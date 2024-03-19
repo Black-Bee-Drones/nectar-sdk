@@ -18,6 +18,7 @@ class ImageHandler:
         node: Node,
         image_source: str,
         image_processing_callback: callable,
+        show_result: str = None,
         cap: Optional[int] = 0,
     ):
         """
@@ -36,12 +37,11 @@ class ImageHandler:
         # Initialize the camera source (ROS topic or webcam)
         self.image_source = image_source
         self.img = None
-        self.cap = cap
+        self.show_result = show_result
+        self.cap_num = cap
         self.bridge = CvBridge()
 
-        self.run()
         self.node.get_logger().info(f"Image source: {self.image_source}")
-        rclpy.spin(self.node)
 
     def _configure_ros_topic(self):
         """
@@ -50,14 +50,23 @@ class ImageHandler:
         """
         if self.image_source.endswith("compressed"):
             self.convert_bridge = self.bridge.compressed_imgmsg_to_cv2
-            self.node.create_subscription(
+            self.image_sub = self.node.create_subscription(
                 CompressedImage, self.image_source, self.ros_topic_callback, 10
             )
         else:
             self.convert_bridge = self.bridge.imgmsg_to_cv2
-            self.node.create_subscription(
+            self.image_sub = self.node.create_subscription(
                 Image, self.image_source, self.ros_topic_callback, 10
             )
+
+    def process(self):
+        self.image_processing_callback(self.img)
+
+        if self.show_result is not None:
+            cv2.imshow(self.show_result, self.img)
+
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            self.cleanup()
 
     def ros_topic_callback(self, data):
         """
@@ -73,10 +82,7 @@ class ImageHandler:
                 f"Failed to convert ROS image message: {str(e)}"
             )
 
-        self.image_processing_callback(self.img)
-
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            self.cleanup()
+        self.process()
 
     def webcam_callback(self):
         """
@@ -89,10 +95,7 @@ class ImageHandler:
                 self.node.get_logger().error("Webcam is not functioning correctly.")
                 return
 
-            self.image_processing_callback(self.img)
-
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                self.cleanup()
+            self.process()
 
         except Exception as e:
             self.node.get_logger().error(f"Failed to read from webcam: {str(e)}")
@@ -106,9 +109,9 @@ class ImageHandler:
         if self.image_source == "webcam":
             # For webcam, the image is read by VideoCapture
             # and detection is maintained by the Timer together with the callback function
-            self.cap = cv2.VideoCapture(self.cap)
+            self.cap = cv2.VideoCapture(self.cap_num)
 
-            self.node.create_timer(0.001, self.webcam_callback)
+            self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
 
         else:
             self._configure_ros_topic()
@@ -118,9 +121,15 @@ class ImageHandler:
         Clean up the image handler
         """
 
-        self.node.get_logger().info("Shutting down")
+        self.node.get_logger().info("Image Handler Shutting down")
         if self.image_source == "webcam":
             self.cap.release()
+            self.node.destroy_timer(self.webcam_timer)
+        else:
+            self.node.destroy_subscription(self.image_sub)
 
-        self.node.destroy_node()
-        cv2.destroyAllWindows()
+        if self.show_result is not None:
+            cv2.destroyWindow(self.show_result)
+
+    def __del__(self):
+        self.cleanup()

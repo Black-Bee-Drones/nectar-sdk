@@ -1,11 +1,10 @@
 from tkinter import *
 
 import pathlib
-from mpi4py import rc
 import numpy as np
 
 import rclpy
-from tadini_sdk.control.bebop.bebop_api import Bebop
+from mirela_sdk.control.bebop.bebop_api import Bebop
 
 
 class DroneGUI:

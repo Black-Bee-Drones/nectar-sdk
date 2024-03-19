@@ -3,7 +3,7 @@ from rclpy.node import Node
 from rclpy.timer import Rate
 from rclpy.duration import Duration
 
-from tadini_sdk.control.mavros.gps_controller import GPSController
+from mirela_sdk.control.mavros.gps_controller import GPSController
 
 from mavros_msgs.srv import (
     SetMode,

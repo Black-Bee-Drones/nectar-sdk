@@ -8,7 +8,7 @@ import cv2
 from std_msgs.msg import Empty, UInt8, Float32, Bool
 from geometry_msgs.msg import Twist
 
-from tadini_sdk.image_processing.camera.image_handler import ImageHandler
+from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
 
 class Bebop(Node):
