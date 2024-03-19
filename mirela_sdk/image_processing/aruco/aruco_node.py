@@ -5,10 +5,10 @@ from rclpy.node import Node
 import cv2
 from math import degrees
 
-from tadini_sdk.image_processing.aruco.aruco_detect import Aruco
+from mirela_sdk.image_processing.aruco.aruco_detect import Aruco
 from tadinisdk_interfaces.msg import ArucoTransforms
 
-from tadini_sdk.image_processing.camera.image_handler import ImageHandler
+from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
 
 class ArucoNode(ImageHandler):
@@ -24,9 +24,11 @@ class ArucoNode(ImageHandler):
         self.aruco_pose_estimate = ArucoTransforms()
 
         self.pose_estime_pub = self.create_publisher(
-            ArucoTransforms, self.
-    def _check_position(self):
-        current_lat: float 
+            ArucoTransforms, ArucoNode.POSE_TOPIC, 10
+        )
+
+        self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
+
     def process_image(self):
         # Process the image and perform aruco pose estimate
 

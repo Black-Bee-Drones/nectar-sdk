@@ -32,8 +32,8 @@ class Aruco:
         )
 
         # Configurando o dicionario
-        self.arucoDict = aruco.Dictionary_get(self.key)
-        self.arucoParam = aruco.DetectorParameters_create()
+        self.aruco_detect = aruco.Dictionary_get(self.key)
+        self.aruco_param = aruco.DetectorParameters_create()
 
     @property
     def total_markers(self):
@@ -62,8 +62,8 @@ class Aruco:
         self.key = getattr(
             aruco, f"DICT_{marker_dict}X{marker_dict}_{self.total_markers}"
         )
-        self.arucoDict = aruco.Dictionary_get(self.key)
-        self.arucoParam = aruco.DetectorParameters_create()
+        self.aruco_detect = aruco.Dictionary_get(self.key)
+        self.aruco_param = aruco.DetectorParameters_create()
         self.tag_size = tag_size
 
     def detect(self, img, draw=False):
@@ -88,7 +88,7 @@ class Aruco:
 
         # Pegando os valores do Bounding Box (limite do ArUco marker), e seu ID
         bbox, ids, rejected = aruco.detectMarkers(
-            gray, self.arucoDict, parameters=self.arucoParam
+            gray, self.aruco_detect, parameters=self.aruco_param
         )
 
         if draw:

@@ -10,7 +10,7 @@ from math import radians
 from tf.transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
 
-from tadini_sdk.control.mavros.mavros_api import MavDrone
+from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class GPSController:
