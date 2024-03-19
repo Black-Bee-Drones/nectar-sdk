@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "gui = mirela_sdk.interface.gui:main",
+            "aruco_node = mirela_sdk.image_processing.aruco.aruco_node:main",
         ],
     },
 )
