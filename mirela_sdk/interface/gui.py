@@ -502,7 +502,7 @@ class DroneGUI:
 
 
 def main(args=None) -> None:
-    rclpy.init()
+    rclpy.init(args=args)
     gui = DroneGUI(Bebop())
     rclpy.spin(gui)
 

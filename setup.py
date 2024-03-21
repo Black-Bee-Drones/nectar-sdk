@@ -1,4 +1,7 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
+
 
 package_name = "mirela_sdk"
 
@@ -9,6 +12,10 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
+        (
+            os.path.join("share", package_name, "launch"),
+            glob(os.path.join("launch", "*launch.[pxy][yma]*")),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -21,6 +28,8 @@ setup(
         "console_scripts": [
             "gui = mirela_sdk.interface.gui:main",
             "aruco_node = mirela_sdk.image_processing.aruco.aruco_node:main",
+            "gesture_recognizer = mirela_sdk.solutions.hand_gesture.gesture_recognizer:main",
+            "gesture_controller = mirela_sdk.solutions.hand_gesture.controller:main",
         ],
     },
 )
