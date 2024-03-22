@@ -21,8 +21,6 @@ class TestVelocity(Node):
             ground_reference=False,
             pub_rate=30,
             time=5,
-            linear_x=0.0,
-            linear_z=0.0,
         )
         sleep(5)
 
@@ -32,8 +30,6 @@ class TestVelocity(Node):
             ground_reference=False,
             pub_rate=30,
             time=5,
-            linear_y=0.0,
-            linear_z=0.0,
         )
         sleep(5)
 
@@ -43,8 +39,6 @@ class TestVelocity(Node):
             ground_reference=False,
             pub_rate=30,
             time=5,
-            linear_x=0.0,
-            linear_z=0.0,
         )
         sleep(5)
 
@@ -54,8 +48,6 @@ class TestVelocity(Node):
             ground_reference=False,
             pub_rate=30,
             time=5,
-            linear_y=0.0,
-            linear_z=0.0,
         )
         sleep(5)
 

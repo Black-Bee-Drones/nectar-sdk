@@ -375,11 +375,11 @@ class MavDrone(Node):
 
     def offboard_gps_position(
         self,
-        lat_setpoint: float,
-        lon_setpoint: float,
-        alt_setpoint: float,
-        heading: float,
-        precision_radius: float,
+        lat_setpoint: float = 0.0,
+        lon_setpoint: float = 0.0,
+        alt_setpoint: float = 0.0,
+        heading: float = 0.0,
+        precision_radius: float = 0.0,
     ):
         """
         Move sending a GPS coordinate setpoint
@@ -400,10 +400,10 @@ class MavDrone(Node):
 
     def offboard_velocity(
         self,
-        linear_x: float,
-        linear_y: float,
-        linear_z: float,
-        angular_z: float,
+        linear_x: float = 0.0,
+        linear_y: float = 0.0,
+        linear_z: float = 0.0,
+        angular_z: float = 0.0,
         ground_reference: bool = True,
     ):
         """ """
@@ -425,10 +425,10 @@ class MavDrone(Node):
 
     def offboard_velocity_timer(
         self,
-        linear_x: float,
-        linear_y: float,
-        linear_z: float,
-        angular_z: float,
+        linear_x: float = 0.0,
+        linear_y: float = 0.0,
+        linear_z: float = 0.0,
+        angular_z: float = 0.0,
         ground_reference: bool = True,
         pub_rate: int = 30,
         time: int = 0,
