@@ -5,6 +5,7 @@ import numpy as np
 
 import rclpy
 from mirela_sdk.control.bebop.bebop_api import Bebop
+from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class DroneGUI:
@@ -503,7 +504,7 @@ class DroneGUI:
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    gui = DroneGUI(Bebop())
+    gui = DroneGUI(MavDrone())
     rclpy.spin(gui)
 
 

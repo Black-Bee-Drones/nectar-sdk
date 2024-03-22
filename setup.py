@@ -30,6 +30,7 @@ setup(
             "aruco_node = mirela_sdk.image_processing.aruco.aruco_node:main",
             "gesture_recognizer = mirela_sdk.solutions.hand_gesture.gesture_recognizer:main",
             "gesture_controller = mirela_sdk.solutions.hand_gesture.controller:main",
+            "test_velocity = mirela_sdk.control.mavros.examples.test_velocity:main",
         ],
     },
 )

@@ -7,14 +7,12 @@ from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic
 from math import radians
 
-from tf.transformations import quaternion_from_euler
+from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
-
-from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class GPSController:
-    def __init__(self, drone: MavDrone):
+    def __init__(self, drone):
         self.drone = drone
         self._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
         self.photo_count: int = 0
