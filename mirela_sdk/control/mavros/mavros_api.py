@@ -90,13 +90,13 @@ class MavDrone(Node):
                     f"Service {service.srv_name} not available, waiting again..."
                 )
 
-        wait_service(self._mode_srv)
-        wait_service(self._arm_srv)
-        wait_service(self._takeoff_srv)
-        wait_service(self._land_srv)
-        wait_service(self._home_srv)
-        # wait_service(self._param_set_srv)
-        wait_service(self._command_srv)
+        # wait_service(self._mode_srv)
+        # wait_service(self._arm_srv)
+        # wait_service(self._takeoff_srv)
+        # wait_service(self._land_srv)
+        # wait_service(self._home_srv)
+        # # wait_service(self._param_set_srv)
+        # wait_service(self._command_srv)
 
         # Publishers:
         self.gps_pub = self.create_publisher(
@@ -109,11 +109,7 @@ class MavDrone(Node):
             PositionTarget, "/mavros/setpoint_raw/local", 1
         )
 
-        # Wait Services:
-        while not self._mode_srv.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Service not available, waiting again...")
-
-        sleep(10)
+        sleep(5)
 
         self.get_logger().info("Mavros API initialized")
 
@@ -446,6 +442,15 @@ class MavDrone(Node):
             )
             rate.sleep()
             t_now = self.get_clock().now()
+
+    def image_viewer(self):
+        pass
+
+    def snapshot(self):
+        pass
+
+    def record(self, record):
+        pass
 
 
 def main(args=None):
