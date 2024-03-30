@@ -8,6 +8,7 @@ from geopy.distance import geodesic
 from math import radians
 
 from tf_transformations import quaternion_from_euler
+from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
 from mirela_sdk.control.mavros.mavros_api import MavDrone
 

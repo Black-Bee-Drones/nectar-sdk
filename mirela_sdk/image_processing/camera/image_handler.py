@@ -77,12 +77,12 @@ class ImageHandler:
         try:
             self.img = self.convert_bridge(data, "bgr8")
 
+            self.process()
+
         except Exception as e:
             self.node.get_logger().error(
                 f"Failed to convert ROS image message: {str(e)}"
             )
-
-        self.process()
 
     def webcam_callback(self):
         """

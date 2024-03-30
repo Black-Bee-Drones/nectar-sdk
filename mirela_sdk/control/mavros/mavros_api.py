@@ -90,13 +90,13 @@ class MavDrone(Node):
                     f"Service {service.srv_name} not available, waiting again..."
                 )
 
-        wait_service(self._mode_srv)
-        wait_service(self._arm_srv)
-        wait_service(self._takeoff_srv)
-        wait_service(self._land_srv)
-        wait_service(self._home_srv)
-        # wait_service(self._param_set_srv)
-        wait_service(self._command_srv)
+        # wait_service(self._mode_srv)
+        # wait_service(self._arm_srv)
+        # wait_service(self._takeoff_srv)
+        # wait_service(self._land_srv)
+        # wait_service(self._home_srv)
+        # # wait_service(self._param_set_srv)
+        # wait_service(self._command_srv)
 
         # Publishers:
         self.gps_pub = self.create_publisher(
@@ -109,11 +109,7 @@ class MavDrone(Node):
             PositionTarget, "/mavros/setpoint_raw/local", 1
         )
 
-        # Wait Services:
-        while not self._mode_srv.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Service not available, waiting again...")
-
-        sleep(10)
+        sleep(5)
 
         self.get_logger().info("Mavros API initialized")
 
@@ -375,11 +371,11 @@ class MavDrone(Node):
 
     def offboard_gps_position(
         self,
-        lat_setpoint: float,
-        lon_setpoint: float,
-        alt_setpoint: float,
-        heading: float,
-        precision_radius: float,
+        lat_setpoint: float = 0.0,
+        lon_setpoint: float = 0.0,
+        alt_setpoint: float = 0.0,
+        heading: float = 0.0,
+        precision_radius: float = 0.0,
     ):
         """
         Move sending a GPS coordinate setpoint
@@ -400,10 +396,10 @@ class MavDrone(Node):
 
     def offboard_velocity(
         self,
-        linear_x: float,
-        linear_y: float,
-        linear_z: float,
-        angular_z: float,
+        linear_x: float = 0.0,
+        linear_y: float = 0.0,
+        linear_z: float = 0.0,
+        angular_z: float = 0.0,
         ground_reference: bool = True,
     ):
         """ """
@@ -425,10 +421,10 @@ class MavDrone(Node):
 
     def offboard_velocity_timer(
         self,
-        linear_x: float,
-        linear_y: float,
-        linear_z: float,
-        angular_z: float,
+        linear_x: float = 0.0,
+        linear_y: float = 0.0,
+        linear_z: float = 0.0,
+        angular_z: float = 0.0,
         ground_reference: bool = True,
         pub_rate: int = 30,
         time: int = 0,
@@ -446,6 +442,15 @@ class MavDrone(Node):
             )
             rate.sleep()
             t_now = self.get_clock().now()
+
+    def image_viewer(self):
+        pass
+
+    def snapshot(self):
+        pass
+
+    def record(self, record):
+        pass
 
 
 def main(args=None):
