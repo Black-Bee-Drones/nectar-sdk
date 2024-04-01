@@ -10,23 +10,24 @@ class TestVelocity(Node):
         super().__init__("test_velocity")
 
         self.drone = MavDrone()
+        self.get_logger().info("Test velocity has been initialized")
 
     def run(self):
         self.drone.arm_takeoff(4.0)
         sleep(8)
 
-        self.get_logger().info("Moving to left")
+        self.get_logger().info("Moving to front")
         self.drone.offboard_velocity_timer(
-            linear_y=1.0,
+            linear_x=1.0,
             ground_reference=False,
             pub_rate=30,
             time=5,
         )
         sleep(5)
 
-        self.get_logger().info("Moving to front")
+        self.get_logger().info("Moving to left")
         self.drone.offboard_velocity_timer(
-            linear_x=1.0,
+            linear_y=1.0,
             ground_reference=False,
             pub_rate=30,
             time=5,

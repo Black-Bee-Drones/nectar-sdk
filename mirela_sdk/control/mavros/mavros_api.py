@@ -95,7 +95,7 @@ class MavDrone(Node):
         # wait_service(self._takeoff_srv)
         # wait_service(self._land_srv)
         # wait_service(self._home_srv)
-        # # wait_service(self._param_set_srv)
+        # wait_service(self._param_set_srv)
         # wait_service(self._command_srv)
 
         # Publishers:
@@ -290,8 +290,8 @@ class MavDrone(Node):
         ----------
         takeoff_alt: float (meters)
         """
-        self.set_mode("GUIDED")
         self.arm()
+        sleep(2)
         self.takeoff(takeoff_alt)
 
     def land(self):
