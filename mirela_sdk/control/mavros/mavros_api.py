@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.timer import Rate
 from rclpy.duration import Duration
-
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from mirela_sdk.control.mavros.gps_controller import GPSController
 
 from mavros_msgs.srv import (
@@ -40,12 +40,18 @@ class MavDrone(Node):
 
         self.gps_controller = GPSController(self)
 
+        #Alterando política de qualidade de serviço para receber dados gps:
+        qos_profile = QoSProfile(
+            depth = 10,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT
+)
         # Subscribers:
         self._gps_sub = self.create_subscription(
             NavSatFix,
             "/mavros/global_position/global",
             lambda data: self.__setattr__("_gps", data),
-            10,
+            qos_profile,
         )
         self._state_sub = self.create_subscription(
             State, "/mavros/state", lambda data: self.__setattr__("_state", data), 10
@@ -60,19 +66,19 @@ class MavDrone(Node):
             Float64,
             "/mavros/global_position/rel_alt",
             lambda data: self.__setattr__("_rel_alt", data),
-            10,
+            qos_profile,
         )
         self._local_pos_sub = self.create_subscription(
             PoseStamped,
             "/mavros/local_position/pose",
             lambda data: self.__setattr__("_local_pos", data),
-            10,
+            qos_profile,
         )
         self._hdg_sub = self.create_subscription(
             Float64,
             "/mavros/global_position/compass_hdg",
             lambda data: self.__setattr__("_heading", data),
-            10,
+            qos_profile,
         )
 
         # Services:
@@ -81,7 +87,7 @@ class MavDrone(Node):
         self._takeoff_srv = self.create_client(CommandTOL, "/mavros/cmd/takeoff")
         self._land_srv = self.create_client(CommandTOL, "/mavros/cmd/land")
         self._home_srv = self.create_client(CommandHome, "/mavros/cmd/set_home")
-        # self._param_set_srv = self.create_client(ParamSet, "/mavros/param/set")
+        self._param_set_srv = self.create_client(ParamSet, "/mavros/param/set")
         self._command_srv = self.create_client(CommandLong, "/mavros/cmd/command")
 
         def wait_service(service):
@@ -229,13 +235,13 @@ class MavDrone(Node):
         """
         command = CommandLong.Request()
         command.command = 400
-        command.param1 = 0
-        command.param2 = 0
-        command.param3 = 0
-        command.param4 = 0
-        command.param5 = 21196
-        command.param6 = 0
-        command.param7 = 0
+        command.param1 = 0.0
+        command.param2 = 0.0
+        command.param3 = 0.0
+        command.param4 = 0.0
+        command.param5 = 21196.0
+        command.param6 = 0.0
+        command.param7 = 0.0
         self._call_service(
             self._command_srv, command, "-- Motors killed", "-- Kill motors failed"
         )
@@ -291,7 +297,6 @@ class MavDrone(Node):
         takeoff_alt: float (meters)
         """
         self.arm()
-        sleep(2)
         self.takeoff(takeoff_alt)
 
     def land(self):
@@ -402,7 +407,36 @@ class MavDrone(Node):
         angular_z: float = 0.0,
         ground_reference: bool = True,
     ):
-        """ """
+        """ 
+        Move sending velocity commands
+
+        Parameters
+        ----------
+        linear_x: float (m/s)
+            (+)Move forward
+
+            (-)Move backward 
+
+        linear_y: float (m/s)      
+            (+)Move left
+
+            (-)Move right
+        
+        linear_z: float (m/s)     
+            (+)Move up
+
+            (-)Move down
+        
+        angular_z: float            
+            (+)Rotate counter clockwise
+
+            (-)Rotate clockwise
+
+        ground_reference: Bool
+            (True)Groud reference
+
+            (False)Body reference
+        """
         vel_msg = PositionTarget()
 
         if ground_reference:
@@ -429,7 +463,39 @@ class MavDrone(Node):
         pub_rate: int = 30,
         time: int = 0,
     ):
-        """ """
+        """
+        Move sending velocity commands
+
+        Parameters
+        ----------
+        linear_x: float (m/s)
+            (+)Move forward
+
+            (-)Move backward 
+
+        linear_y: float (m/s)      
+            (+)Move left
+
+            (-)Move right
+        
+        linear_z: float (m/s)     
+            (+)Move up
+
+            (-)Move down
+        
+        angular_z: float            
+            (+)Rotate counter clockwise
+
+            (-)Rotate clockwise
+
+        ground_reference: Bool
+            (True)Groud reference
+
+            (False)Body reference
+
+        time: float (seconds)
+            Moviment time duration 
+        """
         t_start = t_now = self.get_clock().now()
         duration = Duration(secs=time)
         rate = Rate(pub_rate)
@@ -451,24 +517,3 @@ class MavDrone(Node):
 
     def record(self, record):
         pass
-
-
-def main(args=None):
-    rclpy.init()
-
-    drone = MavDrone()
-
-    drone.arm_takeoff(5.0)
-
-    sleep(5.0)
-
-    # drone.offboard_velocity_timer(1, 0, 0, 1, False, 30, 15)
-    # drone.offboard_velocity(0, 0, 0, 0, False)
-
-    drone.land()
-
-    rclpy.spin(drone)
-
-
-if __name__ == "__main__":
-    main()
