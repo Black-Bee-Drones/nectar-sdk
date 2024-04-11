@@ -1,7 +1,6 @@
 import os
 import rclpy
 from rclpy.node import Node
-from rclpy.timer import Timer
 from pygeodesy.geoids import GeoidPGM
 from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic

@@ -45,7 +45,7 @@ class MavDrone(Node):
             depth = 10,
             durability=QoSDurabilityPolicy.VOLATILE,
             reliability=QoSReliabilityPolicy.BEST_EFFORT
-)
+        )
         # Subscribers:
         self._gps_sub = self.create_subscription(
             NavSatFix,
