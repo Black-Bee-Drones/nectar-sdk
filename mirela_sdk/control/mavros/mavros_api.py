@@ -20,6 +20,8 @@ from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range
 
 from time import sleep
+import subprocess
+import shlex
 
 
 class MavDrone(Node):
@@ -27,7 +29,7 @@ class MavDrone(Node):
     Class to control the mav ros drone using ROS2.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, init_mavros: bool = True) -> None:
         super().__init__("mavros_api_node")
 
         # Variables:
@@ -84,19 +86,8 @@ class MavDrone(Node):
         # self._param_set_srv = self.create_client(ParamSet, "/mavros/param/set")
         self._command_srv = self.create_client(CommandLong, "/mavros/cmd/command")
 
-        def wait_service(service):
-            while not service.wait_for_service(timeout_sec=1.0):
-                self.get_logger().info(
-                    f"Service {service.srv_name} not available, waiting again..."
-                )
-
-        # wait_service(self._mode_srv)
-        # wait_service(self._arm_srv)
-        # wait_service(self._takeoff_srv)
-        # wait_service(self._land_srv)
-        # wait_service(self._home_srv)
-        # # wait_service(self._param_set_srv)
-        # wait_service(self._command_srv)
+        if init_mavros:
+            self.init_mavros()
 
         # Publishers:
         self.gps_pub = self.create_publisher(
@@ -112,6 +103,62 @@ class MavDrone(Node):
         sleep(5)
 
         self.get_logger().info("Mavros API initialized")
+
+    def init_mavros(self):
+        # Command to start the ros2 launch mavros apm
+        command = [
+            "ros2",
+            "launch",
+            "mavros",
+            "apm.launch",
+            "fcu_url:=serial:///dev/ttyUSB0:57600",
+        ]
+
+        # Join the list elements into a single string
+        command_str = " ".join(command)
+
+        # Start the process
+        process = subprocess.Popen(
+            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
+        )
+
+        # Wait for the process to finish
+        stdout, stderr = process.communicate()
+
+        # Check for any errors
+        if process.returncode != 0:
+            print(f"\033[91mErro ao iniciar o mavros: {process.returncode}\033[0m")
+        else:
+            print(f"\033[92mMavros apm launch iniciado com sucesso\033[0m")
+
+        sleep(1.5)
+
+        def wait_service(service):
+            self.get_logger().info(service.srv_name)
+            while not service.wait_for_service(timeout_sec=1.0):
+                self.get_logger().info(
+                    f"Service {service.srv_name} not available, waiting again..."
+                )
+
+        wait_service(self._mode_srv)
+        wait_service(self._arm_srv)
+        wait_service(self._takeoff_srv)
+        wait_service(self._land_srv)
+        wait_service(self._home_srv)
+        # wait_service(self._param_set_srv)
+        wait_service(self._command_srv)
+
+    def check_mavros_node(self) -> bool:
+        # Obtém a lista de nós atualmente ativos
+        node_names = self.get_node_names()
+
+        # Verifica se o nó mavros está na lista
+        if "/mavros/mavros_node" in node_names:
+            self.get_logger().info("O nó mavros está rodando.")
+            return True
+        else:
+            self.get_logger().info("O nó mavros não está rodando.")
+            return False
 
     @property
     def get_state(self) -> State:

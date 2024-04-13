@@ -21,38 +21,13 @@ class MavComponent(DroneComponent):
 
         print("Mav component Init")
 
-        self.drone = MavDrone()
+        self.drone = MavDrone(init_mavros=False)
 
     def init_drone_config(self):
         """
         Initialize the Mavros configuration for the Mav drone.
         """
-
-        # Command to start the ros2 launch mavros apm
-        command = [
-            "ros2",
-            "launch",
-            "mavros",
-            "apm.launch",
-            "fcu_url:=serial:///dev/ttyUSB0:57600",
-        ]
-
-        # Join the list elements into a single string
-        command_str = " ".join(command)
-
-        # Start the process
-        process = subprocess.Popen(
-            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
-        )
-
-        # Wait for the process to finish
-        stdout, stderr = process.communicate()
-
-        # Check for any errors
-        if process.returncode != 0:
-            print(f"\033[91mErro ao iniciar o mavros: {process.returncode}\033[0m")
-        else:
-            print(f"\033[92mMavros apm launch iniciado com sucesso\033[0m")
+        self.drone.init_mavros()
 
     def create_specific_widgets(self):
         """

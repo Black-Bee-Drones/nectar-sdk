@@ -20,34 +20,13 @@ class BebopComponent(DroneComponent):
 
         print("Bebop component Init")
 
-        self.drone = Bebop()
+        self.drone = Bebop(bebop_driver=False)
 
     def init_drone_config(self):
         """
         Initialize the Bebop Driver drone configuration.
         """
-
-        # Command to start the ros2 launch bebob driver
-        command = ["ros2", "launch", "ros2_bebop_driver", "bebop_node_launch.xml"]
-
-        # Join the list elements into a single string
-        command_str = " ".join(command)
-
-        # Start the process
-        process = subprocess.Popen(
-            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
-        )
-
-        # Wait for the process to finish
-        stdout, stderr = process.communicate()
-
-        # Check for any errors
-        if process.returncode != 0:
-            print(
-                f"\033[91mErro ao iniciar o bebop driver: {process.returncode}\033[0m"
-            )
-        else:
-            print(f"\033[92mros2_bebop_driver iniciado com sucesso\033[0m")
+        self.drone.init_bebop_driver()
 
     def create_specific_widgets(self):
         """

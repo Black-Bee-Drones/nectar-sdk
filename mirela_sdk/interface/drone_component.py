@@ -101,16 +101,16 @@ class DroneComponent(ABC):
         self.logo = Label(self.root, image=self.img_logo, bg=self.colors["black"])
         self.logo.grid(row=0, column=0, columnspan=2, ipadx=20, ipady=16, padx=20)
 
-        self.btn_config = Button(
-            self.root,
-            text="Configure",
-            width=6,
-            command=self.driver_thread.start,
-            bg=self.colors["black"],
-            background=self.colors["black"],
-            fg=self.colors["white"],
-        )
-        self.btn_config.place(x=390, y=25)
+        # self.btn_config = Button(
+        #     self.root,
+        #     text="Configure",
+        #     width=6,
+        #     command=self.driver_thread.start,
+        #     bg=self.colors["black"],
+        #     background=self.colors["black"],
+        #     fg=self.colors["white"],
+        # )
+        # self.btn_config.place(x=390, y=25)
 
         self.btn_W = Button(
             self.frame_teclas,

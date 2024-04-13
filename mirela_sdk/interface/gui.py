@@ -9,6 +9,8 @@ from mirela_sdk.interface.drone_component import DroneComponent
 from mirela_sdk.interface.bebop_component import BebopComponent
 from mirela_sdk.interface.mav_component import MavComponent
 
+from mirela_sdk.control.bebop.bebop_api import Bebop
+
 
 class DroneGUI:
     def __init__(self):
@@ -16,7 +18,7 @@ class DroneGUI:
         Initialize the Drone Graphical User Interface.
         """
 
-        self.drone_strategy = None
+        self.drone_strategy: DroneComponent = None
         self.drone = None
         self.colors = {
             "yellow": "#FDCE01",
@@ -68,8 +70,19 @@ class DroneGUI:
         posy = h_screen / 2 - h / 2
         self.root.geometry("%dx%d+%d+%d" % (w, h, posx, posy))
 
-        self.init_widgets()
+        self.combobox = ttk.Combobox(
+            self.root,
+            values=["Bebop", "Mavros"],
+            width=10,
+            justify="center",
+            style="TCombobox",
+        )
+        self.combobox.bind("<<ComboboxSelected>>", self.update_drone)
+        self.combobox.grid(row=0, column=0)
+        self.combobox.current(0)
+
         self.update_drone(None)
+        self.init_widgets()
         self.root.mainloop()
 
     def init_widgets(self) -> None:
@@ -86,27 +99,24 @@ class DroneGUI:
         )
         self.combobox.bind("<<ComboboxSelected>>", self.update_drone)
         self.combobox.grid(row=0, column=0)
-        self.combobox.current(0)
+        self.combobox.set(self.drone_type)
 
-    from tkinter import ttk
+        self.btn_config = Button(
+            self.root,
+            text="Configure",
+            width=6,
+            command=lambda: self.progress_bar(self.drone_strategy.init_drone_config),
+            bg=self.colors["black"],
+            background=self.colors["black"],
+            fg=self.colors["white"],
+        )
+        self.btn_config.place(x=390, y=25)
 
-    def update_drone(self, event) -> None:
-        """
-        Update the drone based on the selected type on the combobox.
-
-        :param event: The event that triggered the update.
-        """
-        # Disable the combobox
-        drone_type = self.combobox.get()
-        self.combobox.set(drone_type)
-
-        self.combobox.config(state="disabled")
-
+    def progress_bar(self, callback) -> None:
         # Clear old widgets and create new ones
         for widget in self.root.winfo_children():
             widget.destroy()
 
-        # Create and start progress bar
         progress = ttk.Progressbar(
             self.root, length=100, mode="determinate", maximum=140, style="TProgressbar"
         )
@@ -127,11 +137,37 @@ class DroneGUI:
         progress.place(x=x, y=y)
         progress.start()
 
+        # Start drone initialization in a new thread
+        drone_thread = threading.Thread(target=callback)
+        drone_thread.start()
+
+        while drone_thread.is_alive():
+            self.root.update()
+
+        # Stop and remove progress bar
+        progress.stop()
+        progress.place_forget()
+
+        self.init_widgets()
+        self.drone_strategy.create_widgets()
+
+    def update_drone(self, event) -> None:
+        """
+        Update the drone based on the selected type on the combobox.
+
+        :param event: The event that triggered the update.
+        """
+        # Disable the combobox
+        self.drone_type = self.combobox.get()
+        self.combobox.set(self.drone_type)
+
+        self.combobox.config(state="disabled")
+
         def init_drone():
-            print("Drone set: ", drone_type)
-            if drone_type == "Bebop":
+            print("Drone set: ", self.drone_type)
+            if self.drone_type == "Bebop":
                 self.drone_strategy = BebopComponent(self.root)
-            elif drone_type == "Mavros":
+            elif self.drone_type == "Mavros":
                 self.drone_strategy = MavComponent(self.root)
             else:
                 return
@@ -141,20 +177,11 @@ class DroneGUI:
 
             self.drone = self.drone_strategy.drone
 
-            self.init_widgets()
-            self.combobox.set(drone_type)
-            self.drone_strategy.create_widgets()
+        self.progress_bar(init_drone)
 
-            # Stop and remove progress bar
-            progress.stop()
-            progress.place_forget()
-
-            # Enable the combobox
-            self.combobox.config(state="normal")
-
-        # Start drone initialization in a new thread
-        drone_thread = threading.Thread(target=init_drone)
-        drone_thread.start()
+        # Enable the combobox
+        self.combobox.config(state="normal")
+        self.combobox.set(self.drone_type)
 
         def __del__(self):
             """

@@ -4,6 +4,8 @@ from rclpy.duration import Duration
 
 from time import sleep
 import cv2
+import subprocess
+import shlex
 
 from std_msgs.msg import Empty, UInt8, Float32, Bool
 from geometry_msgs.msg import Twist
@@ -16,7 +18,7 @@ class Bebop(Node):
     Class to control the Parrot Bebop 2 drone using ROS2.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, bebop_driver: bool = True) -> None:
         super().__init__("bebop_api_node")
 
         # Publishers:
@@ -31,9 +33,37 @@ class Bebop(Node):
 
         self.cv_image = None
 
+        if bebop_driver:
+            self.init_bebop_driver()
+
         self.delay(0.5)
 
         self.get_logger().info("Bebop API initialized")
+
+    def init_bebop_driver(self):
+        # Command to start the ros2 launch bebob driver
+        command = ["ros2", "launch", "ros2_bebop_driver", "bebop_node_launch.xml"]
+
+        # Join the list elements into a single string
+        command_str = " ".join(command)
+
+        # Start the process
+        process = subprocess.Popen(
+            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
+        )
+
+        # Wait for the process to finish
+        stdout, stderr = process.communicate()
+
+        # Check for any errors
+        if process.returncode != 0:
+            print(
+                f"\033[91mErro ao iniciar o bebop driver: {process.returncode}\033[0m"
+            )
+        else:
+            print(f"\033[92mros2_bebop_driver iniciado com sucesso\033[0m")
+
+        sleep(2.0)
 
     def takeoff(self) -> None:
         """
