@@ -1,12 +1,10 @@
 import os
-
 import rclpy
-
+from rclpy.node import Node
 from pygeodesy.geoids import GeoidPGM
 from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic
 from math import radians
-
 from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
 
@@ -21,10 +19,12 @@ class GPSController:
     def _check_position(self):
         current_lat: float = self.drone.get_gps.latitude
         current_long: float = self.drone.get_gps.longitude
+        print(f"Lat: {current_lat} Long: {current_long}")
+
         current_position = Point(current_lat, current_long)
 
         if not current_position.within(self.fence):
-            self.get_logger().info("-- Geofence breach")
+            self.drone.get_logger().info("-- Geofence breach")
             self.drone.kill_motors()
             rclpy.shutdown()
 
@@ -38,9 +38,11 @@ class GPSController:
 
         :param coords: List of coordinates to define the geofence
         """
-
+        self.drone.get_logger().info("Geofence function")
         self.fence = Polygon(coords)
-        rclpy.Node.create_timer(self, 0.01, self._check_position)
+        Node.create_timer(self.drone, 0.01, self._check_position)                
+        
+
 
     def geoid_height(self, lat, lon):
         """

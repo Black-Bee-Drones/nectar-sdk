@@ -32,8 +32,8 @@ class Aruco:
         )
 
         # Configurando o dicionario
-        self.aruco_detect = aruco.Dictionary_get(self.key)
-        self.aruco_param = aruco.DetectorParameters_create()
+        self.aruco_detect = aruco.getPredefinedDictionary(self.key)
+        self.aruco_param = aruco.DetectorParameters()
 
     @property
     def total_markers(self):
@@ -62,8 +62,8 @@ class Aruco:
         self.key = getattr(
             aruco, f"DICT_{marker_dict}X{marker_dict}_{self.total_markers}"
         )
-        self.aruco_detect = aruco.Dictionary_get(self.key)
-        self.aruco_param = aruco.DetectorParameters_create()
+        self.aruco_detect = aruco.getPredefinedDictionary(self.key)
+        self.aruco_param = aruco.DetectorParameters()
         self.tag_size = tag_size
 
     def detect(self, img, draw=False):
@@ -144,17 +144,16 @@ class Aruco:
 
 def main():
 
-    aruco = Aruco()
+    aruco = Aruco(5,20)
 
     cap = cv2.VideoCapture(0)
 
-    while 1:
+    while cv2.waitKey(1) < 0:
 
         _, img = cap.read()
 
-        id, t, r = aruco.pose_estimate(img, 5, 0.2)
-        # cv2.imshow("a",img)
-        # cv2.waitKey(1)
+        id, t, r = aruco.pose_estimate(img, True)
+        cv2.imshow("a",img)
         print(id, t, r)
 
 
