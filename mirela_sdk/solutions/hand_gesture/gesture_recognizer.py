@@ -8,6 +8,8 @@ from cvzone.HandTrackingModule import HandDetector
 
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
+import time
+import math
 
 class GestureRecognizer(Node):
     # Declare fingers gesture positions
@@ -28,6 +30,7 @@ class GestureRecognizer(Node):
         (0, 1, 1, 1, 0, 0, 1, 1, 1, 0): 12,  # BACK
         (0, 0, 0, 0, 1, 0, 0, 0, 0, 0): 13,  # YAW-CLOCKWISE
         (0, 0, 0, 0, 0, 0, 0, 0, 0, 1): 14,  # YAW-COUNTERCLOCKWISE
+        (1, 1, 1, 1, 1, 0, 0, 0, 0, 0): 15,  # Bye-Bye
     }
 
     def __init__(
@@ -49,6 +52,15 @@ class GestureRecognizer(Node):
             detectionCon=min_detection_confidence,
             minTrackCon=min_tracking_confidence,
         )
+
+        #tchauzingo_detect global variables
+        self.turns = 0  #int variable --> saves the number of times the wrist-motion way changes
+        self.old_ang = None #int variable --> saves the hand wrist-motion angle from the last loop
+        self.motion = None #boolean variable --> 1 == increasing angle | 2 == decreasing angle
+        self.old_motion = None #boolean variable --> saves the wrist-motion way from the last loop
+        self.tchau_starttime = None
+        self.left_indice = 0
+        self.right_indice = 0
 
         self.msg = Int16()
 
@@ -81,11 +93,23 @@ class GestureRecognizer(Node):
         hands, img = self.detector.findHands(img)
 
         if hands and len(hands) == 2:
-            fingers_right = self.detector.fingersUp(hands[0])
-            fingers_left = self.detector.fingersUp(hands[1])
+            self.get_logger().info(hands[0]["type"])
+            if hands[0]["type"] == "Right": 
+                self.right_indice = 0
+                self.left_indice = 1
+            else:
+                self.right_indice = 1
+                self.left_indice = 0
+            
+            fingers_right = self.detector.fingersUp(hands[self.right_indice])
+            fingers_left = self.detector.fingersUp(hands[self.left_indice])
 
             self.msg.data = self.recognize_gesture(fingers_right, fingers_left)
-            self.acao_pub.publish(self.msg)
+            if self.msg.data == 15:
+                self.tchauzinho_detect(hands[self.right_indice])
+
+            else:    
+                self.acao_pub.publish(self.msg)
             print(self.msg.data)
 
     def recognize_gesture(self, fingers_right: list, fingers_left: list) -> int:
@@ -97,6 +121,48 @@ class GestureRecognizer(Node):
         :return: Gesture ID.
         """
         return self.gestures.get(tuple(fingers_right + fingers_left), 0)
+
+    def tchauzinho_detect(self, hand : dict):
+
+        x0, y0, _ = hand['lmList'][0]  # Wrist coordinates
+        x12, y12, _ = hand['lmList'][12]  # Tip of middle finger coordinates
+
+        if self.tchau_starttime == None:
+            self.tchau_starttime = time.time()
+
+        if x12 == x0:
+            hand_angulation = 90
+
+        else:
+            hand_angulation = int( math.degrees( math.atan( ( y12 - y0 ) / ( x12 - x0 ) ) ) / 25 )
+        
+        if self.old_ang != None:
+            if hand_angulation > self.old_ang:
+                self.motion = 1
+            elif hand_angulation < self.old_ang:
+                self.motion = 0
+
+        if self.old_motion != None:
+            if self.old_motion != self.motion:
+                self.turns += 1
+                self.tchau_starttime = time.time()
+
+        self.old_motion = self.motion
+        self.old_ang = hand_angulation
+
+        if time.time() - self.tchau_starttime >= 10:
+            self.old_motion = None
+            self.old_ang = None
+            self.turns = 0
+            self.tchau_starttime = None
+
+
+        if self.turns >= 4:
+            self.old_motion = None
+            self.old_ang = None
+            self.turns = 0
+            self.tchau_starttime = None
+            self.get_logger().info("tchauzinho\n")
 
 
 def main(args=None):
