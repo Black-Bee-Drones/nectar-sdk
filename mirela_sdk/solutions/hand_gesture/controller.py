@@ -10,10 +10,10 @@ from mirela_sdk.control.bebop.bebop_api import Bebop
 
 class GestureController(Node):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("gesture_controller")
 
-        self.bebop = Bebop()
+        self.bebop = Bebop(bebop_driver=False)
         self.create_subscription(
             Int16, "/bebop/hands_action", self._moviment_callback, 10
         )
@@ -54,23 +54,28 @@ class GestureController(Node):
             8: ("Flip Frente", lambda: self.bebop.flip(0)),
             9: ("Flip Tras", lambda: self.bebop.flip(1)),
             10: ("Tirando Foto", lambda: self.bebop.snapshot()),
+            15: ("Tchau", lambda: self.bebop.bye_bye()),
         }
 
-        # self.bebop.takeoff()
+        self.start_time = None
 
-        self.start_time = time()
+    def _moviment_callback(self, msg: Int16) -> None:
+        """
+        Callback function for the gesture recognizer node.
 
-    def _moviment_callback(self, msg: Int16):
+        :param msg (Int16): The message received from the gesture recognizer node (hand_gesture/gesture_recognizer.py).
+        """
         self.previous_action = self.current_action
         self.current_action = msg.data
 
         if self.previous_action == self.current_action and self.previous_action != 0:
-            self.action_counter += 1
+            if self.start_time is None:
+                self.start_time = time()
         else:
-            self.action_counter = 0
+            self.start_time = None
             self.already_sent = False
 
-        if self.action_counter >= 15:  # 0.5 segundos considerando 30hz
+        if self.start_time is not None and time() - self.start_time >= 0.5:
             action_name, action_func = self.continuous_actions.get(
                 self.current_action, ("Unknown", None)
             )

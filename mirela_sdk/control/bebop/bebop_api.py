@@ -223,11 +223,15 @@ class Bebop(Node):
 
     def image_viewer(self) -> None:
         """
-        Display the image from the drone's camera.
+        Init Image Handler with bebop image_raw topic and call the show method
         """
         self.image_manager = ImageHandler(
             self, ImageHandler.BEBOP_TOPIC, image_processing_callback=self.show
         )
+
+    def bye_bye(self) -> None:
+        # TODO: Moviment to gesture bye_bye
+        pass
 
     def cleanup(self):
         self.land()

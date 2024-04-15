@@ -11,6 +11,7 @@ from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 import time
 import math
 
+
 class GestureRecognizer(Node):
     # Declare fingers gesture positions
     gestures: dict[tuple[int, ...], int] = {
@@ -53,14 +54,22 @@ class GestureRecognizer(Node):
             minTrackCon=min_tracking_confidence,
         )
 
-        #tchauzingo_detect global variables
-        self.turns = 0  #int variable --> saves the number of times the wrist-motion way changes
-        self.old_ang = None #int variable --> saves the hand wrist-motion angle from the last loop
-        self.motion = None #boolean variable --> 1 == increasing angle | 2 == decreasing angle
-        self.old_motion = None #boolean variable --> saves the wrist-motion way from the last loop
-        self.tchau_starttime = None
-        self.left_indice = 0
-        self.right_indice = 0
+        # tchauzingo_detect global variables
+        self.turns: int = (
+            0  # int variable --> saves the number of times the wrist-motion way changes
+        )
+        self.old_ang: int = (
+            None  # int variable --> saves the hand wrist-motion angle from the last loop
+        )
+        self.motion: bool = (
+            None  # boolean variable --> 1 == increasing angle | 2 == decreasing angle
+        )
+        self.old_motion: bool = (
+            None  # boolean variable --> saves the wrist-motion way from the last loop
+        )
+        self.tchau_starttime: float = None
+        self.left_indice: int = 0
+        self.right_indice: int = 0
 
         self.msg = Int16()
 
@@ -87,30 +96,34 @@ class GestureRecognizer(Node):
         Process the image to detect the hands and recognize the gestures.
 
         :param img: Image to be processed.
-        :return: Processed image.
         """
 
         hands, img = self.detector.findHands(img)
 
-        if hands and len(hands) == 2:
-            self.get_logger().info(hands[0]["type"])
-            if hands[0]["type"] == "Right": 
-                self.right_indice = 0
-                self.left_indice = 1
-            else:
-                self.right_indice = 1
-                self.left_indice = 0
-            
-            fingers_right = self.detector.fingersUp(hands[self.right_indice])
-            fingers_left = self.detector.fingersUp(hands[self.left_indice])
+        if not hands or len(hands) != 2:
+            self.get_logger().info("Two hands not detected")
+            return
 
-            self.msg.data = self.recognize_gesture(fingers_right, fingers_left)
-            if self.msg.data == 15:
-                self.tchauzinho_detect(hands[self.right_indice])
+        # Check which hand is the right  and left
+        self.right_indice, self.left_indice = (
+            (0, 1) if hands[0]["type"] == "Right" else (1, 0)
+        )
 
-            else:    
-                self.acao_pub.publish(self.msg)
-            print(self.msg.data)
+        # Get the fingers positions for the right and left hands
+        fingers_right = self.detector.fingersUp(hands[self.right_indice])
+        fingers_left = self.detector.fingersUp(hands[self.left_indice])
+
+        self.msg.data = self.recognize_gesture(fingers_right, fingers_left)
+
+        if (self.msg.data == 15) and (
+            not self.tchauzinho_detect(hands[self.right_indice])
+        ):
+            self.msg.data = 0
+
+        if self.msg.data != 0:
+            self.acao_pub.publish(self.msg)
+
+        self.get_logger().info(f"{str(self.msg.data)}")
 
     def recognize_gesture(self, fingers_right: list, fingers_left: list) -> int:
         """
@@ -122,47 +135,50 @@ class GestureRecognizer(Node):
         """
         return self.gestures.get(tuple(fingers_right + fingers_left), 0)
 
-    def tchauzinho_detect(self, hand : dict):
+    def reset_variables(self):
+        self.old_motion = self.old_ang = self.tchau_starttime = None
+        self.turns = 0
 
-        x0, y0, _ = hand['lmList'][0]  # Wrist coordinates
-        x12, y12, _ = hand['lmList'][12]  # Tip of middle finger coordinates
+    def tchauzinho_detect(self, hand: dict) -> bool:
 
+        x0, y0, _ = hand["lmList"][0]  # Wrist coordinates
+        x12, y12, _ = hand["lmList"][12]  # Tip of middle finger coordinates
+
+        # If the tchau_starttime is None, set it to the current time
         if self.tchau_starttime == None:
             self.tchau_starttime = time.time()
 
-        if x12 == x0:
-            hand_angulation = 90
+        # Calculate the hand angulation
+        hand_angulation = (
+            90
+            if (x12 == x0)
+            else int(math.degrees(math.atan((y12 - y0) / (x12 - x0))) / 25)
+        )
 
-        else:
-            hand_angulation = int( math.degrees( math.atan( ( y12 - y0 ) / ( x12 - x0 ) ) ) / 25 )
-        
-        if self.old_ang != None:
-            if hand_angulation > self.old_ang:
-                self.motion = 1
-            elif hand_angulation < self.old_ang:
-                self.motion = 0
+        # Set the motion variable
+        self.motion = (
+            1 if (self.old_ang is not None and hand_angulation > self.old_ang) else 0
+        )
 
-        if self.old_motion != None:
-            if self.old_motion != self.motion:
-                self.turns += 1
-                self.tchau_starttime = time.time()
+        # Check if the motion has changed
+        if (self.old_motion is not None) and (self.old_motion != self.motion):
+            self.turns += 1
+            self.tchau_starttime = time.time()
 
+        # Update the variables
         self.old_motion = self.motion
         self.old_ang = hand_angulation
 
+        # Check if the time has passed
         if time.time() - self.tchau_starttime >= 10:
-            self.old_motion = None
-            self.old_ang = None
-            self.turns = 0
-            self.tchau_starttime = None
+            self.reset_variables()
 
-
+        # Check if the number of turns is greater than 4
         if self.turns >= 4:
-            self.old_motion = None
-            self.old_ang = None
-            self.turns = 0
-            self.tchau_starttime = None
-            self.get_logger().info("tchauzinho\n")
+            self.reset_variables()
+            return True
+
+        return False
 
 
 def main(args=None):
