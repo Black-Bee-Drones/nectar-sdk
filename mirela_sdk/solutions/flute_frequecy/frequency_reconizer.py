@@ -7,7 +7,7 @@ from rclpy.node import Node
 from std_msgs.msg import Int16
 
 
-class FrequencyReconizer(Node):
+class FrequencyRecognizer(Node):
     frequency_bands = {
         1: (518, 551),   # Land
         2: (595, 629),   # Sobe
