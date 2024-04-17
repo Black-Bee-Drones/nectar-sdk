@@ -130,7 +130,7 @@ class FrequencyRecognizer(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = FrequencyReconizer()
+    node = FrequencyRecognizer()
     rclpy.spin(node)
 
 if __name__ == "__main__":

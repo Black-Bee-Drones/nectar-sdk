@@ -123,15 +123,19 @@ class Aruco:
             rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(
                 bbox, self.tag_size, self.camera_matrix, self.camera_distortion
             )
-            if draw:
-                cv2.drawFrameAxes(
-                    img,
-                    self.camera_matrix,
-                    self.camera_distortion,
-                    rvecs,
-                    tvecs,
-                    self.tag_size,
-                )
+
+            try:
+                if draw:
+                    cv2.drawFrameAxes(
+                        img,
+                        self.camera_matrix,
+                        self.camera_distortion,
+                        rvecs,
+                        tvecs,
+                        self.tag_size,
+                    )
+            except Exception as ex:
+                print("Something wrong is not correct: ", ex)
 
             translation_vector = tvecs[0][0][0:3]
             rotation_vector = rvecs[0][0][0:3]

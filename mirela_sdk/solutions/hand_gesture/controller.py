@@ -1,10 +1,7 @@
 import rclpy
 from rclpy.node import Node
-
 from std_msgs.msg import Int16
-
 from time import time
-
 from mirela_sdk.control.bebop.bebop_api import Bebop
 
 

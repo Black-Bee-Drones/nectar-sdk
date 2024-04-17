@@ -131,5 +131,7 @@ class ImageHandler:
         if self.show_result is not None:
             cv2.destroyWindow(self.show_result)
 
+        self.node.destroy_node()
+
     def __del__(self):
         self.cleanup()
