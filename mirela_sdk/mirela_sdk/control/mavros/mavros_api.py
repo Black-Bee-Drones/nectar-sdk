@@ -42,11 +42,11 @@ class MavDrone(Node):
 
         self.gps_controller = GPSController(self)
 
-        #Alterando política de qualidade de serviço para receber dados gps:
+        # Alterando política de qualidade de serviço para receber dados gps:
         qos_profile = QoSProfile(
-            depth = 10,
+            depth=10,
             durability=QoSDurabilityPolicy.VOLATILE,
-            reliability=QoSReliabilityPolicy.BEST_EFFORT
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
         )
         # Subscribers:
         self._gps_sub = self.create_subscription(
@@ -94,6 +94,7 @@ class MavDrone(Node):
 
         if init_mavros:
             self.init_mavros()
+            sleep(5)
 
         # Publishers:
         self.gps_pub = self.create_publisher(
@@ -105,8 +106,6 @@ class MavDrone(Node):
         self.local_pub = self.create_publisher(
             PositionTarget, "/mavros/setpoint_raw/local", 1
         )
-
-        sleep(5)
 
         self.get_logger().info("Mavros API initialized")
 
@@ -140,7 +139,6 @@ class MavDrone(Node):
         sleep(1.5)
 
         def wait_service(service):
-            self.get_logger().info(service.srv_name)
             while not service.wait_for_service(timeout_sec=1.0):
                 self.get_logger().info(
                     f"Service {service.srv_name} not available, waiting again..."
@@ -159,11 +157,11 @@ class MavDrone(Node):
         node_names = self.get_node_names()
 
         # Verifica se o nó mavros está na lista
-        if "/mavros/mavros_node" in node_names:
-            self.get_logger().info("O nó mavros está rodando.")
+        if "mavros_node" in node_names:
+            self.get_logger().info("\033[92mThe mavros node is running.\033[0m")
             return True
         else:
-            self.get_logger().info("O nó mavros não está rodando.")
+            self.get_logger().info("\033[91mThe mavros node is not running.\033[0m")
             return False
 
     @property
@@ -454,7 +452,7 @@ class MavDrone(Node):
         angular_z: float = 0.0,
         ground_reference: bool = True,
     ):
-        """ 
+        """
         Move sending velocity commands
 
         Parameters
@@ -462,19 +460,19 @@ class MavDrone(Node):
         linear_x: float (m/s)
             (+)Move forward
 
-            (-)Move backward 
+            (-)Move backward
 
-        linear_y: float (m/s)      
+        linear_y: float (m/s)
             (+)Move left
 
             (-)Move right
-        
-        linear_z: float (m/s)     
+
+        linear_z: float (m/s)
             (+)Move up
 
             (-)Move down
-        
-        angular_z: float            
+
+        angular_z: float
             (+)Rotate counter clockwise
 
             (-)Rotate clockwise
@@ -518,19 +516,19 @@ class MavDrone(Node):
         linear_x: float (m/s)
             (+)Move forward
 
-            (-)Move backward 
+            (-)Move backward
 
-        linear_y: float (m/s)      
+        linear_y: float (m/s)
             (+)Move left
 
             (-)Move right
-        
-        linear_z: float (m/s)     
+
+        linear_z: float (m/s)
             (+)Move up
 
             (-)Move down
-        
-        angular_z: float            
+
+        angular_z: float
             (+)Rotate counter clockwise
 
             (-)Rotate clockwise
@@ -541,7 +539,7 @@ class MavDrone(Node):
             (False)Body reference
 
         time: float (seconds)
-            Moviment time duration 
+            Moviment time duration
         """
         t_start = t_now = self.get_clock().now()
         duration = Duration(secs=time)
