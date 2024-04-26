@@ -4,11 +4,9 @@ import rclpy
 from rclpy.node import Node
 
 from math import degrees
-import cv2
 
 from mirela_sdk.image_processing.aruco.aruco_detect import Aruco
-#from tadinisdk_interfaces.msg import ArucoTransforms
-
+from mirela_interfaces.msg import ArucoTransforms
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
 
@@ -26,11 +24,11 @@ class ArucoNode(Node):
         self.marker_dict = int(marker_dict)
         self.tag_size = float(tag_size)
 
-        # self.aruco_pose_estimate = ArucoTransforms()
+        self.aruco_pose_estimate = ArucoTransforms()
 
-        # self.pose_estime_pub = self.create_publisher(
-        #     ArucoTransforms, ArucoNode.POSE_TOPIC, 10
-        # )
+        self.pose_estime_pub = self.create_publisher(
+            ArucoTransforms, ArucoNode.POSE_TOPIC, 10
+        )
 
         self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
 
@@ -49,7 +47,7 @@ class ArucoNode(Node):
         if id is not None:
             # Publish line setpoints
 
-            self.aruco_pose_estimate.id = id
+            self.aruco_pose_estimate.id = int(id)
 
             self.aruco_pose_estimate.translation.x = Tvect[0]
             self.aruco_pose_estimate.translation.y = Tvect[1]
@@ -65,11 +63,6 @@ def main(args=None) -> None:
 
     # Instantiate the line detection node
     node = ArucoNode()
-
-    # Get detection parameters (marker_dict, tag_size and image_source) from the command line
-    # marker_dict = node.get_parameter("marker_dict").get_parameter_value().string_value
-    # tag_size = node.get_parameter("tag_size").get_parameter_value().string_value
-    # image_source = node.get_parameter("image_source").get_parameter_value().string_value
 
     rclpy.spin(node)
 
