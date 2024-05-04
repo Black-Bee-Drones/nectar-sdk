@@ -10,37 +10,43 @@ import shlex
 from std_msgs.msg import Empty, UInt8, Float32, Bool
 from geometry_msgs.msg import Twist
 
+from mirela_sdk.control.drone import Drone
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
 
-class Bebop(Node):
-    """
-    Class to control the Parrot Bebop 2 drone using ROS2.
-    """
+class Bebop(Drone):
 
-    def __init__(self, bebop_driver: bool = True) -> None:
-        super().__init__("bebop_api_node")
+    def __init__(self, node: Node, driver: bool = True) -> None:
+        """
+        Class to control the Parrot Bebop 2 drone using ROS2.
+        It provides a python interface to send commands to the driver node.
+
+        :param node (Node): ROS2 node to create commands publishers.
+        :param driver (bool): True to start the bebop driver node.
+        """
+        super().__init__(node=node)
 
         # Publishers:
-        self.takeoff_pub = self.create_publisher(Empty, "/bebop/takeoff", 1)
-        self.land_pub = self.create_publisher(Empty, "/bebop/land", 1)
-        self.vel_pub = self.create_publisher(Twist, "/bebop/cmd_vel", 1)
-        self.flip_pub = self.create_publisher(UInt8, "/bebop/flip", 1)
-        self.gimbal_pub = self.create_publisher(Twist, "/bebop/camera_control", 1)
-        self.snap_pub = self.create_publisher(Empty, "/bebop/snapshot", 1)
-        self.video_pub = self.create_publisher(Bool, "/bebop/record", 1)
-        self.exposure_pub = self.create_publisher(Float32, "/bebop/set_exposure", 1)
+        self.takeoff_pub = self._create_publisher(Empty, "/bebop/takeoff", 1)
+        self.land_pub = self._create_publisher(Empty, "/bebop/land", 1)
+        self.vel_pub = self._create_publisher(Twist, "/bebop/cmd_vel", 1)
+        self.flip_pub = self._create_publisher(UInt8, "/bebop/flip", 1)
+        self.gimbal_pub = self._create_publisher(Twist, "/bebop/camera_control", 1)
+        self.snap_pub = self._create_publisher(Empty, "/bebop/snapshot", 1)
+        self.video_pub = self._create_publisher(Bool, "/bebop/record", 1)
+        self.exposure_pub = self._create_publisher(Float32, "/bebop/set_exposure", 1)
 
-        self.cv_image = None
+        if driver:
+            self.init_drivers()
+            self.delay(0.5)
 
-        if bebop_driver:
-            self.init_bebop_driver()
+        self.node.get_logger().info("Bebop API initialized")
 
-        self.delay(0.5)
-
-        self.get_logger().info("Bebop API initialized")
-
-    def init_bebop_driver(self):
+    def init_drivers(self):
+        """
+        Start the ros2 launch file to initialize the bebop driver.
+            ros2 launch ros2_bebop_driver bebop_node_launch.xml
+        """
         # Command to start the ros2 launch bebob driver
         command = ["ros2", "launch", "ros2_bebop_driver", "bebop_node_launch.xml"]
 
@@ -65,13 +71,23 @@ class Bebop(Node):
 
         sleep(2.0)
 
+    def check_driver_node(self):
+        """
+        Check if the bebop driver is running.
+        """
+        # Get all node names
+        node_names = self.node.get_node_names()
+
+        # Check if the mavros node is running
+        return True if "bebop_driver" in node_names else False
+
     def takeoff(self) -> None:
         """
         Send a takeoff command to the drone.
         """
 
         self.takeoff_pub.publish(Empty())
-        self.get_logger().info("-- Takeoff")
+        self.node.get_logger().info("-- Takeoff")
 
     def land(self) -> None:
         """
@@ -79,7 +95,7 @@ class Bebop(Node):
         """
 
         self.land_pub.publish(Empty())
-        self.get_logger().info("-- Land")
+        self.node.get_logger().info("-- Land")
 
     def offboard_velocity(
         self, linear_x: float, linear_y: float, linear_z: float, angular_z: float
@@ -137,7 +153,7 @@ class Bebop(Node):
         duration = Duration(seconds=time)
         rate = self.create_rate(pub_rate)
 
-        self.get_logger().info("-- Moviment start")
+        self.node.get_logger().info("-- Moviment start")
 
         while t_now <= t_start + duration:
 
@@ -145,7 +161,7 @@ class Bebop(Node):
             rate.sleep()
             t_now = self.get_clock().now()
 
-        self.get_logger().info("-- Moviment end")
+        self.node.get_logger().info("-- Moviment end")
 
     def flip(self, direction: int) -> None:
         """
@@ -154,9 +170,9 @@ class Bebop(Node):
         :param direction (int): Direction of the flip.
             0: Front, 1: Back, 2: Right, 3: Left
         """
-
+        directions = ["Front", "Back", "Right", "Left"]
         self.flip_pub.publish(UInt8(data=direction))
-        self.get_logger().info("-- Flip")
+        self.node.get_logger().info("-- Flip " + directions[direction])
 
     def camera_control(self, tilt: float, pan: float) -> None:
         """
@@ -176,24 +192,6 @@ class Bebop(Node):
 
         self.gimbal_pub.publish(twist)
 
-    def snapshot(self) -> None:
-        """
-        Send a snapshot command to the drone.
-        """
-
-        self.snap_pub.publish(Empty())
-        self.get_logger().info("-- Snapshot")
-
-    def record(self, record: bool) -> None:
-        """
-        Send a record command to the drone.
-
-        :param record (bool): True to start recording, False to stop recording.
-        """
-
-        self.video_pub.publish(Bool(data=record))
-        self.get_logger().info("-- {} recording".format("Start" if record else "Stop"))
-
     def set_exposure(self, exposure: float) -> None:
         """
         Set the exposure of the camera.
@@ -203,51 +201,53 @@ class Bebop(Node):
         """
 
         self.exposure_pub.publish(Float32(data=exposure))
-        self.get_logger().info("-- Set exposure to {}".format(exposure))
-
-    def delay(self, time: float) -> None:
-        """
-        Delay the execution of the program.
-        """
-
-        self.get_logger().info(f"-- Init delay {time}")
-        sleep(time)
-        self.get_logger().info(f"-- End delay {time}")
-
-    def show(self, img) -> None:
-        """
-        Display the image from the drone's camera.
-        """
-        self.get_logger().info("View")
-        cv2.imshow("Bebop Camera", img)
+        self.node.get_logger().info("-- Set exposure to {}".format(exposure))
 
     def image_viewer(self) -> None:
         """
-        Init Image Handler with bebop image_raw topic and call the show method
+        Init Image Handler with bebop image_raw topic and show the image.
         """
         self.image_manager = ImageHandler(
-            self, ImageHandler.BEBOP_TOPIC, image_processing_callback=self.show
+            self.node,
+            ImageHandler.BEBOP_TOPIC,
+            image_processing_callback=lambda image: cv2.imshow("Bebop Camera", image),
+        )
+        self.image_manager.run()
+
+    def record(self, record: bool) -> None:
+        """
+        Send a record command to the drone.
+
+        :param record (bool): True to start recording, False to stop recording.
+        """
+
+        self.video_pub.publish(Bool(data=record))
+        self.node.get_logger().info(
+            "-- {} recording".format("Start" if record else "Stop")
         )
 
-    def bye_bye(self) -> None:
-        # TODO: Moviment to gesture bye_bye
-        pass
+    def snapshot(self) -> None:
+        """
+        Send a snapshot command to the drone.
+        """
 
-    def cleanup(self):
-        self.land()
+        self.snap_pub.publish(Empty())
+        self.node.get_logger().info("-- Snapshot")
 
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    bebop = Bebop()
+
+    node = rclpy.create_node("bebop_node")
+    bebop = Bebop(node, True)
 
     bebop.image_viewer()
+    bebop.check_drivers()
 
-    rclpy.spin(bebop)
+    rclpy.spin(node)
 
-    bebop.cleanup()
-
-    # rclpy.shutdown()
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

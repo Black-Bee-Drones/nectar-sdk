@@ -1,9 +1,10 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.timer import Rate
+from rclpy.client import Client
+from rclpy.service import SrvTypeRequest
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
-from mirela_sdk.control.mavros.gps_controller import GPSController
 
 from mavros_msgs.srv import (
     SetMode,
@@ -22,15 +23,21 @@ from sensor_msgs.msg import NavSatFix, Range
 from time import sleep
 import subprocess
 import shlex
+import threading
+import queue
+
+from mirela_sdk.control.mavros.gps_controller import GPSController
+from mirela_sdk.image_processing.camera.image_handler import ImageHandler
+from mirela_sdk.control.drone import Drone
 
 
-class MavDrone(Node):
+class MavDrone(Drone):
     """
     Class to control the mav ros drone using ROS2.
     """
 
-    def __init__(self, init_mavros: bool = True) -> None:
-        super().__init__("mavros_api_node")
+    def __init__(self, node: Node, mavros: bool = True) -> None:
+        super().__init__(node=node)
 
         # Variables:
         self._state = State()
@@ -48,35 +55,36 @@ class MavDrone(Node):
             durability=QoSDurabilityPolicy.VOLATILE,
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
         )
+
         # Subscribers:
-        self._gps_sub = self.create_subscription(
+        self._gps_sub = self._create_subscriber(
             NavSatFix,
             "/mavros/global_position/global",
             lambda data: self.__setattr__("_gps", data),
             qos_profile,
         )
-        self._state_sub = self.create_subscription(
+        self._state_sub = self._create_subscriber(
             State, "/mavros/state", lambda data: self.__setattr__("_state", data), 10
         )
-        self._rng_alt_sub = self.create_subscription(
+        self._rng_alt_sub = self._create_subscriber(
             Range,
             "/mavros/distance_sensor/rangefinder_pub",
             lambda data: self.__setattr__("_rng_alt", data),
             10,
         )
-        self._rel_alt_sub = self.create_subscription(
+        self._rel_alt_sub = self._create_subscriber(
             Float64,
             "/mavros/global_position/rel_alt",
             lambda data: self.__setattr__("_rel_alt", data),
             qos_profile,
         )
-        self._local_pos_sub = self.create_subscription(
+        self._local_pos_sub = self._create_subscriber(
             PoseStamped,
             "/mavros/local_position/pose",
             lambda data: self.__setattr__("_local_pos", data),
             qos_profile,
         )
-        self._hdg_sub = self.create_subscription(
+        self._hdg_sub = self._create_subscriber(
             Float64,
             "/mavros/global_position/compass_hdg",
             lambda data: self.__setattr__("_heading", data),
@@ -84,32 +92,32 @@ class MavDrone(Node):
         )
 
         # Services:
-        self._mode_srv = self.create_client(SetMode, "/mavros/set_mode")
-        self._arm_srv = self.create_client(CommandBool, "/mavros/cmd/arming")
-        self._takeoff_srv = self.create_client(CommandTOL, "/mavros/cmd/takeoff")
-        self._land_srv = self.create_client(CommandTOL, "/mavros/cmd/land")
-        self._home_srv = self.create_client(CommandHome, "/mavros/cmd/set_home")
-        self._param_set_srv = self.create_client(ParamSet, "/mavros/param/set")
-        self._command_srv = self.create_client(CommandLong, "/mavros/cmd/command")
-
-        if init_mavros:
-            self.init_mavros()
-            sleep(5)
+        self._mode_srv = self._create_client(SetMode, "/mavros/set_mode")
+        self._arm_srv = self._create_client(CommandBool, "/mavros/cmd/arming")
+        self._takeoff_srv = self._create_client(CommandTOL, "/mavros/cmd/takeoff")
+        self._land_srv = self._create_client(CommandTOL, "/mavros/cmd/land")
+        self._home_srv = self._create_client(CommandHome, "/mavros/cmd/set_home")
+        self._param_set_srv = self._create_client(ParamSet, "/mavros/param/set")
+        self._command_srv = self._create_client(CommandLong, "/mavros/cmd/command")
 
         # Publishers:
-        self.gps_pub = self.create_publisher(
+        self.gps_pub = self._create_publisher(
             GeoPoseStamped, "/mavros/setpoint_position/global", 1
         )
-        self.gps2_pub = self.create_publisher(
+        self.gps2_pub = self._create_publisher(
             GlobalPositionTarget, "/mavros/setpoint_raw/global", 1
         )
-        self.local_pub = self.create_publisher(
+        self.local_pub = self._create_publisher(
             PositionTarget, "/mavros/setpoint_raw/local", 1
         )
 
-        self.get_logger().info("Mavros API initialized")
+        if mavros:
+            self.init_drivers()
+            self.delay(5)
 
-    def init_mavros(self):
+        self.node.get_logger().info("Mavros API initialized")
+
+    def init_drivers(self):
         # Command to start the ros2 launch mavros apm
         command = [
             "ros2",
@@ -135,12 +143,13 @@ class MavDrone(Node):
             print(f"\033[91mErro ao iniciar o mavros: {process.returncode}\033[0m")
         else:
             print(f"\033[92mMavros apm launch iniciado com sucesso\033[0m")
+            self._driver_initialized = True
 
         sleep(1.5)
 
         def wait_service(service):
             while not service.wait_for_service(timeout_sec=1.0):
-                self.get_logger().info(
+                self.node.get_logger().info(
                     f"Service {service.srv_name} not available, waiting again..."
                 )
 
@@ -152,17 +161,14 @@ class MavDrone(Node):
         # wait_service(self._param_set_srv)
         wait_service(self._command_srv)
 
-    def check_mavros_node(self) -> bool:
-        # Obtém a lista de nós atualmente ativos
-        node_names = self.get_node_names()
+        self.node.get_logger().info("Mavros services initialized")
 
-        # Verifica se o nó mavros está na lista
-        if "mavros_node" in node_names:
-            self.get_logger().info("\033[92mThe mavros node is running.\033[0m")
-            return True
-        else:
-            self.get_logger().info("\033[91mThe mavros node is not running.\033[0m")
-            return False
+    def check_driver_node(self) -> bool:
+        # Get all node names
+        node_names = self.node.get_node_names()
+
+        # Check if the mavros node is running
+        return True if "mavros_node" in node_names else False
 
     @property
     def get_state(self) -> State:
@@ -240,8 +246,8 @@ class MavDrone(Node):
 
     def _call_service(
         self,
-        service,
-        request,
+        service: Client,
+        request: SrvTypeRequest,
         success_message: str,
         failure_message: str,
     ):
@@ -254,12 +260,28 @@ class MavDrone(Node):
         :param failure_message (str): Message to print if failure
         """
 
+        self.node.get_logger().info(f"-- Calling service {service.srv_name}")
+
         future = service.call_async(request)
-        rclpy.spin_until_future_complete(self, future)
-        if future.result() is not None:
-            self.get_logger().info("\033[32;1;4m" + success_message + "\033[0m")
-        else:
-            self.get_logger().error("\033[31;1;4m" + failure_message + "\033[0m")
+
+        def handle_future(future):
+            try:
+                result = future.result()
+
+                if result is not None:
+                    self.node.get_logger().info(
+                        "\033[32;1;4m" + success_message + "\033[0m"
+                    )
+                else:
+                    self.node.get_logger().error(
+                        "\033[31;1;4m" + failure_message + "\033[0m"
+                    )
+            except Exception as e:
+                self.node.get_logger().error(
+                    f"Service call failed {service.srv_name}: {str(e)}"
+                )
+
+        future.add_done_callback(handle_future)
 
     def geofence(self, coords: list[tuple[float, float]]):
         """
@@ -269,7 +291,7 @@ class MavDrone(Node):
 
             exemple: [(-22.41517936,-45.44797450),(-22.41493884,-45.44779748),(-22.41532317,-45.44727176)]
         """
-        self.get_logger().info("-- Geofence created")
+        self.node.get_logger().info("-- Geofence created")
         self.gps_controller.geofence(coords)
 
     def kill_motors(self):
@@ -437,7 +459,7 @@ class MavDrone(Node):
         :param precision_radius (float): Precision radius setpoint (meters)
         """
 
-        self.get_logger().info(
+        self.node.get_logger().info(
             f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {heading}"
         )
         self.gps_controller.gps_send(
@@ -541,24 +563,41 @@ class MavDrone(Node):
         time: float (seconds)
             Moviment time duration
         """
-        t_start = t_now = self.get_clock().now()
-        duration = Duration(secs=time)
-        rate = Rate(pub_rate)
+        t_start = t_now = self.node.get_clock().now()
 
-        self.get_logger().info("-- Moviment start")
+        duration = Duration(seconds=time)
+        # rate = self.node.create_rate(pub_rate, self.node.get_clock())
+        rate = 1.0 / pub_rate
+
+        self.node.get_logger().info("-- Moviment start")
 
         while t_now <= t_start + duration:
             self.offboard_velocity(
                 linear_x, linear_y, linear_z, angular_z, ground_reference
             )
-            rate.sleep()
-            t_now = self.get_clock().now()
+            sleep(rate)
+            t_now = self.node.get_clock().now()
+
+        self.node.get_logger().info(
+            "-- Moviment end - time: {:.4f} s".format(
+                (t_now - t_start).nanoseconds / 1000000000
+            )
+        )
 
     def image_viewer(self):
+        """
+        Init Image Handler with raspicam image_raw topic and show the image.
+        """
+        self.image_handler = ImageHandler(
+            node=self.node,
+            image_source="/image_raw",
+            image_processing_callback=None,
+            show_result="Raspicam Viewer",
+        )
+        self.image_handler.run()
+
+    def record(self, record):
         pass
 
     def snapshot(self):
-        pass
-
-    def record(self, record):
         pass
