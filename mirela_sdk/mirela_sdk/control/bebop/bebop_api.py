@@ -1,15 +1,12 @@
 import rclpy
-from rclpy.node import Node
-from rclpy.duration import Duration
-
-from time import sleep
 import cv2
 import subprocess
 import shlex
-
+from rclpy.node import Node
+from time import sleep
+from rclpy.duration import Duration
 from std_msgs.msg import Empty, UInt8, Float32, Bool
 from geometry_msgs.msg import Twist
-
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
 
@@ -154,9 +151,13 @@ class Bebop(Node):
         :param direction (int): Direction of the flip.
             0: Front, 1: Back, 2: Right, 3: Left
         """
-
+        logger = {0:"Front", 
+                  1:"Back",
+                  2:"Right",
+                  3:"Left"}
+        
         self.flip_pub.publish(UInt8(data=direction))
-        self.get_logger().info("-- Flip")
+        self.get_logger().info(f"-- Flip {logger.get(direction)}")
 
     def camera_control(self, tilt: float, pan: float) -> None:
         """
