@@ -1,12 +1,10 @@
 import rclpy
-from rclpy.node import Node
-from rclpy.duration import Duration
-
-from time import sleep
 import cv2
 import subprocess
 import shlex
-
+from rclpy.node import Node
+from time import sleep
+from rclpy.duration import Duration
 from std_msgs.msg import Empty, UInt8, Float32, Bool
 from geometry_msgs.msg import Twist
 
