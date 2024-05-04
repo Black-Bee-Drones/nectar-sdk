@@ -30,6 +30,7 @@ setup(
             "aruco_node = mirela_sdk.image_processing.aruco.aruco_node:main",
             "test_velocity = mirela_sdk.examples.test_velocity:main",
             "test_raspicam = mirela_sdk.examples.raspicam_viewer:main",
+            "color_calibration_node = mirela_sdk.image_processing.color.color_calibration_node:main",
         ],
     },
 )
