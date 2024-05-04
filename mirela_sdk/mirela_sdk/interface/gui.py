@@ -4,6 +4,7 @@ from tkinter import ttk
 import threading
 
 import rclpy
+from rclpy.node import Node
 
 from mirela_sdk.interface.drone_component import DroneComponent
 from mirela_sdk.interface.bebop_component import BebopComponent
@@ -12,23 +13,25 @@ from mirela_sdk.interface.mav_component import MavComponent
 from mirela_sdk.control.bebop.bebop_api import Bebop
 
 
-class DroneGUI:
+class DroneGUI(Node):
     def __init__(self):
         """
         Initialize the Drone Graphical User Interface.
         """
+        super().__init__("drone_gui")
 
         self.drone_strategy: DroneComponent = None
-        self.drone = None
         self.colors = {
             "yellow": "#FDCE01",
             "black": "#1E1E1E",
             "white": "#FEFEFE",
         }
 
-        self.init_gui()
+    def ros_spin(self):
+        while rclpy.ok():
+            rclpy.spin_once(self)
 
-    def init_gui(self) -> None:
+    def start_gui(self) -> None:
         """
         Initialize the GUI for the DroneGUI.
         Init root window and style.
@@ -83,6 +86,10 @@ class DroneGUI:
 
         self.update_drone(None)
         self.init_widgets()
+
+        self.ros_thread = threading.Thread(target=self.ros_spin)
+        self.ros_thread.start()
+
         self.root.mainloop()
 
     def init_widgets(self) -> None:
@@ -149,6 +156,9 @@ class DroneGUI:
         progress.place_forget()
 
         self.init_widgets()
+
+        self.root.update()
+
         self.drone_strategy.create_widgets()
 
     def update_drone(self, event) -> None:
@@ -165,17 +175,15 @@ class DroneGUI:
 
         def init_drone():
             print("Drone set: ", self.drone_type)
+            if self.drone_strategy:
+                self.drone_strategy.cleanup()
+
             if self.drone_type == "Bebop":
-                self.drone_strategy = BebopComponent(self.root)
+                self.drone_strategy = BebopComponent(self.root, self)
             elif self.drone_type == "Mavros":
-                self.drone_strategy = MavComponent(self.root)
+                self.drone_strategy = MavComponent(self.root, self)
             else:
                 return
-
-            if self.drone is not None:
-                self.drone.destroy_node()
-
-            self.drone = self.drone_strategy.drone
 
         self.progress_bar(init_drone)
 
@@ -183,19 +191,15 @@ class DroneGUI:
         self.combobox.config(state="normal")
         self.combobox.set(self.drone_type)
 
-        def __del__(self):
-            """
-            Ensure the drone lands and its node is destroyed when the DroneGUI is deleted.
-            """
-
-            self.drone_strategy.drone.land()
-            self.drone_strategy.drone.destroy_node()
-
 
 def main(args=None) -> None:
     rclpy.init(args=args)
     gui = DroneGUI()
-    rclpy.spin(gui)
+
+    gui.start_gui()
+
+    gui.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

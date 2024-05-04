@@ -3,8 +3,13 @@ from abc import ABC, abstractmethod
 import pathlib
 import numpy as np
 import threading
+from time import sleep
+from rclpy.node import Node
+from rclpy.timer import Timer
 
 from tkinter import *
+
+from mirela_sdk.control.drone import Drone
 
 
 class DroneComponent(ABC):
@@ -12,13 +17,14 @@ class DroneComponent(ABC):
     Abstract base class for a drone interface component.
     """
 
-    def __init__(self, root) -> None:
+    def __init__(self, root: Tk, node: Node) -> None:
         """
         Initialize the drone component.
 
         param: root: The root widget used to create other widgets.
         """
-        self.drone = None
+        self.drone: Drone = None
+        self.node = node
         self.on: bool = False
         self.recording: bool = False
         self.colors = {
@@ -28,18 +34,46 @@ class DroneComponent(ABC):
         }
         self.action = np.zeros(4)
 
-        self.driver_thread = threading.Thread(target=self.init_drone_config)
-
         self.imgs_dir = pathlib.Path(__file__).parent.resolve()
 
+        self._config_on_old = False
+        self._config_on_new = False
+        self._config_state_change = None
         self.root = root
 
-    @abstractmethod
+        self.check_timer: Timer = None
+        self.state_history = [False, False, False]
+
     def init_drone_config(self):
         """
-        Abstract method to initialize drone configuration.
+        Method to initialize drone configuration.
         """
-        pass
+        self.drone.init_drivers()
+
+    def check_driver_status(self):
+        if self.drone:
+            self._config_on_new = self.drone.check_driver_node()
+
+            if self._config_on_old != self._config_on_new:
+                self._config_state_change = self._config_on_new
+
+            self._config_on_old = self._config_on_new
+            self.state_history.append(self._config_on_new)
+            self.state_history.pop(0)
+
+            # Verifica se o novo estado se manteve pelo menos 3 vezes
+            if (
+                len(set(self.state_history)) == 1
+                and self.state_history[0] == self._config_state_change
+            ):
+                self.update_state(self._config_on_new)
+                self._config_state_change = None
+
+    def update_state(self, on: bool):
+        if on:
+            self.btn_on.config(state="normal")
+        else:
+            self.btn_on.config(state=DISABLED)
 
     @abstractmethod
     def create_specific_widgets(self):
@@ -52,6 +86,7 @@ class DroneComponent(ABC):
         """
         Method to create common widgets shared to drones interfaces
         """
+
         self.root.bind(
             "<KeyPress>", lambda event: self.moviment_control(event.keycode, True)
         )
@@ -100,17 +135,6 @@ class DroneComponent(ABC):
         self.img_logo = PhotoImage(file=f"{self.imgs_dir}/images/logo.png")
         self.logo = Label(self.root, image=self.img_logo, bg=self.colors["black"])
         self.logo.grid(row=0, column=0, columnspan=2, ipadx=20, ipady=16, padx=20)
-
-        # self.btn_config = Button(
-        #     self.root,
-        #     text="Configure",
-        #     width=6,
-        #     command=self.driver_thread.start,
-        #     bg=self.colors["black"],
-        #     background=self.colors["black"],
-        #     fg=self.colors["white"],
-        # )
-        # self.btn_config.place(x=390, y=25)
 
         self.btn_W = Button(
             self.frame_teclas,
@@ -223,6 +247,7 @@ class DroneComponent(ABC):
             bg="#A60305",
             width=2,
             command=self.on_off,
+            state=DISABLED,
         )
         self.btn_on.grid(row=0, column=3)
 
@@ -378,8 +403,19 @@ class DroneComponent(ABC):
         """
         Create all widgets for the drone component.
         """
+
+        if self.check_timer is not None:
+            self.check_timer.cancel()
+            self.node.destroy_timer(self.check_timer)
+            self.check_timer = None
+
         self.create_common_widgets()
         self.create_specific_widgets()
+
+        sleep(0.5)
+        self.check_timer = self.node.create_timer(
+            2.0, self.check_driver_status, clock=self.node.get_clock()
+        )
 
     def on_off(self):
         """
@@ -438,3 +474,8 @@ class DroneComponent(ABC):
                 self.action[i % 4] = 1 * hold if (i < 4) else -1 * hold
 
         self.move(*self.action)
+
+    def cleanup(self) -> None:
+        self.check_timer.cancel()
+        self.node.destroy_timer(self.check_timer)
+        self.drone.cleanup()

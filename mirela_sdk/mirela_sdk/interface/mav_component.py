@@ -1,8 +1,8 @@
-import subprocess
-import shlex
+from rclpy.node import Node
 
 
 from tkinter import *
+from threading import Thread
 
 from mirela_sdk.interface.drone_component import DroneComponent
 from mirela_sdk.control.mavros.mavros_api import MavDrone
@@ -10,24 +10,33 @@ from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 class MavComponent(DroneComponent):
 
-    def __init__(self, root):
+    def __init__(self, root: Tk, node: Node):
         """
         Initialize a MavComponent.
 
         :param root: The root tkinter window.
         """
 
-        super().__init__(root)
+        super().__init__(root, node)
 
         print("Mav component Init")
 
-        self.drone = MavDrone(init_mavros=False)
+        self.drone = MavDrone(node, mavros=False)
 
-    def init_drone_config(self):
-        """
-        Initialize the Mavros configuration for the Mav drone.
-        """
-        self.drone.init_mavros()
+    def update_state(self, on: bool):
+        super().update_state(on)
+        if on:
+            self.btn_arm.config(state="normal")
+            self.btn_disarm.config(state="normal")
+            self.btn_takeoff.config(state="normal")
+            self.btn_land.config(state="normal")
+            self.btn_arm_takeoff.config(state="normal")
+        else:
+            self.btn_arm.config(state=DISABLED)
+            self.btn_disarm.config(state=DISABLED)
+            self.btn_takeoff.config(state=DISABLED)
+            self.btn_land.config(state=DISABLED)
+            self.btn_arm_takeoff.config(state=DISABLED)
 
     def create_specific_widgets(self):
         """
@@ -38,10 +47,11 @@ class MavComponent(DroneComponent):
             self.frame_basic,
             text="Arm",
             width=5,
-            command=lambda: self.drone.arm(),
+            command=self.drone.arm,
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_arm.grid(row=0, column=0, padx=10)
 
@@ -49,10 +59,11 @@ class MavComponent(DroneComponent):
             self.frame_basic,
             text="Disarm",
             width=5,
-            command=lambda: self.drone.kill_motors(),
+            command=self.drone.kill_motors,
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_disarm.grid(row=0, column=1)
 
@@ -64,6 +75,7 @@ class MavComponent(DroneComponent):
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_takeoff.grid(row=1, column=0, pady=10, padx=10)
 
@@ -75,6 +87,7 @@ class MavComponent(DroneComponent):
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_land.grid(row=1, column=1)
 
@@ -86,5 +99,6 @@ class MavComponent(DroneComponent):
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_arm_takeoff.grid(row=3, column=0, columnspan=15, pady=20, padx=10)

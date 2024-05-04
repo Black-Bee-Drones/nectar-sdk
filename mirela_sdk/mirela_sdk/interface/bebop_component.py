@@ -1,5 +1,4 @@
-import subprocess
-import shlex
+from rclpy.node import Node
 
 from tkinter import *
 
@@ -9,24 +8,30 @@ from mirela_sdk.control.bebop.bebop_api import Bebop
 
 class BebopComponent(DroneComponent):
 
-    def __init__(self, root) -> None:
+    def __init__(self, root, node: Node) -> None:
         """
         Initialize a BebopComponent.
 
         :param root: The root tkinter window.
+        :param node: The ROS2 node.
         """
 
-        super().__init__(root)
+        super().__init__(root, node)
 
         print("Bebop component Init")
 
-        self.drone = Bebop(bebop_driver=False)
+        self.drone = Bebop(node, driver=False)
 
-    def init_drone_config(self):
-        """
-        Initialize the Bebop Driver drone configuration.
-        """
-        self.drone.init_bebop_driver()
+    def update_state(self, on: bool):
+        super().update_state(on)
+        if on:
+            self.btn_takeoff.config(state="normal")
+            self.btn_land.config(state="normal")
+            self.btn_flip.config(state="normal")
+        else:
+            self.btn_takeoff.config(state=DISABLED)
+            self.btn_land.config(state=DISABLED)
+            self.btn_flip.config(state=DISABLED)
 
     def create_specific_widgets(self):
         """
@@ -41,6 +46,7 @@ class BebopComponent(DroneComponent):
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_takeoff.grid(row=0, column=0)
 
@@ -52,6 +58,7 @@ class BebopComponent(DroneComponent):
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_land.grid(row=1, column=0, pady=10)
 
@@ -63,6 +70,7 @@ class BebopComponent(DroneComponent):
             bg=self.colors["black"],
             background=self.colors["black"],
             fg=self.colors["white"],
+            state=DISABLED,
         )
         self.btn_flip.grid(row=2, column=0)
 
