@@ -17,7 +17,7 @@ class ImageHandler:
         self,
         node: Node,
         image_source: str,
-        image_processing_callback: callable,
+        image_processing_callback: Optional[callable] = None,
         show_result: str = None,
         cap: Optional[int] = 0,
     ):
@@ -40,8 +40,6 @@ class ImageHandler:
         self.show_result = show_result
         self.cap_num = cap
         self.bridge = CvBridge()
-
-        self.node.get_logger().info(f"Image source: {self.image_source}")
 
     def _configure_ros_topic(self):
         """
@@ -104,7 +102,7 @@ class ImageHandler:
         """
         Run the image handler
         """
-        self.node.get_logger().info("Running image handler")
+        self.node.get_logger().info("Running image handler [" + self.image_source + "]")
 
         if self.image_source == "webcam":
             # For webcam, the image is read by VideoCapture
@@ -129,9 +127,10 @@ class ImageHandler:
             self.node.destroy_subscription(self.image_sub)
 
         if self.show_result is not None:
-            cv2.destroyWindow(self.show_result)
-
-        self.node.destroy_node()
+            try:
+                cv2.destroyWindow(self.show_result)
+            except Exception as e:
+                self.node.get_logger().warning(str(e))
 
     def __del__(self):
         self.cleanup()

@@ -24,7 +24,7 @@ class GPSController:
         current_position = Point(current_lat, current_long)
 
         if not current_position.within(self.fence):
-            self.drone.get_logger().info("-- Geofence breach")
+            self.drone.node.get_logger().info("-- Geofence breach")
             self.drone.kill_motors()
             rclpy.shutdown()
 
@@ -38,11 +38,9 @@ class GPSController:
 
         :param coords: List of coordinates to define the geofence
         """
-        self.drone.get_logger().info("Geofence function")
+        self.drone.node.get_logger().info("Geofence function")
         self.fence = Polygon(coords)
-        Node.create_timer(self.drone, 0.01, self._check_position)                
-        
-
+        Node.create_timer(self.drone, 0.01, self._check_position)
 
     def geoid_height(self, lat, lon):
         """
@@ -79,7 +77,7 @@ class GPSController:
             print(distance_target)
 
             if distance_target <= precision_radius:
-                rclpy.Node.get_logger().info("-- GPS setpoint reached")
+                self.drone.node.get_logger().info("-- GPS setpoint reached")
                 break
 
     def gps_send(
