@@ -1,0 +1,2 @@
+float64 center_x
+float64 angle
