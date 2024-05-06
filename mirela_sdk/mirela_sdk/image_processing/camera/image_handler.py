@@ -39,6 +39,7 @@ class ImageHandler:
         self.img = None
         self.show_result = show_result
         self.cap_num = cap
+        self.cleaned = False
         self.bridge = CvBridge()
 
     def _configure_ros_topic(self):
@@ -63,8 +64,8 @@ class ImageHandler:
         if self.show_result is not None:
             cv2.imshow(self.show_result, self.img)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            self.cleanup()
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                self.cleanup()
 
     def ros_topic_callback(self, data):
         """
@@ -120,6 +121,7 @@ class ImageHandler:
         """
 
         self.node.get_logger().info("Image Handler Shutting down")
+        self.cleaned = True
         if self.image_source == "webcam":
             self.cap.release()
             self.node.destroy_timer(self.webcam_timer)
@@ -133,4 +135,5 @@ class ImageHandler:
                 self.node.get_logger().warning(str(e))
 
     def __del__(self):
-        self.cleanup()
+        if not self.cleaned:
+            self.cleanup()
