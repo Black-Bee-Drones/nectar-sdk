@@ -1,4 +1,9 @@
 import rclpy
+import subprocess
+import shlex
+import threading
+import queue
+
 from rclpy.node import Node
 from rclpy.client import Client
 from rclpy.service import SrvTypeRequest
@@ -14,21 +19,19 @@ from mavros_msgs.srv import (
     CommandLong,
     ParamSet,
 )
+from time import sleep
+
 from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget, ParamValue
 from std_msgs.msg import Float64, Int64
 from geometry_msgs.msg import Twist, PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range
 
-from time import sleep
-import subprocess
-import shlex
-import threading
-import queue
-
 from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
+from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
+
 
 
 class MavDrone(Drone):
@@ -421,6 +424,31 @@ class MavDrone(Drone):
             f"-- {param_id} set to {param_value}",
             f"-- Set {param_id} failed",
         )
+
+    def rtl(self, rtl_alt: int = 10, precision_landing: bool = False):
+        """
+        Send return to launch command.
+
+        The copter will first rise to RTL_ALT before returning home or maintain the current 
+        altitude if the current altitude is higher than RTL_ALT. The default value for RTL_ALT is 15m.
+        
+        Parameters
+        ----------
+        rtl_alt: float (m)
+
+        precisionland: bool (True or False)
+        """
+
+        param_value = Int64()
+        param_value.data = rtl_alt*100
+
+        self.set_param("RTL_ALT", param_value=param_value)
+        self.delay(1)
+        self.set_mode("rtl")
+        
+        if precision_landing:
+            PrecisionLanding(self, self.node)
+
 
     def do_servo(self, aux_out: int, pwm_value: int):
         """
