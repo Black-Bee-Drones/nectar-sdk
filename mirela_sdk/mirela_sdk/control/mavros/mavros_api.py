@@ -434,7 +434,7 @@ class MavDrone(Drone):
         
         Parameters
         ----------
-        rtl_alt: float (m)
+        rtl_alt: int (m)
 
         precisionland: bool (True or False)
         """

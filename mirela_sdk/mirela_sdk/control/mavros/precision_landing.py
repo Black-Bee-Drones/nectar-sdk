@@ -4,12 +4,11 @@ import subprocess
 import shlex
 from rclpy.node import Node
 from mirela_interfaces.msg._aruco_transforms import ArucoTransforms
-from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class PrecisionLanding:
 
-    def __init__(self, drone: MavDrone, node: Node) -> None:
+    def __init__(self, drone, node: Node) -> None:
         self.state = 0
         self.node = node
         self.aruco_target = 800
