@@ -8,12 +8,11 @@ from math import radians
 from tf_transformations import quaternion_from_euler
 from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
-from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class GPSController:
 
-    def __init__(self, drone: MavDrone):
+    def __init__(self, drone):
         self.drone = drone
         self._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
         self.photo_count: int = 0
@@ -43,7 +42,7 @@ class GPSController:
         """
         self.drone.node.get_logger().info("Geofence function")
         self.fence = Polygon(coords)
-        Node.create_timer(self.drone, 0.01, self._check_position)
+        Node.create_timer(self.drone.node, 0.01, self._check_position)
 
     def geoid_height(self, lat, lon):
         """
