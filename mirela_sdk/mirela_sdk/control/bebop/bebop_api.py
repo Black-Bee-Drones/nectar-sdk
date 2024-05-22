@@ -1,12 +1,12 @@
 import rclpy
-import cv2
+import numpy as np
 import subprocess
 import shlex
 from rclpy.node import Node
 from time import sleep
 from rclpy.duration import Duration
 from std_msgs.msg import Empty, UInt8, Float32, Bool
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Vector3
 
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
@@ -22,6 +22,7 @@ class Bebop(Drone):
         :param node (Node): ROS2 node to create commands publishers.
         :param driver (bool): True to start the bebop driver node.
         """
+
         super().__init__(node=node)
 
         # Publishers:
@@ -29,10 +30,13 @@ class Bebop(Drone):
         self.land_pub = self._create_publisher(Empty, "/bebop/land", 1)
         self.vel_pub = self._create_publisher(Twist, "/bebop/cmd_vel", 1)
         self.flip_pub = self._create_publisher(UInt8, "/bebop/flip", 1)
-        self.gimbal_pub = self._create_publisher(Twist, "/bebop/camera_control", 1)
-        self.snap_pub = self._create_publisher(Empty, "/bebop/snapshot", 1)
-        self.video_pub = self._create_publisher(Bool, "/bebop/record", 1)
-        self.exposure_pub = self._create_publisher(Float32, "/bebop/set_exposure", 1)
+        self.gimbal_pub = self._create_publisher(Vector3, "/bebop/move_camera", 1)
+        self.emergency_pub = self._create_publisher(Empty, "/bebop/reset", 1)
+        self.flattrim_pub = self._create_publisher(Empty, "/bebop/flattrim", 1)
+        self.navigate_home_pub = self._create_publisher(
+            Empty, "/bebop/autoflight/navigate_home", 1
+        )
+        self.photo_pub = self._create_publisher(Bool, "/bebop/photo", 1)
 
         if driver:
             self.init_drivers()
@@ -176,18 +180,17 @@ class Bebop(Drone):
         """
         Send a camera control command to the drone.
 
-
-
         :param tilt (float): Tilt angle of the camera.
-            (+) Up, (-) Down.
+            (+) Down, (-) Up.
         :param pan (float): Pan angle of the camera.
             (+) Left, (-) Right.
         """
 
-        twist = Twist()
-        twist.linear.x = tilt
-        twist.linear.y = pan
+        twist = Vector3()
+        twist.x = tilt
+        twist.y = pan
 
+        self.node.get_logger().info(f"Move camera tilt: {tilt}, pan: {pan}")
         self.gimbal_pub.publish(twist)
 
     def set_exposure(self, exposure: float) -> None:
@@ -205,10 +208,11 @@ class Bebop(Drone):
         """
         Init Image Handler with bebop image_raw topic and show the image.
         """
+
         self.image_manager = ImageHandler(
             self.node,
             ImageHandler.BEBOP_TOPIC,
-            image_processing_callback=lambda image: cv2.imshow("Bebop Camera", image),
+            show_result="Bebop Image",
         )
         self.image_manager.run()
 
@@ -218,18 +222,15 @@ class Bebop(Drone):
 
         :param record (bool): True to start recording, False to stop recording.
         """
-
-        self.video_pub.publish(Bool(data=record))
-        self.node.get_logger().info(
-            "-- {} recording".format("Start" if record else "Stop")
-        )
+        # TODO: Implement record command
+        pass
 
     def snapshot(self) -> None:
         """
         Send a snapshot command to the drone.
         """
 
-        self.snap_pub.publish(Empty())
+        self.photo_pub.publish(Bool(data=True))
         self.node.get_logger().info("-- Snapshot")
 
 
@@ -237,10 +238,15 @@ def main(args=None) -> None:
     rclpy.init(args=args)
 
     node = rclpy.create_node("bebop_node")
-    bebop = Bebop(node, True)
+    bebop = Bebop(node, False)
 
-    bebop.image_viewer()
-    bebop.check_drivers()
+    # bebop.image_viewer()
+    bebop.check_driver_node()
+
+    # sleep(2.0)
+    # bebop.camera_control(-170.0, 0.0)
+    sleep(2.0)
+    bebop.camera_control(180.0, 0.0)
 
     rclpy.spin(node)
 
