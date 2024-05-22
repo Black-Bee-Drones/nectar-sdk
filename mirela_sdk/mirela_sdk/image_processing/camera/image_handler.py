@@ -47,6 +47,7 @@ class ImageHandler:
         Configure the ROS topic to subscribe to the image source
             Could be a compressed image or a raw image
         """
+
         if self.image_source.endswith("compressed"):
             self.convert_bridge = self.bridge.compressed_imgmsg_to_cv2
             self.image_sub = self.node.create_subscription(
@@ -59,7 +60,8 @@ class ImageHandler:
             )
 
     def process(self):
-        self.image_processing_callback(self.img)
+        if self.image_processing_callback is not None:
+            self.image_processing_callback(self.img)
 
         if self.show_result is not None:
             cv2.imshow(self.show_result, self.img)
