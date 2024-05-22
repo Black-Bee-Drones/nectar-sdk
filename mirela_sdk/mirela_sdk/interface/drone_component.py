@@ -67,7 +67,9 @@ class DroneComponent(ABC):
                 and self.state_history[0] == self._config_state_change
             ):
                 self.update_state(self._config_on_new)
+                self.node.get_logger().info(f"On" if self._config_on_new else "Off")
                 self._config_state_change = None
+                self.state_history = [False, False, False]
 
     def update_state(self, on: bool):
         if on:
@@ -414,7 +416,7 @@ class DroneComponent(ABC):
 
         sleep(0.5)
         self.check_timer = self.node.create_timer(
-            2.0, self.check_driver_status, clock=self.node.get_clock()
+            1.0, self.check_driver_status, clock=self.node.get_clock()
         )
 
     def on_off(self):
