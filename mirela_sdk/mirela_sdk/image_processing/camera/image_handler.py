@@ -60,6 +60,11 @@ class ImageHandler:
             )
 
     def process(self):
+        """
+        Process the image using the callback function
+
+        Show the result if the show_result is not None
+        """
         if self.image_processing_callback is not None:
             self.image_processing_callback(self.img)
 
