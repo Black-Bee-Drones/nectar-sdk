@@ -100,7 +100,11 @@ class Bebop(Drone):
         self.node.get_logger().info("-- Land")
 
     def offboard_velocity(
-        self, linear_x: float, linear_y: float, linear_z: float, angular_z: float
+        self,
+        linear_x: float = 0.0,
+        linear_y: float = 0.0,
+        linear_z: float = 0.0,
+        angular_z: float = 0.0,
     ) -> None:
         """
         Send velocity commands to the drone.
@@ -127,12 +131,12 @@ class Bebop(Drone):
 
     def offboard_velocity_timer(
         self,
-        linear_x: float,
-        linear_y: float,
-        linear_z: float,
-        angular_z: float,
-        pub_rate: UInt8,
-        time: float,
+        linear_x: float = 0.0,
+        linear_y: float = 0.0,
+        linear_z: float = 0.0,
+        angular_z: float = 0.0,
+        pub_rate: int = 30,
+        time: float = 1.0,
     ) -> None:
         """
         Send velocity commands to the drone for a certain amount of time.
@@ -145,25 +149,30 @@ class Bebop(Drone):
             (+) Up, (-) Down.
         :param angular_z (float): Angular velocity in the z-axis.
             (+) Counter-clockwise, (-) Clockwise.
-        :param pub_rate (UInt8): Rate at which the commands are published.
+        :param pub_rate (int): Rate at which the commands are published.
             Publish rate on cmd_vel topic (Hz)
         :param time (float): Duration of the movement.
             Time in seconds.
         """
 
-        t_start = t_now = self.get_clock().now()
+        t_start = t_now = self.node.get_clock().now()
+
         duration = Duration(seconds=time)
-        rate = self.create_rate(pub_rate)
+        # rate = self.node.create_rate(pub_rate, self.node.get_clock())
+        rate = 1.0 / pub_rate
 
         self.node.get_logger().info("-- Moviment start")
 
         while t_now <= t_start + duration:
-
             self.offboard_velocity(linear_x, linear_y, linear_z, angular_z)
-            rate.sleep()
-            t_now = self.get_clock().now()
+            sleep(rate)
+            t_now = self.node.get_clock().now()
 
-        self.node.get_logger().info("-- Moviment end")
+        self.node.get_logger().info(
+            "-- Moviment end - time: {:.4f} s".format(
+                (t_now - t_start).nanoseconds / 1000000000
+            )
+        )
 
     def flip(self, direction: int) -> None:
         """
@@ -192,17 +201,6 @@ class Bebop(Drone):
 
         self.node.get_logger().info(f"Move camera tilt: {tilt}, pan: {pan}")
         self.gimbal_pub.publish(twist)
-
-    def set_exposure(self, exposure: float) -> None:
-        """
-        Set the exposure of the camera.
-
-        :param exposure (float): Exposure value.
-            Acceptable range: [-3, 3]
-        """
-
-        self.exposure_pub.publish(Float32(data=exposure))
-        self.node.get_logger().info("-- Set exposure to {}".format(exposure))
 
     def image_viewer(self) -> None:
         """
