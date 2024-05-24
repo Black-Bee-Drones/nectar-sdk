@@ -95,8 +95,8 @@ class ColorDetector:
             hsv_color = [hsv_values[0], hsv_values[1]]
             output = hsv_color
         else:
-            print("Color not Defined")
             output = None
+            raise ValueError("Color not defined")
 
         return output
 

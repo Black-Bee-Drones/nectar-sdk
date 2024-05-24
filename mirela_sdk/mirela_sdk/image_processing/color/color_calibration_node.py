@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 import sys
-import os
 import rclpy
 from rclpy.node import Node
 import cv2
 import cvzone
 
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
-
 from mirela_sdk.image_processing.color.color_detector import ColorDetector
 
 
@@ -31,7 +29,12 @@ class ColorCalibrationNode(Node):
 
         self.image_handler.run()
 
-    def process(self, img):
+    def process(self, img) -> None:
+        """
+        Process the image to calibrate the color detection
+
+        :param img (np.array): the image to process
+        """
         try:
             if img is not None:
 
@@ -74,7 +77,7 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         node.destroy_node()
-        rclpy.shutdown()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
