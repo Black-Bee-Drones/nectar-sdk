@@ -10,6 +10,7 @@ from geometry_msgs.msg import Twist, Vector3
 
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
+from mirela_sdk.utils.process import ProcessUtils
 
 
 class Bebop(Drone):
@@ -40,48 +41,22 @@ class Bebop(Drone):
 
         if driver:
             self.init_drivers()
-            self.delay(0.5)
 
         self.node.get_logger().info("Bebop API initialized")
 
-    def init_drivers(self):
+    def start_driver_node(self):
         """
         Start the ros2 launch file to initialize the bebop driver.
             ros2 launch ros2_bebop_driver bebop_node_launch.xml
         """
         # Command to start the ros2 launch bebob driver
-        command = ["ros2", "launch", "ros2_bebop_driver", "bebop_node_launch.xml"]
-
-        # Join the list elements into a single string
-        command_str = " ".join(command)
-
-        # Start the process
-        process = subprocess.Popen(
-            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
+        result = ProcessUtils.start_process(
+            "ros2 launch ros2_bebop_driver bebop_node_launch.xml", "bebop_driver"
         )
+        self._driver_initialized = result
 
-        # Wait for the process to finish
-        stdout, stderr = process.communicate()
-
-        # Check for any errors
-        if process.returncode != 0:
-            print(
-                f"\033[91mErro ao iniciar o bebop driver: {process.returncode}\033[0m"
-            )
-        else:
-            print(f"\033[92mros2_bebop_driver iniciado com sucesso\033[0m")
-
-        sleep(2.0)
-
-    def check_driver_node(self):
-        """
-        Check if the bebop driver is running.
-        """
-        # Get all node names
-        node_names = self.node.get_node_names()
-
-        # Check if the mavros node is running
-        return True if "bebop_driver" in node_names else False
+    def get_driver_node_name(self) -> str:
+        return "bebop_driver"
 
     def takeoff(self) -> None:
         """
@@ -236,13 +211,11 @@ def main(args=None) -> None:
     rclpy.init(args=args)
 
     node = rclpy.create_node("bebop_node")
-    bebop = Bebop(node, False)
+    bebop = Bebop(node, True)
 
     # bebop.image_viewer()
-    bebop.check_driver_node()
+    print(bebop.check_driver_node())
 
-    # sleep(2.0)
-    # bebop.camera_control(-170.0, 0.0)
     sleep(2.0)
     bebop.camera_control(180.0, 0.0)
 

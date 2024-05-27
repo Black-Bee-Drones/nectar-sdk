@@ -1,8 +1,6 @@
-import rclpy
 import subprocess
 import shlex
-import threading
-import queue
+import os
 
 from rclpy.node import Node
 from rclpy.client import Client
@@ -31,7 +29,7 @@ from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
-
+from mirela_sdk.utils.process import ProcessUtils
 
 
 class MavDrone(Drone):
@@ -40,6 +38,12 @@ class MavDrone(Drone):
     """
 
     def __init__(self, node: Node, mavros: bool = True) -> None:
+        """
+        Initialize the Mavros API
+
+        :param node (Node): ROS2 node to run the API
+        :param mavros (bool): True to start the mavros node
+        """
         super().__init__(node=node)
 
         # Variables:
@@ -116,62 +120,24 @@ class MavDrone(Drone):
 
         if mavros:
             self.init_drivers()
-            self.delay(5)
 
         self.node.get_logger().info("Mavros API initialized")
 
-    def init_drivers(self):
-        # Command to start the ros2 launch mavros apm
-        command = [
-            "ros2",
-            "launch",
-            "mavros",
-            "apm.launch",
-            "fcu_url:=serial:///dev/ttyUSB0:57600",
-        ]
+    def start_driver_node(self) -> None:
+        """
+        Start the mavros launch
+            ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:57600
+        """
 
-        # Join the list elements into a single string
-        command_str = " ".join(command)
-
-        # Start the process
-        process = subprocess.Popen(
-            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
+        # Start the ros2 launch mavros apm
+        result = ProcessUtils.start_process(
+            "ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:57600",
+            "mavros_node",
         )
+        self._driver_initialized = result
 
-        # Wait for the process to finish
-        stdout, stderr = process.communicate()
-
-        # Check for any errors
-        if process.returncode != 0:
-            print(f"\033[91mErro ao iniciar o mavros: {process.returncode}\033[0m")
-        else:
-            print(f"\033[92mMavros apm launch iniciado com sucesso\033[0m")
-            self._driver_initialized = True
-
-        sleep(1.5)
-
-        def wait_service(service):
-            while not service.wait_for_service(timeout_sec=1.0):
-                self.node.get_logger().info(
-                    f"Service {service.srv_name} not available, waiting again..."
-                )
-
-        wait_service(self._mode_srv)
-        wait_service(self._arm_srv)
-        wait_service(self._takeoff_srv)
-        wait_service(self._land_srv)
-        wait_service(self._home_srv)
-        # wait_service(self._param_set_srv)
-        wait_service(self._command_srv)
-
-        self.node.get_logger().info("Mavros services initialized")
-
-    def check_driver_node(self) -> bool:
-        # Get all node names
-        node_names = self.node.get_node_names()
-
-        # Check if the mavros node is running
-        return True if "mavros_node" in node_names else False
+    def get_driver_node_name(self) -> str:
+        return "mavros_node"
 
     @property
     def get_state(self) -> State:
@@ -262,6 +228,11 @@ class MavDrone(Drone):
         :param success_message (str): Message to print if success
         :param failure_message (str): Message to print if failure
         """
+
+        while not service.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().info(
+                f"Service {service.srv_name} not available, waiting again..."
+            )
 
         self.node.get_logger().info(f"-- Calling service {service.srv_name}")
 
@@ -429,9 +400,9 @@ class MavDrone(Drone):
         """
         Send return to launch command.
 
-        The copter will first rise to RTL_ALT before returning home or maintain the current 
+        The copter will first rise to RTL_ALT before returning home or maintain the current
         altitude if the current altitude is higher than RTL_ALT. The default value for RTL_ALT is 15m.
-        
+
         Parameters
         ----------
         rtl_alt: int (m)
@@ -440,15 +411,14 @@ class MavDrone(Drone):
         """
 
         param_value = Int64()
-        param_value.data = rtl_alt*100
+        param_value.data = rtl_alt * 100
 
         self.set_param("RTL_ALT", param_value=param_value)
         self.delay(1)
         self.set_mode("rtl")
-        
+
         if precision_landing:
             PrecisionLanding(self, self.node)
-
 
     def do_servo(self, aux_out: int, pwm_value: int):
         """

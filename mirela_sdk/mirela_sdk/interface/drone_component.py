@@ -48,11 +48,21 @@ class DroneComponent(ABC):
         """
         Method to initialize drone configuration.
         """
+        if self.check_timer is not None:
+            self.check_timer.cancel()
+            self.node.destroy_timer(self.check_timer)
+            self.check_timer = None
+
+        self._config_on_old = False
+        self._config_on_new = False
+        self._config_state_change = None
+        self.state_history = [False] * 3
+
         self.drone.init_drivers()
 
     def check_driver_status(self):
         if self.drone:
-            self._config_on_new = self.drone.check_driver_node()
+            self._config_on_new = self.drone.check_driver_node(0.0)
 
             if self._config_on_old != self._config_on_new:
                 self._config_state_change = self._config_on_new
@@ -69,7 +79,7 @@ class DroneComponent(ABC):
                 self.update_state(self._config_on_new)
                 self.node.get_logger().info(f"On" if self._config_on_new else "Off")
                 self._config_state_change = None
-                self.state_history = [False, False, False]
+                self.state_history = [self._config_on_new] * 3
 
     def update_state(self, on: bool):
         if on:
@@ -406,15 +416,10 @@ class DroneComponent(ABC):
         Create all widgets for the drone component.
         """
 
-        if self.check_timer is not None:
-            self.check_timer.cancel()
-            self.node.destroy_timer(self.check_timer)
-            self.check_timer = None
-
         self.create_common_widgets()
         self.create_specific_widgets()
 
-        sleep(0.5)
+        sleep(1.0)
         self.check_timer = self.node.create_timer(
             1.0, self.check_driver_status, clock=self.node.get_clock()
         )
@@ -478,6 +483,8 @@ class DroneComponent(ABC):
         self.move(*self.action)
 
     def cleanup(self) -> None:
-        self.check_timer.cancel()
-        self.node.destroy_timer(self.check_timer)
+        if self.check_timer is not None:
+            self.check_timer.cancel()
+            self.node.destroy_timer(self.check_timer)
+            self.check_timer = None
         self.drone.cleanup()

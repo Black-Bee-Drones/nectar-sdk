@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from time import sleep
+from time import sleep, time
 
 from rclpy.qos import QoSProfile
 from rclpy.node import Node
@@ -63,34 +63,60 @@ class Drone(ABC):
         """
         return self._driver_initialized
 
-    def cleanup(self) -> None:
+    def check_driver_node(self, timeout: float = 0.0) -> bool:
         """
-        Clean up ROS2 objects associated with the drone.
+        Check if the driver node is running within the specified timeout.
         """
-        for subscriber in self._subscribers:
-            self.node.destroy_subscription(subscriber)
+        node_name = self.get_driver_node_name()
 
-        for publisher in self._publishers:
-            self.node.destroy_publisher(publisher)
+        # If timeout is 0, perform a single check
+        if timeout == 0.0:
+            node_names = self.node.get_node_names()
+            return node_name in node_names
 
-        for client in self._clients:
-            self.node.destroy_client(client)
+        # Otherwise, perform checks until timeout
+        start_time = time()
+        while time() - start_time < timeout:
+            # Get all node names
+            node_names = self.node.get_node_names()
+
+            # Check if the driver node is running
+            if node_name in node_names:
+                return True
+            sleep(0.1)  # Wait a short period before checking again
+
+        return False
 
     @abstractmethod
-    def init_drivers(self) -> None:
+    def get_driver_node_name(self) -> str:
         """
-        Initialize the drivers for the drone (implementation specific).
-        """
-        raise NotImplementedError("init_drivers() must be implemented by a subclass")
-
-    @abstractmethod
-    def check_driver_node(self) -> bool:
-        """
-        Check if node of corresponding driver is running
+        Return the name of the driver node.
+        This method should be implemented by subclasses.
         """
         raise NotImplementedError(
-            "check_driver_node() must be implemented by a subclass"
+            "get_driver_node_name() must be implemented by a subclass"
         )
+
+    @abstractmethod
+    def start_driver_node(self) -> None:
+        raise NotImplementedError(
+            "start_driver_node() must be implemented by a subclass"
+        )
+
+    def init_drivers(self) -> None:
+        """
+        Initialize the drivers for the drone
+        """
+        driver_name = self.get_driver_node_name()
+        self.node.get_logger().info(f"Initializing {driver_name}")
+        if self.check_driver_node():
+            self.node.get_logger().info(
+                f"\033[93m{driver_name} is already running.\033[0m"
+            )
+            self._driver_initialized = True
+        else:
+            self.start_driver_node()
+            self.delay(1.5)
 
     @abstractmethod
     def takeoff(self) -> None:
@@ -175,3 +201,16 @@ class Drone(ABC):
         publisher = self.node.create_publisher(msg_type, topic, qos)
         self._publishers.append(publisher)
         return publisher
+
+    def cleanup(self) -> None:
+        """
+        Clean up ROS2 objects associated with the drone.
+        """
+        for subscriber in self._subscribers:
+            self.node.destroy_subscription(subscriber)
+
+        for publisher in self._publishers:
+            self.node.destroy_publisher(publisher)
+
+        for client in self._clients:
+            self.node.destroy_client(client)
