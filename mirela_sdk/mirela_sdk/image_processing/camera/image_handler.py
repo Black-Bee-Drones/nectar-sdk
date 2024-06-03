@@ -6,6 +6,7 @@ from cv_bridge import CvBridge
 import cv2
 
 from typing import Optional
+from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
 
 
 class ImageHandler:
@@ -20,15 +21,19 @@ class ImageHandler:
         image_processing_callback: Optional[callable] = None,
         show_result: str = None,
         cap: Optional[int] = 0,
+        oakd_num: Optional[int] = 1,
     ):
         """
         Class to handle image processing from a ROS topic or webcam.
 
         :param node (rclpy.node.Node): the ROS node to handle the image processing
-        :param image_source (str): the source of the image (ROS topic or webcam)
+        :param image_source (str): the source of the image (ROS topic or webcam or oakd)
         :param image_processing_callback (callable): the callback function to process the image
         :param cap (int): the webcam index.
             Use this parameter only if the image source is "webcam"
+        :param oakd_num (int): index number for oakd cam - 1 for rgb, 2 for left monochrome cam, 3 for
+         right monochrome cam 
+            Use this parameter only if the image source is "oakd"
         """
 
         self.node = node
@@ -39,6 +44,7 @@ class ImageHandler:
         self.img = None
         self.show_result = show_result
         self.cap_num = cap
+        self.oakd_num = oakd_num
         self.cleaned = False
         self.bridge = CvBridge()
 
@@ -106,6 +112,15 @@ class ImageHandler:
         except Exception as e:
             self.node.get_logger().error(f"Failed to read from webcam: {str(e)}")
 
+    def oakd_callback(self):
+        """
+        Callback function for oakd
+        """
+        
+        # getFrame function converts the frame from camera pattern to cv2.Mat
+        self.img = self.oakd.getFrame(self.queue)
+        self.process()
+
     def run(self):
         """
         Run the image handler
@@ -118,6 +133,16 @@ class ImageHandler:
             self.cap = cv2.VideoCapture(self.cap_num)
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
+
+        elif self.image_source == "oakd":
+            # For oakd, OakdCam class initializes the pipeline, configures the camera according 
+            #to the address, returns the queue with frames in the camera pattern
+
+            self.oakd = OakdCam()
+            self.oakd.setup_camera(self.oakd_num)
+            self.oakd.init_cam()
+            self.queue = self.oakd.getQueue_CamType()
+            self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
 
         else:
             self._configure_ros_topic()
@@ -132,6 +157,11 @@ class ImageHandler:
         if self.image_source == "webcam":
             self.cap.release()
             self.node.destroy_timer(self.webcam_timer)
+
+        elif self.image_source == "oakd":
+            self.oakd.clean()
+            self.node.destroy_timer(self.oakd_timer)
+            
         else:
             self.node.destroy_subscription(self.image_sub)
 
