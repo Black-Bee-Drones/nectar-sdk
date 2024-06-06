@@ -13,16 +13,18 @@ from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 class ArucoNode(Node):
     POSE_TOPIC = "/aruco/pose_estimate"
 
-    def __init__(
-        self,
-        image_source: str = "webcam",
-        marker_dict: str = "5",
-        tag_size: str = "0.2",
-    ):
+    def __init__(self):
+
         super().__init__("aruco_node")
 
-        self.marker_dict = int(marker_dict)
-        self.tag_size = float(tag_size)
+        self.declare_parameter("image_source", "webcam")
+        self.declare_parameter("marker_dict", 5)
+        self.declare_parameter("tag_size", 0.2)
+
+        self.image_source = self.get_parameter("image_source").value
+        self.marker_dict = self.get_parameter("marker_dict").value
+        self.tag_size = self.get_parameter("tag_size").value
+        print(self.image_source)
 
         self.aruco_pose_estimate = ArucoTransforms()
 
@@ -33,7 +35,7 @@ class ArucoNode(Node):
         self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
 
         self.img_handler = ImageHandler(
-            self, image_source, self.process_image, show_result="Aruco"
+            self, self.image_source, self.process_image, show_result="Aruco"
         )
         self.img_handler.run()
 

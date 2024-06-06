@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-import subprocess
-import shlex
 from rclpy.node import Node
 from mirela_interfaces.msg._aruco_transforms import ArucoTransforms
+from mirela_sdk.utils.process import ProcessUtils
 
 
 class PrecisionLanding:
@@ -20,26 +19,8 @@ class PrecisionLanding:
         self._aruco_sub = node.create_subscription(ArucoTransforms, "aruco/pose_estimate", 
                                                    self.sub_aruco_callback, 10)
         
-        
-    def init_aruco_node():
-
-        command = [
-            "ros2",
-            "run",
-            "mirela_sdk",
-            "aruco_node",
-        ]
-
-        command_str = " ".join(command)
-
-        process = subprocess.Popen(shlex.split(f'gnome-terminal -- bash -c "{command_str}"'))
-
-        process.communicate()
-
-        if process.returncode != 0:
-            print(f"\033[91mErro ao iniciar aruco_node: {process.returncode}\033[0m")
-        else:
-            print(f"\033[92maruco_node iniciado com sucesso\033[0m")
+        ProcessUtils.start_process("ros2 run mirela_sdk aruco_node --ros-args -p image_source:='oakd'", 
+                                   "precision_landing")
 
 
 

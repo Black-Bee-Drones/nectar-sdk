@@ -87,9 +87,8 @@ class Aruco:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Pegando os valores do Bounding Box (limite do ArUco marker), e seu ID
-        bbox, ids, rejected = aruco.detectMarkers(
-            gray, self.aruco_detect, parameters=self.aruco_param
-        )
+        detector = aruco.ArucoDetector(self.aruco_detect, self.aruco_param)
+        bbox, ids, _ = detector.detectMarkers(gray)
 
         if draw:
             aruco.drawDetectedMarkers(img, bbox, ids)
@@ -152,7 +151,7 @@ def main():
 
     cap = cv2.VideoCapture(0)
 
-    while cv2.waitKey(1) < 0:
+    while cv2.waitKey(1) & 0xFF != ord("q"):
 
         _, img = cap.read()
 
