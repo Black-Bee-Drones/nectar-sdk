@@ -19,7 +19,7 @@ class PrecisionLanding:
         self._aruco_sub = node.create_subscription(ArucoTransforms, "aruco/pose_estimate", 
                                                    self.sub_aruco_callback, 10)
         
-        ProcessUtils.start_process("ros2 run mirela_sdk aruco_node --ros-args -p image_source:='oakd'", 
+        ProcessUtils.start_process("ros2 run mirela_sdk aruco_node --ros-args -p image_source:='webcam'", 
                                    "precision_landing")
 
 

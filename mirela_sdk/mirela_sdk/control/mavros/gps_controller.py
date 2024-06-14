@@ -42,6 +42,8 @@ class GPSController:
         """
         self.drone.node.get_logger().info("Geofence function")
         self.fence = Polygon(coords)
+        #delay para aguardo do recebimento de dados do subscriber
+        self.drone.delay(2.0)
         Node.create_timer(self.drone.node, 0.01, self._check_position)
 
     def geoid_height(self, lat, lon):
@@ -76,6 +78,7 @@ class GPSController:
             distance_target = geodesic(
                 (current_lat, current_long), (lat_setpoint, lon_setpoint)
             ).meters
+            print(current_lat, current_long)
             print(distance_target)
 
             if distance_target <= precision_radius:

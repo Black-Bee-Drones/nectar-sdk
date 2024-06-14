@@ -308,6 +308,7 @@ class MavDrone(Drone):
         Send command to arm the drone.
         """
         self.set_mode("GUIDED")
+        self._startup()
         req = CommandBool.Request()
         req.value = True
         self._call_service(self._arm_srv, req, "-- Armed", "-- Arm failed")
@@ -405,9 +406,9 @@ class MavDrone(Drone):
 
         Parameters
         ----------
-        rtl_alt: int (m)
+        param rtl_alt (int): altitude in meters to rtl mode
 
-        precisionland: bool (True or False)
+        param precisionland (bool): run precision_landing when the drone start the land or not
         """
 
         param_value = Int64()
