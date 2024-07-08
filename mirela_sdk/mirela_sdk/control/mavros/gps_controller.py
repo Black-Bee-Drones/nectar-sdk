@@ -6,7 +6,6 @@ from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic
 from math import radians
 from tf_transformations import quaternion_from_euler
-from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
 
 
@@ -18,7 +17,19 @@ class GPSController:
         self.photo_count: int = 0
         self.path = os.path.dirname(os.path.abspath(__file__))
 
+
+    def __startup(self):
+        """
+        Get initial values for the drone state, gps, altitude and heading.
+        """
+        rclpy.spin_once(self.drone.node)
+        self.initial_altitude = self.drone.get_gps.altitude
+        self.initial_heading = self.drone.get_heading.data
+        print(self.initial_altitude)
+
+
     def _check_position(self):
+        rclpy.spin_once(self.drone.node)
         current_lat: float = self.drone.get_gps.latitude
         current_long: float = self.drone.get_gps.longitude
         print(f"Lat: {current_lat} Long: {current_long}")
@@ -42,9 +53,7 @@ class GPSController:
         """
         self.drone.node.get_logger().info("Geofence function")
         self.fence = Polygon(coords)
-        #delay para aguardo do recebimento de dados do subscriber
-        self.drone.delay(2.0)
-        Node.create_timer(self.drone.node, 0.01, self._check_position)
+        self.drone.node.create_timer(0.01, self._check_position)
 
     def geoid_height(self, lat, lon):
         """
@@ -72,7 +81,8 @@ class GPSController:
         :warning: This function stuck the code until the drone reaches the setpoint
         """
 
-        while True:
+        while rclpy.ok():
+            rclpy.spin_once(self.drone.node)
             current_lat = self.drone.get_gps.latitude
             current_long = self.drone.get_gps.longitude
             distance_target = geodesic(
@@ -103,10 +113,12 @@ class GPSController:
         :param precision_radius (float): Radius of the precision
         """
 
+        self.__startup()
+
         # ellipsoid to AMSL conversion: subtract alt_adjust
         alt_adjust = self.geoid_height(lat_setpoint, lon_setpoint)
 
-        target_altitude = self.drone.initial_altitude - alt_adjust + alt_setpoint
+        target_altitude = self.initial_altitude - alt_adjust + alt_setpoint
 
         gps_setpoint = GeoPoseStamped()
         gps_setpoint.pose.position.latitude = lat_setpoint

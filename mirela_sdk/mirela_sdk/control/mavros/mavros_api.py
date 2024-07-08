@@ -1,12 +1,8 @@
-import subprocess
-import shlex
-import os
-
+import rclpy
 from rclpy.node import Node
 from rclpy.client import Client
 from rclpy.service import SrvTypeRequest
 from rclpy.duration import Duration
-from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 
 from mavros_msgs.srv import (
@@ -15,7 +11,7 @@ from mavros_msgs.srv import (
     CommandTOL,
     CommandHome,
     CommandLong,
-    ParamSet,
+    ParamSetV2,
 )
 from time import sleep
 
@@ -24,6 +20,7 @@ from std_msgs.msg import Float64, Int64
 from geometry_msgs.msg import Twist, PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range
+from rcl_interfaces.msg import ParameterValue
 
 from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
@@ -75,7 +72,7 @@ class MavDrone(Drone):
         )
         self._rng_alt_sub = self._create_subscriber(
             Range,
-            "/mavros/distance_sensor/rangefinder_pub",
+            "/mavros/rangefinder/rangefinder",
             lambda data: self.__setattr__("_rng_alt", data),
             10,
         )
@@ -104,7 +101,7 @@ class MavDrone(Drone):
         self._takeoff_srv = self._create_client(CommandTOL, "/mavros/cmd/takeoff")
         self._land_srv = self._create_client(CommandTOL, "/mavros/cmd/land")
         self._home_srv = self._create_client(CommandHome, "/mavros/cmd/set_home")
-        self._param_set_srv = self._create_client(ParamSet, "/mavros/param/set")
+        self._param_set_srv = self._create_client(ParamSetV2, "/mavros/param/set")
         self._command_srv = self._create_client(CommandLong, "/mavros/cmd/command")
 
         # Publishers:
@@ -205,14 +202,6 @@ class MavDrone(Drone):
         """
         return self._heading
 
-    def _startup(self):
-        """
-        Get initial values for the drone state, gps, altitude and heading.
-        """
-        self.initial_heading = self._heading.data
-        self.initial_altitude = self._gps.altitude
-        print(self.initial_altitude)
-
     def _call_service(
         self,
         service: Client,
@@ -308,7 +297,6 @@ class MavDrone(Drone):
         Send command to arm the drone.
         """
         self.set_mode("GUIDED")
-        self._startup()
         req = CommandBool.Request()
         req.value = True
         self._call_service(self._arm_srv, req, "-- Armed", "-- Arm failed")
@@ -363,6 +351,8 @@ class MavDrone(Drone):
         :param longitude (float): Longitude in degrees
         :param altitude (float): Altitude in meters
         """
+
+        rclpy.spin_once(self.node)
         req = CommandHome.Request()
         req.current_gps = current_gps
         req.yaw = yaw
@@ -384,12 +374,13 @@ class MavDrone(Drone):
         :param param_value (Int64): Parameter value
         """
 
-        value = ParamValue()
-        value.integer = param_value.data
+        value = ParameterValue()
+        value.integer_value = param_value.data
 
-        request = ParamSet.Request()
+        request = ParamSetV2.Request()
         request.param_id = param_id
         request.value = value
+        request.force_set = True
         self._call_service(
             self._param_set_srv,
             request,

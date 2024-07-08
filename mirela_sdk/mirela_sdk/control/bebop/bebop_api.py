@@ -1,7 +1,4 @@
 import rclpy
-import numpy as np
-import subprocess
-import shlex
 from rclpy.node import Node
 from time import sleep
 from rclpy.duration import Duration
