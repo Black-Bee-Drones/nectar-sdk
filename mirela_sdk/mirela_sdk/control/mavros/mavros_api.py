@@ -388,7 +388,7 @@ class MavDrone(Drone):
             f"-- Set {param_id} failed",
         )
 
-    def rtl(self, rtl_alt: int = 10, precision_landing: bool = False):
+    def rtl(self, rtl_alt: int = 10, precision_landing: bool = False, aruco_target: int = 800):
         """
         Send return to launch command.
 
@@ -410,7 +410,7 @@ class MavDrone(Drone):
         self.set_mode("rtl")
 
         if precision_landing:
-            PrecisionLanding(self, self.node)
+            PrecisionLanding(self, self.node, False, aruco_target)
 
     def do_servo(self, aux_out: int, pwm_value: int):
         """
