@@ -398,8 +398,8 @@ class MavDrone(Drone):
         Parameters
         ----------
         param rtl_alt (int): altitude in meters to rtl mode
-
         param precisionland (bool): run precision_landing when the drone start the land or not
+        param aruco_target (int): the ArUco marker id to do the precision landing 
         """
 
         param_value = Int64()
