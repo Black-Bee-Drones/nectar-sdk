@@ -64,7 +64,7 @@ class PrecisionLanding:
                     if (abs(self.translation_x) > landing_area) or (abs(self.translation_y) > 
                                                                         landing_area):
                         
-                        print("\033[1;34m-- Move to aruco\033[m")
+                        self.node.get_logger().info("\033[1;34m-- Move to aruco\033[m")
                         self.__move_to_aruco()
 
                     elif(abs(self.translation_x) < landing_area) and (abs(self.translation_y) < 
@@ -75,7 +75,7 @@ class PrecisionLanding:
                     
                 if (self.state == 1):
                     self.node.get_logger().info("\033[32mDescendo o drone\033[m")
-                    self.drone.offboard_velocity(0, 0, -0.4, 0, False)  
+                    self.drone.offboard_velocity(0.0, 0.0, -0.4, 0.0, False)  
                     self.state = 0
                     
         
@@ -83,7 +83,7 @@ class PrecisionLanding:
                 self.drone.land()
 
             elif altitude <= 1.2 and self.delivery:
-                self.drone.do_servo(1, 1500)
+                self.drone.do_servo(3.0, 1500.0)
                 self.drone.rtl(10, False)
 
         else:
@@ -97,4 +97,4 @@ class PrecisionLanding:
         linear_vel_x = self.kp_linear*self.translation_x
         linear_vel_y = self.kp_linear*self.translation_y
 
-        self.drone.offboard_velocity(linear_vel_x, linear_vel_y, 0, 0, False)
+        self.drone.offboard_velocity(linear_vel_x, linear_vel_y, 0.0, 0.0, False)

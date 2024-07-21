@@ -412,17 +412,17 @@ class MavDrone(Drone):
         if precision_landing:
             PrecisionLanding(self, self.node, False, aruco_target)
 
-    def do_servo(self, aux_out: int, pwm_value: int):
+    def do_servo(self, aux_out: float, pwm_value: float):
         """
         Send a PWM signal to moviment a servo motor connected *aux_out*
 
-        :param aux_out (int): Auxiliar port (1-6)
-        :param pwm_value (int): PWM value (usually between 1000 ~ 2000)
+        :param aux_out (float): Auxiliar port (1-6)
+        :param pwm_value (float): PWM value (usually between 1000 ~ 2000)
         """
 
         command = CommandLong.Request()
         command.command = 183
-        command.param1 = aux_out + 8
+        command.param1 = aux_out + 8.0
         command.param2 = pwm_value
         self._call_service(
             self._command_srv,
