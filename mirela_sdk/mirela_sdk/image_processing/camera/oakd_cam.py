@@ -3,6 +3,10 @@ import cv2
 
 class OakdCam:
 
+    """
+    Class to initialize the pipeline and define the paramters for accessing OAKD images
+    """
+    
     def __init__(self)-> None:
         """
         OakdCam constructor: initializes the pipeline and configures cameras and their 
@@ -17,6 +21,8 @@ class OakdCam:
 
     def setup_camera(self, cam_num: int)-> None:
         """
+        Function to set the camera type based on the camera number parameter
+
         :param cam_num (int): index number for oakd cam - 1 for rgb, 2 for left monochrome cam, 3 for
                               right monochrome cam 
         """
@@ -33,12 +39,14 @@ class OakdCam:
                 self.mono_camera()
 
 
-    def init_cam(self) -> dai.Device:
+    def init_cam(self, full_speed: bool = False) -> dai.Device:
         """
-        Initilize the device and return it
+        Initialize the device and return it
         """
 
-        self.device = dai.Device(self.pipeline)
+        usb_speed = dai.UsbSpeed.FULL if full_speed else dai.UsbSpeed.HIGH
+
+        self.device = dai.Device(self.pipeline, maxUsbSpeed=usb_speed)
 
         return self.device
     
@@ -60,7 +68,7 @@ class OakdCam:
         xOut_rgb = self.pipeline.createXLinkOut()
         xOut_rgb.setStreamName("rgb")
 
-        #coloca camera como entrada do link de comunição:
+        #coloca camera como entrada do link de comunicação:
         cam.preview.link(xOut_rgb.input)
 
         return cam
@@ -82,8 +90,8 @@ class OakdCam:
     
     def getQueue_CamType(self) -> dai.DataOutputQueue:
         """
-        Gets an output queue corresponding to cam_type. If it doesn't exist it throws
-        Use this function to get the output queue defined in the "setup()" scope
+        Gets an output queue corresponding to cam_type. If it doesn't exist it throws.
+            Use this function to get the output queue from cam_type defined in the "setup()" scope
         """
         
         return self.device.getOutputQueue(self.cam_type)
