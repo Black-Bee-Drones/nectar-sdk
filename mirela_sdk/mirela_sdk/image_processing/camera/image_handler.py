@@ -1,4 +1,4 @@
-import rclpy
+import os
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CompressedImage
 
@@ -11,6 +11,8 @@ from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
 
 class ImageHandler:
     RASPICAM_LAUNCH = "camerav2_410x308_30fps.launch"
+    RASPICAM_TOPIC = "/image_raw"
+    RASPICAM_COMPRESS_TOPIC = "/image_raw/compressed"
 
     BEBOP_TOPIC = "/bebop/camera/image_raw"
 
@@ -32,7 +34,7 @@ class ImageHandler:
         :param cap (int): the webcam index.
             Use this parameter only if the image source is "webcam"
         :param oakd_num (int): index number for oakd cam - 1 for rgb, 2 for left monochrome cam, 3 for
-         right monochrome cam 
+         right monochrome cam
             Use this parameter only if the image source is "oakd"
         """
 
@@ -116,7 +118,7 @@ class ImageHandler:
         """
         Callback function for oakd
         """
-        
+
         # getFrame function converts the frame from camera pattern to cv2.Mat
         self.img = self.oakd.getFrame(self.queue)
         self.process()
@@ -135,8 +137,8 @@ class ImageHandler:
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
 
         elif self.image_source == "oakd":
-            # For oakd, OakdCam class initializes the pipeline, configures the camera according 
-            #to the address, returns the queue with frames in the camera pattern
+            # For oakd, OakdCam class initializes the pipeline, configures the camera according
+            # to the address, returns the queue with frames in the camera pattern
 
             self.oakd = OakdCam()
             self.oakd.setup_camera(self.oakd_num)
@@ -144,7 +146,16 @@ class ImageHandler:
             self.queue = self.oakd.getQueue_CamType()
             self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
 
+        elif os.path.isfile(self.image_source):
+            # For image file, the image is read by cv2.imread
+            try:
+                self.img = cv2.imread(self.image_source)
+                self.image_timer = self.node.create_timer(0.0001, self.process)
+            except Exception as e:
+                self.node.get_logger().error(f"Failed to read image file: {str(e)}")
+
         else:
+            # For ROS topic, the image is read by the callback function
             self._configure_ros_topic()
 
     def cleanup(self):
@@ -161,7 +172,9 @@ class ImageHandler:
         elif self.image_source == "oakd":
             self.oakd.clean()
             self.node.destroy_timer(self.oakd_timer)
-            
+
+        elif os.path.isfile(self.image_source):
+            self.node.destroy_timer(self.image_timer)
         else:
             self.node.destroy_subscription(self.image_sub)
 
