@@ -202,6 +202,14 @@ class MavDrone(Drone):
         """
         return self._heading
 
+    def __startup(self):
+        """
+        Get initial values for the drone state, gps, altitude and heading.
+        """
+        rclpy.spin_once(self.node)
+        self.initial_altitude = self.get_gps.altitude
+        self.initial_heading = self.get_heading.data
+
     def _call_service(
         self,
         service: Client,
@@ -438,6 +446,7 @@ class MavDrone(Drone):
         alt_setpoint: float = 0.0,
         heading: float = 0.0,
         precision_radius: float = 0.0,
+        initial_heading: bool = False
     ):
         """
         Move sending a GPS coordinate setpoint
@@ -447,13 +456,17 @@ class MavDrone(Drone):
         :param alt_setpoint (float): Altitude setpoint (meters AGL)
         :param heading (float): Heading setpoint (degrees refered to North)
         :param precision_radius (float): Precision radius setpoint (meters)
+        :param initial_heading (bool): True for keep initial heading value, False for value passed
         """
 
+        self.__startup()
+        final_heading = self.get_heading if initial_heading else heading
+
         self.node.get_logger().info(
-            f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {heading}"
+            f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"
         )
         self.gps_controller.gps_send(
-            lat_setpoint, lon_setpoint, alt_setpoint, heading, precision_radius
+            lat_setpoint, lon_setpoint, alt_setpoint, final_heading, precision_radius
         )
 
     def offboard_velocity(

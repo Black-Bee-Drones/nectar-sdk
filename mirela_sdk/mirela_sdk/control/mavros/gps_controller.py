@@ -18,16 +18,6 @@ class GPSController:
         self.path = os.path.dirname(os.path.abspath(__file__))
 
 
-    def __startup(self):
-        """
-        Get initial values for the drone state, gps, altitude and heading.
-        """
-        rclpy.spin_once(self.drone.node)
-        self.initial_altitude = self.drone.get_gps.altitude
-        self.initial_heading = self.drone.get_heading.data
-        print(self.initial_altitude)
-
-
     def _check_position(self):
         rclpy.spin_once(self.drone.node)
         current_lat: float = self.drone.get_gps.latitude
@@ -88,8 +78,7 @@ class GPSController:
             distance_target = geodesic(
                 (current_lat, current_long), (lat_setpoint, lon_setpoint)
             ).meters
-            print(current_lat, current_long)
-            print(distance_target)
+            self.drone.node.get_logger().info(f"Coordenate distance: {distance_target}")
 
             if distance_target <= precision_radius:
                 self.drone.node.get_logger().info("-- GPS setpoint reached")
@@ -118,7 +107,7 @@ class GPSController:
         # ellipsoid to AMSL conversion: subtract alt_adjust
         alt_adjust = self.geoid_height(lat_setpoint, lon_setpoint)
 
-        target_altitude = self.initial_altitude - alt_adjust + alt_setpoint
+        target_altitude = self.drone.initial_altitude - alt_adjust + alt_setpoint
 
         gps_setpoint = GeoPoseStamped()
         gps_setpoint.pose.position.latitude = lat_setpoint
