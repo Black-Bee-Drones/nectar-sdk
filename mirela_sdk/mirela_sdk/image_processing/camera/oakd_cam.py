@@ -39,12 +39,14 @@ class OakdCam:
                 self.mono_camera()
 
 
-    def init_cam(self) -> dai.Device:
+    def init_cam(self, full_speed: bool = False) -> dai.Device:
         """
         Initialize the device and return it
         """
 
-        self.device = dai.Device(self.pipeline)
+        usb_speed = dai.UsbSpeed.FULL if full_speed else dai.UsbSpeed.HIGH
+
+        self.device = dai.Device(self.pipeline, maxUsbSpeed=usb_speed)
 
         return self.device
     
