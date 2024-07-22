@@ -460,7 +460,7 @@ class MavDrone(Drone):
         """
 
         self.__startup()
-        final_heading = self.get_heading if initial_heading else heading
+        final_heading = self.initial_heading if initial_heading else heading
 
         self.node.get_logger().info(
             f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"

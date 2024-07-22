@@ -102,8 +102,6 @@ class GPSController:
         :param precision_radius (float): Radius of the precision
         """
 
-        self.__startup()
-
         # ellipsoid to AMSL conversion: subtract alt_adjust
         alt_adjust = self.geoid_height(lat_setpoint, lon_setpoint)
 
