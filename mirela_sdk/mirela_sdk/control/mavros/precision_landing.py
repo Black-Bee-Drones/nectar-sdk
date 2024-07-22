@@ -94,7 +94,7 @@ class PrecisionLanding:
         """
         Function to calculate and move the mav to ArUco Marker center
         """
-        linear_vel_x = self.kp_linear*self.translation_x
-        linear_vel_y = self.kp_linear*self.translation_y
+        linear_vel_x = self.kp_linear*self.translation_y
+        linear_vel_y = self.kp_linear*self.translation_x
 
         self.drone.offboard_velocity(linear_vel_x, linear_vel_y, 0.0, 0.0, False)
