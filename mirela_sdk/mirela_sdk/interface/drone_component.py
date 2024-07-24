@@ -31,8 +31,10 @@ class DroneComponent(ABC):
             "yellow": "#FDCE01",
             "black": "#1E1E1E",
             "white": "#FEFEFE",
+            "red": "#A60305",
         }
         self.action = np.zeros(4)
+        self.ground_reference = False
 
         self.imgs_dir = pathlib.Path(__file__).parent.resolve()
 
@@ -62,7 +64,7 @@ class DroneComponent(ABC):
 
     def check_driver_status(self):
         if self.drone:
-            self._config_on_new = self.drone.check_driver_node(0.0)
+            self._config_on_new = True  # self.drone.check_driver_node(0.0)
 
             if self._config_on_old != self._config_on_new:
                 self._config_state_change = self._config_on_new
@@ -256,7 +258,7 @@ class DroneComponent(ABC):
             self.frame_teclas,
             text="OFF",
             fg="white",
-            bg="#A60305",
+            bg=self.colors["red"],
             width=2,
             command=self.on_off,
             state=DISABLED,
@@ -465,7 +467,14 @@ class DroneComponent(ABC):
         velocity = control_velocity * velocity
 
         if self.on:
-            self.drone.offboard_velocity(*velocity)
+            self.move_velocity(velocity)
+
+    @abstractmethod
+    def move_velocity(self, velocity: np.ndarray) -> None:
+        """
+        Move the drone based on the specified velocities.
+        """
+        raise NotImplementedError("Method not implemented")
 
     def moviment_control(self, key_pressed, hold):
         """

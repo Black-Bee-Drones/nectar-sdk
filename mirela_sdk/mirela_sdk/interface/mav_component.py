@@ -2,7 +2,7 @@ from rclpy.node import Node
 
 
 from tkinter import *
-from threading import Thread
+import numpy as np
 
 from mirela_sdk.interface.drone_component import DroneComponent
 from mirela_sdk.control.mavros.mavros_api import MavDrone
@@ -22,7 +22,9 @@ class MavComponent(DroneComponent):
         print("Mav component Init")
 
         self.drone = MavDrone(node, mavros=False)
+        self.ground_reference = BooleanVar()
 
+    # Override the update_state method
     def update_state(self, on: bool):
         super().update_state(on)
         if on:
@@ -37,6 +39,17 @@ class MavComponent(DroneComponent):
             self.btn_takeoff.config(state=DISABLED)
             self.btn_land.config(state=DISABLED)
             self.btn_arm_takeoff.config(state=DISABLED)
+
+    # Override the on_off method
+    def on_off(self):
+        """
+        Turn the keyboard control on or off
+        """
+        super().on_off()
+        if self.on:
+            self.btn_ground_reference.config(state="normal")
+        else:
+            self.btn_ground_reference.config(state=DISABLED)
 
     def create_specific_widgets(self):
         """
@@ -102,3 +115,21 @@ class MavComponent(DroneComponent):
             state=DISABLED,
         )
         self.btn_arm_takeoff.grid(row=3, column=0, columnspan=15, pady=20, padx=10)
+
+        self.btn_ground_reference = Checkbutton(
+            self.frame_control,
+            state=DISABLED,
+            variable=self.ground_reference,
+            onvalue=True,
+            offvalue=False,
+            bg=self.colors["black"],
+            fg=self.colors["red"],
+            text="Ground Reference",
+        )
+        self.btn_ground_reference.grid(row=2, column=0, columnspan=15, pady=10)
+
+    def move_velocity(self, velocity: np.ndarray) -> None:
+        """
+        Move the drone based on the specified velocities.
+        """
+        self.drone.offboard_velocity(*velocity, self.ground_reference.get())
