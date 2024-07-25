@@ -40,22 +40,25 @@ class Calibration(Node):
 
     def __photo(self, img):
 
-        if self.cont <= 100:
+        if self.cont == 10:
 
-            sleep(0.2)
-            cv2.imwrite(f"{self.path}/dataset/chessboard{self.cont}.jpg", img)
-            cv2.waitKey(1)
-            self.cont += 1
-            self.get_logger().info(f"Saving photo number {self.cont}")
+            self.photos += 1
+            cv2.imwrite(f"{self.path}/dataset/chessboard{self.photos}.jpg", img)
+            self.get_logger().info(f"Saving photo number {self.photos}")
+            self.cont = 0
 
-        else:
+        if self.photos == 100:
             self.get_logger().info("Photos completed")
             self.image_handler.cleanup()
+
+        self.cont += 1
+
             
 
     def run_photos(self):
         self.get_logger().info("Taking photos to dataset")
-        self.cont = 0
+        self.cont = 1
+        self.photos = 0
         self.image_handler = ImageHandler(self, "webcam", self.__photo, None, 0)
         self.image_handler.run()
 
