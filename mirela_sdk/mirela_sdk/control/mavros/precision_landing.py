@@ -31,13 +31,13 @@ class PrecisionLanding:
         self.kl = 0.05
         self.drone = drone
         self.flag = False
+        self.final_flag = False
 
         self._aruco_sub = self.node.create_subscription(ArucoTransforms, "/aruco/pose_estimate", 
                                                    self.__sub_aruco_callback, 10)
         
         ProcessUtils.start_process("ros2 run mirela_sdk aruco_node --ros-args -p image_source:='webcam'", 
                                    "precision_landing")
-
 
 
     def __sub_aruco_callback(self, aruco: ArucoTransforms) -> None:
@@ -61,14 +61,10 @@ class PrecisionLanding:
             if altitude > 1.2 and self.flag:
         
                 if (self.state == 0):
-                    if (abs(self.translation_x) > landing_area) or (abs(self.translation_y) > 
-                                                                        landing_area):
-                        
-                        self.node.get_logger().info("\033[1;34m-- Move to aruco\033[m")
+                    if (abs(self.translation_x) > landing_area) or (abs(self.translation_y) > landing_area):
                         self.__move_to_aruco()
 
-                    elif(abs(self.translation_x) < landing_area) and (abs(self.translation_y) < 
-                                                                          landing_area):
+                    elif(abs(self.translation_x) < landing_area) and (abs(self.translation_y) < landing_area):
                         
                         self.node.get_logger().info("\033[32mDrone no centro da Aruco\033[m")
                         self.state = 1
@@ -80,11 +76,14 @@ class PrecisionLanding:
                     
         
             elif altitude <= 1.2 and not self.delivery:
-                self.drone.land()
+                if not self.final_flag:
+                    self.drone.land()
+                    self.final_flag = True
 
             elif altitude <= 1.2 and self.delivery:
-                self.drone.do_servo(3.0, 1500.0)
-                self.drone.rtl(10, False)
+                if not self.final_flag:
+                    self.drone.do_servo(3.0, 1500.0)
+                    self.drone.rtl(10, False)
 
         else:
             self.node.get_logger().info(f"\033[31mAruco id {self.aruco_target} not detected\033[m")   
@@ -94,7 +93,10 @@ class PrecisionLanding:
         """
         Function to calculate and move the mav to ArUco Marker center
         """
-        linear_vel_x = self.kp_linear*self.translation_y
-        linear_vel_y = self.kp_linear*self.translation_x
+        linear_vel_x = -self.kp_linear*self.translation_y
+        linear_vel_y = -self.kp_linear*self.translation_x
 
         self.drone.offboard_velocity(linear_vel_x, linear_vel_y, 0.0, 0.0, False)
+
+        log = f"\033[1;34mMove to aruco: \033[m\nVel linear x: {linear_vel_x}\nVel linear y: {linear_vel_y}"
+        self.node.get_logger().info(log)
