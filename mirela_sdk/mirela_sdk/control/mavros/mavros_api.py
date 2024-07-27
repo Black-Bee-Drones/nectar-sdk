@@ -17,7 +17,7 @@ from time import sleep
 
 from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget, ParamValue
 from std_msgs.msg import Float64, Int64
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import TwistStamped, PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range
 from rcl_interfaces.msg import ParameterValue
@@ -49,6 +49,7 @@ class MavDrone(Drone):
         self._rng_alt = Range()
         self._rel_alt = Float64()
         self._local_pos = PoseStamped()
+        self._vel_body = TwistStamped()
         self._heading = Float64()
 
         self.gps_controller = GPSController(self)
@@ -93,6 +94,13 @@ class MavDrone(Drone):
             "/mavros/global_position/compass_hdg",
             lambda data: self.__setattr__("_heading", data),
             qos_profile,
+        )
+
+        self._vel_body_sub = self._create_subscriber(
+            TwistStamped,
+            "/mavros/local_position/velocity_body",
+            lambda data: self.__setattr__("_vel_body", data), 
+            qos_profile
         )
 
         # Services:
@@ -201,6 +209,18 @@ class MavDrone(Drone):
         http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
         """
         return self._heading
+    
+    @property
+    def get_vel_body(self)-> TwistStamped:
+        """
+        Return body velocity
+        TwistStamped
+        ------------
+
+        http://docs.ros.org/en/melodic/api/geometry_msgs/html/msg/TwistStamped.html
+        """
+       
+        return self._vel_body
 
     def __startup(self):
         """
