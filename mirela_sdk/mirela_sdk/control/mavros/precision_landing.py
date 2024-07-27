@@ -58,7 +58,7 @@ class PrecisionLanding:
             self.drone.set_mode('GUIDED')
 
         if(self.aruco_id == self.aruco_target):
-            if altitude > 1.2 and self.flag:
+            if altitude > 1.0 and self.flag:
         
                 if (self.state == 0):
                     if (abs(self.translation_x) > landing_area) or (abs(self.translation_y) > landing_area):
@@ -75,15 +75,16 @@ class PrecisionLanding:
                     self.state = 0
                     
         
-            elif altitude <= 1.2 and not self.delivery:
+            elif altitude <= 1.0 and not self.delivery:
                 if not self.final_flag:
                     self.drone.land()
                     self.final_flag = True
 
-            elif altitude <= 1.2 and self.delivery:
+            elif altitude <= 1.0 and self.delivery:
                 if not self.final_flag:
-                    self.drone.do_servo(3.0, 1500.0)
+                    self.drone.do_servo(3.0, 982.0)
                     self.drone.rtl(10, False)
+                    self.final_flag = True
 
         else:
             self.node.get_logger().info(f"\033[31mAruco id {self.aruco_target} not detected\033[m")   
