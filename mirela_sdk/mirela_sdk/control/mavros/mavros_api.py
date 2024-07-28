@@ -15,12 +15,13 @@ from mavros_msgs.srv import (
 )
 from time import sleep
 
-from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget, ParamValue
+from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget
 from std_msgs.msg import Float64, Int64
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range
-from rcl_interfaces.msg import ParameterValue
+from rcl_interfaces.msg import Parameter
+from rcl_interfaces.srv import SetParameters
 
 from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
@@ -109,7 +110,8 @@ class MavDrone(Drone):
         self._takeoff_srv = self._create_client(CommandTOL, "/mavros/cmd/takeoff")
         self._land_srv = self._create_client(CommandTOL, "/mavros/cmd/land")
         self._home_srv = self._create_client(CommandHome, "/mavros/cmd/set_home")
-        self._param_set_srv = self._create_client(ParamSetV2, "/mavros/param/set")
+        #self._param_set_srv = self._create_client(ParamSetV2, "/mavros/param/set")
+        self._param_set_srv = self._create_client(SetParameters, "/mavros/param/set_parameters")
         self._command_srv = self._create_client(CommandLong, "/mavros/cmd/command")
 
         # Publishers:
@@ -398,17 +400,17 @@ class MavDrone(Drone):
         """
         Set a parameter value
 
-        :param param_id (str): Parameter id
+        :param param_id (str): Parameter name
         :param param_value (Int64): Parameter value
         """
 
-        value = ParameterValue()
-        value.integer_value = param_value.data
+        value = Parameter()
+        value.name = param_id
+        value.value.integer_value = param_value.data
 
-        request = ParamSetV2.Request()
-        request.param_id = param_id
-        request.value = value
-        request.force_set = True
+        request = SetParameters.Request()
+        request.parameters.append(value)
+
         self._call_service(
             self._param_set_srv,
             request,
