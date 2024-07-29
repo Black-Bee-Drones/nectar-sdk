@@ -50,6 +50,8 @@ class Calibration(Node):
         if self.photos == 100:
             self.get_logger().info("Photos completed")
             self.image_handler.cleanup()
+            self.calibrate(show_corners=False)
+            self.overwrite_matrices()
 
         self.cont += 1
 
@@ -136,9 +138,7 @@ class Calibration(Node):
 def main():
     rclpy.init()
     calibration = Calibration()
-    # calibration.run_photos()
-    calibration.calibrate(show_corners=False)
-    calibration.overwrite_matrices()
+    calibration.run_photos()
     rclpy.spin(calibration)
     rclpy.shutdown()
 
