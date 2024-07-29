@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 
 import pathlib
 import numpy as np
-import threading
 from time import sleep
 from rclpy.node import Node
 from rclpy.timer import Timer
@@ -64,7 +63,7 @@ class DroneComponent(ABC):
 
     def check_driver_status(self):
         if self.drone:
-            self._config_on_new = True  # self.drone.check_driver_node(0.0)
+            self._config_on_new = self.drone.check_driver_node(0.0)
 
             if self._config_on_old != self._config_on_new:
                 self._config_state_change = self._config_on_new
