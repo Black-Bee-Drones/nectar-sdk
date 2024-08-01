@@ -4,24 +4,15 @@ import os
 import cv2
 import numpy as np
 import cv2.aruco as aruco
+from mirela_sdk.image_processing.camera.calibration.calibration import Calibration
 
 
 class Aruco:
 
     def __init__(self, marker_dict, tag_size):
 
-        self.path = os.path.dirname(os.path.abspath(__file__))  # Diretório do código
-        self.path = os.path.dirname(self.path)  # Pega o diretório superior
-        self.matrix_file_path = os.path.join(
-            self.path, "camera", "calibration", "camera_matrix.txt"
-        )
-        self.distortion_file_path = os.path.join(
-            self.path, "camera", "calibration", "camera_distortion.txt"
-        )
-
         self._total_markers = 1000
-        self.camera_matrix = np.loadtxt(self.matrix_file_path, delimiter=",")
-        self.camera_distortion = np.loadtxt(self.distortion_file_path, delimiter=",")
+        self.camera_matrix, self.camera_distortion = Calibration.get_camera_matrix_distortion()
 
         self._marker_dict = marker_dict
         self._tag_size = tag_size

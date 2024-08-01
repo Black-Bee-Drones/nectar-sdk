@@ -3,7 +3,6 @@ import os
 import numpy as np
 import glob
 import rclpy
-from time import sleep
 from rclpy.node import Node
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
@@ -12,6 +11,8 @@ class Calibration(Node):
     """
     Class to calibrate a camera with OpenCV and a chessboard
     """
+
+    path = os.path.dirname(__file__)
 
     def __init__(self, chessboard_size: tuple = (9,7)):
 
@@ -28,7 +29,6 @@ class Calibration(Node):
 
         # Chessboard parameters
         self.chessboard_size = chessboard_size  # Number of inner corners on the board (width x height)
-        self.path = os.path.dirname(__file__)
         
         # Prepare 3D object points
         self.objp = np.zeros((np.prod(self.chessboard_size), 3), dtype=np.float32)
@@ -43,7 +43,7 @@ class Calibration(Node):
         if self.cont == 10:
 
             self.photos += 1
-            cv2.imwrite(f"{self.path}/dataset/chessboard{self.photos}.jpg", img)
+            cv2.imwrite(f"{Calibration.path}/dataset/chessboard{self.photos}.jpg", img)
             self.get_logger().info(f"Saving photo number {self.photos}")
             self.cont = 0
 
@@ -55,8 +55,6 @@ class Calibration(Node):
 
         self.cont += 1
 
-            
-
     def run_photos(self):
         self.get_logger().info("Taking photos to dataset")
         self.cont = 1
@@ -66,7 +64,7 @@ class Calibration(Node):
 
     def __find_corners(self, show_result: bool):
 
-        list_of_image_files = glob.glob(f'{self.path}/dataset/*.jpg')
+        list_of_image_files = glob.glob(f'{Calibration.path}/dataset/*.jpg')
         imgs_detected = 0
         # Load and process each image
         for image_file in list_of_image_files:
@@ -117,7 +115,7 @@ class Calibration(Node):
         Functions to write or overwrite the calibration and distortion matrices files
         """
 
-        with open(f"{self.path}/camera_matrix.txt", "w") as matrix:
+        with open(f"{Calibration.path}/camera_matrix.txt", "w") as matrix:
 
             for i in range (len(self.calibration_matrix)):
                 for j in range(len(self.calibration_matrix[i])):
@@ -128,16 +126,30 @@ class Calibration(Node):
                 if i != len(self.calibration_matrix) - 1:
                     matrix.write("\n")
 
-        with open(f"{self.path}/camera_distortion.txt", "w") as distortion:
+        with open(f"{Calibration.path}/camera_distortion.txt", "w") as distortion:
             for i in range (len(self.distortion_list)):
                 distortion.write(str(self.distortion_list[i]))
                 if i != len(self.distortion_list) - 1:
                     distortion.write(",")
 
+    @classmethod
+    def get_camera_matrix_distortion(cls)-> tuple[list, list]:
+
+        """
+        Class method to get the camera matrix and distortion coefficients from .txt files.
+
+        Use this function only if you are sure that calibration is complete and the files exist.
+        """
+
+        camera_matrix_list = np.loadtxt(f"{cls.path}/camera_matrix.txt", delimiter=",")
+        camera_distortion_list = np.loadtxt(f"{cls.path}/camera_distortion.txt", delimiter=",")
+
+        return (camera_matrix_list, camera_distortion_list)    
+    
 
 def main():
     rclpy.init()
-    calibration = Calibration()
+    calibration = Calibration(chessboard_size=(8,6))
     calibration.run_photos()
     rclpy.spin(calibration)
     rclpy.shutdown()
