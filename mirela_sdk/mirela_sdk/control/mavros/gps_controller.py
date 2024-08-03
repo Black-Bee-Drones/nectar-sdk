@@ -67,7 +67,6 @@ class GPSController:
         :param lon_setpoint: Longitude of the setpoint
         :param precision_radius: Radius of the precision
 
-        :return: True if the drone has reached the setpoint, False otherwise
         :warning: This function stuck the code until the drone reaches the setpoint
         """
 
@@ -78,7 +77,7 @@ class GPSController:
             distance_target = geodesic(
                 (current_lat, current_long), (lat_setpoint, lon_setpoint)
             ).meters
-            self.drone.node.get_logger().info(f"Coordenate distance: {distance_target}")
+            self.drone.node.get_logger().info(f"Coordinate distance: {distance_target}")
 
             if distance_target <= precision_radius:
                 self.drone.node.get_logger().info("-- GPS setpoint reached")

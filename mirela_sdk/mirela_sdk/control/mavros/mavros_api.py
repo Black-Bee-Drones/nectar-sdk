@@ -261,6 +261,13 @@ class MavDrone(Drone):
             try:
                 result = future.result()
 
+            except Exception as e:
+                self.node.get_logger().error(
+                    f"Service call failed {service.srv_name}: {str(e)}"
+                )
+
+            finally:
+
                 if result is not None:
                     self.node.get_logger().info(
                         "\033[32;1;4m" + success_message + "\033[0m"
@@ -269,10 +276,6 @@ class MavDrone(Drone):
                     self.node.get_logger().error(
                         "\033[31;1;4m" + failure_message + "\033[0m"
                     )
-            except Exception as e:
-                self.node.get_logger().error(
-                    f"Service call failed {service.srv_name}: {str(e)}"
-                )
 
         future.add_done_callback(handle_future)
 
@@ -461,6 +464,15 @@ class MavDrone(Drone):
             f"-- Set servo {aux_out} failed",
         )
 
+    def force_correct_heading(self) -> float:
+        
+        while self.initial_heading == 0.0:
+            rclpy.spin_once(self.node)
+            self.initial_heading = self.get_heading.data
+
+        return self.initial_heading
+
+
     def offboard_gps_position(
         self,
         lat_setpoint: float = 0.0,
@@ -482,7 +494,7 @@ class MavDrone(Drone):
         """
 
         self.__startup()
-        final_heading = self.initial_heading if initial_heading else heading
+        final_heading = self.force_correct_heading() if initial_heading else heading
 
         self.node.get_logger().info(
             f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"
