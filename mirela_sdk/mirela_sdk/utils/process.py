@@ -12,12 +12,22 @@ class ProcessUtils:
         """
         try:
             # Check if the DISPLAY environment variable is set
-            return "DISPLAY" in os.environ
+            return bool(
+                subprocess.run(
+                    ["which", "gnome-terminal"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                ).returncode
+                == 0
+            )
         except Exception:
+            print("\033[94mGUI is not available\033[94m")
             return False
 
     @staticmethod
-    def start_process(command: str, name: str = "my_session") -> bool:
+    def start_process(
+        command: str, name: str = "my_session", gui: bool = False
+    ) -> bool:
         """
         Start a process with gnome-terminal if GUI is available,
         otherwise start it in a tmux session.
@@ -28,14 +38,13 @@ class ProcessUtils:
         :return: True if the process started successfully, False otherwise
         """
         print(f"-- Starting process: {command}")
-        if ProcessUtils.is_gui_available():
+        if gui and ProcessUtils.is_gui_available():
             print("\033[94mGUI is available\033[0m")
             print(f"\033[94mInitializing {name} in a new terminal")
             process = subprocess.Popen(
                 shlex.split(f'gnome-terminal -- bash -c "{command}"')
             )
         else:
-            print("\033[94mGUI is not available\033[94m")
             print("Initializing process in a tmux session")
             print(
                 f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
