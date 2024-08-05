@@ -35,7 +35,7 @@ class MavDrone(Drone):
     Class to control the mav ros drone using ROS2.
     """
 
-    def __init__(self, node: Node, mavros: bool = True) -> None:
+    def __init__(self, node: Node, mavros: bool = False) -> None:
         """
         Initialize the Mavros API
 
@@ -100,8 +100,8 @@ class MavDrone(Drone):
         self._vel_body_sub = self._create_subscriber(
             TwistStamped,
             "/mavros/local_position/velocity_body",
-            lambda data: self.__setattr__("_vel_body", data), 
-            qos_profile
+            lambda data: self.__setattr__("_vel_body", data),
+            qos_profile,
         )
 
         # Services:
@@ -110,8 +110,10 @@ class MavDrone(Drone):
         self._takeoff_srv = self._create_client(CommandTOL, "/mavros/cmd/takeoff")
         self._land_srv = self._create_client(CommandTOL, "/mavros/cmd/land")
         self._home_srv = self._create_client(CommandHome, "/mavros/cmd/set_home")
-        #self._param_set_srv = self._create_client(ParamSetV2, "/mavros/param/set")
-        self._param_set_srv = self._create_client(SetParameters, "/mavros/param/set_parameters")
+        # self._param_set_srv = self._create_client(ParamSetV2, "/mavros/param/set")
+        self._param_set_srv = self._create_client(
+            SetParameters, "/mavros/param/set_parameters"
+        )
         self._command_srv = self._create_client(CommandLong, "/mavros/cmd/command")
 
         # Publishers:
@@ -211,9 +213,9 @@ class MavDrone(Drone):
         http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
         """
         return self._heading
-    
+
     @property
-    def get_vel_body(self)-> TwistStamped:
+    def get_vel_body(self) -> TwistStamped:
         """
         Return body velocity
         TwistStamped
@@ -221,7 +223,7 @@ class MavDrone(Drone):
 
         http://docs.ros.org/en/melodic/api/geometry_msgs/html/msg/TwistStamped.html
         """
-       
+
         return self._vel_body
 
     def __startup(self):
@@ -238,6 +240,7 @@ class MavDrone(Drone):
         request: SrvTypeRequest,
         success_message: str,
         failure_message: str,
+        sync: bool = False,
     ):
         """
         Auxiliar function to call services and print result.
@@ -246,38 +249,44 @@ class MavDrone(Drone):
         :param request (Request): Service request
         :param success_message (str): Message to print if success
         :param failure_message (str): Message to print if failure
+        :param sync: If True, call the service synchronously, otherwise asynchronously.
+            Synchoronous call will block the code until the service is done
         """
 
-        while not service.wait_for_service(timeout_sec=1.0):
-            self.node.get_logger().info(
-                f"Service {service.srv_name} not available, waiting again..."
-            )
+        def _wait_for_service():
+            while not service.wait_for_service(timeout_sec=1.0):
+                self.node.get_logger().info(
+                    f"Service {service.srv_name} not available, waiting again..."
+                )
 
-        self.node.get_logger().info(f"-- Calling service {service.srv_name}")
+        def _print_result(result):
+            if result is not None:
+                self.node.get_logger().info(f"\033[32;1;4m{success_message}\033[0m")
+            else:
+                self.node.get_logger().error(f"\033[31;1;4m{failure_message}\033[0m")
 
-        future = service.call_async(request)
-
-        def handle_future(future):
+        def _handle_future(future):
             try:
                 result = future.result()
-
             except Exception as e:
                 self.node.get_logger().error(
                     f"Service call failed {service.srv_name}: {str(e)}"
                 )
-
+                result = None
             finally:
+                _print_result(result)
 
-                if result is not None:
-                    self.node.get_logger().info(
-                        "\033[32;1;4m" + success_message + "\033[0m"
-                    )
-                else:
-                    self.node.get_logger().error(
-                        "\033[31;1;4m" + failure_message + "\033[0m"
-                    )
+        _wait_for_service()
+        self.node.get_logger().info(
+            f"-- Calling service {service.srv_name} | Sync: {sync}"
+        )
 
-        future.add_done_callback(handle_future)
+        if sync:
+            result = service.call(request)
+            _print_result(result)
+        else:
+            future = service.call_async(request)
+            future.add_done_callback(_handle_future)
 
     def geofence(self, coords: list[tuple[float, float]]):
         """
@@ -421,7 +430,12 @@ class MavDrone(Drone):
             f"-- Set {param_id} failed",
         )
 
-    def rtl(self, rtl_alt: int = 10, precision_landing: bool = False, aruco_target: int = 800):
+    def rtl(
+        self,
+        rtl_alt: int = 10,
+        precision_landing: bool = False,
+        aruco_target: int = 800,
+    ):
         """
         Send return to launch command.
 
@@ -432,7 +446,7 @@ class MavDrone(Drone):
         ----------
         param rtl_alt (int): altitude in meters to rtl mode
         param precisionland (bool): run precision_landing when the drone start the land or not
-        param aruco_target (int): the ArUco marker id to do the precision landing 
+        param aruco_target (int): the ArUco marker id to do the precision landing
         """
 
         param_value = Int64()
@@ -465,13 +479,12 @@ class MavDrone(Drone):
         )
 
     def force_correct_heading(self) -> float:
-        
+
         while self.initial_heading == 0.0:
             rclpy.spin_once(self.node)
             self.initial_heading = self.get_heading.data
 
         return self.initial_heading
-
 
     def offboard_gps_position(
         self,
@@ -480,7 +493,7 @@ class MavDrone(Drone):
         alt_setpoint: float = 0.0,
         heading: float = 0.0,
         precision_radius: float = 0.0,
-        initial_heading: bool = False
+        initial_heading: bool = False,
     ):
         """
         Move sending a GPS coordinate setpoint
