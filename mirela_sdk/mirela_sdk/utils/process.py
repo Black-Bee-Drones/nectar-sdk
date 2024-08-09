@@ -38,13 +38,37 @@ class ProcessUtils:
         :return: True if the process started successfully, False otherwise
         """
         print(f"-- Starting process: {command}")
+
         if gui and ProcessUtils.is_gui_available():
             print("\033[94mGUI is available\033[0m")
-            print(f"\033[94mInitializing {name} in a new terminal")
+            print(f"\033[94mInitializing {name} in a new terminal\033[0m")
             process = subprocess.Popen(
                 shlex.split(f'gnome-terminal -- bash -c "{command}"')
             )
         else:
+            # Check if the tmux session exists
+            check_session = subprocess.Popen(
+                shlex.split(f"tmux has-session -t {name}"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            _, stderr = check_session.communicate()
+
+            if check_session.returncode == 0:
+                # Session exists, so kill it
+                print(f"\033[93mSession {name} already exists. Killing it...\033[0m")
+                subprocess.Popen(shlex.split(f"tmux kill-session -t {name}")).wait()
+                print(f"\033[93mSession {name} killed successfully.\033[0m")
+            else:
+                if b"no server running" in stderr:
+                    print(
+                        f"\033[93mNo tmux server running, starting a new session.\033[0m"
+                    )
+                else:
+                    print(
+                        f"\033[93mNo existing session named {name}, starting a new one.\033[0m"
+                    )
+
             print("Initializing process in a tmux session")
             print(
                 f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
