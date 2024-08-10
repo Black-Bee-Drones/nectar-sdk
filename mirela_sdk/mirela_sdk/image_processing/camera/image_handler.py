@@ -163,26 +163,29 @@ class ImageHandler:
         Clean up the image handler
         """
 
-        self.node.get_logger().info("Image Handler Shutting down")
-        self.cleaned = True
-        if self.image_source == "webcam":
-            self.cap.release()
-            self.node.destroy_timer(self.webcam_timer)
+        if not self.cleaned:
+            print("Image Handler Shutting down")
+            self.cleaned = True
+            if self.image_source == "webcam":
+                self.cap.release()
+                self.node.destroy_timer(self.webcam_timer)
 
-        elif self.image_source == "oakd":
-            self.oakd.clean()
-            self.node.destroy_timer(self.oakd_timer)
+            elif self.image_source == "oakd":
+                self.oakd.clean()
+                self.node.destroy_timer(self.oakd_timer)
 
-        elif os.path.isfile(self.image_source):
-            self.node.destroy_timer(self.image_timer)
+            elif os.path.isfile(self.image_source):
+                self.node.destroy_timer(self.image_timer)
+            else:
+                self.node.destroy_subscription(self.image_sub)
+
+            if self.show_result is not None:
+                try:
+                    cv2.destroyWindow(self.show_result)
+                except Exception as e:
+                    self.node.get_logger().warning(str(e))
         else:
-            self.node.destroy_subscription(self.image_sub)
-
-        if self.show_result is not None:
-            try:
-                cv2.destroyWindow(self.show_result)
-            except Exception as e:
-                self.node.get_logger().warning(str(e))
+            print("Image Handler already cleaned up")
 
     def __del__(self):
         if not self.cleaned:

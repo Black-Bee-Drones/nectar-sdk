@@ -3,6 +3,8 @@
 import rclpy
 from rclpy.node import Node
 
+import sys
+
 from math import degrees
 
 from mirela_sdk.image_processing.aruco.aruco_detect import Aruco
@@ -24,7 +26,6 @@ class ArucoNode(Node):
         self.image_source = self.get_parameter("image_source").value
         self.marker_dict = self.get_parameter("marker_dict").value
         self.tag_size = self.get_parameter("tag_size").value
-        print(self.image_source)
 
         self.aruco_pose_estimate = ArucoTransforms()
 
@@ -59,6 +60,11 @@ class ArucoNode(Node):
 
             self.pose_estime_pub.publish(self.aruco_pose_estimate)
 
+    def cleanup(self):
+        self.img_handler.cleanup()
+        print("Shutting down aruco node")
+        self.destroy_publisher(self.pose_estime_pub)
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
@@ -66,9 +72,12 @@ def main(args=None) -> None:
     # Instantiate the line detection node
     node = ArucoNode()
 
-    rclpy.spin(node)
-
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.cleanup()
+        node.destroy_node()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
