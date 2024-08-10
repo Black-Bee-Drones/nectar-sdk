@@ -91,3 +91,55 @@ class ProcessUtils:
         else:
             print(f"\033[92mStarted {name} successfully\033[0m")
             return True
+
+    @staticmethod
+    def has_process(name: str = "my_session") -> bool:
+        """
+        Check if a process started in a tmux session exists
+
+        :param name: The name of the tmux session
+        """
+        print(f"-- Checking process: {name}")
+
+        # Check if the tmux session exists
+        check_session = subprocess.Popen(
+            shlex.split(f"tmux has-session -t {name}"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        _, stderr = check_session.communicate()
+
+        if check_session.returncode == 0:
+            print(f"\033[93mSession {name} exists.\033[0m")
+            return True
+        else:
+            print(f"\033[91mSession {name} does not exist.\033[0m")
+            return False
+
+    @staticmethod
+    def kill_process(name: str = "my_session") -> bool:
+        """
+        Kill a process started in a tmux session
+
+        :param name: The name of the tmux session
+        """
+        print(f"-- Killing process: {name}")
+
+        # Check if the tmux session exists
+        result = ProcessUtils.has_process(name)
+
+        if result:
+            print(f"\033[93mKilling session {name}\033[0m")
+            process = subprocess.Popen(
+                shlex.split(f"tmux kill-session -t {name}"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            _, stderr = process.communicate()
+
+            if process.returncode != 0:
+                print(f"\033[91mError killing {name}: {process.returncode}\033[0m")
+                return False
+            else:
+                print(f"\033[92mKilled {name} successfully\033[0m")
+                return True
