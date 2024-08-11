@@ -60,7 +60,7 @@ class OakdCam:
         #seleciono a câmera rgb:
         cam.setBoardSocket(self.boardSocket)
         #setar resolução:
-        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_4_K)
         #setar tamanho
         cam.setPreviewSize(960, 540)
 
