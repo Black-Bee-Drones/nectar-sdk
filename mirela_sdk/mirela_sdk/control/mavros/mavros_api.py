@@ -338,6 +338,7 @@ class MavDrone(Drone):
         """
         Send command to arm the drone.
         """
+        self.__startup()
         self.set_mode("GUIDED")
         req = CommandBool.Request()
         req.value = True
@@ -506,7 +507,6 @@ class MavDrone(Drone):
         :param initial_heading (bool): True for keep initial heading value, False for value passed
         """
 
-        self.__startup()
         final_heading = self.force_correct_heading() if initial_heading else heading
 
         self.node.get_logger().info(
