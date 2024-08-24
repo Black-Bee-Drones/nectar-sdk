@@ -230,9 +230,24 @@ class MavDrone(Drone):
         """
         Get initial values for the drone state, gps, altitude and heading.
         """
-        rclpy.spin_once(self.node)
+        self.force_correct_altitude()
+        self.force_correct_heading()
+
+
+    def force_correct_altitude(self):
         self.initial_altitude = self.get_gps.altitude
-        self.initial_heading = self.get_heading.data
+
+        while self.initial_altitude == 0.0:
+            self.initial_altitude = self.get_gps.altitude
+            rclpy.spin_once(self.node)
+
+    def force_correct_heading(self) -> float:
+
+        while self.initial_heading == 0.0:
+            rclpy.spin_once(self.node)
+            self.initial_heading = self.get_heading.data
+
+        return self.initial_heading
 
     def _call_service(
         self,
@@ -479,13 +494,6 @@ class MavDrone(Drone):
             f"-- Set servo {aux_out} failed",
         )
 
-    def force_correct_heading(self) -> float:
-
-        while self.initial_heading == 0.0:
-            rclpy.spin_once(self.node)
-            self.initial_heading = self.get_heading.data
-
-        return self.initial_heading
 
     def offboard_gps_position(
         self,
