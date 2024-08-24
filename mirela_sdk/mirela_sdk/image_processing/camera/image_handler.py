@@ -164,7 +164,7 @@ class ImageHandler:
         """
 
         if not self.cleaned:
-            print("Image Handler Shutting down")
+            self.node.get_logger().info("Image Handler Shutting Down")
             self.cleaned = True
             if self.image_source == "webcam":
                 self.cap.release()
