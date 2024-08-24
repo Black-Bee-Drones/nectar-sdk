@@ -3,7 +3,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32
 from time import sleep
 
-from mirela_sdk.control.pid.controller import Controller
+from mirela_sdk.control.pid import PIDController
 
 
 class ExampleSystem(Node):
@@ -28,7 +28,7 @@ class ExampleSystem(Node):
         self._decel_force: float = 0.0
         self._control_effort: float = 0.0
 
-        self.controller = Controller(
+        self.controller = PIDController(
             self,
             "example_system",
             5.0,

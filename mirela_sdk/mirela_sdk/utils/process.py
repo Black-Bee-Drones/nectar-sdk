@@ -47,49 +47,29 @@ class ProcessUtils:
             )
         else:
             # Check if the tmux session exists
-            check_session = subprocess.Popen(
-                shlex.split(f"tmux has-session -t {name}"),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            _, stderr = check_session.communicate()
+            if ProcessUtils.kill_process(name):
 
-            if check_session.returncode == 0:
-                # Session exists, so kill it
-                print(f"\033[93mSession {name} already exists. Killing it...\033[0m")
-                subprocess.Popen(shlex.split(f"tmux kill-session -t {name}")).wait()
-                print(f"\033[93mSession {name} killed successfully.\033[0m")
-            else:
-                if b"no server running" in stderr:
-                    print(
-                        f"\033[93mNo tmux server running, starting a new session.\033[0m"
-                    )
-                else:
-                    print(
-                        f"\033[93mNo existing session named {name}, starting a new one.\033[0m"
-                    )
+                print("Initializing process in a tmux session")
+                print(
+                    f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
+                )
+                process = subprocess.Popen(
+                    shlex.split(f'tmux new-session -d -s {name} "{command}"'),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
 
-            print("Initializing process in a tmux session")
-            print(
-                f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
-            )
-            process = subprocess.Popen(
-                shlex.split(f'tmux new-session -d -s {name} "{command}"'),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
-        sleep(1.5)
+            sleep(1.5)
 
         # Wait for the process to finish
         stdout, stderr = process.communicate()
 
         # Check for any errors
         if process.returncode != 0:
-            print(f"\033[91mError starting {name}: {process.returncode}\033[0m")
+            print(f"\033[91m-- Error starting {name}: {process.returncode}\033[0m")
             return False
         else:
-            print(f"\033[92mStarted {name} successfully\033[0m")
+            print(f"\033[92m-- Started {name} successfully\033[0m")
             return True
 
     @staticmethod
@@ -110,10 +90,10 @@ class ProcessUtils:
         _, stderr = check_session.communicate()
 
         if check_session.returncode == 0:
-            print(f"\033[93mSession {name} exists.\033[0m")
+            print(f"\033[93m-- Session {name} exists.\033[0m")
             return True
         else:
-            print(f"\033[91mSession {name} does not exist.\033[0m")
+            print(f"\033[91m-- Session {name} does not exist.\033[0m")
             return False
 
     @staticmethod
@@ -126,9 +106,7 @@ class ProcessUtils:
         print(f"-- Killing process: {name}")
 
         # Check if the tmux session exists
-        result = ProcessUtils.has_process(name)
-
-        if result:
+        if ProcessUtils.has_process(name):
             print(f"\033[93mKilling session {name}\033[0m")
             process = subprocess.Popen(
                 shlex.split(f"tmux kill-session -t {name}"),
@@ -138,8 +116,11 @@ class ProcessUtils:
             _, stderr = process.communicate()
 
             if process.returncode != 0:
-                print(f"\033[91mError killing {name}: {process.returncode}\033[0m")
+                print(f"\033[91m-- Error killing {name}: {process.returncode}\033[0m")
                 return False
             else:
-                print(f"\033[92mKilled {name} successfully\033[0m")
+                print(f"\033[92m-- Killed {name} successfully\033[0m")
                 return True
+        else:
+            print(f"\033[91m-- Session {name} does not exist.\033[0m")
+            return True

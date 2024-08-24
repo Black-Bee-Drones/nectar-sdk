@@ -8,7 +8,7 @@ from time import sleep
 from mirela_sdk.utils.process import ProcessUtils
 
 
-class Controller:
+class PIDController:
     """
     A class to create a Python interface for the ROS2 PID control library, enabling the configuration
     and initialization of nodes, and management of topics and parameters programmatically.
