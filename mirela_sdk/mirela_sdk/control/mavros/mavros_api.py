@@ -242,7 +242,8 @@ class MavDrone(Drone):
             rclpy.spin_once(self.node)
 
     def force_correct_heading(self) -> float:
-
+        self.initial_heading = self.get_heading.data
+        
         while self.initial_heading == 0.0:
             rclpy.spin_once(self.node)
             self.initial_heading = self.get_heading.data
