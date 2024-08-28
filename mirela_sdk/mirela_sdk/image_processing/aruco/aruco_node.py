@@ -5,8 +5,6 @@ from rclpy.node import Node
 
 import sys
 
-from math import degrees
-
 from mirela_sdk.image_processing.aruco.aruco_detect import Aruco
 from mirela_interfaces.msg import ArucoTransforms
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
@@ -45,7 +43,7 @@ class ArucoNode(Node):
         Process the image and perform aruco pose estimate
         """
 
-        id, Tvect, Rvect = self.aruco.pose_estimate(img, True)
+        id, Tvect, yaw = self.aruco.pose_estimate(img, True)
 
         if id is not None:
             # Publish line setpoints
@@ -56,7 +54,7 @@ class ArucoNode(Node):
             self.aruco_pose_estimate.translation.y = Tvect[1]
             self.aruco_pose_estimate.translation.z = Tvect[2]
 
-            self.aruco_pose_estimate.yaw.data = degrees(Rvect[1])
+            self.aruco_pose_estimate.yaw.data = yaw
 
             self.pose_estime_pub.publish(self.aruco_pose_estimate)
 
