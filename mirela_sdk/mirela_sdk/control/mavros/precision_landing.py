@@ -20,7 +20,7 @@ class PrecisionLanding:
         :param drone (Drone): the mav being used in the application
         :param node (rclpy.node.Node): the ROS node to get the ArucoTransforms messages from topic
         :param delivery (bool): True to execute the package delivery, False to execute the landing. 
-        :param aruco_target(int): the aruco id target to execute the process. 
+        :param aruco_target (int): the aruco id target to execute the process. 
         """
 
         self.state = 0
@@ -30,13 +30,12 @@ class PrecisionLanding:
         self.kp_linear = 0.2
         self.kl = 0.05
         self.drone = drone
-        self.flag = False
-        self.final_flag = False
+        self.mode_flag = False
 
         self._aruco_sub = self.node.create_subscription(ArucoTransforms, "/aruco/pose_estimate", 
                                                    self.__sub_aruco_callback, 10)
         
-        ProcessUtils.start_process("ros2 run mirela_sdk aruco_node --ros-args -p image_source:='webcam'", 
+        ProcessUtils.start_process("ros2 run mirela_sdk aruco_node --ros-args -p image_source:='oakd'", 
                                    "precision_landing")
 
 
@@ -53,9 +52,13 @@ class PrecisionLanding:
         altitude = self.drone.get_rng_alt.range
         landing_area = self.kl*altitude
 
-        if altitude < 8  and not self.flag:
-            self.flag = True
+        if altitude < 8  and not self.mode_flag:
+            self.mode_flag = True
             self.drone.set_mode('GUIDED')
+
+        elif not self.mode_flag:
+            self.drone.offboard_velocity(0.0, 0.0, -0.4, 0.0, False)  
+
 
         if(self.aruco_id == self.aruco_target):
             if altitude > 1.0 and self.flag:
@@ -75,16 +78,20 @@ class PrecisionLanding:
                     self.state = 0
                     
         
-            elif altitude <= 1.0 and not self.delivery:
-                if not self.final_flag:
-                    self.drone.land()
-                    self.final_flag = True
+            elif altitude <= 1.0:
+                self.drone.land()
 
-            elif altitude <= 1.0 and self.delivery:
-                if not self.final_flag:
+                if self.delivery:
+                    self.drone.delay(5.0)
                     self.drone.do_servo(3.0, 982.0)
+                    self.drone.do_servo(4.0, 2006.0)
+                    self.drone.delay(3.0)
+                    self.drone.arm_takeoff(10.0)
+                    self.drone.delay(5.0)
                     self.drone.rtl(10, False)
-                    self.final_flag = True
+                    
+                ProcessUtils.kill_process("precision_landing")
+                self.node.destroy_subscription(self._aruco_sub)
 
         else:
             self.node.get_logger().info(f"\033[31mAruco id {self.aruco_target} not detected\033[m")   
