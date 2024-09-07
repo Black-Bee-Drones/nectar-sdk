@@ -53,20 +53,20 @@ class ImageCalculus:
         distance_in_meters = module * gdr  # gdr should be given as meters/pixel
 
         # Calculating the angle formed by the reference and a line made by the two points: unit radians
-        argument = math.atan2(pixel2_height - centerpixel_height, pixel2_width - centerpixel_width)
+        # In this calculation, the "height" is inverted because opencv's orientation is oposite to ours.
+        argument = math.atan2(centerpixel_height - pixel2_height, pixel2_width - centerpixel_width)
 
-        # 'alpha' is used as a reference angle; it is an arithmetic trick because the argument 
-        # and the bearing use different references: unit radians
-        alpha = math.radians(90) + bearing_radians - argument
-
+        # 'alpha' in the angle of the vector from the point1 to the point2; 
+        alpha = bearing_radians - argument
+        
         latitude_distance = distance_in_meters * math.sin(alpha) # unit -> meters
         longitude_distance = distance_in_meters * math.cos(alpha) # unit -> meters
-
+        
         # Convert latitude and longitude from radians to degrees
         lat, lon = map(math.radians, [centerpixel_lat, centerpixel_lon])
 
         # Calculate the new coordinate point
-        newlat = lat + (latitude_distance / (earth_radius * 1000))
+        newlat = lat - (latitude_distance / (earth_radius * 1000))
         newlon = lon + (longitude_distance / (earth_radius * 1000))
 
         # Convert back to degrees
