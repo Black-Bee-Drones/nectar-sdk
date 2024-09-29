@@ -117,10 +117,11 @@ class OakdCam:
                  blocking: bool = True) -> dai.DataOutputQueue:
         """
         Gets an output queue corresponding to stream name. If it doesn't exist it throws
-        param stream_name (str): the stream name for output queue
-        param maxSize (int): max size of the queue
-        param blocking (bool): True for block the return of the function until 
-        arrive new msgs in the queue. False for otherwise
+
+        :param stream_name (str): the stream name for output queue
+        :param maxSize (int): max size of the queue
+        :param blocking (bool): True for block the return of the function until 
+         arrive new msgs in the queue. False for otherwise
         """
 
         return self.device.getOutputQueue(stream_name, maxSize, blocking = blocking)
@@ -129,7 +130,8 @@ class OakdCam:
     def getFrame(self, queue: dai.DataOutputQueue) -> cv2.Mat:
         """
         Gets the cv frame from output queue wich is depthai.ImgFrame
-        param queue (dai.DataOutputQueue): the output queue from getQueue function
+        
+        :param queue (dai.DataOutputQueue): the output queue from getQueue function
         """
 
         return queue.get().getCvFrame()
@@ -165,7 +167,7 @@ class OakdCam:
         """
         Set the stereo output requested
 
-        param stream_names list[str]: stream names to configure
+        :param stream_names list[str]: stream names to configure
         ("disparity", "depth", "rectifiedLeft", "rectifiedRight", "syncedLeft", "syncedRight")
         """
         
@@ -204,9 +206,9 @@ class OakdCam:
         """
         Enable the IMU sensor requested
         
-        param sensor_name (str): the sensor name to enable ("accelerometer", "gyroscope")
-        param rate (int): the measurement frequency, in Hz, of the sensor. Max frequencies: 
-        accelerometer -> 512 Hz, gyroscope -> 1000 Hz
+        :param sensor_name (str): the sensor name to enable ("accelerometer", "gyroscope")
+        :param rate (int): the measurement frequency, in Hz, of the sensor. Max frequencies: 
+         accelerometer -> 512 Hz, gyroscope -> 1000 Hz
         """
 
         sensor = self.imu_sensors.get(sensor_name, (None, None))
