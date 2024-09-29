@@ -171,8 +171,15 @@ class ImageHandler:
                 self.node.destroy_timer(self.webcam_timer)
 
             elif self.image_source == "oakd":
-                self.oakd.clean()
-                self.node.destroy_timer(self.oakd_timer)
+
+                try:
+                    self.oakd.clean()
+
+                except AttributeError as ex:
+                    self.node.get_logger().error(f"{ex}")
+                    
+                else: 
+                    self.node.destroy_timer(self.oakd_timer)
 
             elif os.path.isfile(self.image_source):
                 self.node.destroy_timer(self.image_timer)
