@@ -45,6 +45,8 @@ class OakdCam:
             else:
                 camera = self.mono_camera()
 
+        else: raise ValueError("Invalid value for cam_num")
+
         return camera
 
 
@@ -181,6 +183,9 @@ class OakdCam:
                 xout.setStreamName(stream_name)
                 link(xout.input)
 
+            else: raise ValueError("Invalid stream name value")
+
+      
     def create_imu(self) -> dai.node.IMU:
 
         """
@@ -211,11 +216,13 @@ class OakdCam:
          accelerometer -> 512 Hz, gyroscope -> 1000 Hz
         """
 
-        sensor = self.imu_sensors.get(sensor_name, (None, None))
+        sensor = self.imu_sensors.get(sensor_name, None)
         
         if sensor:
 
             self.imu.enableIMUSensor(sensor, rate)
+
+        else: raise ValueError("Invalid sensor name value")
 
 
     def clean(self):
