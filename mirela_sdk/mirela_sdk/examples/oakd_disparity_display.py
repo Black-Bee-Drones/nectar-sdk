@@ -9,10 +9,8 @@ oakd.configure_stereo_node_output(["disparity", "rectifiedLeft", "rectifiedRight
 oakd.init_cam()
 
 disp_queue = oakd.getQueue("disparity", maxSize = 1, blocking = False)
-rectifiedLeftQueue = oakd.getQueue("rectifiedLeft", 
-                                           maxSize=1, blocking=False)
-rectifiedRightQueue=oakd.getQueue("rectifiedRight", 
-                                           maxSize=1, blocking=False)
+rectifiedLeftQueue = oakd.getQueue("rectifiedLeft", maxSize=1, blocking=False)
+rectifiedRightQueue=oakd.getQueue("rectifiedRight", maxSize=1, blocking=False)
 
 #Valor para multiplicar a matriz de disparidade para que os valores fiquem entre 0 e 255
 disparityMultiplier = 255 / stereo.initialConfig.getMaxDisparity()
