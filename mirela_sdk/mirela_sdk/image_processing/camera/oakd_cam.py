@@ -12,6 +12,28 @@ class OakdCam:
 
     """
     
+    AUTOEXPOSURE =      "autoexposure"
+    ANTI_BANDING_MODE = "anti_banding_mode"
+    AWB_MODE =          "awb_mode"
+    EFFECT_MODE =       "effect_mode"
+    AUTOFOCUS =         "autofocus"
+    AE_COMP =           "ae_comp"
+    BRIGHTNESS =        "brightness"
+    CONTRAST =          "contrast"
+    SATURATION =        "saturation"
+    SHARPNESS =         "sharpness"
+    LUMA_DENOISE =      "luma_denoise"
+    CHROMA_DENOISE =    "chroma_denoise"
+    EXPOSURE_TIME =     "exposure_time"
+    SENSITIVITY_ISO =   "sensitivity_iso"
+    FOCUS =             "focus"
+    WHITE_BALANCE =     "white_balance"
+    AWB_MODE =          "awb_mode"
+    ANTI_BANDING_MODE = "anti_banding_mode"
+    EFFECT_MODE =       "effect_mode"
+    AUTOFOCUS =         "autofocus"
+
+    
     def __init__(self)-> None:
         """
         OakdCam constructor: initializes the pipeline and configures cameras with their 
@@ -256,23 +278,23 @@ class OakdCam:
         """
 
         self.ctrl = dai.CameraControl()
-        self.__controls = {"autoexposure":      self.ctrl.setAutoExposureEnable,
-                           "anti_banding_mode": self.ctrl.setAntiBandingMode,
-                           "awb_mode":          self.ctrl.setAutoWhiteBalanceMode,
-                           "effect_mode":       self.ctrl.setEffectMode,
-                           "autofocus":         self.ctrl.setAutoFocusMode, 
-                           "ae_comp":           self.ctrl.setAutoExposureCompensation,
-                           "brightness":        self.ctrl.setBrightness, 
-                           "contrast":          self.ctrl.setContrast, 
-                           "saturation":        self.ctrl.setSaturation, 
-                           "sharpness":         self.ctrl.setSharpness, 
-                           "luma_denoise":      self.ctrl.setLumaDenoise, 
-                           "chroma_denoise":    self.ctrl.setChromaDenoise}
+        self.__controls = {OakdCam.AUTOEXPOSURE:      self.ctrl.setAutoExposureEnable,
+                           OakdCam.ANTI_BANDING_MODE: self.ctrl.setAntiBandingMode,
+                           OakdCam.AWB_MODE:          self.ctrl.setAutoWhiteBalanceMode,
+                           OakdCam.EFFECT_MODE:       self.ctrl.setEffectMode,
+                           OakdCam.AUTOFOCUS:         self.ctrl.setAutoFocusMode, 
+                           OakdCam.AE_COMP:           self.ctrl.setAutoExposureCompensation,
+                           OakdCam.BRIGHTNESS:        self.ctrl.setBrightness, 
+                           OakdCam.CONTRAST:          self.ctrl.setContrast, 
+                           OakdCam.SATURATION:        self.ctrl.setSaturation, 
+                           OakdCam.SHARPNESS:         self.ctrl.setSharpness, 
+                           OakdCam.LUMA_DENOISE:      self.ctrl.setLumaDenoise, 
+                           OakdCam.CHROMA_DENOISE:    self.ctrl.setChromaDenoise}
         
-        self.__manual_controls = {"exposure_time":   self.ctrl.setManualExposure,
-                                  "sensitivity_iso": self.ctrl.setManualExposure, 
-                                  "focus":           self.ctrl.setManualFocus, 
-                                  "white_balance":   self.ctrl.setManualWhiteBalance}
+        self.__manual_controls = {OakdCam.EXPOSURE_TIME:   self.ctrl.setManualExposure,
+                                  OakdCam.SENSITIVITY_ISO: self.ctrl.setManualExposure, 
+                                  OakdCam.FOCUS:           self.ctrl.setManualFocus, 
+                                  OakdCam.WHITE_BALANCE:   self.ctrl.setManualWhiteBalance}
         
         self.__range_control = ["brightness", "contrast", "saturation", "ae_comp", 
                                 "sharpness", "luma_denoise", "chroma_denoise"]
@@ -290,10 +312,10 @@ class OakdCam:
         auto_focus_mode = cycle([item for name, item in vars(dai.CameraControl.AutoFocusMode).items()
                             if name.isupper()])
         
-        self.__control_modes = {"awb_mode":          awb_mode,
-                                "anti_banding_mode": anti_banding_mode, 
-                                "effect_mode":       effect_mode, 
-                                "autofocus":         auto_focus_mode}
+        self.__control_modes = {OakdCam.AWB_MODE:          awb_mode,
+                                OakdCam.ANTI_BANDING_MODE: anti_banding_mode, 
+                                OakdCam.EFFECT_MODE:       effect_mode, 
+                                OakdCam.AUTOFOCUS:         auto_focus_mode}
 
 
     def __enable_binary_controls(self, 
