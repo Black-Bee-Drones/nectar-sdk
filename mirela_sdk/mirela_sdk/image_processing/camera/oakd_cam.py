@@ -108,7 +108,7 @@ class OakdCam:
         #setar tamanho
         cam.setIspScale(1,2) # 540P
         #setar fps
-        cam.setFps(30)
+        cam.setFps(35)
         
         #criar link de comunicação da camera com o host(pc)
         xOut_rgb = self.pipeline.createXLinkOut()
@@ -302,26 +302,24 @@ class OakdCam:
         self.__expTime = 20000
         self.__sensIso = 800
         
-        awb_mode = cycle([item for name, item in vars(dai.CameraControl.AutoWhiteBalanceMode).items() 
-                            if name.isupper()])
-        anti_banding_mode = cycle([item for name, item in vars(dai.CameraControl.AntiBandingMode).items() 
-                            if name.isupper()])
-        effect_mode = cycle([item for name, item in vars(dai.CameraControl.EffectMode).items() 
-                            if name.isupper()])
+        self.awb_modes =     {name: mode for name, mode in vars(self.ctrl.AutoWhiteBalanceMode).items() 
+                              if name.isupper()}
+        self.antband_modes = {name: mode for name, mode in vars(self.ctrl.AntiBandingMode).items() 
+                              if name.isupper()}
+        self.effect_modes =  {name: mode for name, mode in vars(self.ctrl.EffectMode).items() 
+                              if name.isupper()}
+        self.aut_foc_modes = {name: mode for name, mode in vars(self.ctrl.AutoFocusMode).items() 
+                              if name.isupper()}
         
-        auto_focus_mode = cycle([item for name, item in vars(dai.CameraControl.AutoFocusMode).items()
-                            if name.isupper()])
-        
-        self.__control_modes = {OakdCam.AWB_MODE:          awb_mode,
-                                OakdCam.ANTI_BANDING_MODE: anti_banding_mode, 
-                                OakdCam.EFFECT_MODE:       effect_mode, 
-                                OakdCam.AUTOFOCUS:         auto_focus_mode}
+        self.__control_modes = [OakdCam.AWB_MODE, 
+                                OakdCam.ANTI_BANDING_MODE, 
+                                OakdCam.EFFECT_MODE,       
+                                OakdCam.AUTOFOCUS]
 
 
     def __enable_binary_controls(self, 
                                  control: str, 
                                  action: callable, 
-                                 interface: bool, 
                                  mode = None) -> str:
 
         """
@@ -329,7 +327,6 @@ class OakdCam:
 
         :param control (str): Name of the control to call the function.
         :param action (callable): the function to be call for set the changes.
-        :param interface (bool): True if the control will be done in an interface
         :param mode (control_mode): The mode connected to control passed (from dai.CameraControl..) 
 
          Return the result of the set operation as str
@@ -339,8 +336,7 @@ class OakdCam:
             action()
             return "Autoexposure enabled"
 
-        elif control in [item for item, _ in self.__control_modes.items()]:
-            mode = next(self.__control_modes.get(control)) if interface else mode
+        elif control in self.__control_modes:
             action(mode)
             return f"{control.capitalize()}: {mode}"
         
@@ -354,14 +350,15 @@ class OakdCam:
         :param control (str): the control name to check the correct range.
         :param value (int): the value to check if it is within the range.
         """
-        
-        if control == "ae_comp": return max(-9, min(9, value))
-        elif control in ["brightness", "contrast", "saturation"]: return max(-10, min(10, value))
-        elif control == "sensitivity_iso": return max(100, min(1600, value))
-        elif control == "exposure_time": return max(1, min(33000, value))
-        elif control == "focus": return max(0, min(255, value))
-        elif control == "white_balance": return max(1000, min(12000, value))
-        else: return max(0, min(4, value))
+
+        match(control):
+            case "ae_comp":return max(-9, min(9, value))
+            case "brightness" | "contrast" | "saturation": return max(-10, min(10, value))
+            case "sensitivity_iso": return max(100, min(1600, value))
+            case "exposure_time": return max(1, min(33000, value))
+            case "focus": return max(0, min(255, value))
+            case "white_balance": return max(1000, min(12000, value))
+            case _: return max(0, min(4, value))
 
 
     def get_control_input_queue(self) -> dai.DataInputQueue:
@@ -376,7 +373,6 @@ class OakdCam:
     def set_control(self, 
                      control: str, 
                      value: int = 0, 
-                     interface: bool = False,
                      mode = None) -> str:
 
         """
@@ -388,7 +384,6 @@ class OakdCam:
         :param value (int): the integer value to set the control. Range -10 .. +10 for brightness, 
          contrast and saturation. For sharpness, luma denoise and chroma denoise the range is 0 .. +4
          For ae_comp -9 .. +9. Use this parameter if the control parameter needs an integer value.
-        :param interface (bool): True if the control will be done in an interface
         :param mode (control_mode): The mode connected to control passed (from dai.CameraControl..)
 
          Return the result as a string
@@ -405,7 +400,7 @@ class OakdCam:
                 action(value)
 
             else:
-                result = self.__enable_binary_controls(control, action, interface, mode)
+                result = self.__enable_binary_controls(control, action, mode)
 
             self.get_control_input_queue().send(self.ctrl)
             return result
@@ -421,7 +416,9 @@ class OakdCam:
         :param manual_control (str): The manual control name to set the value. ( exposure_time 
          | sensitivity_iso | focus | white_balance)
         :param value (int): the integer value to set. 
-            Accept range: 
+
+            Accepted range: 
+            
                 exposure_time -> 1 .. 33000 
                 sensitivity_iso -> 100 .. 1600 
                 focus -> 0 .. 255 
