@@ -1,6 +1,5 @@
 import depthai as dai
 import cv2
-from itertools import cycle
 
 class OakdCam:
 
@@ -28,10 +27,6 @@ class OakdCam:
     SENSITIVITY_ISO =   "sensitivity_iso"
     FOCUS =             "focus"
     WHITE_BALANCE =     "white_balance"
-    AWB_MODE =          "awb_mode"
-    ANTI_BANDING_MODE = "anti_banding_mode"
-    EFFECT_MODE =       "effect_mode"
-    AUTOFOCUS =         "autofocus"
 
     
     def __init__(self)-> None:
@@ -425,7 +420,7 @@ class OakdCam:
                 white_balance -> 1000 .. 12000
 
 
-        Return the resulta as a string
+        Return the result as a string
         """
 
         action = self.__manual_controls.get(manual_control, None)
