@@ -8,7 +8,9 @@ from mirela_sdk.image_processing.camera.calibration.calibration import Calibrati
 
 class Aruco:
 
-    def __init__(self, marker_dict, tag_size):
+    def __init__(self, 
+                 marker_dict: int,
+                 tag_size: int):
 
         self._total_markers = 1000
         self.camera_matrix, self.camera_distortion = (
@@ -39,7 +41,9 @@ class Aruco:
     def tag_size(self):
         return self._tag_size
 
-    def aruco_config(self, marker_dict, tag_size):
+    def aruco_config(self, 
+                     marker_dict: int,
+                     tag_size: int):
         """
         Configure the aruco marker
 
@@ -137,18 +141,16 @@ class Aruco:
                 bbox, self.tag_size, self.camera_matrix, self.camera_distortion
             )
 
-            try:
-                if draw:
-                    cv2.drawFrameAxes(
-                        img,
-                        self.camera_matrix,
-                        self.camera_distortion,
-                        rvecs,
-                        tvecs,
-                        self.tag_size,
-                    )
-            except Exception as ex:
-                print("Something wrong is not correct: ", ex)
+            if draw:
+                cv2.drawFrameAxes(
+                    img,
+                    self.camera_matrix,
+                    self.camera_distortion,
+                    rvecs[0],
+                    tvecs[0],
+                    self.tag_size,
+                )
+
 
             translation_vector = tvecs[0][0][0:3]
             rotation_vector = rvecs[0][0][0:3]
