@@ -28,7 +28,7 @@ class PrecisionLanding:
         self.delivery = delivery
         self.aruco_target = aruco_target
         self.kp_linear = 0.2
-        self.kl = 0.05
+        self.kl = 0.04
         self.drone = drone
         self.mode_flag = False
 
@@ -61,7 +61,7 @@ class PrecisionLanding:
 
 
         if(self.aruco_id == self.aruco_target):
-            if altitude > 1.0 and self.flag:
+            if altitude > 1.2 and self.flag:
         
                 if (self.state == 0):
                     if (abs(self.translation_x) > landing_area) or (abs(self.translation_y) > landing_area):
@@ -78,7 +78,7 @@ class PrecisionLanding:
                     self.state = 0
                     
         
-            elif altitude <= 1.0:
+            elif altitude <= 1.2:
                 self.drone.land()
 
                 if self.delivery:

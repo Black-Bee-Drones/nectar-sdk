@@ -29,12 +29,18 @@ class GPSController:
 
         if not current_position.within(self.fence):
             self.drone.node.get_logger().info("-- Geofence breach")
-            self.drone.kill_motors()
+            self.drone.rtl() if self.rtl else self.drone.kill_motors()
             rclpy.shutdown()
 
-    def geofence(self, coords: list[tuple[float, float]]):
+    def geofence(self, coords: list[tuple[float, float]], rtl: bool):
+
         """
         Set a geofence for the drone
+        Create a polygon geofence, to get motors killed
+
+        :param coords: List of lat ant long coordinates
+
+            exemple: [(-22.41517936,-45.44797450),(-22.41493884,-45.44779748),(-22.41532317,-45.44727176)]
 
         Create a timer to check the position of the drone, for every 0.01 seconds
 
@@ -42,7 +48,10 @@ class GPSController:
 
         :param coords: List of coordinates to define the geofence
         """
-        self.drone.node.get_logger().info("Geofence function")
+
+        self.rtl = rtl
+        self.drone.set_mode("GUIDED")
+        self.drone.node.get_logger().info("-- Geofence created")
         self.fence = Polygon(coords)
         self.drone.node.create_timer(0.01, self._check_position)
 

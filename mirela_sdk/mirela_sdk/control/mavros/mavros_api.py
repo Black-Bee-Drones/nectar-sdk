@@ -3,7 +3,7 @@ from rclpy.node import Node
 from rclpy.client import Client
 from rclpy.service import SrvTypeRequest
 from rclpy.duration import Duration
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from rclpy.qos import qos_profile_sensor_data
 
 from mavros_msgs.srv import (
     SetMode,
@@ -55,19 +55,12 @@ class MavDrone(Drone):
 
         self.gps_controller = GPSController(self)
 
-        # Alterando política de qualidade de serviço para receber dados gps:
-        qos_profile = QoSProfile(
-            depth=10,
-            durability=QoSDurabilityPolicy.VOLATILE,
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-        )
-
         # Subscribers:
         self._gps_sub = self._create_subscriber(
             NavSatFix,
             "/mavros/global_position/global",
             lambda data: self.__setattr__("_gps", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
         self._state_sub = self._create_subscriber(
             State, "/mavros/state", lambda data: self.__setattr__("_state", data), 10
@@ -82,26 +75,26 @@ class MavDrone(Drone):
             Float64,
             "/mavros/global_position/rel_alt",
             lambda data: self.__setattr__("_rel_alt", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
         self._local_pos_sub = self._create_subscriber(
             PoseStamped,
             "/mavros/local_position/pose",
             lambda data: self.__setattr__("_local_pos", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
         self._hdg_sub = self._create_subscriber(
             Float64,
             "/mavros/global_position/compass_hdg",
             lambda data: self.__setattr__("_heading", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
 
         self._vel_body_sub = self._create_subscriber(
             TwistStamped,
             "/mavros/local_position/velocity_body",
             lambda data: self.__setattr__("_vel_body", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
 
         # Services:
@@ -303,17 +296,6 @@ class MavDrone(Drone):
         else:
             future = service.call_async(request)
             future.add_done_callback(_handle_future)
-
-    def geofence(self, coords: list[tuple[float, float]]):
-        """
-        Create a polygon geofence, to get motors killed.
-
-        :param coords: List of lat ant long coordinates
-
-            exemple: [(-22.41517936,-45.44797450),(-22.41493884,-45.44779748),(-22.41532317,-45.44727176)]
-        """
-        self.node.get_logger().info("-- Geofence created")
-        self.gps_controller.geofence(coords)
 
     def kill_motors(self):
         """
