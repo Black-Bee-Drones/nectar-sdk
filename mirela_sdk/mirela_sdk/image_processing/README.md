@@ -40,6 +40,140 @@ Provides a collection of tools for image processing, focusing on color detection
 * **`color/color_calibration_node.py`:** ROS 2 node for calibrating color detection parameters using trackbars.
 * **`color/color_calibration.txt`:**  Stores calibrated HSV color ranges for different object categories.
 
-## Usage Examples 💡
+## Package Structure 📂
 
-Check the individual file descriptions and docstrings for specific usage examples.  A more comprehensive set of examples and tutorials will be added in the future.
+* **`image_processing`**: Contains the core image processing logic.
+    * **`camera`**:  Camera handling and calibration functionalities.
+        * **`__init__.py`**: Exposes `ImageHandler`, `OakdCam`, and calibration classes.
+        * **`image_handler.py`**: Image acquisition from various sources.
+        * **`oakd_cam.py`**: OAK-D camera management.
+        * **`calibration`**: Camera calibration logic.
+            * **`calibration.py`**: Camera calibration class.
+            * **`camera_distortion.txt`**: Camera distortion parameters.
+            * **`camera_matrix.txt`**: Camera intrinsic matrix.
+            * **`dataset`**: Chessboard dataset for calibration.
+        * **`image_calculus.py`**: Image calculus for GPS calculations.
+    * **`aruco`**: ArUco marker detection and pose estimation.
+        * **`__init__.py`**: Exposes `Aruco` and `ArucoNode`.
+        * **`aruco_detect.py`**: ArUco marker detection class.
+        * **`aruco_node.py`**: ROS 2 node for ArUco detection.
+    * **`color`**: Color detection and calibration.
+        * **`__init__.py`**: Exposes `ColorDetector` and `ColorCalibrationNode`.
+        * **`color_detector.py`**: Color detection class.
+        * **`color_calibration_node.py`**: ROS 2 node for color calibration.
+        * **`color_calibration.txt`**: Calibrated HSV color ranges.
+
+## **Key Classes**
+
+### **Camera Handling**
+- **`ImageHandler`**: Manages image acquisition from various sources.
+- **`OakdCam`**: Controls an OAK-D camera for advanced image processing.
+
+### **Camera Calibration**
+- **`Calibration`**: Calibrates a camera using a chessboard pattern.
+- **`ImageCalculus`**: Converts pixel locations to GPS coordinates.
+
+### **ArUco Marker Detection**
+- **`Aruco`**: Detects and estimates the pose of ArUco markers.
+- **`ArucoNode`**: ROS 2 node for ArUco marker detection.
+
+### **Color Detection**
+- **`ColorDetector`**: Detects and tracks colors in images.
+- **`ColorCalibrationNode`**: ROS 2 node for color calibration.
+
+### **Image Processing Utilities**
+- **`ImageCalculus`**: Converts pixel locations to GPS coordinates.
+
+## Class Diagram 
+
+```mermaid
+classDiagram
+    %% Classes base abstratas
+    class Node {
+        <<abstract>>
+    }
+    
+
+    %% Classes de processamento de imagem que herdam de Node
+    Node <|-- ColorCalibrationNode
+    Node <|-- ArucoNode
+    Node <|-- Calibration
+
+    class ColorCalibrationNode {
+        +__init__(image_source)
+        +process(img)
+    }
+
+    class ArucoNode {
+        +__init__()
+        +process_image(img)
+        +cleanup()
+    }
+
+    class Calibration {
+        +__init__(chessboard_size)
+        -__photo(img)
+        +run_photos()
+        -__find_corners(show_result)
+        +calibrate(show_corners)
+        +overwrite_matrices()
+        +get_camera_matrix_distortion(cls)
+    }
+
+    %% Classes utilitárias de processamento de imagem
+    class ColorDetector {
+        +__init__(mode, color)
+        +hsv_color()
+        +hsv_color(values)
+        +empty(a)
+        +initTrackbars()
+        +getTrackValues()
+        +filterColor(img)
+        +getColorHSV(color_name)
+        +saveColorHSV()
+    }
+
+    class Aruco {
+        +__init__(marker_dict, tag_size)
+        +total_markers()
+        +marker_dict()
+        +tag_size()
+        +aruco_config(marker_dict, tag_size)
+        +detect(img, draw)
+        +calculateYawFromCorners(bbox)
+        +pose_estimate(img, draw)
+    }
+
+    class ImageHandler {
+        +__init__(node, image_source, image_processing_callback, show_result, cap, oakd_num)
+        +_configure_ros_topic()
+        +process()
+        +ros_topic_callback(data)
+        +webcam_callback()
+        +oakd_callback()
+        +run()
+        +cleanup()
+        +__del__()
+    }
+
+    class ImageCalculus {
+        +find_coordinate(centerpixel_lon, centerpixel_lat, centerpixel_height, centerpixel_width, pixel2_height, pixel2_width, gdr, bearing)
+    }
+
+    class OakdCam {
+        +__init__()
+        +setup_camera(cam_num, link_out, set_control)
+        +init_cam(full_speed)
+        +color_camera()
+        +mono_camera()
+        +getQueue_CamType()
+        +getFrame(queue)
+        +get_stereo_depth()
+        +configure_stereo_node_output(stream_names)
+    }
+
+    %% Relacionamentos
+    ColorDetector -- ColorCalibrationNode
+    Aruco -- ArucoNode
+    OakdCam -- ImageHandler
+```
