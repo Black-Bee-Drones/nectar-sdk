@@ -6,3 +6,9 @@ __pycache__/
 *.pyo
 *.pyd
 *.jpg
+log/
+log/*
+.venv/*
+.venv
+.venv
+
