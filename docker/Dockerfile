@@ -44,10 +44,10 @@ RUN echo "🐍 Instalando dependências Python do mirela-sdk..." && \
 
 # Configurar ambiente ROS2
 RUN echo "🔧 Configurando ambiente ROS2 no bashrc..." && \
-    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc \
-    echo "source /home/ros2_ws/install/local_setup.bash" >> ~/.bashrc \
-    echo "source /usr/share/colcon_cd/function/colcon_cd.sh" >> ~/.bashrc \
-    echo "export ROS_DOMAIN_ID=14" >> ~/.bashrc \
+    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
+    echo "source /home/ros2_ws/install/local_setup.bash" >> ~/.bashrc && \
+    echo "source /usr/share/colcon_cd/function/colcon_cd.sh" >> ~/.bashrc && \
+    echo "export ROS_DOMAIN_ID=14" >> ~/.bashrc && \
     echo "export _colcon_cd_root=/opt/ros/humble/" >> ~/.bashrc
 
 # Build do workspace
