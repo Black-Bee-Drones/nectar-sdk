@@ -1,7 +1,6 @@
 import rclpy
 from rclpy.node import Node
 from time import sleep
-import threading
 from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
