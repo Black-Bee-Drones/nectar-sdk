@@ -51,3 +51,67 @@ This file implements the main GUI application, allowing users to select the dron
 * **Key Methods:** `__init__`, `ros_spin`, `start_gui`, `init_widgets`, `progress_bar`, `update_drone`, `main`.
 
 
+## Class Diagram 
+
+```mermaid
+classDiagram
+    %% Classes base abstratas
+    class Node {
+        <<abstract>>
+    }
+    class ABC {
+        <<abstract>>
+    }
+    
+    %% Classes base de drone
+    class DroneComponent {
+        <<abstract>>
+        +__init__(root, node)
+        +init_drone_config()
+        +check_driver_status()
+        +update_state(on)
+        +create_specific_widgets()
+        +create_common_widgets()
+        +create_widgets()
+        +on_off()
+        +move(pitch, roll, thrust, yaw)
+        +move_velocity(velocity)
+        +moviment_control(key_pressed, hold)
+        +cleanup()
+    }
+
+    %% Interface gráfica
+    class DroneGUI {
+        +drone_strategy: DroneComponent
+        +drone_type: string
+        +__init__()
+        +ros_spin()
+        +start_gui()
+        +init_widgets()
+        +progress_bar(callback)
+        +update_drone(event)
+    }
+
+    %% DroneComponent children
+    class BebopComponent {
+        +__init__(root, node)
+        +update_state(on)
+        +create_specific_widgets()
+        +move_velocity(velocity)
+        +open_flip_menu()
+    }
+    class MavComponent {
+        +__init__(root, node)
+        +update_state(on)
+        +on_off()
+        +create_specific_widgets()
+        +move_velocity(velocity)
+    }
+
+    %% Herança e composição
+    Node <|-- DroneGUI
+    ABC <|-- DroneComponent
+    DroneComponent <|-- BebopComponent
+    DroneComponent <|-- MavComponent
+    DroneGUI o-- DroneComponent : drone_strategy
+```
