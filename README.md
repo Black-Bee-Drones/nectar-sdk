@@ -1,7 +1,21 @@
 # Mirela SDK: Your Drone Control and Computer Vision Toolkit 
 
-[![Ros Badge](https://img.shields.io/badge/-ROS-22314E?style=for-the-badge&labelColor=black&logo=ros&)](#) [![Opencv Badge](https://img.shields.io/badge/-Opencv-5C3EE8?style=for-the-badge&labelColor=black&logo=opencv&logoColor=5C3EE8)](#) [![Nodejs Badge](https://img.shields.io/badge/-Python-3776AB?style=for-the-badge&labelColor=black&logo=python&logoColor=3776AB)](#)
-[![Docker Badge](https://img.shields.io/badge/-Docker-2496ED?style=for-the-badge&labelColor=black&logo=docker&logoColor=2496ED)](#)
+<table>
+  <tr>
+    <td>
+      <a href="#"><img src="https://img.shields.io/badge/-ROS-22314E?style=for-the-badge&labelColor=black&logo=ros&" alt="Ros Badge" /></a>
+    </td>
+    <td>
+      <a href="#"><img src="https://img.shields.io/badge/-Opencv-5C3EE8?style=for-the-badge&labelColor=black&logo=opencv&logoColor=5C3EE8" alt="Opencv Badge" /></a>
+    </td>
+    <td>
+      <a href="#"><img src="https://img.shields.io/badge/-Python-3776AB?style=for-the-badge&labelColor=black&logo=python&logoColor=3776AB" alt="Python Badge" /></a>
+    </td>
+    <td>
+      <a href="#"><img src="https://img.shields.io/badge/-Docker-2496ED?style=for-the-badge&labelColor=black&logo=docker&logoColor=2496ED" alt="Docker Badge" /></a>
+    </td>
+  </tr>
+</table>
 
 
 <img align="left" width="25" height="25" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
