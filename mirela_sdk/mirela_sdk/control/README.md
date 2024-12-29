@@ -6,33 +6,62 @@ This package provides an extensible framework for controlling drones via ROS2, w
 
 ## **Basic Usage Example**
 
-### **Controlling a Parrot Bebop 2**
+- **Controlling a Parrot Bebop 2**
 ```python
-from bebop.bebop_api import Bebop
+import time
+from mirela_sdk.control.bebop import Bebop
 from rclpy.node import Node
 
 class MyBebopNode(Node):
     def __init__(self):
         super().__init__('my_bebop_node')
-        self.bebop = Bebop(node=self, driver=True)  # Initialize Bebop with this node
+        # Inicializa o drone Bebop com driver
+        self.bebop = Bebop(node=self, driver=True)
     
-    def run(self):
-        self.bebop.takeoff()  # Command the drone to take off
-        # Add more commands here, such as:
-        # self.bebop.offboard_velocity(0.5, 0.0, 0.0, 0.0)
-        # self.bebop.flip("forward")
-        self.bebop.land()  # Land the drone
+    def run_basic_mission(self):
+        # Decola o drone
+        self.bebop.takeoff()
+        # Espera 5 segundos
+        time.sleep(5)
+        # Move para frente por 2 segundos
+        self.bebop.offboard_velocity_timer(
+            linear_x=0.5,  # m/s para frente
+            linear_y=0.0,  # m/s lateral
+            linear_z=0.0,  # m/s vertical
+            angular_z=0.0, # rad/s rotação
+            pub_rate=10,   # Hz
+            time=2         # segundos
+        )
+        # Pousa o drone
+        self.bebop.land()
+```
 
-# Run your ROS2 node
-import rclpy
-def main(args=None):
-    rclpy.init(args=args)
-    node = MyBebopNode()
-    try:
-        node.run()
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+- **Controlling a MAVROS-Enabled Drone**
+```python
+from rclpy.node import Node
+from mirela_sdk.control.mavros import MavDrone
+
+class MyMavNode(Node):
+    def __init__(self):
+        super().__init__('my_mav_node')
+        # Inicializa o drone MAV
+        self.mav = MavDrone(node=self, mavros=True)
+    
+    def run_gps_mission(self):
+        # Arma e decola para 10 metros
+        self.mav.arm()
+        self.mav.takeoff(takeoff_alt=10.0)
+        
+        # Vai para uma posição GPS
+        self.mav.offboard_gps_position(
+            lat_setpoint=-27.123456,  
+            lon_setpoint=-48.123456,  
+            alt_setpoint=10.0,        
+            heading=0.0,         
+            precision_radius=1.0
+        )
+        # Pousa
+        self.mav.land()
 ```
 
 ---
