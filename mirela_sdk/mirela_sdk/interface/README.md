@@ -3,7 +3,7 @@
 This hosts a Python-based Graphical User Interface (GUI) built with `Tkinter` for controlling drones using ROS 2 and the `mirela_sdk`.  It offers a flexible architecture for supporting different drone types, currently including Parrot Bebop and MAV (Micro Air Vehicle) drones.
 
 
-[![Watch the video](../../../assets/gui_demo.png)](../../../assets/gui_demo.mp4)
+https://github.com/user-attachments/assets/6bdf06b6-89f3-4474-a76e-3c20b0dd950f
 
 ## Features
 
