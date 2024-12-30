@@ -336,7 +336,7 @@ class MavDrone(Drone):
         """
         Send command to arm the drone.
         """
-        self.__startup()
+        # self.__startup()
         self.set_mode("GUIDED")
         req = CommandBool.Request()
         req.value = True
