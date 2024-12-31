@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 
 import pathlib
 import numpy as np
-import threading
 from time import sleep
 from rclpy.node import Node
 from rclpy.timer import Timer
@@ -31,8 +30,10 @@ class DroneComponent(ABC):
             "yellow": "#FDCE01",
             "black": "#1E1E1E",
             "white": "#FEFEFE",
+            "red": "#A60305",
         }
         self.action = np.zeros(4)
+        self.ground_reference = False
 
         self.imgs_dir = pathlib.Path(__file__).parent.resolve()
 
@@ -48,11 +49,21 @@ class DroneComponent(ABC):
         """
         Method to initialize drone configuration.
         """
+        if self.check_timer is not None:
+            self.check_timer.cancel()
+            self.node.destroy_timer(self.check_timer)
+            self.check_timer = None
+
+        self._config_on_old = False
+        self._config_on_new = False
+        self._config_state_change = None
+        self.state_history = [False] * 3
+
         self.drone.init_drivers()
 
     def check_driver_status(self):
         if self.drone:
-            self._config_on_new = self.drone.check_driver_node()
+            self._config_on_new = self.drone.check_driver_node(0.0)
 
             if self._config_on_old != self._config_on_new:
                 self._config_state_change = self._config_on_new
@@ -67,7 +78,9 @@ class DroneComponent(ABC):
                 and self.state_history[0] == self._config_state_change
             ):
                 self.update_state(self._config_on_new)
+                self.node.get_logger().info(f"On" if self._config_on_new else "Off")
                 self._config_state_change = None
+                self.state_history = [self._config_on_new] * 3
 
     def update_state(self, on: bool):
         if on:
@@ -244,7 +257,7 @@ class DroneComponent(ABC):
             self.frame_teclas,
             text="OFF",
             fg="white",
-            bg="#A60305",
+            bg=self.colors["red"],
             width=2,
             command=self.on_off,
             state=DISABLED,
@@ -404,17 +417,12 @@ class DroneComponent(ABC):
         Create all widgets for the drone component.
         """
 
-        if self.check_timer is not None:
-            self.check_timer.cancel()
-            self.node.destroy_timer(self.check_timer)
-            self.check_timer = None
-
         self.create_common_widgets()
         self.create_specific_widgets()
 
-        sleep(0.5)
+        sleep(1.0)
         self.check_timer = self.node.create_timer(
-            2.0, self.check_driver_status, clock=self.node.get_clock()
+            1.0, self.check_driver_status, clock=self.node.get_clock()
         )
 
     def on_off(self):
@@ -458,7 +466,14 @@ class DroneComponent(ABC):
         velocity = control_velocity * velocity
 
         if self.on:
-            self.drone.offboard_velocity(*velocity)
+            self.move_velocity(velocity)
+
+    @abstractmethod
+    def move_velocity(self, velocity: np.ndarray) -> None:
+        """
+        Move the drone based on the specified velocities.
+        """
+        raise NotImplementedError("Method not implemented")
 
     def moviment_control(self, key_pressed, hold):
         """
@@ -476,6 +491,8 @@ class DroneComponent(ABC):
         self.move(*self.action)
 
     def cleanup(self) -> None:
-        self.check_timer.cancel()
-        self.node.destroy_timer(self.check_timer)
+        if self.check_timer is not None:
+            self.check_timer.cancel()
+            self.node.destroy_timer(self.check_timer)
+            self.check_timer = None
         self.drone.cleanup()

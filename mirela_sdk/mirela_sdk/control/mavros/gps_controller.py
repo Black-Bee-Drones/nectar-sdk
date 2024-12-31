@@ -1,25 +1,26 @@
 import os
 import rclpy
+import numpy as np
 from rclpy.node import Node
 from pygeodesy.geoids import GeoidPGM
 from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic
 from math import radians
 from tf_transformations import quaternion_from_euler
-from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
-from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class GPSController:
 
-    def __init__(self, drone: MavDrone):
+    def __init__(self, drone):
         self.drone = drone
         self._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
         self.photo_count: int = 0
         self.path = os.path.dirname(os.path.abspath(__file__))
 
+
     def _check_position(self):
+        rclpy.spin_once(self.drone.node)
         current_lat: float = self.drone.get_gps.latitude
         current_long: float = self.drone.get_gps.longitude
         print(f"Lat: {current_lat} Long: {current_long}")
@@ -28,12 +29,18 @@ class GPSController:
 
         if not current_position.within(self.fence):
             self.drone.node.get_logger().info("-- Geofence breach")
-            self.drone.kill_motors()
+            self.drone.rtl() if self.rtl else self.drone.kill_motors()
             rclpy.shutdown()
 
-    def geofence(self, coords: list[tuple[float, float]]):
+    def geofence(self, coords: list[tuple[float, float]], rtl: bool):
+
         """
         Set a geofence for the drone
+        Create a polygon geofence, to get motors killed
+
+        :param coords: List of lat ant long coordinates
+
+            exemple: [(-22.41517936,-45.44797450),(-22.41493884,-45.44779748),(-22.41532317,-45.44727176)]
 
         Create a timer to check the position of the drone, for every 0.01 seconds
 
@@ -41,9 +48,12 @@ class GPSController:
 
         :param coords: List of coordinates to define the geofence
         """
-        self.drone.node.get_logger().info("Geofence function")
+
+        self.rtl = rtl
+        self.drone.set_mode("GUIDED")
+        self.drone.node.get_logger().info("-- Geofence created")
         self.fence = Polygon(coords)
-        Node.create_timer(self.drone, 0.01, self._check_position)
+        self.drone.node.create_timer(0.01, self._check_position)
 
     def geoid_height(self, lat, lon):
         """
@@ -67,17 +77,17 @@ class GPSController:
         :param lon_setpoint: Longitude of the setpoint
         :param precision_radius: Radius of the precision
 
-        :return: True if the drone has reached the setpoint, False otherwise
         :warning: This function stuck the code until the drone reaches the setpoint
         """
 
-        while True:
+        while rclpy.ok():
+            rclpy.spin_once(self.drone.node)
             current_lat = self.drone.get_gps.latitude
             current_long = self.drone.get_gps.longitude
             distance_target = geodesic(
                 (current_lat, current_long), (lat_setpoint, lon_setpoint)
             ).meters
-            print(distance_target)
+            self.drone.node.get_logger().info(f"Coordinate distance: {distance_target}")
 
             if distance_target <= precision_radius:
                 self.drone.node.get_logger().info("-- GPS setpoint reached")
@@ -121,3 +131,52 @@ class GPSController:
         self.drone.gps_pub.publish(gps_setpoint)
 
         self.gps_reach(lat_setpoint, lon_setpoint, precision_radius)
+
+    def calculate_bearing(self, lat: float, lon: float):
+
+        """
+        Calculate the bearing/heading towards a given a coordinate.
+        The lat and lon represents the latitude and longitude of the desired coordinate to compare with the drone one.
+        This method returns an angle in degrees, in which zero corresponds to North, and increases clock-wise.
+        
+        :param lat (float): setpoint latitude (degrees)
+        :param lon (float): setpoint longitute (degrees)
+        """
+        lat, lon = map(np.radians, [lat, lon])
+        lat1 = self.drone.get_gps.latitude
+        lon1 = self.drone.get_gps.longitude
+
+        lat1, lon1 = map(np.radians, [lat1, lon1])
+
+        dlon = lon - lon1
+
+        x = np.sin(dlon) * np.cos(lat)
+        y = np.cos(lat1) * np.sin(lat) - (np.sin(lat1) * np.cos(lat) * np.cos(dlon))
+        bearing = np.arctan2(x, y)
+
+        bearing = np.degrees(bearing)
+
+        bearing = (bearing + 360) % 360
+
+        return bearing
+    
+
+    def haversine_distance(self, lat: float, lon: float):
+        """
+        This method returns the distance between the drone and a given GPS coordinate, in meters.
+
+        :param lat (float): setpoint's latitude in degrees
+        :param lon (float): setpoint's longitude in degrees
+        """
+        lat, lon = map(np.radians, [lat, lon])
+
+        lat1 = self.drone.get_gps.latitude
+        lon1 = self.drone.get_gps.longitude
+
+        lat1, lon1 = map(np.radians, [lat1, lon1])
+        dlat = lat1 - lat
+        dlon = lon1 - lon
+
+        a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat) * np.sin(dlon / 2) ** 2
+        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+        return c * 6371000 # angle in the great-cricle between the two point times earth's radius

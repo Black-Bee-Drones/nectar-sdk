@@ -1,6 +1,7 @@
 from rclpy.node import Node
 
 from tkinter import *
+import numpy as np
 
 from mirela_sdk.interface.drone_component import DroneComponent
 from mirela_sdk.control.bebop.bebop_api import Bebop
@@ -73,6 +74,12 @@ class BebopComponent(DroneComponent):
             state=DISABLED,
         )
         self.btn_flip.grid(row=2, column=0)
+
+    def move_velocity(self, velocity: np.ndarray) -> None:
+        """
+        Move the drone based on the specified velocities.
+        """
+        self.drone.offboard_velocity(*velocity)
 
     def open_flip_menu(self):
         """

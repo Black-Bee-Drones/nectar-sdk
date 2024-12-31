@@ -5,3 +5,10 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.jpg
+log/
+log/*
+.venv/*
+.venv
+.venv
+

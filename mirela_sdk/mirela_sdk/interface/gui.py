@@ -21,6 +21,7 @@ class DroneGUI(Node):
         super().__init__("drone_gui")
 
         self.drone_strategy: DroneComponent = None
+        self.drone_type = "Bebop"
         self.colors = {
             "yellow": "#FDCE01",
             "black": "#1E1E1E",
@@ -73,19 +74,8 @@ class DroneGUI(Node):
         posy = h_screen / 2 - h / 2
         self.root.geometry("%dx%d+%d+%d" % (w, h, posx, posy))
 
-        self.combobox = ttk.Combobox(
-            self.root,
-            values=["Bebop", "Mavros"],
-            width=10,
-            justify="center",
-            style="TCombobox",
-        )
-        self.combobox.bind("<<ComboboxSelected>>", self.update_drone)
-        self.combobox.grid(row=0, column=0)
-        self.combobox.current(0)
-
-        self.update_drone(None)
         self.init_widgets()
+        self.update_drone(None)
 
         self.ros_thread = threading.Thread(target=self.ros_spin)
         self.ros_thread.start()

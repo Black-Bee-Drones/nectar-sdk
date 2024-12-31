@@ -1,15 +1,9 @@
 import rclpy
-import subprocess
-import shlex
-import threading
-import queue
-
 from rclpy.node import Node
 from rclpy.client import Client
 from rclpy.service import SrvTypeRequest
 from rclpy.duration import Duration
-from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from rclpy.qos import qos_profile_sensor_data
 
 from mavros_msgs.srv import (
     SetMode,
@@ -17,21 +11,23 @@ from mavros_msgs.srv import (
     CommandTOL,
     CommandHome,
     CommandLong,
-    ParamSet,
+    ParamSetV2,
 )
 from time import sleep
 
-from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget, ParamValue
+from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget
 from std_msgs.msg import Float64, Int64
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import TwistStamped, PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range
+from rcl_interfaces.msg import Parameter
+from rcl_interfaces.srv import SetParameters
 
 from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
-
+from mirela_sdk.utils.process import ProcessUtils
 
 
 class MavDrone(Drone):
@@ -39,7 +35,13 @@ class MavDrone(Drone):
     Class to control the mav ros drone using ROS2.
     """
 
-    def __init__(self, node: Node, mavros: bool = True) -> None:
+    def __init__(self, node: Node, mavros: bool = False) -> None:
+        """
+        Initialize the Mavros API
+
+        :param node (Node): ROS2 node to run the API
+        :param mavros (bool): True to start the mavros node
+        """
         super().__init__(node=node)
 
         # Variables:
@@ -48,30 +50,24 @@ class MavDrone(Drone):
         self._rng_alt = Range()
         self._rel_alt = Float64()
         self._local_pos = PoseStamped()
+        self._vel_body = TwistStamped()
         self._heading = Float64()
 
         self.gps_controller = GPSController(self)
-
-        # Alterando política de qualidade de serviço para receber dados gps:
-        qos_profile = QoSProfile(
-            depth=10,
-            durability=QoSDurabilityPolicy.VOLATILE,
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-        )
 
         # Subscribers:
         self._gps_sub = self._create_subscriber(
             NavSatFix,
             "/mavros/global_position/global",
             lambda data: self.__setattr__("_gps", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
         self._state_sub = self._create_subscriber(
             State, "/mavros/state", lambda data: self.__setattr__("_state", data), 10
         )
         self._rng_alt_sub = self._create_subscriber(
             Range,
-            "/mavros/distance_sensor/rangefinder_pub",
+            "/mavros/rangefinder/rangefinder",
             lambda data: self.__setattr__("_rng_alt", data),
             10,
         )
@@ -79,19 +75,26 @@ class MavDrone(Drone):
             Float64,
             "/mavros/global_position/rel_alt",
             lambda data: self.__setattr__("_rel_alt", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
         self._local_pos_sub = self._create_subscriber(
             PoseStamped,
             "/mavros/local_position/pose",
             lambda data: self.__setattr__("_local_pos", data),
-            qos_profile,
+            qos_profile_sensor_data,
         )
         self._hdg_sub = self._create_subscriber(
             Float64,
             "/mavros/global_position/compass_hdg",
             lambda data: self.__setattr__("_heading", data),
-            qos_profile,
+            qos_profile_sensor_data,
+        )
+
+        self._vel_body_sub = self._create_subscriber(
+            TwistStamped,
+            "/mavros/local_position/velocity_body",
+            lambda data: self.__setattr__("_vel_body", data),
+            qos_profile_sensor_data,
         )
 
         # Services:
@@ -100,7 +103,10 @@ class MavDrone(Drone):
         self._takeoff_srv = self._create_client(CommandTOL, "/mavros/cmd/takeoff")
         self._land_srv = self._create_client(CommandTOL, "/mavros/cmd/land")
         self._home_srv = self._create_client(CommandHome, "/mavros/cmd/set_home")
-        self._param_set_srv = self._create_client(ParamSet, "/mavros/param/set")
+        # self._param_set_srv = self._create_client(ParamSetV2, "/mavros/param/set")
+        self._param_set_srv = self._create_client(
+            SetParameters, "/mavros/param/set_parameters"
+        )
         self._command_srv = self._create_client(CommandLong, "/mavros/cmd/command")
 
         # Publishers:
@@ -116,62 +122,24 @@ class MavDrone(Drone):
 
         if mavros:
             self.init_drivers()
-            self.delay(5)
 
         self.node.get_logger().info("Mavros API initialized")
 
-    def init_drivers(self):
-        # Command to start the ros2 launch mavros apm
-        command = [
-            "ros2",
-            "launch",
-            "mavros",
-            "apm.launch",
-            "fcu_url:=serial:///dev/ttyUSB0:57600",
-        ]
+    def start_driver_node(self) -> None:
+        """
+        Start the mavros launch
+            ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:57600
+        """
 
-        # Join the list elements into a single string
-        command_str = " ".join(command)
-
-        # Start the process
-        process = subprocess.Popen(
-            shlex.split(f'gnome-terminal -- bash -c "{command_str}"')
+        # Start the ros2 launch mavros apm
+        result = ProcessUtils.start_process(
+            "ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:57600",
+            "mavros_node",
         )
+        self._driver_initialized = result
 
-        # Wait for the process to finish
-        stdout, stderr = process.communicate()
-
-        # Check for any errors
-        if process.returncode != 0:
-            print(f"\033[91mErro ao iniciar o mavros: {process.returncode}\033[0m")
-        else:
-            print(f"\033[92mMavros apm launch iniciado com sucesso\033[0m")
-            self._driver_initialized = True
-
-        sleep(1.5)
-
-        def wait_service(service):
-            while not service.wait_for_service(timeout_sec=1.0):
-                self.node.get_logger().info(
-                    f"Service {service.srv_name} not available, waiting again..."
-                )
-
-        wait_service(self._mode_srv)
-        wait_service(self._arm_srv)
-        wait_service(self._takeoff_srv)
-        wait_service(self._land_srv)
-        wait_service(self._home_srv)
-        # wait_service(self._param_set_srv)
-        wait_service(self._command_srv)
-
-        self.node.get_logger().info("Mavros services initialized")
-
-    def check_driver_node(self) -> bool:
-        # Get all node names
-        node_names = self.node.get_node_names()
-
-        # Check if the mavros node is running
-        return True if "mavros_node" in node_names else False
+    def get_driver_node_name(self) -> str:
+        return "mavros_node"
 
     @property
     def get_state(self) -> State:
@@ -239,13 +207,41 @@ class MavDrone(Drone):
         """
         return self._heading
 
-    def _startup(self):
+    @property
+    def get_vel_body(self) -> TwistStamped:
+        """
+        Return body velocity
+        TwistStamped
+        ------------
+
+        http://docs.ros.org/en/melodic/api/geometry_msgs/html/msg/TwistStamped.html
+        """
+
+        return self._vel_body
+
+    def __startup(self):
         """
         Get initial values for the drone state, gps, altitude and heading.
         """
-        self.initial_heading = self._heading.data
-        self.initial_altitude = self._gps.altitude
-        print(self.initial_altitude)
+        self.force_correct_altitude()
+        self.force_correct_heading()
+
+
+    def force_correct_altitude(self):
+        self.initial_altitude = self.get_gps.altitude
+
+        while self.initial_altitude == 0.0:
+            self.initial_altitude = self.get_gps.altitude
+            rclpy.spin_once(self.node)
+
+    def force_correct_heading(self) -> float:
+        self.initial_heading = self.get_heading.data
+        
+        while self.initial_heading == 0.0:
+            rclpy.spin_once(self.node)
+            self.initial_heading = self.get_heading.data
+
+        return self.initial_heading
 
     def _call_service(
         self,
@@ -253,6 +249,7 @@ class MavDrone(Drone):
         request: SrvTypeRequest,
         success_message: str,
         failure_message: str,
+        sync: bool = False,
     ):
         """
         Auxiliar function to call services and print result.
@@ -261,41 +258,44 @@ class MavDrone(Drone):
         :param request (Request): Service request
         :param success_message (str): Message to print if success
         :param failure_message (str): Message to print if failure
+        :param sync: If True, call the service synchronously, otherwise asynchronously.
+            Synchoronous call will block the code until the service is done
         """
 
-        self.node.get_logger().info(f"-- Calling service {service.srv_name}")
+        def _wait_for_service():
+            while not service.wait_for_service(timeout_sec=1.0):
+                self.node.get_logger().info(
+                    f"Service {service.srv_name} not available, waiting again..."
+                )
 
-        future = service.call_async(request)
+        def _print_result(result):
+            if result is not None:
+                self.node.get_logger().info(f"\033[32;1;4m{success_message}\033[0m")
+            else:
+                self.node.get_logger().error(f"\033[31;1;4m{failure_message}\033[0m")
 
-        def handle_future(future):
+        def _handle_future(future):
             try:
                 result = future.result()
-
-                if result is not None:
-                    self.node.get_logger().info(
-                        "\033[32;1;4m" + success_message + "\033[0m"
-                    )
-                else:
-                    self.node.get_logger().error(
-                        "\033[31;1;4m" + failure_message + "\033[0m"
-                    )
             except Exception as e:
                 self.node.get_logger().error(
                     f"Service call failed {service.srv_name}: {str(e)}"
                 )
+                result = None
+            finally:
+                _print_result(result)
 
-        future.add_done_callback(handle_future)
+        _wait_for_service()
+        self.node.get_logger().info(
+            f"-- Calling service {service.srv_name} | Sync: {sync}"
+        )
 
-    def geofence(self, coords: list[tuple[float, float]]):
-        """
-        Create a polygon geofence, to get motors killed.
-
-        :param coords: List of lat ant long coordinates
-
-            exemple: [(-22.41517936,-45.44797450),(-22.41493884,-45.44779748),(-22.41532317,-45.44727176)]
-        """
-        self.node.get_logger().info("-- Geofence created")
-        self.gps_controller.geofence(coords)
+        if sync:
+            result = service.call(request)
+            _print_result(result)
+        else:
+            future = service.call_async(request)
+            future.add_done_callback(_handle_future)
 
     def kill_motors(self):
         """
@@ -336,6 +336,7 @@ class MavDrone(Drone):
         """
         Send command to arm the drone.
         """
+        # self.__startup()
         self.set_mode("GUIDED")
         req = CommandBool.Request()
         req.value = True
@@ -391,6 +392,8 @@ class MavDrone(Drone):
         :param longitude (float): Longitude in degrees
         :param altitude (float): Altitude in meters
         """
+
+        rclpy.spin_once(self.node)
         req = CommandHome.Request()
         req.current_gps = current_gps
         req.yaw = yaw
@@ -408,16 +411,17 @@ class MavDrone(Drone):
         """
         Set a parameter value
 
-        :param param_id (str): Parameter id
+        :param param_id (str): Parameter name
         :param param_value (Int64): Parameter value
         """
 
-        value = ParamValue()
-        value.integer = param_value.data
+        value = Parameter()
+        value.name = param_id
+        value.value.integer_value = param_value.data
 
-        request = ParamSet.Request()
-        request.param_id = param_id
-        request.value = value
+        request = SetParameters.Request()
+        request.parameters.append(value)
+
         self._call_service(
             self._param_set_srv,
             request,
@@ -425,42 +429,46 @@ class MavDrone(Drone):
             f"-- Set {param_id} failed",
         )
 
-    def rtl(self, rtl_alt: int = 10, precision_landing: bool = False):
+    def rtl(
+        self,
+        rtl_alt: int = 10,
+        precision_landing: bool = False,
+        aruco_target: int = 800,
+    ):
         """
         Send return to launch command.
 
-        The copter will first rise to RTL_ALT before returning home or maintain the current 
+        The copter will first rise to RTL_ALT before returning home or maintain the current
         altitude if the current altitude is higher than RTL_ALT. The default value for RTL_ALT is 15m.
-        
+
         Parameters
         ----------
-        rtl_alt: float (m)
-
-        precisionland: bool (True or False)
+        param rtl_alt (int): altitude in meters to rtl mode
+        param precisionland (bool): run precision_landing when the drone start the land or not
+        param aruco_target (int): the ArUco marker id to do the precision landing
         """
 
         param_value = Int64()
-        param_value.data = rtl_alt*100
+        param_value.data = rtl_alt * 100
 
         self.set_param("RTL_ALT", param_value=param_value)
         self.delay(1)
         self.set_mode("rtl")
-        
+
         if precision_landing:
-            PrecisionLanding(self, self.node)
+            PrecisionLanding(self, self.node, False, aruco_target)
 
-
-    def do_servo(self, aux_out: int, pwm_value: int):
+    def do_servo(self, aux_out: float, pwm_value: float):
         """
         Send a PWM signal to moviment a servo motor connected *aux_out*
 
-        :param aux_out (int): Auxiliar port (1-6)
-        :param pwm_value (int): PWM value (usually between 1000 ~ 2000)
+        :param aux_out (float): Auxiliar port (1-6)
+        :param pwm_value (float): PWM value (usually between 1000 ~ 2000)
         """
 
         command = CommandLong.Request()
         command.command = 183
-        command.param1 = aux_out + 8
+        command.param1 = aux_out + 8.0
         command.param2 = pwm_value
         self._call_service(
             self._command_srv,
@@ -469,6 +477,7 @@ class MavDrone(Drone):
             f"-- Set servo {aux_out} failed",
         )
 
+
     def offboard_gps_position(
         self,
         lat_setpoint: float = 0.0,
@@ -476,6 +485,7 @@ class MavDrone(Drone):
         alt_setpoint: float = 0.0,
         heading: float = 0.0,
         precision_radius: float = 0.0,
+        initial_heading: bool = False,
     ):
         """
         Move sending a GPS coordinate setpoint
@@ -485,13 +495,16 @@ class MavDrone(Drone):
         :param alt_setpoint (float): Altitude setpoint (meters AGL)
         :param heading (float): Heading setpoint (degrees refered to North)
         :param precision_radius (float): Precision radius setpoint (meters)
+        :param initial_heading (bool): True for keep initial heading value, False for value passed
         """
 
+        final_heading = self.force_correct_heading() if initial_heading else heading
+
         self.node.get_logger().info(
-            f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {heading}"
+            f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"
         )
         self.gps_controller.gps_send(
-            lat_setpoint, lon_setpoint, alt_setpoint, heading, precision_radius
+            lat_setpoint, lon_setpoint, alt_setpoint, final_heading, precision_radius
         )
 
     def offboard_velocity(

@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 
-from math import degrees
+import sys
 
 from mirela_sdk.image_processing.aruco.aruco_detect import Aruco
 from mirela_interfaces.msg import ArucoTransforms
@@ -13,16 +13,17 @@ from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 class ArucoNode(Node):
     POSE_TOPIC = "/aruco/pose_estimate"
 
-    def __init__(
-        self,
-        image_source: str = "webcam",
-        marker_dict: str = "5",
-        tag_size: str = "0.2",
-    ):
+    def __init__(self):
+
         super().__init__("aruco_node")
 
-        self.marker_dict = int(marker_dict)
-        self.tag_size = float(tag_size)
+        self.declare_parameter("image_source", "webcam")
+        self.declare_parameter("marker_dict", 5)
+        self.declare_parameter("tag_size", 0.2)
+
+        self.image_source = self.get_parameter("image_source").value
+        self.marker_dict = self.get_parameter("marker_dict").value
+        self.tag_size = self.get_parameter("tag_size").value
 
         self.aruco_pose_estimate = ArucoTransforms()
 
@@ -33,7 +34,7 @@ class ArucoNode(Node):
         self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
 
         self.img_handler = ImageHandler(
-            self, image_source, self.process_image, show_result="Aruco"
+            self, self.image_source, self.process_image, show_result="Aruco"
         )
         self.img_handler.run()
 
@@ -42,7 +43,7 @@ class ArucoNode(Node):
         Process the image and perform aruco pose estimate
         """
 
-        id, Tvect, Rvect = self.aruco.pose_estimate(img, True)
+        id, Tvect, yaw = self.aruco.pose_estimate(img, True)
 
         if id is not None:
             # Publish line setpoints
@@ -53,9 +54,14 @@ class ArucoNode(Node):
             self.aruco_pose_estimate.translation.y = Tvect[1]
             self.aruco_pose_estimate.translation.z = Tvect[2]
 
-            self.aruco_pose_estimate.yaw.data = degrees(Rvect[1])
+            self.aruco_pose_estimate.yaw.data = yaw
 
             self.pose_estime_pub.publish(self.aruco_pose_estimate)
+
+    def cleanup(self):
+        self.img_handler.cleanup()
+        print("Shutting down aruco node")
+        self.destroy_publisher(self.pose_estime_pub)
 
 
 def main(args=None) -> None:
@@ -64,9 +70,12 @@ def main(args=None) -> None:
     # Instantiate the line detection node
     node = ArucoNode()
 
-    rclpy.spin(node)
-
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.cleanup()
+        node.destroy_node()
+        sys.exit(0)
 
 
 if __name__ == "__main__":

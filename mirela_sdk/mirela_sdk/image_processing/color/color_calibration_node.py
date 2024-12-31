@@ -1,19 +1,21 @@
 #!/usr/bin/env python
 import sys
-import os
 import rclpy
 from rclpy.node import Node
 import cv2
 import cvzone
 
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
-
 from mirela_sdk.image_processing.color.color_detector import ColorDetector
 
 
 class ColorCalibrationNode(Node):
-    def __init__(self, image_source: str = "webcam"):
+    def __init__(self, image_source: str = None):
         super().__init__("color_calibration_node")
+
+        if image_source is None:
+            self.declare_parameter("image_source", "/bebop/camera/image_raw")
+            image_source = self.get_parameter("image_source").value
 
         self.image_source = image_source
         self.image_handler = ImageHandler(
@@ -27,7 +29,12 @@ class ColorCalibrationNode(Node):
 
         self.image_handler.run()
 
-    def process(self, img):
+    def process(self, img) -> None:
+        """
+        Process the image to calibrate the color detection
+
+        :param img (np.array): the image to process
+        """
         try:
             if img is not None:
 
@@ -61,19 +68,16 @@ class ColorCalibrationNode(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    # Get image source (webcam or ROS topic)
-    image_source = "webcam"  # Define your image source manually
+    # Get image source (webcam or ROS topic
 
-    node = ColorCalibrationNode(image_source)
+    node = ColorCalibrationNode()
 
     try:
         # Start the color calibration process
         rclpy.spin(node)
-    except Exception as e:
-        node.get_logger().error("Node crashed: " + str(e))
-    finally:
+    except KeyboardInterrupt:
         node.destroy_node()
-        rclpy.shutdown()
+        sys.exit(0)
 
 
 if __name__ == "__main__":

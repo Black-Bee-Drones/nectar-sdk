@@ -1,14 +1,13 @@
 import rclpy
 from rclpy.node import Node
 from time import sleep
-import threading
 from mirela_sdk.control.mavros.mavros_api import MavDrone
 
 
 class TestVelocity(Node):
     def __init__(self):
         super().__init__("test_velocity")
-        self.drone = MavDrone(node=self, mavros=True)
+        self.drone = MavDrone(node=self, mavros=False)
         self.get_logger().info("Test velocity has been initialized")
         self.drone.check_driver_node()
 
@@ -51,6 +50,8 @@ def main(args=None):
 
     test_velocity.run()
 
-    # rclpy.spin(test_velocity)
+    rclpy.spin(test_velocity)
     test_velocity.destroy_node()
     rclpy.shutdown()
+
+main()
