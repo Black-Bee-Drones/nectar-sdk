@@ -14,7 +14,7 @@ class ColorCalibrationNode(Node):
         super().__init__("color_calibration_node")
 
         if image_source is None:
-            self.declare_parameter("image_source", "/bebop/camera/image_raw")
+            self.declare_parameter("image_source", "webcam")
             image_source = self.get_parameter("image_source").value
 
         self.image_source = image_source
