@@ -1,9 +1,5 @@
-# Dockerfile para ambiente ROS2 Humble com MAVROS e SDK personalizado
-
-# Base ROS2 Humble
 FROM osrf/ros:humble-desktop-full
 
-# Argumentos
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Atualização e instalação de pacotes essenciais
@@ -20,7 +16,11 @@ RUN echo "⬆️  Atualizando e instalando pacotes essenciais..." && \
     ros-humble-ament-cmake \
     libboost-python-dev \
     wget \
+    fswebcam \
+    v4l-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN usermod -a -G video root
 
 # Configuração do GeographicLib
 RUN echo "🌍 Configurando GeographicLib para MAVROS..." && \
@@ -54,11 +54,12 @@ RUN echo "🔧 Configurando ambiente ROS2 no bashrc..." && \
 RUN echo "🔨 Construindo o workspace ROS2..." && \
     /bin/bash -c "source /opt/ros/humble/setup.bash && \
     cd /home/ros2_ws && \
+    rosdep fix-permissions && \
     rosdep update && \
     rosdep install -i --from-path src --rosdistro humble -r -y && \
     colcon build --symlink-install && \
     source /home/ros2_ws/install/local_setup.bash"
 
-RUN echo "🚀🐝 AVANTE! Ambiente ROS2 Humble com MAVROS e SDK pronto!"
+RUN echo "🚀🐝 AVANTE! Ambiente ROS2 Humble com MAVROS, Parrot Bebop e SDK pronto!"
 
 CMD ["/bin/bash"]
