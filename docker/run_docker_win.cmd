@@ -8,11 +8,13 @@ REM Caminho do Dockerfile
 set DOCKERFILE_PATH=docker/Dockerfile
 
 REM Constrói a imagem Docker
-echo Building Docker image...
-docker build -t %IMAGE_NAME% -f %DOCKERFILE_PATH% .
+if "%1" == "build" (
+    echo Construindo a imagem Docker...
+    docker build -t %IMAGE_NAME% -f %DOCKERFILE_PATH% .
+)
 
 REM Executa o container Docker
-echo Running Docker container...
+echo Iniciando o container...
 docker run -it ^
     --name=%CONTAINER_NAME% ^
     --env="DISPLAY=host.docker.internal:0.0" ^
