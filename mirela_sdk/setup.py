@@ -32,6 +32,7 @@ setup(
             "test_raspicam = mirela_sdk.examples.raspicam_viewer:main",
             "color_calibration_node = mirela_sdk.image_processing.color.color_calibration_node:main",
             "camera_calibration = mirela_sdk.image_processing.camera.calibration.calibration:main",
+            "line_detection_node = mirela_sdk.image_processing.line.line_detection_node:main",
         ],
     },
 )
