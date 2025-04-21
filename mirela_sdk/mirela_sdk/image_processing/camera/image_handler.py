@@ -191,6 +191,7 @@ class ImageHandler:
                     cv2.destroyWindow(self.show_result)
                 except Exception as e:
                     self.node.get_logger().warning(str(e))
+                    cv2.destroyAllWindows() 
         else:
             print("Image Handler already cleaned up")
 
