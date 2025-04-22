@@ -1,12 +1,13 @@
 # Image Processing Tools 📷
 
-Provides a collection of tools for image processing, focusing on color detection, ArUco marker detection, and camera calibration, built as part of the Mirela SDK.  It leverages OpenCV, ROS 2, and DepthAI for robust and versatile image analysis.
+Provides a collection of tools for image processing, focusing on color detection, ArUco marker detection, camera calibration, and line detection, built as part of the Mirela SDK.  It leverages OpenCV, ROS 2, and DepthAI for robust and versatile image analysis.
 
 ## Features ✨
 
 * **Color Detection:**  Precisely detect and track colors in images using predefined values or interactive trackbars.  Save and load calibrated color ranges for consistent performance.
 * **ArUco Marker Detection:**  Detect and estimate the pose (translation and rotation) of ArUco markers in images or video streams.  Publish pose estimates as ROS 2 messages for seamless integration with robotic systems.
 * **Camera Calibration:**  Calibrate your camera using a chessboard pattern to obtain accurate intrinsic and distortion parameters.  Save and load calibration data for efficient reuse.
+* **Line Detection:** Detect and track lines in images or video streams using various estimation methods. Determine line position (center) and orientation (angle). Publish line information as ROS 2 messages.
 * **Oak-D Camera Support:**  Integrates with DepthAI for advanced functionalities like stereo depth perception and IMU sensor access.
 * **ROS 2 Integration:**  Several components are designed as ROS 2 nodes for easy integration into robotic applications.
 * **Versatile Image Handling:**  Supports various image sources, including ROS topics, webcams, Oak-D cameras, and image files.
@@ -40,6 +41,17 @@ Provides a collection of tools for image processing, focusing on color detection
 * **`color/color_calibration_node.py`:** ROS 2 node for calibrating color detection parameters using trackbars.
 * **`color/color_calibration.txt`:**  Stores calibrated HSV color ranges for different object categories.
 
+### Line Detection 📏
+
+* **`line/line_detector.py`:** Defines the `LineDetector` class for line detection using various estimation methods.
+* **`line/line_detection_node.py`:** ROS 2 node for detecting lines and publishing their position and orientation.
+* Multiple line estimation algorithms including:
+  * `HoughLinesP`: Uses probabilistic Hough transform for line detection.
+  * `RotatedRect`: Approximates lines using a rotated rectangle on contours.
+  * `FitEllipse`: Fits ellipses to detected contours.
+  * `RansacLine`: Uses RANSAC algorithm for robust line detection.
+  * `AdaptiveHoughLinesP`: Adapts parameters based on image characteristics.
+
 ## Package Structure 📂
 
 * **`image_processing`**: Contains the core image processing logic.
@@ -62,6 +74,10 @@ Provides a collection of tools for image processing, focusing on color detection
         * **`color_detector.py`**: Color detection class.
         * **`color_calibration_node.py`**: ROS 2 node for color calibration.
         * **`color_calibration.txt`**: Calibrated HSV color ranges.
+    * **`line`**: Line detection and tracking.
+        * **`__init__.py`**: Exposes `LineDetector` and `LineDetectionNode`.
+        * **`line_detector.py`**: Line detection class with multiple estimation methods.
+        * **`line_detection_node.py`**: ROS 2 node for line detection.
 
 ## **Key Classes**
 
@@ -81,6 +97,16 @@ Provides a collection of tools for image processing, focusing on color detection
 - **`ColorDetector`**: Detects and tracks colors in images.
 - **`ColorCalibrationNode`**: ROS 2 node for color calibration.
 
+### **Line Detection**
+- **`LineDetector`**: Detects and tracks lines in images using various estimation methods.
+- **`LineDetectionNode`**: ROS 2 node for line detection.
+- **Line Estimation Methods**:
+  - **`HoughLinesP`**: Probabilistic Hough transform for line detection.
+  - **`RotatedRect`**: Detects lines using rotated rectangles on contours.
+  - **`FitEllipse`**: Fits ellipses to detected contours.
+  - **`RansacLine`**: Uses RANSAC algorithm for robust line fitting.
+  - **`AdaptiveHoughLinesP`**: Dynamically adjusts parameters based on image characteristics.
+
 ### **Image Processing Utilities**
 - **`ImageCalculus`**: Converts pixel locations to GPS coordinates.
 
@@ -93,11 +119,23 @@ classDiagram
         <<abstract>>
     }
     
+    class ILineEstimationMethod {
+        <<abstract>>
+        +estimate(img_detect, img_out, offset, draw) tuple
+    }
+    
+    ILineEstimationMethod <|-- HoughLinesP
+    ILineEstimationMethod <|-- RotatedRect
+    ILineEstimationMethod <|-- FitEllipse
+    ILineEstimationMethod <|-- RansacLine
+    ILineEstimationMethod <|-- AdaptiveHoughLinesP
+    
 
     %% Classes de processamento de imagem que herdam de Node
     Node <|-- ColorCalibrationNode
     Node <|-- ArucoNode
     Node <|-- Calibration
+    Node <|-- LineDetectionNode
 
     class ColorCalibrationNode {
         +__init__(image_source)
@@ -107,6 +145,14 @@ classDiagram
     class ArucoNode {
         +__init__()
         +process_image(img)
+        +cleanup()
+    }
+    
+    class LineDetectionNode {
+        +__init__()
+        +parameters_callback(params)
+        +process_image(img)
+        +run()
         +cleanup()
     }
 
@@ -143,6 +189,33 @@ classDiagram
         +calculateYawFromCorners(bbox)
         +pose_estimate(img, draw)
     }
+    
+    class LineDetector {
+        +__init__(color, estimation_method)
+        +set_text_positions(positions_dict)
+        +detect_line(img, region, draw, draw_color)
+        -_calculate_confidence(binary_img, center_x, angle)
+    }
+    
+    class HoughLinesP {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class RotatedRect {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class FitEllipse {
+        +estimate(img_detect, img_out, offset, draw) tuple
+    }
+    
+    class RansacLine {
+        +estimate(img_detect, img_out, offset, draw) tuple
+    }
+    
+    class AdaptiveHoughLinesP {
+        +estimate(img_detect, img_out, offset, draw) tuple
+    }
 
     class ImageHandler {
         +__init__(node, image_source, image_processing_callback, show_result, cap, oakd_num)
@@ -172,8 +245,10 @@ classDiagram
         +configure_stereo_node_output(stream_names)
     }
 
-    %% Relacionamentos
+    %% Relationships
     ColorDetector -- ColorCalibrationNode
     Aruco -- ArucoNode
     OakdCam -- ImageHandler
+    LineDetector -- LineDetectionNode
+    LineDetector -- ColorDetector
 ```
