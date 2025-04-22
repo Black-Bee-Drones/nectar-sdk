@@ -22,7 +22,11 @@ class ILineEstimationMethod(ABC):
 class HoughLinesP(ILineEstimationMethod):
     @staticmethod
     def estimate(
-        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True
+        img_detect: np.ndarray,
+        img_out: np.ndarray,
+        offset: tuple,
+        draw: bool = True,
+        draw_color=None,
     ) -> Tuple[float, float]:
         """
         Hough lines P detection method.
@@ -34,6 +38,7 @@ class HoughLinesP(ILineEstimationMethod):
             img_out (numpy.ndarray): Image to draw detected lines on.
             offset (tuple): Offset values for drawing.
             draw (bool): Whether to draw the detected line.
+            draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None.
 
         Returns:
             tuple: Tuple containing the center_x and angle of the detected line.
@@ -72,16 +77,30 @@ class HoughLinesP(ILineEstimationMethod):
                 angle -= 90.0
 
             if draw:
+                # Use the provided color or default to green for the line
+                line_color = draw_color if draw_color is not None else (0, 255, 0)
+
+                # Use a darker shade of the same color for the center point
+                if draw_color is not None:
+                    # Make a darker version of the color
+                    center_color = (
+                        max(0, draw_color[0] // 2),
+                        max(0, draw_color[1] // 2),
+                        max(0, draw_color[2] // 2),
+                    )
+                else:
+                    center_color = (255, 0, 0)  # Default to blue
+
                 # Draw the approximated line on the image
                 m = 50
                 cv2.line(
                     img_out,
                     (int(x[0] - m * vx[0]), int(y[0] - m * vy[0])),
                     (int(x[0] + m * vx[0]), int(y[0] + m * vy[0])),
-                    (0, 255, 0),
+                    line_color,
                     2,
                 )
-                cv2.circle(img_out, (int(x[0]), int(y[0])), 2, (255, 0, 0), 3)
+                cv2.circle(img_out, (int(x[0]), int(y[0])), 2, center_color, 3)
 
         return center_x, angle
 
@@ -89,7 +108,11 @@ class HoughLinesP(ILineEstimationMethod):
 class RotatedRect(ILineEstimationMethod):
     @staticmethod
     def estimate(
-        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True
+        img_detect: np.ndarray,
+        img_out: np.ndarray,
+        offset: tuple,
+        draw: bool = True,
+        draw_color=None,
     ) -> Tuple[float, float]:
         """
         Rotated rectangle detection method.
@@ -100,6 +123,7 @@ class RotatedRect(ILineEstimationMethod):
             img_out (numpy.ndarray): Image to draw detected rotated rectangle on.
             offset (tuple): Offset values for drawing.
             draw (bool): Whether to draw the detected rotated rectangle.
+            draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None.
 
         Returns:
             tuple: Tuple containing the center_x and angle of the detected rotated rectangle.
@@ -142,8 +166,23 @@ class RotatedRect(ILineEstimationMethod):
             center_x = center[0]
 
             if draw:
-                cv2.line(img_out, (x1, y1), (x2, y2), (255, 0, 0), 3)
-                cv2.circle(img_out, center, 2, (0, 255, 0), 3)
+                # Use the provided color or default to blue for the line
+                line_color = draw_color if draw_color is not None else (255, 0, 0)
+
+                # Use a variation of the same color for the center point
+                if draw_color is not None:
+                    # Make a brighter version of the color
+                    center_color = (
+                        min(255, draw_color[0] + 50),
+                        min(255, draw_color[1] + 50),
+                        min(255, draw_color[2] + 50),
+                    )
+                else:
+                    center_color = (0, 255, 0)  # Default to green
+
+                # Draw the line and center point
+                cv2.line(img_out, (x1, y1), (x2, y2), line_color, 3)
+                cv2.circle(img_out, center, 2, center_color, 3)
 
         return center_x, angle
 
@@ -375,19 +414,40 @@ class LineDetector:
 
         Args:
             color (str, optional): Color to detect. Defaults to "blue".
+            estimation_method: The method to use for line estimation. Defaults to HoughLinesP.
         """
         self.color_detector = ColorDetector(mode="preset", color=color)
         self.estimation_method = estimation_method
+        self.color = color
+        # Default text positions
+        self.text_positions = {
+            "color": (10, 90),
+            "angle": (10, 30),
+            "center_x": (10, 60),
+        }
 
-    def detect_line(self, img, region=(0, 0), draw=True):
+    def set_text_positions(self, positions_dict):
+        """
+        Set positions for the text labels.
+        
+        Args:
+            positions_dict (dict): Dictionary containing position tuples for each text element
+                                  Possible keys: 'angle', 'center_x', 'color', 'confidence'
+        """
+        if positions_dict and isinstance(positions_dict, dict):
+            for key, value in positions_dict.items():
+                if key in self.text_positions and isinstance(value, tuple) and len(value) == 2:
+                    self.text_positions[key] = value
+                    
+    def detect_line(self, img, region=(0, 0), draw=True, draw_color=None):
         """
         Detects the line using the specified method.
 
         Args:
             img (numpy.ndarray): Input image.
-            method (function, optional): The line detection method to use. Defaults to None.
             region (tuple, optional): Region of interest in the format (width, height). Defaults to (0, 0) for the whole image.
             draw (bool, optional): Whether to draw the detected line on the output image. Defaults to True.
+            draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None, which will use default colors.
 
         Returns:
             tuple: Tuple containing the output image, region image, center_x, angle, and confidence.
@@ -416,7 +476,23 @@ class LineDetector:
         confidence = 0.0
 
         try:
-            center_x, angle = self.estimation_method.estimate(region, img, offset, draw)
+            # Use custom drawing colors if provided
+            line_color = (
+                draw_color if draw_color is not None else (0, 255, 0)
+            )  # Default to green
+
+            # Check if the estimation method accepts a draw_color parameter
+            try:
+                # Try with draw_color
+                center_x, angle = self.estimation_method.estimate(
+                    region, img, offset, draw, line_color
+                )
+            except (TypeError, ValueError):
+                # Fallback to original call without draw_color
+                center_x, angle = self.estimation_method.estimate(
+                    region, img, offset, draw
+                )
+
             # Calculate confidence based on quality metrics
             confidence = self._calculate_confidence(region, center_x, angle)
 
@@ -424,36 +500,43 @@ class LineDetector:
             print(f"Error in estimation method: {e}")
 
         if draw:
-            # Draw the angle and center on the image
+            # Use custom color for text if provided
+            text_color = (
+                draw_color if draw_color is not None else (0, 0, 255)
+            )  # Default to red
+
+            # Draw the angle and center on the image using the configured positions
             cv2.putText(
                 img,
-                f"Angle: {angle:.2f} degrees",
-                (10, 30),
+                f"Angle: {angle:.2f}",
+                self.text_positions["angle"],
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 0, 255),
-                2,
+                0.5,
+                text_color,
+                1,
             )
 
             cv2.putText(
                 img,
-                f"Center X: {center_x}",
-                (10, 60),
+                f"Center X: {center_x:.2f}",
+                self.text_positions["center_x"],
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 0, 255),
-                2,
+                0.5,
+                text_color,
+                1,
             )
 
-            cv2.putText(
-                img,
-                f"Confidence: {confidence:.2f}",
-                (10, 140),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 0, 255),
-                2,
-            )
+            # Add color name if available
+            if hasattr(self, "color") and self.color:
+                cv2.putText(
+                    img,
+                    f"Color: {self.color}",
+                    self.text_positions["color"],
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    text_color,
+                    1,
+                )
 
         return img, region, center_x, angle, confidence
 

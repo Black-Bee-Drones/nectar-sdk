@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
+from typing import Dict, List, Any
 
 import rclpy
 from rclpy.node import Node
@@ -25,9 +26,9 @@ from mirela_interfaces.msg import LineInfo
 
 class LineDetectionNode(Node):
 
-    # Constants for topic names
-    LINE_STATE_TOPIC = "line_state"
-    LINE_DETECTED_TOPIC = "line_detect"
+    # Base names for topic names - will be appended with color name
+    LINE_STATE_TOPIC_BASE = "line_state"
+    LINE_DETECTED_TOPIC_BASE = "line_detect"
 
     # Constants for image processing
     IMG_SIZE = (640, 480)
@@ -50,7 +51,7 @@ class LineDetectionNode(Node):
         methods, such as RotatedRect, HoughLinesP, FitEllipse, RansacLine, and AdaptiveHoughLinesP.
 
         All configuration is handled through ROS parameters:
-        - line_color: The color of the line to detect
+        - line_colors: Comma-separated list of colors to detect
         - method: The line detection method to use
         - image_source: The source of the image stream
         - show_visualization: Whether to show visualization window
@@ -59,20 +60,22 @@ class LineDetectionNode(Node):
         super().__init__("line_detection_node")
 
         # Declare standard parameters with default values
-        self.declare_parameter("line_color", "green")
+        self.declare_parameter("line_colors", "teste")  # Changed to multiple colors
         self.declare_parameter("method", "HoughLinesP")
         self.declare_parameter("image_source", "webcam")
         self.declare_parameter("show_visualization", True)
         self.declare_parameter("visualization_name", "Line Detection")
 
         # Get parameters
-        self.line_color = (
-            self.get_parameter("line_color").get_parameter_value().string_value
+        colors_param = (
+            self.get_parameter("line_colors").get_parameter_value().string_value
         )
+        self.line_colors = [color.strip() for color in colors_param.split(",")]
+
         self.image_source = (
             self.get_parameter("image_source").get_parameter_value().string_value
         )
-        estimation_method = (
+        estimation_method_name = (
             self.get_parameter("method").get_parameter_value().string_value
         )
         self.show_visualization = (
@@ -83,34 +86,34 @@ class LineDetectionNode(Node):
         )
 
         # Determine the estimation method
-        if estimation_method in self.estimation_methods:
-            estimation_class = self.estimation_methods[estimation_method]
+        if estimation_method_name in self.estimation_methods:
+            self.estimation_class = self.estimation_methods[estimation_method_name]
         else:
             self.get_logger().error(
-                f"Unknown estimation method '{estimation_method}'. Defaulting to HoughLinesP."
+                f"Unknown estimation method '{estimation_method_name}'. Defaulting to HoughLinesP."
             )
-            estimation_class = HoughLinesP
+            self.estimation_class = HoughLinesP
 
-        # Initialize the line detector
-        self.line_detector = LineDetector(
-            color=self.line_color, estimation_method=estimation_class
-        )
+        # Initialize dictionaries to store detectors and publishers for each color
+        self.line_detectors: Dict[str, LineDetector] = {}
+        self.line_detected_pubs: Dict[str, Any] = {}
+        self.state_pubs: Dict[str, Any] = {}
+        self.line_state_msgs: Dict[str, LineInfo] = {}
+        self.center_x_values: Dict[str, float] = {}
+        self.angle_values: Dict[str, float] = {}
+        self.line_detected_msgs: Dict[str, Bool] = {}
 
-        self.line_detected = Bool()
-        self.line_detected_pub = self.create_publisher(
-            Bool, self.LINE_DETECTED_TOPIC, 10
-        )
-
-        self.line_state_msg = LineInfo()
-        self.center_x = self.angle = float()
-        self.state_pub = self.create_publisher(LineInfo, self.LINE_STATE_TOPIC, 10)
+        # Initialize each color detector and publishers
+        for color in self.line_colors:
+            self.initialize_color_detector(color)
 
         # Log available methods for user reference
         method_names = ", ".join(list(self.estimation_methods.keys()))
+        colors_str = ", ".join(self.line_colors)
         self.get_logger().info(
             f"Line Detection Node initialized with: \
-            \n - Line color: {self.line_color} \
-            \n - Estimation method: {estimation_method} \
+            \n - Line colors: {colors_str} \
+            \n - Estimation method: {estimation_method_name} \
             \n - Image source: {self.image_source} \
             \n - Show visualization: {self.show_visualization} \
             \n - Available methods: {method_names}"
@@ -118,6 +121,80 @@ class LineDetectionNode(Node):
 
         # Set up a parameter callback to handle runtime parameter changes
         self.add_on_set_parameters_callback(self.parameters_callback)
+
+    def initialize_color_detector(self, color: str):
+        """
+        Initialize line detector and publishers for a specific color.
+
+        Args:
+            color: The color to detect
+        """
+        try:
+            # Initialize the line detector for this color
+            try:
+                self.line_detectors[color] = LineDetector(
+                    color=color, estimation_method=self.estimation_class
+                )
+
+                # Configure text positions based on the index of the color
+                color_idx = len(self.line_detectors) - 1
+                text_positions = {
+                    "color": (10, 30 + 100 * color_idx),
+                    "angle": (25, 60 + 100 * color_idx),
+                    "center_x": (25, 90 + 100 * color_idx),
+                }
+                self.line_detectors[color].set_text_positions(text_positions)
+
+                # Verify color detector was initialized properly
+                if self.line_detectors[color].color_detector is None:
+                    self.get_logger().error(
+                        f"Color detector for '{color}' was not initialized properly"
+                    )
+                    return
+
+                # Verify HSV values were loaded correctly
+                hsv_color = self.line_detectors[color].color_detector.hsv_color
+                if hsv_color is None:
+                    self.get_logger().warn(
+                        f"Color '{color}' not found in color calibration file"
+                    )
+                else:
+                    self.get_logger().info(f"Color '{color}' HSV range: {hsv_color}")
+
+            except Exception as e:
+                self.get_logger().error(
+                    f"Failed to create LineDetector for color '{color}': {e}"
+                )
+                return
+
+            # Create topics with color in the name
+            line_detected_topic = f"{self.LINE_DETECTED_TOPIC_BASE}/{color}"
+            line_state_topic = f"{self.LINE_STATE_TOPIC_BASE}/{color}"
+
+            # Create publishers
+            self.line_detected_msgs[color] = Bool()
+            self.line_detected_pubs[color] = self.create_publisher(
+                Bool, line_detected_topic, 10
+            )
+
+            self.line_state_msgs[color] = LineInfo()
+            self.state_pubs[color] = self.create_publisher(
+                LineInfo, line_state_topic, 10
+            )
+
+            # Initialize values
+            self.center_x_values[color] = float("nan")
+            self.angle_values[color] = float("nan")
+
+            self.get_logger().info(f"Initialized detector for color: {color}")
+            self.get_logger().info(
+                f"Publishing to: {line_detected_topic} and {line_state_topic}"
+            )
+
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to initialize detector for color {color}: {e}"
+            )
 
     def parameters_callback(self, params):
         """
@@ -129,34 +206,67 @@ class LineDetectionNode(Node):
         Returns:
             SetParametersResult indicating success or failure.
         """
-        from rclpy.parameter import SetParametersResult
+        from rclpy.parameter_service import SetParametersResult
 
         result = SetParametersResult()
         result.successful = True
         result.reason = ""
 
         for param in params:
-            if param.name == "line_color":
-                self.line_color = param.value
-                # Recreate the line detector with the new color
-                self.line_detector = LineDetector(
-                    color=self.line_color,
-                    estimation_method=self.line_detector.estimation_method.__class__,
+            if param.name == "line_colors":
+                # Handle changes to the colors list
+                new_colors = [color.strip() for color in param.value.split(",")]
+
+                # Remove detectors for colors that are no longer needed
+                for color in list(self.line_detectors.keys()):
+                    if color not in new_colors:
+                        # Clean up publishers
+                        if color in self.line_detected_pubs:
+                            self.destroy_publisher(self.line_detected_pubs[color])
+                            del self.line_detected_pubs[color]
+                        if color in self.state_pubs:
+                            self.destroy_publisher(self.state_pubs[color])
+                            del self.state_pubs[color]
+                        # Remove detector
+                        if color in self.line_detectors:
+                            del self.line_detectors[color]
+
+                        self.get_logger().info(f"Removed detector for color: {color}")
+
+                # Add new detectors for colors that weren't already present
+                for color in new_colors:
+                    if color not in self.line_detectors:
+                        self.initialize_color_detector(color)
+
+                self.line_colors = new_colors
+                self.get_logger().info(
+                    f"Updated colors to: {', '.join(self.line_colors)}"
                 )
-                self.get_logger().info(f"Changed line color to {self.line_color}")
+
             elif param.name == "method":
                 if param.value in self.estimation_methods:
                     estimation_class = self.estimation_methods[param.value]
-                    # Recreate the line detector with the new method
-                    self.line_detector = LineDetector(
-                        color=self.line_color, estimation_method=estimation_class
-                    )
+                    # Update the estimation method for all detectors
+                    for color, detector in self.line_detectors.items():
+                        self.line_detectors[color] = LineDetector(
+                            color=color, estimation_method=estimation_class
+                        )
+                        # Reconfigure text positions
+                        color_idx = list(self.line_detectors.keys()).index(color)
+                        text_positions = {
+                            "color": (10, 30 + 100 * color_idx),
+                            "angle": (25, 60 + 100 * color_idx),
+                            "center_x": (25, 90 + 100 * color_idx),
+                        }
+                        self.line_detectors[color].set_text_positions(text_positions)
+                    self.estimation_class = estimation_class
                     self.get_logger().info(
-                        f"Changed estimation method to {param.value}"
+                        f"Changed estimation method to {param.value} for all detectors"
                     )
                 else:
                     result.successful = False
                     result.reason = f"Unknown estimation method: {param.value}"
+
             elif param.name == "image_source":
                 # Image source changes require restarting the node or special handling
                 self.get_logger().warning(
@@ -168,40 +278,217 @@ class LineDetectionNode(Node):
 
     def process_image(self, img: np.ndarray) -> None:
         """
-        Processes a single image frame, detects lines, and publishes the detection results.
+        Processes a single image frame, detects lines for all colors, and publishes the detection results.
 
         Args:
             img (np.ndarray): The input image frame to process.
         """
-        # Process the image and perform line detection
+        # Process the image for each color
         try:
+            # Resize the image once (shared operation)
             cv2.resize(img, self.IMG_SIZE, img)
-            (img, region, self.center_x, self.angle, confidence) = (
-                self.line_detector.detect_line(img, region=self.DETECTION_ZONE)
-            )
 
-            # Publish line states
-            if not isnan(self.center_x) and not isnan(self.angle):
-                self.line_state_msg.center_x = float(self.center_x)
-                self.line_state_msg.angle = float(self.angle)
-                self.state_pub.publish(self.line_state_msg)
+            # Create a copy for display if needed
+            display_img = img.copy() if self.show_visualization else None
 
-                self.line_detected.data = True
-            else:
-                self.line_detected.data = False
+            # Process each color
+            for color in self.line_colors:
+                if color not in self.line_detectors:
+                    continue
 
-            self.line_detected_pub.publish(self.line_detected)
+                try:
+                    # Process this color
+                    detector = self.line_detectors[color]
 
-            cv2.circle(
-                img,
-                (self.IMG_SIZE[0] // 2, self.IMG_SIZE[1] // 2),
-                2,
-                (0, 255, 0),
-                3,
-            )
+                    # Get the color for visualization
+                    try:
+                        bgr_color = self._get_color_bgr(color)
+                    except Exception as e:
+                        self.get_logger().warning(
+                            f"Error getting color for {color}: {e}"
+                        )
+                        bgr_color = (255, 255, 255)  # Default to white
+
+                    # Detect line on a copy of the image
+                    img_copy = display_img if self.show_visualization else img.copy()
+
+                    try:
+                        # Call with color parameter for custom visualization
+                        (processed_img, region, center_x, angle, confidence) = (
+                            detector.detect_line(
+                                img_copy,
+                                region=self.DETECTION_ZONE,
+                                draw=self.show_visualization,  # Draw on processed_img if visualization is enabled
+                                draw_color=bgr_color,  # Pass the actual color
+                            )
+                        )
+                    except TypeError as e:
+                        # Fallback if the draw_color parameter isn't supported by the detector
+                        self.get_logger().debug(
+                            f"Method doesn't support draw_color, using fallback: {e}"
+                        )
+                        (processed_img, region, center_x, angle, confidence) = (
+                            detector.detect_line(
+                                img_copy,
+                                region=self.DETECTION_ZONE,
+                                draw=self.show_visualization,  # Draw on processed_img if visualization is enabled
+                            )
+                        )
+                    except Exception as e:
+                        self.get_logger().error(
+                            f"Error in line detection for {color}: {e}"
+                        )
+                        # Set defaults to handle the error gracefully
+                        center_x = angle = float("nan")
+                        confidence = 0.0
+                        processed_img = img_copy  # Just use the copy as is
+
+                    # Store values
+                    self.center_x_values[color] = center_x
+                    self.angle_values[color] = angle
+
+                    # Publish line states
+                    if not isnan(center_x) and not isnan(angle):
+                        self.line_state_msgs[color].center_x = float(center_x)
+                        self.line_state_msgs[color].angle = float(angle)
+                        self.state_pubs[color].publish(self.line_state_msgs[color])
+
+                        self.line_detected_msgs[color].data = True
+                    else:
+                        self.line_detected_msgs[color].data = False
+
+                    self.line_detected_pubs[color].publish(
+                        self.line_detected_msgs[color]
+                    )
+
+                except Exception as e:
+                    self.get_logger().error(f"Error processing color {color}: {e}")
+
+            # Draw a center reference and detection zone on the display image
+            if self.show_visualization and display_img is not None:
+                # Draw crosshair at center of image
+                center_x, center_y = self.IMG_SIZE[0] // 2, self.IMG_SIZE[1] // 2
+                cv2.line(
+                    display_img,
+                    (center_x - 10, center_y),
+                    (center_x + 10, center_y),
+                    (0, 255, 0),
+                    1,
+                )
+                cv2.line(
+                    display_img,
+                    (center_x, center_y - 10),
+                    (center_x, center_y + 10),
+                    (0, 255, 0),
+                    1,
+                )
+
+                # Draw detection zone
+                zone_width, zone_height = self.DETECTION_ZONE
+                zone_x1 = center_x - zone_width // 2
+                zone_y1 = center_y - zone_height // 2
+                zone_x2 = center_x + zone_width // 2
+                zone_y2 = center_y + zone_height // 2
+                cv2.rectangle(
+                    display_img, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 255, 0), 1
+                )
+
+                # Update the display
+                cv2.imshow(self.visualization_name, display_img)
+
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    cv2.destroyWindow(self.visualization_name)
+                    self.image_handler.cleanup()
 
         except Exception as e:
             self.get_logger().error(f"Error in line detection: {e}")
+
+    def _get_hsv_to_bgr(self, hsv_color):
+        """
+        Convert HSV color values to BGR.
+
+        Args:
+            hsv_color: HSV color values as [[h_min, s_min, v_min], [h_max, s_max, v_max]]
+
+        Returns:
+            tuple: BGR color tuple
+        """
+        try:
+            # Check if hsv_color is None or empty without evaluating it as a boolean
+            if hsv_color is None or len(hsv_color) == 0:
+                return (255, 255, 255)  # Default to white
+
+            # Make sure hsv_color has the expected structure
+            if (
+                len(hsv_color) == 2
+                and len(hsv_color[0]) == 3
+                and len(hsv_color[1]) == 3
+            ):
+                # Use the average of min and max HSV values for a representative color
+                h_min, s_min, v_min = hsv_color[0]
+                h_max, s_max, v_max = hsv_color[1]
+
+                # Use middle of the range for a representative color
+                h = (h_min + h_max) // 2
+                s = (s_min + s_max) // 2
+                v = (v_max + v_min) // 2
+
+                # Ensure v is high enough to be visible
+                v = max(v, 180)
+
+                # Create an HSV color array and convert to BGR
+                hsv_color_arr = np.uint8([[[h, s, v]]])
+                bgr_color = cv2.cvtColor(hsv_color_arr, cv2.COLOR_HSV2BGR)[0][0]
+
+                # Return as a tuple
+                return (int(bgr_color[0]), int(bgr_color[1]), int(bgr_color[2]))
+            else:
+                self.get_logger().warning(f"Unexpected hsv_color format: {hsv_color}")
+                return (255, 255, 255)  # Default to white
+        except Exception as e:
+            self.get_logger().warning(f"Error converting HSV to BGR: {e}")
+            return (255, 255, 255)  # Default to white in case of error
+
+    def _get_color_bgr(self, color_name):
+        """
+        Helper to convert color name to BGR values for display by extracting the actual color
+        from the corresponding line detector's ColorDetector.
+
+        Args:
+            color_name (str): The name of the color to get the BGR value for
+
+        Returns:
+            tuple: BGR color tuple for use with OpenCV
+        """
+        try:
+            if color_name in self.line_detectors:
+                # Get the HSV color values from the color detector
+                detector = self.line_detectors[color_name]
+                hsv_color = detector.color_detector.hsv_color
+
+                # Convert hsv_color to BGR without using it in a boolean context
+                if hsv_color is not None:
+                    return self._get_hsv_to_bgr(hsv_color)
+
+            # Default colors if we can't get from detector
+            color_map = {
+                "red": (0, 0, 255),
+                "green": (0, 255, 0),
+                "blue": (255, 0, 0),
+                "yellow": (0, 255, 255),
+                "purple": (255, 0, 255),
+                "cyan": (255, 255, 0),
+                "teste": (128, 128, 128),  # Add specific color for 'teste'
+            }
+            return color_map.get(
+                color_name.lower(), (255, 255, 255)
+            )  # Default to white
+
+        except Exception as e:
+            self.get_logger().warning(
+                f"Error converting color {color_name} to BGR: {e}"
+            )
+            return (255, 255, 255)  # Default to white in case of error
 
     def run(self):
         """
@@ -217,10 +504,12 @@ class LineDetectionNode(Node):
             self,
             self.image_source,
             self.process_image,
-            show_result=visualization_window,
+            show_result=None,  # We'll handle display ourselves in process_image
         )
+
+        colors_str = ", ".join(self.line_colors)
         self.get_logger().info(
-            f"\nDetection Node init: {self.line_color}, {self.image_source}"
+            f"\nDetection Node running: {colors_str}, {self.image_source}"
         )
 
         self.image_handler.run()
@@ -232,6 +521,11 @@ class LineDetectionNode(Node):
         Stops the image handler and destroys the ROS node.
         """
         self.image_handler.cleanup()
+
+        # Close any OpenCV windows
+        if self.show_visualization:
+            cv2.destroyAllWindows()
+
         self.destroy_node()
 
 
