@@ -1,8 +1,9 @@
 catkin-pkg==1.0.0
 opencv-python==4.10.0.84
 opencv-contrib-python==4.10.0.84
-cvzone
-pygeodesy
-shapely
-geopy
+cvzone==1.6.1
+pygeodesy==22.10.22
+shapely==2.0.6
+geopy==2.4.1
+scipy==1.13.1
 depthai==2.29.0.0
