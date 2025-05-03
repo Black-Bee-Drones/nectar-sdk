@@ -394,7 +394,8 @@ class LineDetectionNode(Node):
                 )
 
                 # Update the display
-                cv2.imshow(self.visualization_name, display_img)
+                if self.show_visualization:
+                    cv2.imshow(self.visualization_name, display_img)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     cv2.destroyWindow(self.visualization_name)
@@ -504,7 +505,7 @@ class LineDetectionNode(Node):
             self,
             self.image_source,
             self.process_image,
-            show_result=None,  # We'll handle display ourselves in process_image
+            show_result=None,
         )
 
         colors_str = ", ".join(self.line_colors)
