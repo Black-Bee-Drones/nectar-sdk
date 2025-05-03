@@ -513,7 +513,7 @@ class MavDrone(Drone):
         linear_y: float = 0.0,
         linear_z: float = 0.0,
         angular_z: float = 0.0,
-        ground_reference: bool = True,
+        ground_reference: bool = False,
     ):
         """
         Move sending velocity commands
