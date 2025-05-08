@@ -8,6 +8,9 @@ import cv2
 from typing import Optional
 from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
 
+import re
+import subprocess
+
 
 class ImageHandler:
     RASPICAM_LAUNCH = "camerav2_410x308_30fps.launch"
@@ -24,18 +27,20 @@ class ImageHandler:
         show_result: str = None,
         cap: Optional[int] = 0,
         oakd_num: Optional[int] = 1,
+        c920_config: Optional[int] = 1
     ):
         """
         Class to handle image processing from a ROS topic or webcam.
 
         :param node (rclpy.node.Node): the ROS node to handle the image processing
-        :param image_source (str): the source of the image (ROS topic or webcam or oakd)
+        :param image_source (str): the source of the image (ROS topic, webcam, c920 or oakd)
         :param image_processing_callback (callable): the callback function to process the image
         :param cap (int): the webcam index.
             Use this parameter only if the image source is "webcam"
         :param oakd_num (int): index number for oakd cam - 1 for rgb, 2 for left monochrome cam, 3 for
          right monochrome cam
             Use this parameter only if the image source is "oakd"
+        :param c920_config (int): index number for c920 configuration. 0 -> 640x480, 1 (default) -> 1280x720, 2-> 1920x1080. All are captured in 30 FPS.
         """
 
         self.node = node
@@ -47,6 +52,7 @@ class ImageHandler:
         self.show_result = show_result
         self.cap_num = cap
         self.oakd_num = oakd_num
+        self.c920_config = c920_config
         self.cleaned = False
         self.bridge = CvBridge()
 
@@ -135,6 +141,61 @@ class ImageHandler:
             self.cap = cv2.VideoCapture(self.cap_num)
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
+
+        elif self.image_source == "c920":
+            result = subprocess.run(['v4l2-ctl', '--list-devices'], capture_output=True, text=True)
+            lines = result.stdout.splitlines()
+            device = None
+
+            for i, line in enumerate(lines):
+                if 'HD Pro Webcam C920' in line:
+                    j = i + 1
+                    while j < len(lines) and lines[j].startswith('\t'):
+                        match = re.search(r'(/dev/video\d+)', lines[j])
+                        if match:
+                            device = match.group(1)
+                            break
+                        j += 1
+                if device:
+                    break
+
+            if device is None:
+                self.node.get_logger().error(
+                    "C920 camera not detected. Please ensure the device is connected and that 'v4l2-ctl' is installed."
+                )
+                self.node.get_logger().warn(
+                    f"Falling back to default camera: cv2.VideoCapture({self.cap_num})."
+                )
+                self.cap = cv2.VideoCapture(self.cap_num)
+
+            else:
+                if self.c920_config == 0:
+                    width, height = 640, 480
+                elif self.c920_config == 2:
+                    width, height = 1920, 1080
+                else:
+                    width, height = 1280, 720
+
+                self.node.get_logger().info(
+                    f"C920 camera detected at {device}. Applying configuration profile {width}x{height}@30."
+                )
+
+                self.cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+                success = True
+                success &= self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                success &= self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                success &= self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                success &= self.cap.set(cv2.CAP_PROP_FPS, 30)
+
+                if not success:
+                    self.node.get_logger().warn(
+                        "Failed to apply all camera settings. Continuing, but performance may be degraded."
+                    )
+
+            self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
+
+
+
 
         elif self.image_source == "oakd":
             # For oakd, OakdCam class initializes the pipeline, configures the camera according
