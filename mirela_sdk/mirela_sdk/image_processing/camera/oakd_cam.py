@@ -11,22 +11,22 @@ class OakdCam:
 
     """
     
-    AUTOEXPOSURE =      "autoexposure"
+    AUTOEXPOSURE =           "autoexposure"
     ANTI_BANDING_MODE = "anti_banding_mode"
-    AWB_MODE =          "awb_mode"
-    EFFECT_MODE =       "effect_mode"
-    AUTOFOCUS =         "autofocus"
-    AE_COMP =           "ae_comp"
-    BRIGHTNESS =        "brightness"
-    CONTRAST =          "contrast"
-    SATURATION =        "saturation"
-    SHARPNESS =         "sharpness"
-    LUMA_DENOISE =      "luma_denoise"
-    CHROMA_DENOISE =    "chroma_denoise"
-    EXPOSURE_TIME =     "exposure_time"
-    SENSITIVITY_ISO =   "sensitivity_iso"
-    FOCUS =             "focus"
-    WHITE_BALANCE =     "white_balance"
+    AWB_MODE =                   "awb_mode"
+    EFFECT_MODE =             "effect_mode"
+    AUTOFOCUS =                 "autofocus"
+    AE_COMP =                     "ae_comp"
+    BRIGHTNESS =               "brightness"
+    CONTRAST =                   "contrast"
+    SATURATION =               "saturation"
+    SHARPNESS =                 "sharpness"
+    LUMA_DENOISE =           "luma_denoise"
+    CHROMA_DENOISE =       "chroma_denoise"
+    EXPOSURE_TIME =         "exposure_time"
+    SENSITIVITY_ISO =     "sensitivity_iso"
+    FOCUS =                         "focus"
+    WHITE_BALANCE =         "white_balance"
 
     
     def __init__(self)-> None:
@@ -91,7 +91,7 @@ class OakdCam:
     
     def color_camera(self) -> dai.node.ColorCamera:
         """
-        Link device to host, set resolution and preview size to get the color camera
+        Link device to host, set resolution, Isp scale and fps to get the color camera
         """
 
         #ativo a camera rgb
@@ -173,7 +173,20 @@ class OakdCam:
         """
 
         stereo = self.pipeline.createStereoDepth()
+        
+        # Better handling for occlusions:
         stereo.setLeftRightCheck(True)
+        
+        # Closer-in minimum depth, disparity range is doubled (from 95 to 190):
+        stereo.setExtendedDisparity(False)
+        
+        # Better accuracy for longer distance, fractional disparity 32-levels:
+        stereo.setSubpixel(False)
+
+        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+        
+        # Options: MEDIAN_OFF, KERNEL_3x3, KERNEL_5x5, KERNEL_7x7 (default)
+        stereo.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
 
         self.stereo_links = {"disparity":      stereo.disparity.link, 
                              "depth":          stereo.depth.link, 
@@ -189,6 +202,27 @@ class OakdCam:
         mono_right.out.link(stereo.right)
 
         return stereo
+
+
+    def post_processing_stereo_depth(self, stereo: dai.node.StereoDepth) -> None:
+        """
+        Function to apply depth post-processing settings to the final map
+        
+        -----------
+        https://docs.luxonis.com/software/depthai/examples/depth_post_processing/
+        """
+        
+        config = stereo.initialConfig.get()
+        config.postProcessing.speckleFilter.enable = False
+        config.postProcessing.speckleFilter.speckleRange = 50
+        config.postProcessing.temporalFilter.enable = True
+        config.postProcessing.spatialFilter.enable = True
+        config.postProcessing.spatialFilter.holeFillingRadius = 2
+        config.postProcessing.spatialFilter.numIterations = 1
+        config.postProcessing.thresholdFilter.minRange = 400
+        config.postProcessing.thresholdFilter.maxRange = 15000
+        config.postProcessing.decimationFilter.decimationFactor = 1
+        stereo.initialConfig.set(config)
         
 
     def configure_stereo_node_output(self, stream_names: list[str]) -> None:
