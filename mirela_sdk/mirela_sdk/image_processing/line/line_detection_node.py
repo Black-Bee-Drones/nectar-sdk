@@ -12,6 +12,7 @@ from math import isnan
 import numpy as np
 
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
+from mirela_sdk.image_processing.color.color_detector import ColorDetector, ColorSpace
 from mirela_sdk.image_processing.line import (
     LineDetector,
     ILineEstimationMethod,
@@ -56,15 +57,20 @@ class LineDetectionNode(Node):
         - image_source: The source of the image stream
         - show_visualization: Whether to show visualization window
         - visualization_name: Name for the visualization window
+        - spaces: Comma-separated list of color spaces to use (hsv, lab)
+        - cap: Webcam index to use with OpenCV
         """
         super().__init__("line_detection_node")
 
         # Declare standard parameters with default values
-        self.declare_parameter("line_colors", "teste")  # Changed to multiple colors
+        self.declare_parameter("line_colors", "teste")  # multiple colors
         self.declare_parameter("method", "HoughLinesP")
         self.declare_parameter("image_source", "webcam")
         self.declare_parameter("show_visualization", True)
         self.declare_parameter("visualization_name", "Line Detection")
+        # Added new parameters
+        self.declare_parameter("spaces", "hsv")  # multiple spaces
+        self.declare_parameter("cap", 0)
 
         # Get parameters
         colors_param = (
@@ -84,6 +90,25 @@ class LineDetectionNode(Node):
         self.visualization_name = (
             self.get_parameter("visualization_name").get_parameter_value().string_value
         )
+        # Get new parameters
+        spaces = self.get_parameter("spaces").get_parameter_value().string_value
+        self.color_spaces = [color_space.strip() for color_space in spaces.split(",")]
+
+        # If there are fewer color spaces than colors, use the first color space for additional colors
+        if len(self.color_spaces) < len(self.line_colors):
+            # If no color spaces were provided, default to "hsv"
+            default_space = self.color_spaces[0] if self.color_spaces else "hsv"
+            additional_spaces = [default_space] * (
+                len(self.line_colors) - len(self.color_spaces)
+            )
+            self.color_spaces.extend(additional_spaces)
+            self.get_logger().warning(
+                f"Fewer color spaces ({len(self.color_spaces) - len(additional_spaces)}) "
+                f"than colors ({len(self.line_colors)}). "
+                f"Using '{default_space}' for the additional colors."
+            )
+
+        self.cap = self.get_parameter("cap").get_parameter_value().integer_value
 
         # Determine the estimation method
         if estimation_method_name in self.estimation_methods:
@@ -104,8 +129,8 @@ class LineDetectionNode(Node):
         self.line_detected_msgs: Dict[str, Bool] = {}
 
         # Initialize each color detector and publishers
-        for color in self.line_colors:
-            self.initialize_color_detector(color)
+        for i, color in enumerate(self.line_colors):
+            self.initialize_color_detector(color, self.color_spaces[i])
 
         # Log available methods for user reference
         method_names = ", ".join(list(self.estimation_methods.keys()))
@@ -115,6 +140,8 @@ class LineDetectionNode(Node):
             \n - Line colors: {colors_str} \
             \n - Estimation method: {estimation_method_name} \
             \n - Image source: {self.image_source} \
+            \n - Color spaces: {self.color_spaces} \
+            \n - Webcam index: {self.cap} \
             \n - Show visualization: {self.show_visualization} \
             \n - Available methods: {method_names}"
         )
@@ -122,7 +149,7 @@ class LineDetectionNode(Node):
         # Set up a parameter callback to handle runtime parameter changes
         self.add_on_set_parameters_callback(self.parameters_callback)
 
-    def initialize_color_detector(self, color: str):
+    def initialize_color_detector(self, color: str, color_space: str):
         """
         Initialize line detector and publishers for a specific color.
 
@@ -130,10 +157,16 @@ class LineDetectionNode(Node):
             color: The color to detect
         """
         try:
-            # Initialize the line detector for this color
+            # Initialize the line detector for this color with the specified color space
             try:
                 self.line_detectors[color] = LineDetector(
-                    color=color, estimation_method=self.estimation_class
+                    color=color,
+                    estimation_method=self.estimation_class,
+                    color_space=(
+                        ColorSpace.HSV
+                        if color_space.upper() == "HSV"
+                        else ColorSpace.LAB
+                    ),
                 )
 
                 # Configure text positions based on the index of the color
@@ -152,14 +185,16 @@ class LineDetectionNode(Node):
                     )
                     return
 
-                # Verify HSV values were loaded correctly
-                hsv_color = self.line_detectors[color].color_detector.hsv_color
-                if hsv_color is None:
+                # Verify color values were loaded correctly - use color_values instead of hsv_color
+                color_values = self.line_detectors[color].color_detector.color_values
+                if color_values is None:
                     self.get_logger().warn(
-                        f"Color '{color}' not found in color calibration file"
+                        f"Color '{color}' not found in color calibration file for {color_space} color space"
                     )
                 else:
-                    self.get_logger().info(f"Color '{color}' HSV range: {hsv_color}")
+                    self.get_logger().info(
+                        f"Color '{color}' {color_space} range: {color_values}"
+                    )
 
             except Exception as e:
                 self.get_logger().error(
@@ -234,9 +269,20 @@ class LineDetectionNode(Node):
                         self.get_logger().info(f"Removed detector for color: {color}")
 
                 # Add new detectors for colors that weren't already present
-                for color in new_colors:
+                for i, color in enumerate(new_colors):
                     if color not in self.line_detectors:
-                        self.initialize_color_detector(color)
+                        # Use the corresponding color space if available, otherwise use the first one
+                        color_space_idx = (
+                            min(i, len(self.color_spaces) - 1)
+                            if self.color_spaces
+                            else 0
+                        )
+                        color_space = (
+                            self.color_spaces[color_space_idx]
+                            if self.color_spaces
+                            else "hsv"
+                        )
+                        self.initialize_color_detector(color, color_space)
 
                 self.line_colors = new_colors
                 self.get_logger().info(
@@ -247,9 +293,13 @@ class LineDetectionNode(Node):
                 if param.value in self.estimation_methods:
                     estimation_class = self.estimation_methods[param.value]
                     # Update the estimation method for all detectors
-                    for color, detector in self.line_detectors.items():
+                    for i, (color, detector) in enumerate(self.line_detectors.items()):
+                        # Preserve each detector's current color space
+                        current_color_space = detector.color_detector.color_space
                         self.line_detectors[color] = LineDetector(
-                            color=color, estimation_method=estimation_class
+                            color=color,
+                            estimation_method=estimation_class,
+                            color_space=current_color_space,
                         )
                         # Reconfigure text positions
                         color_idx = list(self.line_detectors.keys()).index(color)
@@ -266,6 +316,52 @@ class LineDetectionNode(Node):
                 else:
                     result.successful = False
                     result.reason = f"Unknown estimation method: {param.value}"
+
+            elif param.name == "spaces":
+                # Update the color spaces
+                new_color_spaces = [cs.strip() for cs in param.value.split(",")]
+                self.color_spaces = new_color_spaces
+
+                # Re-initialize all detectors with the appropriate color spaces
+                for i, color in enumerate(self.line_colors):
+                    # Use the corresponding color space if available, otherwise use the first one
+                    color_space = (
+                        self.color_spaces[i]
+                        if i < len(self.color_spaces)
+                        else self.color_spaces[0]
+                    )
+                    try:
+                        color_space_enum = (
+                            ColorSpace.HSV
+                            if color_space.upper() == "HSV"
+                            else ColorSpace.LAB
+                        )
+                        self.line_detectors[color] = LineDetector(
+                            color=color,
+                            estimation_method=self.estimation_class,
+                            color_space=color_space_enum,
+                        )
+                        color_idx = list(self.line_detectors.keys()).index(color)
+                        text_positions = {
+                            "color": (10, 30 + 100 * color_idx),
+                            "angle": (25, 60 + 100 * color_idx),
+                            "center_x": (25, 90 + 100 * color_idx),
+                        }
+                        self.line_detectors[color].set_text_positions(text_positions)
+                    except Exception as e:
+                        self.get_logger().error(
+                            f"Failed to update detector for color '{color}' to {color_space}: {e}"
+                        )
+                self.get_logger().info(
+                    f"Changed color spaces to {', '.join(self.color_spaces)}"
+                )
+
+            elif param.name == "cap":
+                # Update the webcam index
+                self.cap = param.value
+                self.get_logger().warning(
+                    "Changing cap parameter requires node restart to take effect."
+                )
 
             elif param.name == "image_source":
                 # Image source changes require restarting the node or special handling
@@ -393,6 +489,24 @@ class LineDetectionNode(Node):
                     display_img, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 255, 0), 1
                 )
 
+                # Add color spaces information to the image
+                color_spaces_str = ", ".join(
+                    [
+                        f"{color}: {self.line_detectors[color].color_space.name}"
+                        for color in self.line_colors
+                        if color in self.line_detectors
+                    ]
+                )
+                cv2.putText(
+                    display_img,
+                    f"Color Spaces: {color_spaces_str}",
+                    (10, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 255),
+                    2,
+                )
+
                 # Update the display
                 if self.show_visualization:
                     cv2.imshow(self.visualization_name, display_img)
@@ -404,50 +518,60 @@ class LineDetectionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in line detection: {e}")
 
-    def _get_hsv_to_bgr(self, hsv_color):
+    def _get_color_values_to_bgr(self, color_values, color_space):
         """
-        Convert HSV color values to BGR.
+        Convert color values to BGR based on the provided color space.
 
         Args:
-            hsv_color: HSV color values as [[h_min, s_min, v_min], [h_max, s_max, v_max]]
+            color_values: Color values as [[min1, min2, min3], [max1, max2, max3]]
+            color_space: The color space (ColorSpace.HSV or ColorSpace.LAB)
 
         Returns:
             tuple: BGR color tuple
         """
         try:
-            # Check if hsv_color is None or empty without evaluating it as a boolean
-            if hsv_color is None or len(hsv_color) == 0:
+            # Check if color_values is None or empty
+            if color_values is None or len(color_values) == 0:
                 return (255, 255, 255)  # Default to white
 
-            # Make sure hsv_color has the expected structure
+            # Make sure color_values has the expected structure
             if (
-                len(hsv_color) == 2
-                and len(hsv_color[0]) == 3
-                and len(hsv_color[1]) == 3
+                len(color_values) == 2
+                and len(color_values[0]) == 3
+                and len(color_values[1]) == 3
             ):
-                # Use the average of min and max HSV values for a representative color
-                h_min, s_min, v_min = hsv_color[0]
-                h_max, s_max, v_max = hsv_color[1]
+                # Use the average of min and max values for a representative color
+                min_vals = color_values[0]
+                max_vals = color_values[1]
 
                 # Use middle of the range for a representative color
-                h = (h_min + h_max) // 2
-                s = (s_min + s_max) // 2
-                v = (v_max + v_min) // 2
+                val1 = (min_vals[0] + max_vals[0]) // 2
+                val2 = (min_vals[1] + max_vals[1]) // 2
+                val3 = (min_vals[2] + max_vals[2]) // 2
 
-                # Ensure v is high enough to be visible
-                v = max(v, 180)
+                # Ensure val3 (brightness) is high enough to be visible
+                if color_space == ColorSpace.HSV:
+                    val3 = max(val3, 180)  # For HSV, val3 is V
+                elif color_space == ColorSpace.LAB:
+                    val1 = max(val1, 180)  # For LAB, val1 is L
 
-                # Create an HSV color array and convert to BGR
-                hsv_color_arr = np.uint8([[[h, s, v]]])
-                bgr_color = cv2.cvtColor(hsv_color_arr, cv2.COLOR_HSV2BGR)[0][0]
+                # Create a color array and convert to BGR based on color space
+                if color_space == ColorSpace.HSV:
+                    color_arr = np.uint8([[[val1, val2, val3]]])
+                    bgr_color = cv2.cvtColor(color_arr, cv2.COLOR_HSV2BGR)[0][0]
+                else:  # LAB
+                    color_arr = np.uint8([[[val1, val2, val3]]])
+                    bgr_color = cv2.cvtColor(color_arr, cv2.COLOR_LAB2BGR)[0][0]
 
                 # Return as a tuple
                 return (int(bgr_color[0]), int(bgr_color[1]), int(bgr_color[2]))
             else:
-                self.get_logger().warning(f"Unexpected hsv_color format: {hsv_color}")
+                self.get_logger().warning(
+                    f"Unexpected color values format: {color_values}"
+                )
                 return (255, 255, 255)  # Default to white
         except Exception as e:
-            self.get_logger().warning(f"Error converting HSV to BGR: {e}")
+            self.get_logger().warning(f"Error converting color values to BGR: {e}")
             return (255, 255, 255)  # Default to white in case of error
 
     def _get_color_bgr(self, color_name):
@@ -463,13 +587,14 @@ class LineDetectionNode(Node):
         """
         try:
             if color_name in self.line_detectors:
-                # Get the HSV color values from the color detector
+                # Get the color values from the color detector
                 detector = self.line_detectors[color_name]
-                hsv_color = detector.color_detector.hsv_color
+                color_values = detector.color_detector.color_values
+                color_space = detector.color_detector.color_space
 
-                # Convert hsv_color to BGR without using it in a boolean context
-                if hsv_color is not None:
-                    return self._get_hsv_to_bgr(hsv_color)
+                # Convert color_values to BGR without using it in a boolean context
+                if color_values is not None:
+                    return self._get_color_values_to_bgr(color_values, color_space)
 
             # Default colors if we can't get from detector
             color_map = {
@@ -506,11 +631,26 @@ class LineDetectionNode(Node):
             self.image_source,
             self.process_image,
             show_result=None,
+            cap=self.cap,
         )
 
+        # Prepare detailed running information
         colors_str = ", ".join(self.line_colors)
+        spaces_str = ", ".join(self.color_spaces)
+        color_space_info = ", ".join(
+            [
+                f"{color}: {space}"
+                for color, space in zip(
+                    self.line_colors,
+                    self.color_spaces[: len(self.line_colors)]
+                    + [self.color_spaces[0]]
+                    * (len(self.line_colors) - len(self.color_spaces)),
+                )
+            ]
+        )
+
         self.get_logger().info(
-            f"\nDetection Node running: {colors_str}, {self.image_source}"
+            f"\nDetection Node running: {colors_str}, {self.image_source}, {spaces_str}, cap={self.cap}"
         )
 
         self.image_handler.run()
@@ -537,11 +677,43 @@ def main(args=None):
     Args:
         args: Command line arguments passed to rclpy.init
     """
-    # Initialize ROS with any command-line arguments (but we'll use ROS parameters, not argparse)
+    # Initialize ROS with any command-line arguments
     rclpy.init(args=args)
+
+    # Parse command line arguments to override parameters
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Line Detection Node")
+    parser.add_argument(
+        "--line-colors", type=str, help="Comma-separated list of colors to detect"
+    )
+    parser.add_argument("--method", type=str, help="Line detection method")
+    parser.add_argument(
+        "--image-source", type=str, help="Image source (webcam, topic name, etc.)"
+    )
+    parser.add_argument(
+        "--spaces",
+        type=str,
+        help="Comma-separated list of color spaces (hsv, lab) for each color",
+    )
+    parser.add_argument("--cap", type=int, help="Webcam index to use with OpenCV")
+    parsed_args, remaining_args = parser.parse_known_args(args=args)
 
     # Create and run the line detection node
     detector = LineDetectionNode()
+
+    # Override node parameters with command line arguments if provided
+    if parsed_args.line_colors:
+        detector.declare_parameter("line_colors", parsed_args.line_colors)
+    if parsed_args.method:
+        detector.declare_parameter("method", parsed_args.method)
+    if parsed_args.image_source:
+        detector.declare_parameter("image_source", parsed_args.image_source)
+    if parsed_args.spaces:
+        detector.declare_parameter("spaces", parsed_args.spaces)
+    if parsed_args.cap is not None:
+        detector.declare_parameter("cap", parsed_args.cap)
+
     detector.run()
 
     try:

@@ -407,7 +407,10 @@ class RansacLine(ILineEstimationMethod):
 
 class LineDetector:
     def __init__(
-        self, color="blue", estimation_method: ILineEstimationMethod = HoughLinesP
+        self,
+        color="blue",
+        estimation_method: ILineEstimationMethod = HoughLinesP,
+        color_space=None,
     ):
         """
         Constructor for the LineDetector class.
@@ -415,10 +418,21 @@ class LineDetector:
         Args:
             color (str, optional): Color to detect. Defaults to "blue".
             estimation_method: The method to use for line estimation. Defaults to HoughLinesP.
+            color_space: The color space to use (HSV or LAB). Defaults to None (which will use HSV).
         """
-        self.color_detector = ColorDetector(mode="preset", color=color)
+        # Import ColorSpace here to avoid circular imports
+        from mirela_sdk.image_processing.color.color_detector import ColorSpace
+
+        # Use HSV as default if no color space is specified
+        if color_space is None:
+            color_space = ColorSpace.HSV
+
+        self.color_detector = ColorDetector(
+            mode="preset", color=color, color_space=color_space
+        )
         self.estimation_method = estimation_method
         self.color = color
+        self.color_space = color_space
         # Default text positions
         self.text_positions = {
             "color": (10, 90),
@@ -429,16 +443,20 @@ class LineDetector:
     def set_text_positions(self, positions_dict):
         """
         Set positions for the text labels.
-        
+
         Args:
             positions_dict (dict): Dictionary containing position tuples for each text element
                                   Possible keys: 'angle', 'center_x', 'color', 'confidence'
         """
         if positions_dict and isinstance(positions_dict, dict):
             for key, value in positions_dict.items():
-                if key in self.text_positions and isinstance(value, tuple) and len(value) == 2:
+                if (
+                    key in self.text_positions
+                    and isinstance(value, tuple)
+                    and len(value) == 2
+                ):
                     self.text_positions[key] = value
-                    
+
     def detect_line(self, img, region=(0, 0), draw=True, draw_color=None):
         """
         Detects the line using the specified method.
