@@ -34,6 +34,7 @@ class ProcessUtils:
 
         :param command: The command to start the process
         :param name: The representation name of the process
+        :param gui: Whether to use GUI (gnome-terminal) if available
 
         :return: True if the process started successfully, False otherwise
         """
@@ -42,35 +43,65 @@ class ProcessUtils:
         if gui and ProcessUtils.is_gui_available():
             print("\033[94mGUI is available\033[0m")
             print(f"\033[94mInitializing {name} in a new terminal\033[0m")
-            process = subprocess.Popen(
-                shlex.split(f'gnome-terminal -- bash -c "{command}"')
-            )
-        else:
-            # Check if the tmux session exists
-            if ProcessUtils.kill_process(name):
-
-                print("Initializing process in a tmux session")
-                print(
-                    f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
+            try:
+                process = subprocess.Popen(
+                    shlex.split(f"gnome-terminal -- {command}"),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                 )
+                stdout, stderr = process.communicate()
+
+                if process.returncode != 0:
+                    print(
+                        f"\033[91m-- Error starting {name} in GUI: {stderr.decode()}\033[0m"
+                    )
+                    return False
+                else:
+                    print(f"\033[92m-- Started {name} in GUI successfully\033[0m")
+                    return True
+            except Exception as e:
+                print(f"\033[91m-- Exception starting {name} in GUI: {str(e)}\033[0m")
+                return False
+        else:
+            # First kill any existing tmux session with this name
+            ProcessUtils.kill_process(name)
+
+            # Create a new tmux session
+            print("\033[94mInitializing process in a tmux session\033[0m")
+            print(
+                f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
+            )
+
+            try:
+                # Create the tmux session with the command
                 process = subprocess.Popen(
                     shlex.split(f'tmux new-session -d -s {name} "{command}"'),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
+                stdout, stderr = process.communicate()
 
-            sleep(1.5)
+                # Give tmux a moment to start the session
+                sleep(1.5)
 
-        # Wait for the process to finish
-        stdout, stderr = process.communicate()
+                # Verify the session was actually created
+                if not ProcessUtils.has_process(name):
+                    print(f"\033[91m-- Failed to create tmux session {name}\033[0m")
+                    if stderr:
+                        print(f"\033[91m-- Error: {stderr.decode()}\033[0m")
+                    return False
 
-        # Check for any errors
-        if process.returncode != 0:
-            print(f"\033[91m-- Error starting {name}: {process.returncode}\033[0m")
-            return False
-        else:
-            print(f"\033[92m-- Started {name} successfully\033[0m")
-            return True
+                # Check process return code
+                if process.returncode != 0:
+                    print(f"\033[91m-- Error starting {name}: {stderr.decode()}\033[0m")
+                    return False
+                else:
+                    print(f"\033[92m-- Started {name} successfully\033[0m")
+                    return True
+
+            except Exception as e:
+                print(f"\033[91m-- Exception starting {name}: {str(e)}\033[0m")
+                return False
 
     @staticmethod
     def has_process(name: str = "my_session") -> bool:
