@@ -257,7 +257,6 @@ class AdaptiveHoughLinesP(ILineEstimationMethod):
         Returns:
             tuple: Tuple containing the center_x and angle of the detected line.
         """
-        # Calculate image metrics to determine parameters
         mean_val = np.mean(img_detect)
         std_val = np.std(img_detect)
 
@@ -423,7 +422,6 @@ class LineDetector:
         # Import ColorSpace here to avoid circular imports
         from mirela_sdk.image_processing.color.color_detector import ColorSpace
 
-        # Use HSV as default if no color space is specified
         if color_space is None:
             color_space = ColorSpace.HSV
 
@@ -433,7 +431,6 @@ class LineDetector:
         self.estimation_method = estimation_method
         self.color = color
         self.color_space = color_space
-        # Default text positions
         self.text_positions = {
             "color": (10, 90),
             "angle": (10, 30),
@@ -446,7 +443,7 @@ class LineDetector:
 
         Args:
             positions_dict (dict): Dictionary containing position tuples for each text element
-                                  Possible keys: 'angle', 'center_x', 'color', 'confidence'
+                                  Possible keys: 'angle', 'center_x', 'color'
         """
         if positions_dict and isinstance(positions_dict, dict):
             for key, value in positions_dict.items():
@@ -468,7 +465,7 @@ class LineDetector:
             draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None, which will use default colors.
 
         Returns:
-            tuple: Tuple containing the output image, region image, center_x, angle, and confidence.
+            tuple: Tuple containing the output image, region image, center_x, and angle.
         """
 
         self.color_detector.filterColor(img)
@@ -491,39 +488,29 @@ class LineDetector:
         region = cv2.getRectSubPix(self.color_detector.mask, region_size, region_center)
 
         center_x = angle = float("nan")
-        confidence = 0.0
 
         try:
             # Use custom drawing colors if provided
             line_color = (
                 draw_color if draw_color is not None else (0, 255, 0)
-            )  # Default to green
+            ) 
 
-            # Check if the estimation method accepts a draw_color parameter
             try:
-                # Try with draw_color
                 center_x, angle = self.estimation_method.estimate(
                     region, img, offset, draw, line_color
                 )
             except (TypeError, ValueError):
-                # Fallback to original call without draw_color
                 center_x, angle = self.estimation_method.estimate(
                     region, img, offset, draw
                 )
-
-            # Calculate confidence based on quality metrics
-            confidence = self._calculate_confidence(region, center_x, angle)
 
         except ValueError as e:
             print(f"Error in estimation method: {e}")
 
         if draw:
-            # Use custom color for text if provided
             text_color = (
                 draw_color if draw_color is not None else (0, 0, 255)
             )  # Default to red
-
-            # Draw the angle and center on the image using the configured positions
             cv2.putText(
                 img,
                 f"Angle: {angle:.2f}",
@@ -544,11 +531,10 @@ class LineDetector:
                 1,
             )
 
-            # Add color name if available
             if hasattr(self, "color") and self.color:
                 cv2.putText(
                     img,
-                    f"Color: {self.color}",
+                    f"Color: {self.color}, {self.color_space.name}",
                     self.text_positions["color"],
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
@@ -556,51 +542,11 @@ class LineDetector:
                     1,
                 )
 
-        return img, region, center_x, angle, confidence
-
-    def _calculate_confidence(self, binary_img, center_x, angle):
-        """
-        Calculate a confidence score for the line detection.
-
-        Args:
-            binary_img (numpy.ndarray): Binary image used for detection
-            center_x (float): Detected center x coordinate
-            angle (float): Detected angle
-
-        Returns:
-            float: Confidence score between 0.0 and 1.0
-        """
-        if math.isnan(center_x) or math.isnan(angle):
-            return 0.0
-
-        # Calculate confidence based on:
-        # 1. Number of points fitting the line
-        # 2. Consistency of the line direction
-        # 3. Contrast of the line against background
-
-        # Example implementation
-        white_pixels = np.sum(binary_img > 0)
-        total_pixels = binary_img.size
-
-        # More complex confidence calculation
-        pixel_ratio = min(1.0, white_pixels / (total_pixels * 0.1))  # Normalize
-
-        # Check if center is within reasonable bounds of the image
-        h, w = binary_img.shape[:2]
-        center_factor = 1.0
-        if center_x is not None and not math.isnan(center_x):
-            # How far is center_x from the center of the image (normalized 0-1)
-            center_distance = abs(center_x - w / 2) / (w / 2)
-            center_factor = 1.0 - min(1.0, center_distance)
-
-        # Combine factors
-        confidence = pixel_ratio * 0.6 + center_factor * 0.4
-
-        return confidence
+        return img, region, center_x, angle
 
 
 def main():
-    color = "teste"  # Color to detect
+    color = "teste" 
     line_detector = LineDetector(color, HoughLinesP)
 
     cap = cv2.VideoCapture(0)
@@ -611,7 +557,7 @@ def main():
         if not ret:
             break
 
-        result, region, center_x, angle, confidence = line_detector.detect_line(
+        result, region, center_x, angle = line_detector.detect_line(
             frame, region=(400, 400)
         )
 

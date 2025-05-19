@@ -194,7 +194,6 @@ classDiagram
         +__init__(color, estimation_method)
         +set_text_positions(positions_dict)
         +detect_line(img, region, draw, draw_color)
-        -_calculate_confidence(binary_img, center_x, angle)
     }
     
     class HoughLinesP {
