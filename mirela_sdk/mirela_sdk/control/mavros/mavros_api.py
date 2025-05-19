@@ -123,6 +123,8 @@ class MavDrone(Drone):
         if mavros:
             self.init_drivers()
 
+        self.__startup()
+
         self.node.get_logger().info("Mavros API initialized")
 
     def start_driver_node(self) -> None:
@@ -222,24 +224,98 @@ class MavDrone(Drone):
     def __startup(self):
         """
         Get initial values for the drone state, gps, altitude and heading.
+        If data cannot be obtained within timeout period, log warnings and continue with defaults.
         """
-        self.force_correct_altitude()
-        self.force_correct_heading()
+        self.node.get_logger().info("Starting initialization of sensor data...")
+        sensors_initialized = True
 
+        altitude_success = self.force_correct_altitude(timeout_sec=10.0)
+        if not altitude_success:
+            sensors_initialized = False
+            self.node.get_logger().warn("Failed to initialize GPS altitude data.")
 
-    def force_correct_altitude(self):
+        heading = self.force_correct_heading(timeout_sec=10.0)
+        if heading == 0.0:
+            sensors_initialized = False
+            self.node.get_logger().warn("Failed to initialize heading data.")
+
+        if not sensors_initialized:
+            self.node.get_logger().warn(
+                "Initialization completed with warnings. Some sensors may not be available."
+            )
+            self.node.get_logger().warn(
+                "Check if MAVROS is running and GPS is properly connected."
+            )
+            self.node.get_logger().warn("Using default values for missing sensor data.")
+        else:
+            self.node.get_logger().info(
+                "Sensor data initialization completed successfully."
+            )
+            self.node.get_logger().info(
+                f"Initial altitude: {self.initial_altitude}m, Initial heading: {heading}°"
+            )
+
+    def force_correct_altitude(self, timeout_sec=10.0):
+        """
+        Get initial altitude value from GPS with timeout.
+
+        :param timeout_sec: Maximum time in seconds to wait for valid data
+        :return: Boolean indicating success (True) or failure (False)
+        """
+        self.node.get_logger().info("Waiting for altitude data...")
         self.initial_altitude = self.get_gps.altitude
 
-        while self.initial_altitude == 0.0:
-            self.initial_altitude = self.get_gps.altitude
-            rclpy.spin_once(self.node)
+        start_time = self.node.get_clock().now()
+        timeout = Duration(seconds=timeout_sec)
 
-    def force_correct_heading(self) -> float:
+        # Try to get valid altitude value until timeout
+        while self.initial_altitude == 0.0:
+            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
+            self.initial_altitude = self.get_gps.altitude
+
+            # Check if timeout reached
+            if self.node.get_clock().now() - start_time > timeout:
+                self.node.get_logger().warn(
+                    f"Timeout reached ({timeout_sec}s) while waiting for altitude data. "
+                    "Using default value of 0.0."
+                )
+                self.initial_altitude = 0.0
+                return False
+
+        self.node.get_logger().info(f"Altitude initialized: {self.initial_altitude}m")
+        return True
+
+    def force_correct_heading(self, timeout_sec=10.0) -> float:
+        """
+        Get initial heading value with timeout.
+
+        :param timeout_sec: Maximum time in seconds to wait for valid data
+        :return: Initial heading value (even if it's 0.0 after timeout)
+        """
+        self.node.get_logger().info("Waiting for heading data...")
         self.initial_heading = self.get_heading.data
-        
+
+        start_time = self.node.get_clock().now()
+        timeout = Duration(seconds=timeout_sec)
+        success = True
+
+        # Try to get valid heading value until timeout
         while self.initial_heading == 0.0:
-            rclpy.spin_once(self.node)
+            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
             self.initial_heading = self.get_heading.data
+
+            # Check if timeout reached
+            if self.node.get_clock().now() - start_time > timeout:
+                self.node.get_logger().warn(
+                    f"Timeout reached ({timeout_sec}s) while waiting for heading data. "
+                    "Using default value of 0.0."
+                )
+                self.initial_heading = 0.0
+                success = False
+                break
+
+        if success:
+            self.node.get_logger().info(f"Heading initialized: {self.initial_heading}°")
 
         return self.initial_heading
 
@@ -476,7 +552,6 @@ class MavDrone(Drone):
             f"-- Servo {aux_out} set to {pwm_value}",
             f"-- Set servo {aux_out} failed",
         )
-
 
     def offboard_gps_position(
         self,
