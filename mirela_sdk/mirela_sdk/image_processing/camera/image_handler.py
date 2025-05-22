@@ -16,8 +16,12 @@ class ImageHandler:
     RASPICAM_LAUNCH = "camerav2_410x308_30fps.launch"
     RASPICAM_TOPIC = "/image_raw"
     RASPICAM_COMPRESS_TOPIC = "/image_raw/compressed"
-
     BEBOP_TOPIC = "/bebop/camera/image_raw"
+
+    C920_CTRL_MAP = {
+    'HD Pro Webcam C920': 'focus_automatic_continuous=0',
+    'Logi Webcam C920e': 'focus_auto=0',
+    }
 
     def __init__(
         self,
@@ -146,17 +150,22 @@ class ImageHandler:
             result = subprocess.run(['v4l2-ctl', '--list-devices'], capture_output=True, text=True)
             lines = result.stdout.splitlines()
             device = None
+            ctrl_param = None
 
             for i, line in enumerate(lines):
-                if 'HD Pro Webcam C920' in line:
-                    j = i + 1
-                    while j < len(lines) and lines[j].startswith('\t'):
-                        match = re.search(r'(/dev/video\d+)', lines[j])
-                        if match:
-                            device = match.group(1)
-                            break
-                        j += 1
-                if device:
+                for model_name, param in self.C920_CTRL_MAP.items():
+                    if model_name in line:
+                        ctrl_param = param
+                        j = i + 1
+                        while j < len(lines) and lines[j].startswith('\t'):
+                            match = re.search(r'(/dev/video\d+)', lines[j])
+                            if match:
+                                device = match.group(1)
+                                break
+                            j += 1
+                        break
+                if device and ctrl_param:
+                    subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl=' + ctrl_param])
                     break
 
             if device is None:
