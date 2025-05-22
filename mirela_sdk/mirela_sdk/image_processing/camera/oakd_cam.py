@@ -1,5 +1,7 @@
 import depthai as dai
 import cv2
+import json
+from pathlib import Path
 
 class OakdCam:
 
@@ -80,6 +82,9 @@ class OakdCam:
     def init_cam(self, full_speed: bool = False) -> dai.Device:
         """
         Initialize the device and return it
+
+        :param full_speed (bool): True for a FULL usb speed (USB 3.0), False for 
+         HIGH speed (USB 2.0)
         """
 
         usb_speed = dai.UsbSpeed.FULL if full_speed else dai.UsbSpeed.HIGH
@@ -94,22 +99,17 @@ class OakdCam:
         Link device to host, set resolution, Isp scale and fps to get the color camera
         """
 
-        #ativo a camera rgb
         cam = self.pipeline.createColorCamera()
-        #seleciono a câmera rgb:
         cam.setBoardSocket(self.boardSocket)
-        #setar resolução:
         cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        #setar tamanho
         cam.setIspScale(1,2) # 540P
-        #setar fps
         cam.setFps(35)
         
-        #criar link de comunicação da camera com o host(pc)
+        # Create communication link between camera and host(pc)
         xOut_rgb = self.pipeline.createXLinkOut()
         xOut_rgb.setStreamName("rgb")
 
-        #coloca camera como entrada do link de comunicação:
+        # Camera as input of communication link:
         cam.isp.link(xOut_rgb.input)
 
         return cam
@@ -479,6 +479,110 @@ class OakdCam:
             return result
 
         else: raise ValueError("Invalid manual control name value")
+
+
+    def create_yolo_detection_network(self, 
+                                      model_path: Path | str, 
+                                      json_path: Path | str,
+                                      sync_nn: bool = True,
+                                      confidence: float = 1.0
+                                    ) -> None:
+        
+        """
+        Create a YOLO detection network. This function requires a blob model 
+        and a json file that you can get from a yolo model through the luxonis 
+        conversion tool available at https://tools.luxonis.com
+
+        :param model_path (Path | str): The path for the blob model
+        :param json_path (Path | str): The path for the json file
+        :param sync_nn (bool): True for a synchronous neural network, which keeps 
+         frame capture synchronous with the inference process
+        :param confidence (float): the confidence for valid detections. Default is 
+         the confindence from json file.
+        
+        """
+
+        if not Path(model_path).exists():
+            raise FileNotFoundError(f'Model file not found, please check your path')
+        if not Path(json_path).exists():
+            raise FileNotFoundError(f'json file not found, please check your path')
+        
+        self.__get_model_settings(json_path)
+
+        confidence = confidence if confidence < 1.0 and confidence > 0.0 else self.confidence
+
+        # Define sources and outputs
+        camRgb = self.pipeline.create(dai.node.ColorCamera)
+        detectionNetwork = self.pipeline.create(dai.node.YoloDetectionNetwork)
+        xoutRgb = self.pipeline.create(dai.node.XLinkOut)
+        nnOut = self.pipeline.create(dai.node.XLinkOut)
+
+        xoutRgb.setStreamName("rgb")
+        nnOut.setStreamName("nn")
+
+        # Properties
+        camRgb.setPreviewSize(self.width, self.height)
+        camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        camRgb.setInterleaved(False)
+        camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+        camRgb.setFps(35)
+
+        # Network specific settings
+        detectionNetwork.setConfidenceThreshold(confidence)
+        detectionNetwork.setNumClasses(self.classes)
+        detectionNetwork.setCoordinateSize(self.coordinates)
+        detectionNetwork.setIouThreshold(self.iou_threshold)
+        detectionNetwork.setBlobPath(model_path)
+        detectionNetwork.setNumInferenceThreads(2)
+        detectionNetwork.input.setBlocking(False)
+
+        # Linking
+        camRgb.preview.link(detectionNetwork.input)
+        if sync_nn:
+            detectionNetwork.passthrough.link(xoutRgb.input)
+        else:
+            camRgb.preview.link(xoutRgb.input)
+
+        detectionNetwork.out.link(nnOut.input)
+
+
+    def __get_model_settings(self, json_path: Path) -> None:
+
+        """
+
+        Function to get the model settings from json file (classes, confidence, labels, 
+        coordinates...)
+
+        """
+
+        json_file:          dict  = self.__load_json(json_path)
+        self.nn_config:     dict  = json_file.get("nn_config",                  None)
+        if self.nn_config is None: raise ValueError("nn_config property not found in " \
+                                                                           "json file")
+
+        self.metadata:      dict  = self.nn_config.get("NN_specific_metadata",  None)
+        self.labels:        list  = json_file     .get("mappings",              None)\
+                                                  .get("labels",                None)
+        self.classes:       int   = self.metadata .get("classes",               None)
+        self.coordinates:   int   = self.metadata .get("coordinates",           None)
+
+        self.anchors:       list  = self.metadata .get("anchors",               None)
+        self.anchor_masks:  dict  = self.metadata .get("anchor_masks",          None)
+        self.iou_threshold: float = self.metadata .get("iou_threshold",         None) 
+        self.confidence:    float = self.metadata .get("confidence_threshold",  None)
+        size:               str   = self.nn_config.get("input_size",            None)
+
+        self.width, self.height = [int(value) for value in size.split("x")]
+
+
+    def __load_json(self, json_path: Path) -> dict:
+
+        """
+        Function to load json file from json_path and return it
+        """
+
+        with open(json_path) as file:
+            return json.load(file)
 
         
     def clean(self):
