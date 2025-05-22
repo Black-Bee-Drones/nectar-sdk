@@ -1,10 +1,12 @@
 import os
 import rclpy
 import numpy as np
-from rclpy.node import Node
+from typing import Tuple
+from rclpy.node import Node, Rate
 from pygeodesy.geoids import GeoidPGM
 from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic
+from geographiclib.geodesic import Geodesic
 from math import radians
 from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
@@ -80,6 +82,9 @@ class GPSController:
         :warning: This function stuck the code until the drone reaches the setpoint
         """
 
+        last_distance: float = 1
+        rate: Rate = self.drone.node.create_rate(10)
+
         while rclpy.ok():
             rclpy.spin_once(self.drone.node)
             current_lat = self.drone.get_gps.latitude
@@ -89,9 +94,15 @@ class GPSController:
             ).meters
             self.drone.node.get_logger().info(f"Coordinate distance: {distance_target}")
 
-            if distance_target <= precision_radius:
+            ds = distance_target - last_distance
+
+            if (ds < 0.1 or ds <= 0) and distance_target <= precision_radius:
                 self.drone.node.get_logger().info("-- GPS setpoint reached")
                 break
+
+            last_distance = distance_target
+
+            rate.sleep()
 
     def gps_send(
         self,
@@ -180,3 +191,24 @@ class GPSController:
         a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat) * np.sin(dlon / 2) ** 2
         c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
         return c * 6371000 # angle in the great-cricle between the two point times earth's radius
+    
+    def interp_geo(
+        self,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        frac: float
+    ) -> Tuple[float, float]:
+        """
+        Computes geodesic interpolation between two GPS coordinates.
+
+        Args:
+            start (Tuple[float, float]): Starting GPS coordinate (lat, lon).
+            end (Tuple[float, float]): Ending GPS coordinate (lat, lon).
+            frac (float): Interpolation factor between 0.0 and 1.0.
+
+        Returns:
+            Tuple[float, float]: Interpolated GPS coordinate (lat, lon).
+        """
+        line = Geodesic.WGS84.InverseLine(start[0], start[1], end[0], end[1])
+        position = line.Position(line.s13 * frac)
+        return (position['lat2'], position['lon2'])
