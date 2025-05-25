@@ -6,4 +6,6 @@ pygeodesy==22.10.22
 shapely==2.0.6
 geopy==2.4.1
 scipy==1.13.1
+transforms3d==0.4.2
+numpy==1.26.4
 depthai==2.29.0.0
