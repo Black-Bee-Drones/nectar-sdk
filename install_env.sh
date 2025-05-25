@@ -375,17 +375,29 @@ verify_installation() {
     
     log_info "Verificando ROS 2..."
     if command -v ros2 &> /dev/null; then
-        log_success "ROS 2 instalado: $(ros2 --version)"
+        # Usar uma forma alternativa para verificar a versão do ROS 2
+        if [ -n "$ROS_DISTRO" ]; then
+            log_success "ROS 2 instalado: ROS 2 $ROS_DISTRO"
+        else
+            # Fallback para verificar se o ROS 2 está funcionando
+            if ros2 --help &> /dev/null; then
+                log_success "ROS 2 instalado e funcionando"
+            else
+                log_warning "ROS 2 encontrado mas pode não estar configurado corretamente"
+            fi
+        fi
     else
         log_error "ROS 2 não encontrado!"
         return 1
     fi
     
     log_info "Verificando pacotes Python..."
-    python3 -c "import cv2, numpy, scipy; print('OpenCV:', cv2.__version__, 'NumPy:', numpy.__version__, 'SciPy:', scipy.__version__)"
+    python3 -c "import cv2, numpy, scipy; print('OpenCV:', cv2.__version__, 'NumPy:', numpy.__version__, 'SciPy:', scipy.__version__)" 2>/dev/null || log_warning "Algumas dependências Python podem estar faltando"
     
     log_info "Verificando mirela_sdk..."
-    if ros2 pkg list | grep -q mirela_sdk; then
+    # Usar uma abordagem mais robusta para verificar o pacote
+    PKG_LIST=$(ros2 pkg list 2>/dev/null)
+    if echo "$PKG_LIST" | grep -q "mirela_sdk"; then
         log_success "Pacote mirela_sdk encontrado!"
     else
         log_warning "Pacote mirela_sdk não encontrado no workspace"
@@ -470,7 +482,7 @@ main() {
     echo ""
     log_success "🚀🐝 AVANTE! Ambiente mirela_sdk configurado com sucesso!"
     log_info "Reinicie o terminal ou execute: source ~/.bashrc"
-    log_info "Para testar: cd ~/ros2_ws && ros2 pkg list | grep mirela"
+    log_info "Para testar: cd ~/ros2_ws && ros2 pkg list 2>/dev/null | grep mirela || echo 'Pacote não encontrado'"
 }
 
 # Executar função principal
