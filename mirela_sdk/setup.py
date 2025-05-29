@@ -16,6 +16,10 @@ setup(
             os.path.join("share", package_name, "launch"),
             glob(os.path.join("launch", "*launch.[pxy][yma]*")),
         ),
+        (
+            os.path.join("share", package_name, "config"),
+            glob(os.path.join("config", "*.yaml")),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -34,6 +38,7 @@ setup(
             "color_calibration_node = mirela_sdk.image_processing.color.color_calibration_node:main",
             "camera_calibration = mirela_sdk.image_processing.camera.calibration.calibration:main",
             "line_detection_node = mirela_sdk.image_processing.line.line_detection_node:main",
+            "webcam_publisher = mirela_sdk.image_processing.camera.webcam_publisher_node:main",
         ],
     },
 )
