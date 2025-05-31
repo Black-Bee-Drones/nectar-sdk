@@ -137,7 +137,7 @@ class RotatedRect(ILineEstimationMethod):
 
         angle = center_x = center_y = float("nan")
 
-        if len(contours) > 0 and cv2.contourArea(contours[0]) > 1500:
+        if len(contours) > 0 and cv2.contourArea(contours[0]) > 1700:
             blackbox = cv2.minAreaRect(contours[0])
             (x_min, y_min), (w_min, h_min), angle_bb = blackbox
 
@@ -443,6 +443,7 @@ class LineDetector:
             "angle": (10, 30),
             "center_x": (10, 60),
         }
+        self.prev_angle = float("nan")  # For angle smoothing
 
     def set_text_positions(self, positions_dict):
         """
@@ -511,6 +512,13 @@ class LineDetector:
 
         except ValueError as e:
             print(f"Error in estimation method: {e}")
+
+        # angle smoothing, exponential moving average
+        alpha = 0.1
+        if not math.isnan(angle):
+            if not math.isnan(self.prev_angle):
+                angle = alpha * angle + (1 - alpha) * self.prev_angle
+            self.prev_angle = angle
 
         if draw:
             text_color = (
