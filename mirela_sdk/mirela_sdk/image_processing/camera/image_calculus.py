@@ -5,8 +5,8 @@ class ImageCalculus:
 
     @staticmethod
     def find_coordinate(
-        centerpixel_lon: float,
         centerpixel_lat: float,
+        centerpixel_lon: float,
         centerpixel_height: int,
         centerpixel_width: int,
         pixel2_height: int,
@@ -77,7 +77,7 @@ class ImageCalculus:
         # Convert back to degrees
         newlat, newlon = map(math.degrees, [newlat, newlon])
 
-        return newlon, newlat
+        return newlat, newlon
 
     @staticmethod
     def calculate_offset_pixels(
