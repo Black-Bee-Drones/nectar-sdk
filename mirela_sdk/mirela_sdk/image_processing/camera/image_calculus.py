@@ -1,83 +1,72 @@
 import math
+from geopy.distance import distance
+from geopy.point import Point
 
 
 class ImageCalculus:
-
     @staticmethod
-    def find_coordinate(
-        centerpixel_lat: float,
-        centerpixel_lon: float,
-        centerpixel_height: int,
-        centerpixel_width: int,
-        pixel2_height: int,
-        pixel2_width: int,
-        gdr: float,
-        bearing: float,
+    def estimate_pixel_gps(
+        origin_lat: float,
+        origin_lon: float,
+        origin_row: int,
+        origin_col: int,
+        target_row: int,
+        target_col: int,
+        gsd: float,
+        image_bearing: float,
     ):
         """
-        Finds the GPS coordinate of a pixel in an image based on the GPS coordinates of the image center,
-        coordinates of the center pixel in the image, coordinates of the pixel you want to find the GPS
-        coordinate, GDR (Geographic Resolution) in meters per pixel, and the bearing (compass angulation)
-        in degrees.
+        Estimates the GPS coordinates of a target pixel in an image based on a known GPS coordinate 
+        of a reference pixel (origin), the Ground Sampling Distance (GSD), and the image orientation (bearing).
 
-        Inputs:
-        :param centerpixel_lon (float): GPS longitude of the image center.
-        :param centerpixel_lat (float): GPS latitude of the image center.
+        Parameters:
+        ----------
+        origin_lat : float
+            Latitude of the origin pixel in decimal degrees.
+        origin_lon : float
+            Longitude of the origin pixel in decimal degrees.
+        origin_row : int
+            Row index (vertical axis) of the origin pixel.
+        origin_col : int
+            Column index (horizontal axis) of the origin pixel.
+        target_row : int
+            Row index (vertical axis) of the target pixel.
+        target_col : int
+            Column index (horizontal axis) of the target pixel.
+        gsd : float
+            Ground Sampling Distance (meters per pixel).
+        image_bearing : float
+            Orientation of the image in degrees (0° is North, increases clockwise).
 
-        :param centerpixel_height (int): Vertical coordinate (height) of the central pixel in the image.
-        :param centerpixel_width (int): Horizontal coordinate (width) of the central pixel in the image.
-
-        :param pixel2_height (int): Vertical coordinate (height) of the pixel for which you want to
-                                    find the GPS coordinate.
-        :param pixel2_width (int): Horizontal coordinate (width) of the pixel for which you want to
-                                   find the GPS coordinate.
-
-        :param gdr (float): Geographic Resolution in meters per pixel.
-
-        :param bearing (float): Angle of orientation (bearing) in degrees with respect to magnetic north.
-
-        Output:
-        Tuple containing the GPS Longitude and Latitude of the desired pixel.
+        Returns:
+        -------
+        (float, float)
+            A tuple containing the estimated latitude and longitude (in decimal degrees)
+            of the target pixel.
         """
 
-        # Earth radius in kilometers (will be used to calculate the new coordinate): unit kilometers
-        earth_radius = 6371.0
+        # Euclidean distance in pixel space between origin and target
+        pixel_distance = math.hypot(target_row - origin_row, target_col - origin_col)
 
-        # Converting to radians as math always uses radians: unit radians
-        bearing_radians = math.radians(bearing)
+        # Convert pixel distance to meters using GSD
+        distance_m = pixel_distance * gsd
 
-        # The distance between the two given points: unit pixels
-        module = math.sqrt(
-            (centerpixel_height - pixel2_height) ** 2
-            + (centerpixel_width - pixel2_width) ** 2
+        # Compute the angle from origin to target in image coordinates
+        # Y-axis is inverted: rows increase downward, so we subtract
+        pixel_angle_deg = math.degrees(
+            math.atan2(origin_row - target_row, target_col - origin_col)
         )
 
-        # Calculating that same distance in meters: unit meters
-        distance_in_meters = module * gdr  # gdr should be given as meters/pixel
+        # Adjust angle according to the image's bearing (compass orientation)
+        absolute_bearing = (image_bearing - pixel_angle_deg) % 360
 
-        # Calculating the angle formed by the reference and a line made by the two points: unit radians
-        # In this calculation, the "height" is inverted because opencv's orientation is oposite to ours.
-        argument = math.atan2(
-            centerpixel_height - pixel2_height, pixel2_width - centerpixel_width
-        )
+        # Construct origin GPS point
+        origin = Point(origin_lat, origin_lon)
 
-        # 'alpha' in the angle of the vector from the point1 to the point2;
-        alpha = bearing_radians - argument
+        # Estimate target coordinate using geodesic projection
+        destination = distance(meters=distance_m).destination(origin, absolute_bearing)
 
-        latitude_distance = distance_in_meters * math.sin(alpha)  # unit -> meters
-        longitude_distance = distance_in_meters * math.cos(alpha)  # unit -> meters
-
-        # Convert latitude and longitude from radians to degrees
-        lat, lon = map(math.radians, [centerpixel_lat, centerpixel_lon])
-
-        # Calculate the new coordinate point
-        newlat = lat - (latitude_distance / (earth_radius * 1000))
-        newlon = lon + (longitude_distance / (earth_radius * 1000))
-
-        # Convert back to degrees
-        newlat, newlon = map(math.degrees, [newlat, newlon])
-
-        return newlat, newlon
+        return destination.latitude, destination.longitude
 
     @staticmethod
     def calculate_offset_pixels(
