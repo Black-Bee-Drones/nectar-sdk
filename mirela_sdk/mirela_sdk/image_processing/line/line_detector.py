@@ -14,9 +14,26 @@ class ILineEstimationMethod(ABC):
     @staticmethod
     @abstractmethod
     def estimate(
-        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True
-    ) -> Tuple[float, float, float]:
+        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True, draw_color=None
+    ) -> Tuple[float, float, float, float, float]:
+        """
+        Agora retorna também width e height (médias na máscara binária).
+        """
         pass
+
+def calc_width_height(mask: np.ndarray) -> Tuple[float, float]:
+    # Altura média: média de pixels brancos por coluna (nas colunas centrais)
+    h, w = mask.shape
+    col_ini = w // 2 - w // 10
+    col_fim = w // 2 + w // 10
+    cols = mask[:, col_ini:col_fim]
+    height = float(np.mean(np.sum(cols == 255, axis=0)))
+    # Largura média: média de pixels brancos por linha (nas linhas centrais)
+    row_ini = h // 2 - h // 10
+    row_fim = h // 2 + h // 10
+    rows = mask[row_ini:row_fim, :]
+    width = float(np.mean(np.sum(rows == 255, axis=1)))
+    return width, height
 
 
 class HoughLinesP(ILineEstimationMethod):
@@ -27,7 +44,7 @@ class HoughLinesP(ILineEstimationMethod):
         offset: tuple,
         draw: bool = True,
         draw_color=None,
-    ) -> Tuple[float, float, float]:
+    ) -> Tuple[float, float, float, float, float]:
         """
         Hough lines P detection method.
         Approximating a line from the probabilistic Hough transform
@@ -103,7 +120,9 @@ class HoughLinesP(ILineEstimationMethod):
                 )
                 cv2.circle(img_out, (int(x[0]), int(y[0])), 2, center_color, 3)
 
-        return center_x, center_y, angle
+        width, height = calc_width_height(img_detect)
+
+        return center_x, center_y, angle, width, height
 
 
 class RotatedRect(ILineEstimationMethod):
@@ -114,7 +133,7 @@ class RotatedRect(ILineEstimationMethod):
         offset: tuple,
         draw: bool = True,
         draw_color=None,
-    ) -> Tuple[float, float, float]:
+    ) -> Tuple[float, float, float, float, float]:
         """
         Rotated rectangle detection method.
         Approximates a rectangle of minimum area on the found contour
@@ -186,14 +205,16 @@ class RotatedRect(ILineEstimationMethod):
                 cv2.line(img_out, (x1, y1), (x2, y2), line_color, 3)
                 cv2.circle(img_out, center, 2, center_color, 3)
 
-        return center_x, center_y, angle
+        width, height = calc_width_height(img_detect)
+
+        return center_x, center_y, angle, width, height
 
 
 class FitEllipse(ILineEstimationMethod):
     @staticmethod
     def estimate(
-        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True
-    ) -> Tuple[float, float, float]:
+        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True, draw_color=None
+    ) -> Tuple[float, float, float, float, float]:
         """
         Ellipse fitting detection method.
         Fits an ellipse to the detected contour
@@ -239,14 +260,16 @@ class FitEllipse(ILineEstimationMethod):
                     # Draw the ellipse on the image
                     cv2.ellipse(img_out, ((xc, yc), (d1, d2), angle), (0, 255, 0), 2)
 
-        return center_x, center_y, angle
+        width, height = calc_width_height(img_detect)
+
+        return center_x, center_y, angle, width, height
 
 
 class AdaptiveHoughLinesP(ILineEstimationMethod):
     @staticmethod
     def estimate(
-        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True
-    ) -> Tuple[float, float, float]:
+        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True, draw_color=None
+    ) -> Tuple[float, float, float, float, float]:
         """
         Adaptive Hough lines detection with parameter tuning based on image characteristics.
 
@@ -336,14 +359,16 @@ class AdaptiveHoughLinesP(ILineEstimationMethod):
                     1,
                 )
 
-        return center_x, center_y, angle
+        width, height = calc_width_height(img_detect)
+
+        return center_x, center_y, angle, width, height
 
 
 class RansacLine(ILineEstimationMethod):
     @staticmethod
     def estimate(
-        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True
-    ) -> Tuple[float, float, float]:
+        img_detect: np.ndarray, img_out: np.ndarray, offset: tuple, draw: bool = True, draw_color=None
+    ) -> Tuple[float, float, float, float, float]:
         """
         RANSAC-based line detection method.
         Uses RANSAC to robustly fit a line to detected points, ignoring outliers.
@@ -408,7 +433,9 @@ class RansacLine(ILineEstimationMethod):
                         -1,
                     )
 
-        return center_x, center_y, angle
+        width, height = calc_width_height(img_detect)
+
+        return center_x, center_y, angle, width, height
 
 
 class LineDetector:
@@ -496,20 +523,18 @@ class LineDetector:
         region = cv2.getRectSubPix(self.color_detector.mask, region_size, region_center)
 
         center_x = center_y = angle = float("nan")
-
+        width = height = float('nan')
         try:
             # Use custom drawing colors if provided
             line_color = draw_color if draw_color is not None else (0, 255, 0)
-
             try:
-                center_x, center_y, angle = self.estimation_method.estimate(
+                center_x, center_y, angle, width, height = self.estimation_method.estimate(
                     region, img, offset, draw, line_color
                 )
             except (TypeError, ValueError):
-                center_x, center_y, angle = self.estimation_method.estimate(
+                center_x, center_y, angle, width, height = self.estimation_method.estimate(
                     region, img, offset, draw
                 )
-
         except ValueError as e:
             print(f"Error in estimation method: {e}")
 
@@ -555,7 +580,7 @@ class LineDetector:
                     1,
                 )
 
-        return img, region, center_x, center_y, angle
+        return img, region, center_x, center_y, angle, width, height
 
 
 def main():
@@ -570,7 +595,7 @@ def main():
         if not ret:
             break
 
-        result, region, center_x, center_y, angle = line_detector.detect_line(
+        result, region, center_x, center_y, angle, width, height = line_detector.detect_line(
             frame, region=(400, 400)
         )
 

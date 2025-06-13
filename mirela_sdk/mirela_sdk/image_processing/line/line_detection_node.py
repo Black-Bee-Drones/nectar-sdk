@@ -368,7 +368,7 @@ class LineDetectionNode(Node):
                     img_copy = display_img if self.show_visualization else img.copy()
 
                     try:
-                        (processed_img, region, center_x, center_y, angle) = (
+                        (processed_img, region, center_x, center_y, angle, width, height) = (
                             detector.detect_line(
                                 img_copy,
                                 region=self.DETECTION_ZONE,
@@ -380,7 +380,7 @@ class LineDetectionNode(Node):
                         self.get_logger().debug(
                             f"Method doesn't support draw_color, using fallback: {e}"
                         )
-                        (processed_img, region, center_x, center_y, angle) = (
+                        (processed_img, region, center_x, center_y, angle, width, height) = (
                             detector.detect_line(
                                 img_copy,
                                 region=self.DETECTION_ZONE,
@@ -391,7 +391,7 @@ class LineDetectionNode(Node):
                         self.get_logger().error(
                             f"Error in line detection for {color}: {e}"
                         )
-                        center_x = center_y = angle = float("nan")
+                        center_x = center_y = angle = width = height = float("nan")
 
                     self.center_x_values[color] = center_x
                     self.center_y_values[color] = center_y
@@ -401,8 +401,9 @@ class LineDetectionNode(Node):
                         self.line_state_msgs[color].center_x = float(center_x)
                         self.line_state_msgs[color].center_y = float(center_y)
                         self.line_state_msgs[color].angle = float(angle)
+                        self.line_state_msgs[color].width = float(width)
+                        self.line_state_msgs[color].height = float(height)
                         self.state_pubs[color].publish(self.line_state_msgs[color])
-
                         self.line_detected_msgs[color].data = True
                     else:
                         self.line_detected_msgs[color].data = False
