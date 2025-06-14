@@ -145,6 +145,8 @@ class ImageHandler:
             self.cap = cv2.VideoCapture(self.cap_num)
             self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
             self.cap.set(cv2.CAP_PROP_FOCUS, 0)
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
 
