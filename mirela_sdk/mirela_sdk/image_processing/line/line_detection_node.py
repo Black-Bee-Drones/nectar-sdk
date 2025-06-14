@@ -32,7 +32,7 @@ class LineDetectionNode(Node):
 
     # Constants for image processing
     IMG_SIZE = (640, 480)
-    DETECTION_ZONE = (640, 200)
+    DETECTION_ZONE = (640, 340)
 
     estimation_methods: Dict[str, ILineEstimationMethod] = {
         "RotatedRect": RotatedRect,

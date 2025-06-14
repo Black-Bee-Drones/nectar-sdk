@@ -143,6 +143,8 @@ class ImageHandler:
             # For webcam, the image is read by VideoCapture
             # and detection is maintained by the Timer together with the callback function
             self.cap = cv2.VideoCapture(self.cap_num)
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            self.cap.set(cv2.CAP_PROP_FOCUS, 0)
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
 
