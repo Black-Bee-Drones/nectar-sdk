@@ -58,7 +58,7 @@ class ImageCalculus:
         )
 
         # Adjust angle according to the image's bearing (compass orientation)
-        absolute_bearing = (image_bearing - pixel_angle_deg) % 360
+        absolute_bearing = (image_bearing - pixel_angle_deg + 90) % 360
 
         # Construct origin GPS point
         origin = Point(origin_lat, origin_lon)
