@@ -644,7 +644,7 @@ class MavDrone(Drone):
         angular_z: float = 0.0,
         ground_reference: bool = False,
         pub_rate: int = 30,
-        time: int = 0,
+        time: float = 0,
     ):
         """
         Move sending velocity commands
