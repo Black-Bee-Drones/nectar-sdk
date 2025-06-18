@@ -444,6 +444,7 @@ class MavDrone(Drone):
         takeoff_alt: float (meters)
         """
         self.arm()
+        sleep(3.0)
         self.takeoff(takeoff_alt)
 
     def land(self):
