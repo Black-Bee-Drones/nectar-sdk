@@ -53,6 +53,13 @@ class MavDrone(Drone):
         self._vel_body = TwistStamped()
         self._heading = Float64()
 
+        # Store takeoff position for custom RTL
+        self._takeoff_lat = 0.0
+        self._takeoff_lon = 0.0
+        self._takeoff_alt = 0.0
+        self._takeoff_heading = 0.0
+        self._home_position_set = False
+
         self.gps_controller = GPSController(self)
 
         # Subscribers:
@@ -443,6 +450,18 @@ class MavDrone(Drone):
         ----------
         takeoff_alt: float (meters)
         """
+        # Store the takeoff position for custom RTL strategy
+        self._takeoff_lat = self.get_gps.latitude
+        self._takeoff_lon = self.get_gps.longitude
+        self._takeoff_alt = takeoff_alt
+        self._takeoff_heading = self.get_heading.data
+        self._home_position_set = True
+
+        self.node.get_logger().info(
+            f"Stored takeoff position: Lat {self._takeoff_lat}, Lon {self._takeoff_lon}, "
+            f"Alt {self._takeoff_alt}, Heading {self._takeoff_heading}"
+        )
+
         self.arm()
         sleep(3.0)
         self.takeoff(takeoff_alt)
@@ -511,9 +530,10 @@ class MavDrone(Drone):
         rtl_alt: int = 10,
         precision_landing: bool = False,
         aruco_target: int = 800,
+        rtl_strategy: str = "default",
     ):
         """
-        Send return to launch command.
+        Send return to launch command using the selected strategy.
 
         The copter will first rise to RTL_ALT before returning home or maintain the current
         altitude if the current altitude is higher than RTL_ALT. The default value for RTL_ALT is 15m.
@@ -521,16 +541,101 @@ class MavDrone(Drone):
         Parameters
         ----------
         param rtl_alt (int): altitude in meters to rtl mode
-        param precisionland (bool): run precision_landing when the drone start the land or not
+        param precision_landing (bool): run precision_landing when the drone start the land or not
         param aruco_target (int): the ArUco marker id to do the precision landing
+        param rtl_strategy (str): RTL strategy to use:
+            - "default": Use ArduPilot's built-in RTL mode
+            - "set_home": Set home to current GPS position and then use RTL
+            - "gps_return": Return to takeoff position using offboard_gps_position
+            - "gps_current_alt": Return to takeoff position maintaining current altitude
         """
+        self.node.get_logger().info(f"RTL using strategy: {rtl_strategy}")
 
-        param_value = Int64()
-        param_value.data = rtl_alt * 100
+        if rtl_strategy == "default":
+            # Default ArduPilot RTL mode
+            param_value = Int64()
+            param_value.data = rtl_alt * 100
 
-        self.set_param("RTL_ALT", param_value=param_value)
-        self.delay(1)
-        self.set_mode("rtl")
+            self.set_param("RTL_ALT", param_value=param_value)
+            self.delay(1)
+            self.set_mode("rtl")
+
+        elif rtl_strategy == "set_home":
+            # Set home to current position then RTL
+            current_lat = self.get_gps.latitude
+            current_lon = self.get_gps.longitude
+            current_alt = self.get_gps.altitude
+            current_heading = self.get_heading.data
+
+            self.node.get_logger().info(
+                f"Setting home to current position: {current_lat}, {current_lon}, {current_alt}, {current_heading}"
+            )
+
+            self.set_home(
+                current_gps=False,
+                yaw=current_heading,
+                latitude=current_lat,
+                longitude=current_lon,
+                altitude=current_alt,
+            )
+
+            self.delay(1)
+
+            param_value = Int64()
+            param_value.data = rtl_alt * 100
+            self.set_param("RTL_ALT", param_value=param_value)
+            self.delay(1)
+            self.set_mode("rtl")
+
+        elif rtl_strategy == "gps_return" or rtl_strategy == "gps_current_alt":
+            # Return to takeoff position using GPS control
+            if not self._home_position_set:
+                self.node.get_logger().error(
+                    "Cannot use GPS return strategy: takeoff position not stored"
+                )
+                self.set_mode("rtl")  # Fallback to default RTL
+            else:
+                self.node.get_logger().info(
+                    f"Returning to takeoff position: Lat {self._takeoff_lat}, Lon {self._takeoff_lon}"
+                )
+
+                # If gps_current_alt strategy, use current altitude, otherwise use takeoff altitude
+                return_alt = (
+                    self.get_rel_alt.data
+                    if rtl_strategy == "gps_current_alt"
+                    else self._takeoff_alt
+                )
+
+                # First climb to return altitude if needed
+                current_alt = self.get_rel_alt.data
+                if return_alt > current_alt:
+                    self.node.get_logger().info(
+                        f"Climbing to return altitude: {return_alt}m"
+                    )
+                    self.offboard_velocity_timer(
+                        0.0, 0.0, 0.5, 0.0, False, 30, (return_alt - current_alt) / 0.5
+                    )
+
+                # Then return to takeoff position
+                self.offboard_gps_position(
+                    lat_setpoint=self._takeoff_lat,
+                    lon_setpoint=self._takeoff_lon,
+                    alt_setpoint=return_alt,
+                    heading=self._takeoff_heading,
+                    precision_radius=1.0,
+                )
+
+                # After reaching position, land
+                self.delay(10)  # Give time to reach the position
+                self.land()
+        else:
+            self.node.get_logger().error(f"Unknown RTL strategy: {rtl_strategy}")
+            # Fallback to default RTL
+            param_value = Int64()
+            param_value.data = rtl_alt * 100
+            self.set_param("RTL_ALT", param_value=param_value)
+            self.delay(1)
+            self.set_mode("rtl")
 
         if precision_landing:
             PrecisionLanding(self, self.node, False, aruco_target)
@@ -718,3 +823,90 @@ class MavDrone(Drone):
 
     def snapshot(self):
         pass
+
+    def set_takeoff_position(self, latitude, longitude, altitude, heading):
+        """
+        Store the current position as the takeoff position for custom RTL.
+
+        Parameters
+        ----------
+        latitude : float
+            Latitude of the takeoff position.
+        longitude : float
+            Longitude of the takeoff position.
+        altitude : float
+            Altitude of the takeoff position.
+        heading : float
+            Heading at the takeoff position.
+        """
+        self._takeoff_lat = latitude
+        self._takeoff_lon = longitude
+        self._takeoff_alt = altitude
+        self._takeoff_heading = heading
+        self._home_position_set = True
+
+    def custom_rtl(self):
+        """
+        Perform a custom return-to-launch (RTL) maneuver.
+
+        The drone will ascend to the takeoff altitude, then navigate to the
+        takeoff latitude and longitude, and finally descend to the takeoff
+        altitude.
+        """
+
+        if not self._home_position_set:
+            self.node.get_logger().warn(
+                "Home position not set, using current position."
+            )
+            # If home position is not set, use current position as home
+            home_lat = self.get_gps.latitude
+            home_lon = self.get_gps.longitude
+            home_alt = self.get_rng_alt.range
+            home_heading = self.get_heading.data
+
+            self.set_takeoff_position(home_lat, home_lon, home_alt, home_heading)
+
+        # Ascend to takeoff altitude
+        self.node.get_logger().info(
+            f"Ascending to takeoff altitude: {self._takeoff_alt}m"
+        )
+        self.offboard_velocity_timer(
+            linear_z=0.5, time=(self._takeoff_alt / 0.5)
+        )  # Ascend at 0.5 m/s
+
+        # Navigate to takeoff position
+        self.node.get_logger().info(
+            f"Navigating to takeoff position: {self._takeoff_lat}, {self._takeoff_lon}"
+        )
+        self.gps_controller.gps_send(
+            self._takeoff_lat,
+            self._takeoff_lon,
+            self._takeoff_alt,
+            self._takeoff_heading,
+            precision_radius=0.5,
+        )
+
+        # Descend to takeoff altitude
+        self.node.get_logger().info(
+            f"Descending to takeoff altitude: {self._takeoff_alt}m"
+        )
+        self.offboard_velocity_timer(
+            linear_z=-0.5, time=(self._takeoff_alt / 0.5)
+        )  # Descend at 0.5 m/s
+
+        # Land
+        self.node.get_logger().info("Landing...")
+        self.land()
+
+        self.node.get_logger().info("Custom RTL completed.")
+
+    def delay(self, seconds: float):
+        """
+        Simple delay function that allows processing of callbacks.
+
+        :param seconds (float): Time to delay in seconds
+        """
+        start_time = self.node.get_clock().now()
+        while (self.node.get_clock().now() - start_time).nanoseconds / 1e9 < seconds:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            sleep(0.1)
