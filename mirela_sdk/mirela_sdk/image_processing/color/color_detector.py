@@ -144,6 +144,9 @@ class ColorDetector:
         # Morphological operations for further noise removal and closing gaps
         mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, np.ones((8, 8), np.uint8))
 
+        # Ensure the mask is properly binarized to exactly 0 and 255
+        _, mask = cv2.threshold(mask, 128, 255, cv2.THRESH_BINARY)
+
         self.result = cv2.bitwise_and(img, img, mask=mask)
         self.mask = mask
 
