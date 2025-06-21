@@ -194,12 +194,12 @@ class RotatedRect(ILineEstimationMethod):
         contours, _ = cv2.findContours(
             img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-        contours = sorted(contours, key=cv2.minAreaRect)
-
+        largest_contour = max(contours, key=cv2.contourArea)
+    
         angle = center_x = center_y = float("nan")
 
-        if len(contours) > 0 and cv2.contourArea(contours[0]) > 1700:
-            blackbox = cv2.minAreaRect(contours[0])
+        if len(contours) > 0 and cv2.contourArea(largest_contour) > 1500:
+            blackbox = cv2.minAreaRect(largest_contour)
             (x_min, y_min), (w_min, h_min), angle_bb = blackbox
 
             if angle_bb < -45:
