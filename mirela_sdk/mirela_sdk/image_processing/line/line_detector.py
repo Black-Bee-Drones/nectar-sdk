@@ -62,10 +62,42 @@ def calc_width_height(
     box = np.intp(box)
 
     x, y, w, h = cv2.boundingRect(box)
-    roi = mask[y : y + h, x : x + w]
 
-    height = float(np.mean(np.sum(roi == 255, axis=0)))
-    width = float(np.mean(np.sum(roi == 255, axis=1)))
+    # Ensure x, y, w, h are within image bounds
+    y = max(0, y)
+    x = max(0, x)
+    h = min(h, mask.shape[0] - y)
+    w = min(w, mask.shape[1] - x)
+
+    if w > 0 and h > 0:
+        roi = mask[y : y + h, x : x + w]
+
+        threshold = 128  # Consider pixels with values > 128 as white
+        white_pixels = roi > threshold
+
+        if np.any(white_pixels):
+            # Calculate non-zero columns (for height) using the threshold
+            col_sums = np.sum(white_pixels, axis=0)
+            non_zero_cols = col_sums[col_sums > 0]
+            height = float(np.mean(non_zero_cols)) if len(non_zero_cols) > 0 else 0.0
+
+            # Calculate non-zero rows (for width) using the threshold
+            row_sums = np.sum(white_pixels, axis=1)
+            non_zero_rows = row_sums[row_sums > 0]
+            width = float(np.mean(non_zero_rows)) if len(non_zero_rows) > 0 else 0.0
+        else:
+            # If no white pixels found with threshold, try using the contour directly
+            contour_area = cv2.contourArea(largest_contour)
+            if contour_area > 0:
+                # Estimate width and height from contour
+                width = h_rect if h_rect > w_rect else w_rect
+                height = w_rect if h_rect > w_rect else h_rect
+            else:
+                width = height = 0.0
+    else:
+        # Invalid ROI dimensions
+        print(f"Invalid ROI dimensions: x={x}, y={y}, w={w}, h={h}")
+        width = height = 0.0
 
     return (
         width,
@@ -195,7 +227,7 @@ class RotatedRect(ILineEstimationMethod):
             img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         largest_contour = max(contours, key=cv2.contourArea)
-    
+
         angle = center_x = center_y = float("nan")
 
         if len(contours) > 0 and cv2.contourArea(largest_contour) > 1500:
@@ -580,8 +612,14 @@ class LineDetector:
             region_center[1] - region_size[1] // 2,
         )
 
+        # Debug output for mask properties
+        unique_values = np.unique(self.color_detector.mask)
+
         # Extract the subimage of the region of interest
         region = cv2.getRectSubPix(self.color_detector.mask, region_size, region_center)
+
+        # Ensure the mask has proper thresholding - normalize to 0 and 255
+        _, region = cv2.threshold(region, 128, 255, cv2.THRESH_BINARY)
 
         center_x = center_y = angle = float("nan")
         width = height = float("nan")
