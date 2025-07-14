@@ -165,6 +165,55 @@ class OakdCam:
 
         return queue.get().getCvFrame()
     
+
+    def getLatestFrame(self, queue: dai.DataOutputQueue) -> cv2.Mat:
+        """
+        Gets the latest cv frame from the output queue using a non-blocking call.
+        This drains the queue and returns only the most recent frame, which is
+        essential for low-latency applications.
+
+        :param queue (dai.DataOutputQueue): the output queue from getQueue function
+        """
+        latest_frame = None
+        # Try to get all available frames from the queue
+        while True:
+            frame = queue.tryGet()
+            if frame is not None:
+                latest_frame = frame
+            else:
+                # The queue is empty, break the loop
+                break
+        
+        return latest_frame.getCvFrame()
+    
+
+    def getLatestFrameBlocking(self, queue: dai.DataOutputQueue) -> cv2.Mat:
+        """
+        Gets the latest cv frame from the output queue using a hybrid approach.
+        This method first attempts to drain the queue of any old frames using
+        non-blocking calls. If the queue is empty after draining, it then makes a single
+        blocking call to wait for the next available frame. This ensures
+        low latency while guaranteeing that a frame is always returned.
+
+        :param queue (dai.DataOutputQueue): the output queue from getQueue function
+        :return: The most recent cv2.Mat frame from the camera.
+        """
+        latest_packet = None
+        # Non-blocking drain of the queue to get the latest packet
+        while True:
+            packet = queue.tryGet()
+            if packet is not None:
+                latest_packet = packet
+            else:
+                # The queue is empty, break the loop
+                break
+
+        # If the queue was empty, make a blocking call to wait for the next one.
+        if latest_packet is None:
+            latest_packet = queue.get()
+
+        return latest_packet.getCvFrame()
+    
     
     def get_stereo_depth(self) -> dai.node.StereoDepth:
 
