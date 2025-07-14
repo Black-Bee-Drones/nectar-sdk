@@ -130,7 +130,7 @@ class ImageHandler:
         """
 
         # getFrame function converts the frame from camera pattern to cv2.Mat
-        self.img = self.oakd.getFrame(self.queue)
+        self.img = self.oakd.getLatestFrameBlocking(self.queue)
         self.process()
 
     def run(self):
