@@ -13,22 +13,25 @@ class OakdCam:
 
     """
     
-    AUTOEXPOSURE =           "autoexposure"
+    RGB               =               "rgb"
+    LEFT              =              "left"
+    RIGHT             =             "right"
+    AUTOEXPOSURE      =      "autoexposure"
     ANTI_BANDING_MODE = "anti_banding_mode"
-    AWB_MODE =                   "awb_mode"
-    EFFECT_MODE =             "effect_mode"
-    AUTOFOCUS =                 "autofocus"
-    AE_COMP =                     "ae_comp"
-    BRIGHTNESS =               "brightness"
-    CONTRAST =                   "contrast"
-    SATURATION =               "saturation"
-    SHARPNESS =                 "sharpness"
-    LUMA_DENOISE =           "luma_denoise"
-    CHROMA_DENOISE =       "chroma_denoise"
-    EXPOSURE_TIME =         "exposure_time"
-    SENSITIVITY_ISO =     "sensitivity_iso"
-    FOCUS =                         "focus"
-    WHITE_BALANCE =         "white_balance"
+    AWB_MODE          =          "awb_mode"
+    EFFECT_MODE       =       "effect_mode"
+    AUTOFOCUS         =         "autofocus"
+    AE_COMP           =           "ae_comp"
+    BRIGHTNESS        =        "brightness"
+    CONTRAST          =          "contrast"
+    SATURATION        =        "saturation"
+    SHARPNESS         =         "sharpness"
+    LUMA_DENOISE      =      "luma_denoise"
+    CHROMA_DENOISE    =    "chroma_denoise"
+    EXPOSURE_TIME     =     "exposure_time"
+    SENSITIVITY_ISO   =   "sensitivity_iso"
+    FOCUS             =             "focus"
+    WHITE_BALANCE     =     "white_balance"
 
     
     def __init__(self)-> None:
@@ -36,10 +39,11 @@ class OakdCam:
         OakdCam constructor: initializes the pipeline and configures cameras with their 
         board sockets
         """
+
         self.pipeline = dai.Pipeline()
-        self.oak_dict = {1: ("rgb",   dai.CameraBoardSocket.CAM_A),
-                         2: ("left",  dai.CameraBoardSocket.CAM_B),
-                         3: ("right", dai.CameraBoardSocket.CAM_C)}
+        self.oak_dict = {1: (OakdCam.RGB,   dai.CameraBoardSocket.CAM_A),
+                         2: (OakdCam.LEFT,  dai.CameraBoardSocket.CAM_B),
+                         3: (OakdCam.RIGHT, dai.CameraBoardSocket.CAM_C)}
         self.device = None
         
 
@@ -65,7 +69,7 @@ class OakdCam:
         
         if self.cam_type != "invalid":
 
-            if self.cam_type == "rgb":
+            if self.cam_type == OakdCam.RGB:
                 camera = self.color_camera()
                 if set_control:
                     self.__set_control_input(camera)
@@ -107,7 +111,7 @@ class OakdCam:
         
         # Create communication link between camera and host(pc)
         xOut_rgb = self.pipeline.createXLinkOut()
-        xOut_rgb.setStreamName("rgb")
+        xOut_rgb.setStreamName(OakdCam.RGB)
 
         # Camera as input of communication link:
         cam.isp.link(xOut_rgb.input)
@@ -546,16 +550,18 @@ class OakdCam:
         detectionNetwork.out.link(nnOut.input)
 
 
-    def __get_model_settings(self, json_path: Path) -> None:
+    def __get_model_settings(self, json_path: Path | str) -> None:
 
         """
 
         Function to get the model settings from json file (classes, confidence, labels, 
         coordinates...)
 
+        :param json_path (Path | str): The path for the json file
+
         """
 
-        json_file:          dict  = self.__load_json(json_path)
+        json_file:          dict  = OakdCam.__load_json(json_path)
         self.nn_config:     dict  = json_file.get("nn_config",                  None)
         if self.nn_config is None: raise ValueError("nn_config property not found in " \
                                                                            "json file")
@@ -575,10 +581,14 @@ class OakdCam:
         self.width, self.height = [int(value) for value in size.split("x")]
 
 
-    def __load_json(self, json_path: Path) -> dict:
+    @staticmethod
+    def __load_json(json_path: Path | str) -> dict:
 
         """
         Function to load json file from json_path and return it
+
+        :param json_path (Path | str): The path for the json file
+
         """
 
         with open(json_path) as file:
