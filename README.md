@@ -55,7 +55,18 @@ Welcome to the Mirela SDK, a software development kit designed to simplify drone
 <a name="installation"></a>
 ## Installation 🦥
 
-- 🐳 **Docker (Recommended):**  For a consistent environment, use the provided [Dockerfile](docker/Dockerfile) and scripts:
+- 🚀 **Automated Installation (Recommended for Ubuntu/Debian):**  Download and run the automated installation script:
+    ```bash
+    # Download the installation script
+    wget https://raw.githubusercontent.com/Black-Bee-Drones/mirela-sdk/main/install_env.sh
+    chmod +x install_env.sh
+    
+    # Run the installation
+    ./install_env.sh
+    ```
+    This script automatically installs Git, ROS2 Humble, clones the repository, installs all dependencies, configures the workspace, and builds the project. See [`README_INSTALLATION.md`](README_INSTALLATION.md) for detailed information.
+
+- 🐳 **Docker:**  For a consistent environment, use the provided [Dockerfile](docker/Dockerfile) and scripts:
     * **Linux:** [`./run_docker_linux.sh`](docker/run_docker_linux.sh)
     * **Windows:** 
         - CMD: [`.\run_docker_win.cmd`](docker/run_docker_win.cmd)

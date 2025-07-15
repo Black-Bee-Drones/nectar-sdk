@@ -83,7 +83,6 @@ class GPSController:
         """
 
         last_distance: float = 1
-        rate: Rate = self.drone.node.create_rate(10)
 
         while rclpy.ok():
             rclpy.spin_once(self.drone.node)
@@ -101,8 +100,6 @@ class GPSController:
                 break
 
             last_distance = distance_target
-
-            rate.sleep()
 
     def gps_send(
         self,

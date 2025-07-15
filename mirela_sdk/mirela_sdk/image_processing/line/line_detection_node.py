@@ -32,7 +32,7 @@ class LineDetectionNode(Node):
 
     # Constants for image processing
     IMG_SIZE = (640, 480)
-    DETECTION_ZONE = (640, 200)
+    DETECTION_ZONE = (480, 280)
 
     estimation_methods: Dict[str, ILineEstimationMethod] = {
         "RotatedRect": RotatedRect,
@@ -121,6 +121,7 @@ class LineDetectionNode(Node):
         self.state_pubs: Dict[str, Any] = {}
         self.line_state_msgs: Dict[str, LineInfo] = {}
         self.center_x_values: Dict[str, float] = {}
+        self.center_y_values: Dict[str, float] = {}
         self.angle_values: Dict[str, float] = {}
         self.line_detected_msgs: Dict[str, Bool] = {}
 
@@ -205,6 +206,7 @@ class LineDetectionNode(Node):
             )
 
             self.center_x_values[color] = float("nan")
+            self.center_y_values[color] = float("nan")
             self.angle_values[color] = float("nan")
 
             self.get_logger().info(f"Initialized detector for color: {color}")
@@ -366,7 +368,7 @@ class LineDetectionNode(Node):
                     img_copy = display_img if self.show_visualization else img.copy()
 
                     try:
-                        (processed_img, region, center_x, angle) = (
+                        (processed_img, region, center_x, center_y, angle, width, height) = (
                             detector.detect_line(
                                 img_copy,
                                 region=self.DETECTION_ZONE,
@@ -378,7 +380,7 @@ class LineDetectionNode(Node):
                         self.get_logger().debug(
                             f"Method doesn't support draw_color, using fallback: {e}"
                         )
-                        (processed_img, region, center_x, angle) = (
+                        (processed_img, region, center_x, center_y, angle, width, height) = (
                             detector.detect_line(
                                 img_copy,
                                 region=self.DETECTION_ZONE,
@@ -389,16 +391,19 @@ class LineDetectionNode(Node):
                         self.get_logger().error(
                             f"Error in line detection for {color}: {e}"
                         )
-                        center_x = angle = float("nan")
+                        center_x = center_y = angle = width = height = float("nan")
 
                     self.center_x_values[color] = center_x
+                    self.center_y_values[color] = center_y
                     self.angle_values[color] = angle
 
-                    if not isnan(center_x) and not isnan(angle):
+                    if not isnan(center_x) and not isnan(center_y) and not isnan(angle):
                         self.line_state_msgs[color].center_x = float(center_x)
+                        self.line_state_msgs[color].center_y = float(center_y)
                         self.line_state_msgs[color].angle = float(angle)
+                        self.line_state_msgs[color].width = float(width)
+                        self.line_state_msgs[color].height = float(height)
                         self.state_pubs[color].publish(self.line_state_msgs[color])
-
                         self.line_detected_msgs[color].data = True
                     else:
                         self.line_detected_msgs[color].data = False
@@ -495,7 +500,7 @@ class LineDetectionNode(Node):
                 return (255, 255, 255)  # Default to white
         except Exception as e:
             self.get_logger().warning(f"Error converting color values to BGR: {e}")
-            return (255, 255, 255) 
+            return (255, 255, 255)
 
     def _get_color_bgr(self, color_name):
         """

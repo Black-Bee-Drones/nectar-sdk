@@ -19,8 +19,8 @@ class ImageHandler:
     BEBOP_TOPIC = "/bebop/camera/image_raw"
 
     C920_CTRL_MAP = {
-    'HD Pro Webcam C920': 'focus_automatic_continuous=0',
-    'Logi Webcam C920e': 'focus_auto=0',
+        "HD Pro Webcam C920": "focus_automatic_continuous=0",
+        "Logi Webcam C920e": "focus_auto=0",
     }
 
     def __init__(
@@ -31,7 +31,7 @@ class ImageHandler:
         show_result: str = None,
         cap: Optional[int] = 0,
         oakd_num: Optional[int] = 1,
-        c920_config: Optional[int] = 1
+        c920_config: Optional[int] = 1,
     ):
         """
         Class to handle image processing from a ROS topic or webcam.
@@ -130,7 +130,7 @@ class ImageHandler:
         """
 
         # getFrame function converts the frame from camera pattern to cv2.Mat
-        self.img = self.oakd.getFrame(self.queue)
+        self.img = self.oakd.getLatestFrameBlocking(self.queue)
         self.process()
 
     def run(self):
@@ -143,11 +143,17 @@ class ImageHandler:
             # For webcam, the image is read by VideoCapture
             # and detection is maintained by the Timer together with the callback function
             self.cap = cv2.VideoCapture(self.cap_num)
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            self.cap.set(cv2.CAP_PROP_FOCUS, 0)
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
 
         elif self.image_source == "c920":
-            result = subprocess.run(['v4l2-ctl', '--list-devices'], capture_output=True, text=True)
+            result = subprocess.run(
+                ["v4l2-ctl", "--list-devices"], capture_output=True, text=True
+            )
             lines = result.stdout.splitlines()
             device = None
             ctrl_param = None
@@ -157,15 +163,17 @@ class ImageHandler:
                     if model_name in line:
                         ctrl_param = param
                         j = i + 1
-                        while j < len(lines) and lines[j].startswith('\t'):
-                            match = re.search(r'(/dev/video\d+)', lines[j])
+                        while j < len(lines) and lines[j].startswith("\t"):
+                            match = re.search(r"(/dev/video\d+)", lines[j])
                             if match:
                                 device = match.group(1)
                                 break
                             j += 1
                         break
                 if device and ctrl_param:
-                    subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl=' + ctrl_param])
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", device, "--set-ctrl=" + ctrl_param]
+                    )
                     break
 
             if device is None:
@@ -191,7 +199,9 @@ class ImageHandler:
 
                 self.cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
                 success = True
-                success &= self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                success &= self.cap.set(
+                    cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG")
+                )
                 success &= self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
                 success &= self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
                 success &= self.cap.set(cv2.CAP_PROP_FPS, 30)
@@ -202,9 +212,6 @@ class ImageHandler:
                     )
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
-
-
-
 
         elif self.image_source == "oakd":
             # For oakd, OakdCam class initializes the pipeline, configures the camera according
@@ -247,8 +254,8 @@ class ImageHandler:
 
                 except AttributeError as ex:
                     self.node.get_logger().error(f"{ex}")
-                    
-                else: 
+
+                else:
                     self.node.destroy_timer(self.oakd_timer)
 
             elif os.path.isfile(self.image_source):
@@ -261,7 +268,7 @@ class ImageHandler:
                     cv2.destroyWindow(self.show_result)
                 except Exception as e:
                     self.node.get_logger().warning(str(e))
-                    cv2.destroyAllWindows() 
+                    cv2.destroyAllWindows()
         else:
             print("Image Handler already cleaned up")
 
