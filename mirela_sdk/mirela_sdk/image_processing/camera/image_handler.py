@@ -11,6 +11,8 @@ from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
 import re
 import subprocess
 
+from time import sleep
+
 
 class ImageHandler:
     RASPICAM_LAUNCH = "camerav2_410x308_30fps.launch"
@@ -128,10 +130,46 @@ class ImageHandler:
         """
         Callback function for oakd
         """
+        try:
+            # getFrame function converts the frame from camera pattern to cv2.Mat
+            self.img = self.oakd.getLatestFrameBlocking(self.queue)
+            self.process()
 
-        # getFrame function converts the frame from camera pattern to cv2.Mat
-        self.img = self.oakd.getLatestFrameBlocking(self.queue)
-        self.process()
+        except RuntimeError as e:
+            self.node.get_logger().error(f"RuntimeError at OAK-D callback: {e}")
+            self.node.get_logger().info("Restarting camera communication...")
+            
+            # Stop the current timer if it exists
+            if self.oakd_timer is not None:
+                self.oakd_timer.cancel()
+                self.oakd_timer = None
+            
+            # Clean up the OAK-D camera resources
+            if self.oakd:
+                self.oakd.clean()
+                self.oakd = None
+                self.queue = None
+            
+            # Attempt to reinitialize the OAK-D camera
+            sleep(0.1)
+            self._initialize_oakd()
+
+    def _initialize_oakd(self) -> bool:
+        """
+        OakdCam class initializes the pipeline, configures the camera according to the address,
+        returns the queue with frames in the camera pattern
+        """
+        try:
+            self.oakd = OakdCam()
+            self.oakd.setup_camera(self.oakd_num)
+            self.oakd.init_cam(True)
+            self.queue = self.oakd.getQueue_CamType()
+            self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
+
+        except Exception as e:
+            self.node.get_logger().error(f"Failed to initialize OAK-D camera: {str(e)}")
+            return False
+
 
     def run(self):
         """
@@ -219,7 +257,7 @@ class ImageHandler:
 
             self.oakd = OakdCam()
             self.oakd.setup_camera(self.oakd_num)
-            self.oakd.init_cam()
+            self.oakd.init_cam(True)
             self.queue = self.oakd.getQueue_CamType()
             self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
 
