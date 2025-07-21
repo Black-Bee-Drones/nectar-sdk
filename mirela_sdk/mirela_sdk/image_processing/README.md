@@ -1,6 +1,6 @@
 # Image Processing Tools 📷
 
-Provides a collection of tools for image processing, focusing on color detection, ArUco marker detection, camera calibration, and line detection, built as part of the Mirela SDK.  It leverages OpenCV, ROS 2, and DepthAI for robust and versatile image analysis.
+Provides a collection of tools for image processing, focusing on color detection, ArUco marker detection, camera calibration, line detection, and distance estimation, built as part of the Mirela SDK.  It leverages OpenCV, ROS 2, and DepthAI for robust and versatile image analysis.
 
 ## Features ✨
 
@@ -8,6 +8,7 @@ Provides a collection of tools for image processing, focusing on color detection
 * **ArUco Marker Detection:**  Detect and estimate the pose (translation and rotation) of ArUco markers in images or video streams.  Publish pose estimates as ROS 2 messages for seamless integration with robotic systems.
 * **Camera Calibration:**  Calibrate your camera using a chessboard pattern to obtain accurate intrinsic and distortion parameters.  Save and load calibration data for efficient reuse.
 * **Line Detection:** Detect and track lines in images or video streams using various estimation methods. Determine line position (center) and orientation (angle). Publish line information as ROS 2 messages.
+* **Distance Estimation:** Estimate distances from pixel measurements using multiple mathematical models including linear, polynomial, exponential, and robust methods. Includes calibration tools for custom scenarios.
 * **Oak-D Camera Support:**  Integrates with DepthAI for advanced functionalities like stereo depth perception and IMU sensor access.
 * **ROS 2 Integration:**  Several components are designed as ROS 2 nodes for easy integration into robotic applications.
 * **Versatile Image Handling:**  Supports various image sources, including ROS topics, webcams, Oak-D cameras, and image files.
@@ -52,6 +53,13 @@ Provides a collection of tools for image processing, focusing on color detection
   * `RansacLine`: Uses RANSAC algorithm for robust line detection.
   * `AdaptiveHoughLinesP`: Adapts parameters based on image characteristics.
 
+### Distance Estimation 📐
+
+* **`distance/distance_estimation.py`:** Defines the `DistanceEstimator` class for estimating distances from pixel measurements using multiple mathematical models.
+* **`distance/distance_calibration.py`:** Provides the `DistanceCalibrator` class for calibrating distance estimation models with your own data.
+* **`distance/distance_models.py`:** Advanced model analysis and comparison tools for research and optimization.
+* **`distance/distance_parameters.py`:** Pre-calibrated parameters for various distance estimation models.
+
 ## Package Structure 📂
 
 * **`image_processing`**: Contains the core image processing logic.
@@ -78,6 +86,12 @@ Provides a collection of tools for image processing, focusing on color detection
         * **`__init__.py`**: Exposes `LineDetector` and `LineDetectionNode`.
         * **`line_detector.py`**: Line detection class with multiple estimation methods.
         * **`line_detection_node.py`**: ROS 2 node for line detection.
+    * **`distance`**: Distance estimation and calibration.
+        * **`__init__.py`**: Exposes distance estimation classes and functions.
+        * **`distance_estimation.py`**: Core distance estimation functionality.
+        * **`distance_calibration.py`**: Distance calibration utilities.
+        * **`distance_models.py`**: Advanced model analysis tools.
+        * **`distance_parameters.py`**: Pre-calibrated model parameters.
 
 ## **Key Classes**
 
@@ -107,8 +121,130 @@ Provides a collection of tools for image processing, focusing on color detection
   - **`RansacLine`**: Uses RANSAC algorithm for robust line fitting.
   - **`AdaptiveHoughLinesP`**: Dynamically adjusts parameters based on image characteristics.
 
+### **Distance Estimation**
+- **`DistanceEstimator`**: Estimates distances using multiple mathematical models with optional input validation.
+- **`DistanceCalibrator`**: Calibrates custom distance estimation models from measurement data.
+- **`DistanceModelAnalyzer`**: Advanced analysis and comparison of different estimation models.
+
 ### **Image Processing Utilities**
 - **`ImageCalculus`**: Converts pixel locations to GPS coordinates.
+
+## Distance Estimation Usage Guide 📐
+
+### Quick Start
+
+```python
+from mirela_sdk.image_processing import DistanceEstimator, EstimationMethod
+
+# Create estimator with default settings
+estimator = DistanceEstimator()
+
+# Estimate distance from pixel measurement
+pixel_size = 25.0
+distance_cm = estimator.estimate(pixel_size)
+print(f"Estimated distance: {distance_cm:.2f} cm")
+
+# Use specific estimation method
+distance_cm = estimator.estimate(pixel_size, EstimationMethod.EXPONENTIAL)
+```
+
+### Custom Calibration
+
+```python
+from mirela_sdk.image_processing import DistanceCalibrator, EstimationMethod
+
+# Create calibrator
+calibrator = DistanceCalibrator()
+
+# Add your measurement data (distance_cm, pixel_measurement)
+data_points = [
+    (50, 32.2),
+    (60, 28.5),
+    (70, 24.2),
+    (80, 23.9),
+    (100, 21.6),
+    (120, 19.9),
+    (150, 16.8),
+    (180, 14.8),
+]
+
+calibrator.add_data_points(data_points)
+
+# Calibrate different models
+linear_result = calibrator.calibrate_linear()
+poly_result = calibrator.calibrate_polynomial(degree=2)
+
+print(f"Linear model RMSE: {linear_result['rmse']:.2f}")
+print(f"Polynomial model RMSE: {poly_result['rmse']:.2f}")
+
+# Get best calibration
+best_name, best_params = calibrator.get_best_calibration()
+print(f"Best model: {best_name} (RMSE: {best_params['rmse']:.2f})")
+
+# Create estimator from calibration
+estimator = calibrator.create_estimator_from_calibration(
+    valid_range=(15.0, 35.0)
+)
+```
+
+### Advanced Usage with Validation
+
+```python
+from mirela_sdk.image_processing import DistanceEstimator, EstimationMethod
+
+# Create estimator with input validation
+estimator = DistanceEstimator(
+    default_method=EstimationMethod.POLYNOMIAL,
+    valid_range=(15.0, 35.0),  # Expected input range
+    validate_inputs=True
+)
+
+# Set custom valid range
+estimator.set_valid_range((10.0, 40.0))
+
+# Get available methods
+methods = estimator.get_available_methods()
+print(f"Available methods: {methods}")
+
+# Get method information
+info = estimator.get_method_info(EstimationMethod.EXPONENTIAL)
+print(f"Formula: {info['formula']}")
+```
+
+### Model Evaluation
+
+```python
+from mirela_sdk.image_processing import DistanceCalibrator, EstimationMethod
+
+# Evaluate existing estimator
+calibrator = DistanceCalibrator()
+calibrator.add_data_points(your_test_data)
+
+estimator = DistanceEstimator(default_method=EstimationMethod.POLYNOMIAL)
+metrics = calibrator.evaluate_estimator(estimator, EstimationMethod.POLYNOMIAL)
+
+print(f"RMSE: {metrics['rmse']:.2f}")
+print(f"MAE: {metrics['mae']:.2f}")
+print(f"R²: {metrics['r2']:.4f}")
+```
+
+### Calibration Workflow
+
+1. **Collect Data**: Measure real distances and corresponding pixel measurements
+2. **Create Calibrator**: Initialize `DistanceCalibrator` and add your data points
+3. **Test Models**: Try different calibration methods (linear, polynomial)
+4. **Evaluate**: Compare RMSE and R² values to choose the best model
+5. **Deploy**: Create `DistanceEstimator` from your best calibration
+6. **Validate**: Test with new data to ensure accuracy
+
+### Available Estimation Methods
+
+- **LINEAR**: Simple inverse relationship (`output = k / input`)
+- **POLYNOMIAL**: Polynomial fitting of various degrees
+- **EXPONENTIAL**: Exponential decay model (`output = a * exp(-b * input) + c`)
+- **INVERSE_POWER**: Generalized power law (`output = k / input^p`)
+- **LOGARITHMIC**: Logarithmic relationship (`output = a * log(input) + b`)
+- **ROBUST_POLY2**: Robust 2nd-degree polynomial using Huber regression
 
 ## Class Diagram 
 
@@ -216,6 +352,38 @@ classDiagram
         +estimate(img_detect, img_out, offset, draw) tuple
     }
 
+    class DistanceEstimator {
+        +__init__(default_method, valid_range, validate_inputs)
+        +estimate(input_value, method) float
+        +estimate_distance(height_px, method) float
+        +set_default_method(method)
+        +set_valid_range(valid_range)
+        +get_available_methods() list
+        +get_method_info(method) dict
+    }
+
+    class DistanceCalibrator {
+        +__init__()
+        +add_data_point(distance, pixel)
+        +add_data_points(data_points)
+        +calibrate_linear() dict
+        +calibrate_polynomial(degree) dict
+        +get_best_calibration() tuple
+        +create_estimator_from_calibration(name, valid_range) DistanceEstimator
+        +evaluate_estimator(estimator, method) dict
+        +generate_parameter_code(name) str
+    }
+
+    class DistanceModelAnalyzer {
+        +__init__(data_points)
+        +fit_all_models()
+        +calculate_metrics()
+        +plot_models_comparison(save_path)
+        +get_best_model(criterion) tuple
+        +print_detailed_results()
+        +generate_parameters_file(output_path)
+    }
+
     class ImageHandler {
         +__init__(node, image_source, image_processing_callback, show_result, cap, oakd_num)
         +_configure_ros_topic()
@@ -250,4 +418,6 @@ classDiagram
     OakdCam -- ImageHandler
     LineDetector -- LineDetectionNode
     LineDetector -- ColorDetector
+    DistanceCalibrator -- DistanceEstimator
+    DistanceModelAnalyzer -- DistanceEstimator
 ```
