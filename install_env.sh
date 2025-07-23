@@ -166,8 +166,7 @@ install_ros2() {
     
     # Verificar se ROS 2 já está instalado
     if command -v ros2 &> /dev/null; then
-        log_info "ROS 2 já está instalado:"
-        ros2 --version
+        log_info "ROS 2 já está instalado."
         
         read -p "Deseja reinstalar? (y/N): " -n 1 -r
         echo
