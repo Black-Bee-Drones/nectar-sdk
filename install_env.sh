@@ -233,7 +233,7 @@ clone_mirela_sdk() {
     # Clonar mirela-sdk se não existir
     if [ ! -d "mirela-sdk" ]; then
         log_info "Clonando repositório mirela-sdk..."
-        git clone https://github.com/Black-Bee-Drones/mirela-sdk.git
+        git clone git@github.com:Black-Bee-Drones/mirela-sdk.git
     else
         log_info "Repositório mirela-sdk já existe, atualizando..."
         cd mirela-sdk
