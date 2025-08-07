@@ -1,9 +1,91 @@
 import math
 from geopy.distance import distance
 from geopy.point import Point
+from typing import Optional
 
 
 class ImageCalculus:
+    def __init__(self):
+        self.camera_position = {
+            'x': None,
+            'y': None,
+            'z': None,
+        }
+        self.camera_orientation = {
+            'roll': None,
+            'pitch': None,
+            'yaw': None,
+        }
+        self.image_resolution = {
+            "width": None,
+            "height": None,
+        }
+        self.pixels_per_degree = None
+
+
+    def set_config(self,
+        x: Optional[float]= None,
+        y: Optional[float]= None,
+        z: Optional[float]= None,
+        roll: Optional[float]= None,
+        pitch: Optional[float]= None,
+        yaw: Optional[float]= None,
+        camera_width: Optional[float]= None,
+        camera_height: Optional[float]= None,
+        pixels_per_degree: Optional[float]= None,
+    ):
+        if x is not None:
+            self.camera_position.x = x
+        if y is not None:
+            self.camera_position.y = y
+        if z is not None:
+            self.camera_position.z = z
+
+        if roll is not None:
+            self.camera_position.roll = roll
+        if pitch is not None:
+            self.camera_position.pitch = pitch
+        if yaw is not None:
+            self.camera_position.yaw = yaw
+
+        if camera_width is not None:
+            self.image_resolution = camera_width
+        if camera_height is not None:
+            self.image_resolution = camera_height
+
+        if pixels_per_degree is not None:
+            self.pixels_per_degree = pixels_per_degree
+
+
+    def calculate_relative_vector_to_ground(image_point, drone_orientation, altitude):
+        """
+        Calcula o vetor 3D que aponta do drone para o objeto detectado.
+
+        Parâmetros:
+            image_point (tuple[float, float]): Coordenadas normalizadas (x, y) da imagem [0.0–1.0].
+            drone_orientation (tuple[float, float, float]): Roll, pitch, yaw em radianos.
+            altitude (float): Altura do drone em metros.
+
+        Retorna:
+            tuple[float]: Vetor 3D no frame do drone apontando para o objeto no solo.
+        """
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     @staticmethod
     def estimate_pixel_gps(
         origin_lat: float,
