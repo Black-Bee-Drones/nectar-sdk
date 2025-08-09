@@ -2,6 +2,7 @@ import math
 from geopy.distance import distance
 from geopy.point import Point
 from typing import Optional
+import math
 
 
 class ImageCalculus:
@@ -12,9 +13,9 @@ class ImageCalculus:
             'z': None,
         }
         self.camera_orientation = {
-            'roll': None,
-            'pitch': None,
-            'yaw': None,
+            'angle_ver': None,
+            'angle_hor': None,
+            'angle': None,
         }
         self.image_resolution = {
             "width": None,
@@ -23,16 +24,16 @@ class ImageCalculus:
         self.pixels_per_degree = None
 
 
-    def set_config(self,
-        x: Optional[float]= None,
-        y: Optional[float]= None,
-        z: Optional[float]= None,
-        roll: Optional[float]= None,
-        pitch: Optional[float]= None,
-        yaw: Optional[float]= None,
-        camera_width: Optional[float]= None,
-        camera_height: Optional[float]= None,
-        pixels_per_degree: Optional[float]= None,
+    def update_camera_position(self,
+        x: Optional[float] = None,
+        y: Optional[float] = None,
+        z: Optional[float] = None,
+        angle_ver: Optional[float] = None,
+        angle_hor: Optional[float] = None,
+        angle: Optional[float] = None,
+        camera_width: Optional[float] = None,
+        camera_height: Optional[float] = None,
+        pixels_per_degree: Optional[float] = None,
     ):
         if x is not None:
             self.camera_position.x = x
@@ -41,20 +42,32 @@ class ImageCalculus:
         if z is not None:
             self.camera_position.z = z
 
-        if roll is not None:
-            self.camera_position.roll = roll
-        if pitch is not None:
-            self.camera_position.pitch = pitch
-        if yaw is not None:
-            self.camera_position.yaw = yaw
+        if angle_ver is not None:
+            self.camera_orientation.angle_ver = angle_ver
+        if angle_hor is not None:
+            self.camera_orientation.angle_hor = angle_hor
+        if angle is not None:
+            self.camera_orientation.angle = angle
 
         if camera_width is not None:
-            self.image_resolution = camera_width
+            self.image_resolution.width = camera_width
         if camera_height is not None:
-            self.image_resolution = camera_height
+            self.image_resolution.height = camera_height
 
         if pixels_per_degree is not None:
             self.pixels_per_degree = pixels_per_degree
+
+
+    def calculate_camera_pixel_vetor(self, pixel_x, pixel_y):
+        pixel_angle_ver = (self.image_resolution.height/2 - pixel_y * math.cos(self.camera_orientation.angle)) / self.pixels_per_degree
+        pixel_angle_hor = (self.image_resolution.width/2 - pixel_x * math.cos(self.camera_orientation.angle)) / self.pixels_per_degree
+
+        vetor = (
+            1,
+            math.tan(self.camera_orientation.angle_hor + pixel_angle_hor),
+            math.tan(self.camera_orientation.angle_ver + pixel_angle_ver)
+        )
+
 
 
     def calculate_relative_vector_to_ground(image_point, drone_orientation, altitude):
