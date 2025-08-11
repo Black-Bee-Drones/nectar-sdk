@@ -421,3 +421,156 @@ classDiagram
     DistanceCalibrator -- DistanceEstimator
     DistanceModelAnalyzer -- DistanceEstimator
 ```
+
+## Camera Abstraction Architecture
+
+To support multiple capture sources (OpenCV webcams, ROS topics, Oak-D, Intel RealSense D435i, and image files) with a consistent API, the camera layer has been redesigned around two abstraction levels:
+
+- `AbstractCam`: base interface for starting, grabbing frames, and closing a camera.
+- `DepthCam`: specialization for devices that provide depth and point distance queries.
+
+This design allows `ImageHandler` to manage initialization, polling, and cleanup generically, while still letting you use camera-specific features directly when needed.
+
+### Key Principles
+
+- **Simple common API**: `start()`, `get_frame()`, `close()` for all cameras.
+- **Depth capabilities separated**: `get_depth_frame()` and `get_distance(u, v)` are available only on `DepthCam` implementations.
+- **Pluggable cameras**: `ImageHandler` accepts any `AbstractCam` instance, or can build cameras from a simple `image_source` string for backward compatibility.
+- **Forward-compatible**: You can still use specific camera classes directly when needed (e.g., fine-grained Oak-D controls or RealSense-specific options).
+
+### Classes
+
+- `AbstractCam` (base): lifecycle and RGB frame capture.
+- `DepthCam` (base): adds depth capture and distance queries.
+- `OpenCVCam` (concrete): generic OpenCV webcam capture, with optional C920 tuning.
+- `ROSCam` (concrete): subscribes to a ROS 2 `sensor_msgs/Image` (or `CompressedImage`) topic and exposes the latest frame.
+- `RealsenseCam` (concrete, DepthCam): Intel RealSense D435i color + depth stream and pixel distance.
+- `OakdCam` (concrete, DepthCam): DepthAI Oak-D color (and optional stereo depth) with existing control features preserved.
+- `FileImageCam` (concrete): Single-image source useful for testing pipelines.
+
+### Updated ImageHandler
+
+`ImageHandler` now:
+- Accepts a `camera` instance (`AbstractCam`) or builds one from `image_source`.
+- Polls `camera.get_frame()` on a timer and invokes your processing callback.
+- Optionally shows frames in an OpenCV window.
+- Cleans up timers and camera resources safely.
+
+If your camera implements `DepthCam`, you can access `get_depth_frame()` and `get_distance(u, v)` directly via the `camera` instance you passed to `ImageHandler`.
+
+### Diagram
+
+```mermaid
+classDiagram
+    class AbstractCam {
+        <<abstract>>
+        +start() None
+        +get_frame() np.ndarray | None
+        +close() None
+        +is_running bool
+        +name str
+    }
+
+    class DepthCam {
+        <<abstract>>
+        +start() None
+        +get_frame() np.ndarray | None
+        +get_depth_frame() np.ndarray | None
+        +get_distance(u:int, v:int) float | None
+        +close() None
+        +is_running bool
+        +name str
+    }
+
+    AbstractCam <|-- DepthCam
+
+    class OpenCVCam {
+        +__init__(device_index, *, width, height, fps, fourcc, autofocus, focus)
+        +start()
+        +get_frame()
+        +close()
+    }
+
+    class ROSCam {
+        +__init__(node, topic, *, compressed)
+        +start()
+        +get_frame()
+        +close()
+    }
+
+    class RealsenseCam {
+        +__init__(*, color_res, depth_res, fps, align_to_color)
+        +start()
+        +get_frame()
+        +get_depth_frame()
+        +get_distance(u,v)
+        +close()
+    }
+
+    class OakdCam {
+        +__init__(*, cam_num, enable_depth)
+        +start()
+        +get_frame()
+        +get_depth_frame()
+        +get_distance(u,v)
+        +close()
+        %% Existing Oak-D specific methods remain available
+    }
+
+    class FileImageCam {
+        +__init__(image_path)
+        +start()
+        +get_frame()
+        +close()
+    }
+
+    AbstractCam <|-- OpenCVCam
+    AbstractCam <|-- ROSCam
+    DepthCam <|-- RealsenseCam
+    DepthCam <|-- OakdCam
+    AbstractCam <|-- FileImageCam
+
+    class ImageHandler {
+        +__init__(node, *, camera, image_source, show_result)
+        +run()
+        +cleanup()
+        -_poll_camera()
+    }
+
+    ImageHandler --> AbstractCam
+```
+
+### Usage Examples
+
+- Use ImageHandler with a RealSense camera and query distance at a pixel:
+
+```python
+from mirela_sdk.image_processing.camera.realsense_cam import RealsenseCam
+from mirela_sdk.image_processing.camera.image_handler import ImageHandler
+
+cam = RealsenseCam(fps=30)
+handler = ImageHandler(node, camera=cam, show_result="RealSense")
+
+# Inside your processing callback you can access handler.camera for depth queries
+# e.g., distance_m = handler.camera.get_distance(u=320, v=240)
+```
+
+- Keep using string sources for quick starts:
+
+```python
+handler = ImageHandler(node, image_source="webcam", show_result="Webcam")
+# or
+handler = ImageHandler(node, image_source="oakd", show_result="Oak-D")
+# or
+handler = ImageHandler(node, image_source="/camera/image_raw", show_result="ROS Topic")
+```
+
+- Use ROSCam directly when you want fine-grained topic control:
+
+```python
+from mirela_sdk.image_processing.camera.ros_cam import ROSCam
+cam = ROSCam(node, topic="/camera/image_raw", compressed=False)
+cam.start()
+frame = cam.get_frame()
+cam.close()
+```
