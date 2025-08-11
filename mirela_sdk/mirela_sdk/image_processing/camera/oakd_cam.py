@@ -84,6 +84,7 @@ class OakdCam(DepthCam):
         self._set_control = set_control
         self._link_out = True
 
+        # Configure the color camera (keeps internal cam_type as RGB)
         self.setup_camera(self._cam_num, link_out=True, set_control=set_control)
 
         if enable_depth:
@@ -95,7 +96,8 @@ class OakdCam(DepthCam):
             self._have_depth = False
 
         self.init_cam(full_speed=usb_full_speed)
-        self._rgb_queue = self.getQueue_CamType()
+        # Get queues explicitly by stream name to avoid relying on cam_type
+        self._rgb_queue = self.getQueue(OakdCam.RGB, maxSize=1, blocking=False)
         if self._have_depth:
             self._depth_queue = self.getQueue("depth", maxSize=1, blocking=False)
         self._is_running = True
@@ -104,7 +106,10 @@ class OakdCam(DepthCam):
         if self._rgb_queue is None:
             return None
         try:
-            return self.getFrame(self._rgb_queue)
+            msg = self._rgb_queue.tryGet()
+            if msg is None:
+                return None
+            return msg.getCvFrame()
         except Exception:
             return None
 
@@ -112,7 +117,10 @@ class OakdCam(DepthCam):
         if not self._have_depth or self._depth_queue is None:
             return None
         try:
-            depth_mm = self.getFrame(self._depth_queue)
+            msg = self._depth_queue.tryGet()
+            if msg is None:
+                return None
+            depth_mm = msg.getCvFrame()
         except Exception:
             return None
         if depth_mm is None:
@@ -249,8 +257,12 @@ class OakdCam(DepthCam):
 
         :param queue (dai.DataOutputQueue): the output queue from getQueue function
         """
-
-        return queue.get().getCvFrame()
+        # Prefer non-blocking retrieval to avoid freezing timers
+        msg = queue.tryGet()
+        if msg is None:
+            # Fallback to blocking get only if necessary in synchronous flows
+            return None
+        return msg.getCvFrame()
 
     def get_stereo_depth(self) -> dai.node.StereoDepth:
         """
@@ -282,8 +294,15 @@ class OakdCam(DepthCam):
             "syncedRight": stereo.syncedRight.link,
         }
 
-        mono_left = self.setup_camera(2, False)
-        mono_right = self.setup_camera(3, False)
+        # Create mono cameras directly without changing self.cam_type
+        mono_left = self.pipeline.createMonoCamera()
+        mono_left.setBoardSocket(dai.CameraBoardSocket.CAM_B)
+        mono_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+
+        mono_right = self.pipeline.createMonoCamera()
+        mono_right.setBoardSocket(dai.CameraBoardSocket.CAM_C)
+        mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+
         mono_left.out.link(stereo.left)
         mono_right.out.link(stereo.right)
         return stereo

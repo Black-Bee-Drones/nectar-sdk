@@ -26,7 +26,7 @@ class DepthDemoNode(Node):
         # Select and start camera using the DepthCam interface
         if camera_type == "oakd":
             cam = OakdCam()
-            cam.start(cam_num=1, enable_depth=True, usb_full_speed=True)
+            cam.start(cam_num=1, enable_depth=True, usb_full_speed=False)
         else:
             cam = RealsenseCam(fps=30)
             cam.start()
