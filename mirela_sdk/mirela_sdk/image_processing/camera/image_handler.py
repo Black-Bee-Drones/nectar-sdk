@@ -184,6 +184,7 @@ class ImageHandler:
             self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
             self.cap.set(cv2.CAP_PROP_FOCUS, 0)
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             self.cap.set(cv2.CAP_PROP_FPS, 30)
 
             self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
@@ -243,6 +244,7 @@ class ImageHandler:
                 success &= self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
                 success &= self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
                 success &= self.cap.set(cv2.CAP_PROP_FPS, 30)
+                success &= self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
                 if not success:
                     self.node.get_logger().warn(
