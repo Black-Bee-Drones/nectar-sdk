@@ -257,7 +257,7 @@ class ImageHandler:
 
             self.oakd = OakdCam()
             self.oakd.setup_camera(self.oakd_num)
-            self.oakd.init_cam(True)
+            self.oakd.init_cam()
             self.queue = self.oakd.getQueue_CamType()
             self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
 
