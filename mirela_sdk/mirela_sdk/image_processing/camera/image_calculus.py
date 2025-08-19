@@ -10,9 +10,9 @@ class ImageCalculus:
     def __init__(self):
         '''Initializes the class with default settings.'''
         self.camera_offset: np.ndarray = np.array((0, 0, 0)) # Forward, right, up
-        self.camera_orientation: np.ndarray = np.array((0, 0, 0)) # Roll, pitch, rotation
+        self.camera_orientation: np.ndarray = np.array((0, np.deg2rad(-90), 0)) # Roll, pitch, rotation
         self.camera_resolution: np.ndarray = np.array((1920, 1080))
-        self.pixels_per_degree: Callable[[float], float] = lambda p: p*20
+        self.pixels_to_degree: Callable[[float], float] = lambda p: p/25
 
 
     def update_camera_offset(
@@ -96,22 +96,22 @@ class ImageCalculus:
             return False
 
 
-    def update_pixels_per_degree(
+    def update_pixels_to_degree(
         self,
-        pixels_per_degree: Callable[[float], float],
+        pixels_to_degree: Callable[[float], float],
     ) -> bool:
         '''
         Sets the camera's angular resolution.
 
         Args:
-            pixels_per_degree (float | None): Pixels-per-degree conversion factor.
+            pixels_to_degree (float | None): Pixels-per-degree conversion factor.
                 If None, keeps the current value.
 
         Returns:
             bool: True if the update was successful.
         '''
         try:
-            self.pixels_per_degree = self.pixels_per_degree if pixels_per_degree is None else pixels_per_degree
+            self.pixels_to_degree = self.pixels_to_degree if pixels_to_degree is None else pixels_to_degree
             return True
         except:
             return False
@@ -160,8 +160,8 @@ class ImageCalculus:
         Returns:
             np.ndarray: Rotated 3D vector (x, y, z).
         '''
-        x = vector[0] * np.cos(pitch) + vector[2] * np.sin(pitch)
-        y = vector[1] * np.cos(roll) + vector[2] * np.sin(roll)
+        x = vector[0] * np.cos(pitch) - vector[2] * np.sin(pitch)
+        y = vector[1] * np.cos(roll) - vector[2] * np.sin(roll)
         z = vector[0] * np.sin(pitch) + vector[1] * np.sin(roll) + vector[2] * np.cos(pitch) * np.cos(roll)
         return np.array((x, y, z))
 
@@ -241,12 +241,12 @@ class ImageCalculus:
 
         centro = self.camera_resolution / 2
         vector = centro - target_pixel
-        vector *= np.array((1, -1))
+        vector *= np.array((-1, 1))
 
         theta = np.arctan2(vector[1], vector[0])
 
         r = np.linalg.norm(vector)
-        alfa = self.pixels_per_degree(r)
+        alfa = np.deg2rad(self.pixels_to_degree(r))
 
         direction_vector = self._calculate_direction_vector(
             alfa,
