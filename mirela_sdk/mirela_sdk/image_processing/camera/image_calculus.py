@@ -2,7 +2,6 @@ import math
 from geopy.distance import distance
 from geopy.point import Point
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 from typing import Callable
 
 
