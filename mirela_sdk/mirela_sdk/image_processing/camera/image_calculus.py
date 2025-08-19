@@ -11,7 +11,7 @@ class ImageCalculus:
         '''Initializes the class with default settings.'''
         self.camera_offset: np.ndarray = np.array((0, 0, 0)) # Forward, right, up
         self.camera_orientation: np.ndarray = np.array((0, 0, 0)) # Roll, pitch, rotation
-        self.camera_resolution: np.ndarray = (1920, 1080)
+        self.camera_resolution: np.ndarray = np.array((1920, 1080))
         self.pixels_per_degree: Callable[[float], float] = lambda p: p*20
 
 
@@ -138,8 +138,8 @@ class ImageCalculus:
             np.ndarray: 3D vector (x, y, z) pointing in the direction of the pixel.
         '''
         x = np.cos(alfa)
-        y = np.sin(alfa) * np.sin(theta)
-        z = np.sin(alfa) * np.cos(theta)
+        y = np.sin(alfa) * np.cos(theta)
+        z = np.sin(alfa) * np.sin(theta)
         return (x, y, z)
 
 
@@ -163,7 +163,7 @@ class ImageCalculus:
         x = vector[0] * np.cos(pitch) + vector[2] * np.sin(pitch)
         y = vector[1] * np.cos(roll) + vector[2] * np.sin(roll)
         z = vector[0] * np.sin(pitch) + vector[1] * np.sin(roll) + vector[2] * np.cos(pitch) * np.cos(roll)
-        return (x, y, z)
+        return np.array((x, y, z))
 
 
     def _calculate_direction_vector(
@@ -197,8 +197,8 @@ class ImageCalculus:
 
         vector = self._calculate_rotate_vector(
             camera_vector,
-            self.camera_orientation[0] + pitch,
-            self.camera_orientation[1] + roll,
+            pitch = self.camera_orientation[1] + pitch,
+            roll = self.camera_orientation[0] + roll,
         )
 
         return vector
@@ -313,7 +313,7 @@ class ImageCalculus:
 
         point = self._calculate_ground_intersection_by_line(origin_point, direction_vector)
 
-        if point:
+        if point is not None:
             vector = point - np.array((0, 0, altitude))
 
             return vector
@@ -470,6 +470,7 @@ class ImageCalculus:
         destination = distance(meters=distance_m).destination(origin, absolute_bearing)
 
         return destination.latitude, destination.longitude
+
 
     @staticmethod
     def calculate_offset_pixels(
