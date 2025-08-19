@@ -4,6 +4,7 @@ import numpy as np
 
 
 class GPSCalculate:
+    @staticmethod
     def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
         Calculates the great-circle distance between two GPS coordinates using the Haversine formula.
@@ -32,7 +33,8 @@ class GPSCalculate:
         return c * 6371000  # Earth's radius in meters
 
 
-    def bearing(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    @staticmethod
+    def bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
         Calculates the initial bearing (also known as forward azimuth) from the first GPS coordinate 
         (lat1, lon1) to the second (lat2, lon2). The result is the angle in degrees between north 
@@ -64,8 +66,8 @@ class GPSCalculate:
         return bearing
 
 
+    @staticmethod
     def interp_geo(
-        self,
         start: Tuple[float, float],
         end: Tuple[float, float],
         frac: float
@@ -86,8 +88,8 @@ class GPSCalculate:
         return (position['lat2'], position['lon2'])
 
 
+    @staticmethod
     def generate_point_grid(
-        self,
         vertices: Tuple[Tuple[float, float]],
         grid_shape: tuple[int, int]
     ) -> list[list[Tuple[float, float]]]:
@@ -116,8 +118,8 @@ class GPSCalculate:
         cols, rows = grid_shape
 
         # Interpolates points along the left and right edges (top to bottom)
-        left_edge = [self.interp_geo(vertices[0], vertices[3], i / (rows - 1)) for i in range(rows)]
-        right_edge = [self.interp_geo(vertices[1], vertices[2], i / (rows - 1)) for i in range(rows)]
+        left_edge = [GPSCalculate.interp_geo(vertices[0], vertices[3], i / (rows - 1)) for i in range(rows)]
+        right_edge = [GPSCalculate.interp_geo(vertices[1], vertices[2], i / (rows - 1)) for i in range(rows)]
 
         grid = []
 
@@ -127,9 +129,8 @@ class GPSCalculate:
             # Interpolates points across the row between left and right edge points
             for j in range(cols):
                 frac = j / (cols - 1)  # Horizontal interpolation fraction
-                point = self.interp_geo(left_edge[i], right_edge[i], frac)
+                point = GPSCalculate.interp_geo(left_edge[i], right_edge[i], frac)
                 row.append(point)
             grid.append(row)
 
         return grid
-
