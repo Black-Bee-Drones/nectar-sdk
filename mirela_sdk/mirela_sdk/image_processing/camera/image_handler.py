@@ -152,17 +152,17 @@ class ImageHandler:
             
             # Attempt to reinitialize the OAK-D camera
             sleep(0.1)
-            self._initialize_oakd()
+            self._restart_oakd()
 
-    def _initialize_oakd(self) -> bool:
+    def _restart_oakd(self) -> bool:
         """
-        OakdCam class initializes the pipeline, configures the camera according to the address,
+        OakdCam class reinitializes the pipeline, configures the camera according to the address,
         returns the queue with frames in the camera pattern
         """
         try:
             self.oakd = OakdCam()
             self.oakd.setup_camera(self.oakd_num)
-            self.oakd.init_cam(True)
+            self.oakd.init_cam()
             self.queue = self.oakd.getQueue_CamType()
             self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
 
