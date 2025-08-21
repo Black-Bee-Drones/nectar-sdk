@@ -2,14 +2,13 @@ import os
 import rclpy
 import numpy as np
 from typing import Tuple
-from rclpy.node import Node, Rate
 from pygeodesy.geoids import GeoidPGM
 from shapely.geometry import Point, Polygon
 from geopy.distance import geodesic
-from geographiclib.geodesic import Geodesic
 from math import radians
 from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
+from mirela_sdk.utils.gps_calculate import GPSCalculate
 
 
 class GPSController:
@@ -19,7 +18,6 @@ class GPSController:
         self._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
         self.photo_count: int = 0
         self.path = os.path.dirname(os.path.abspath(__file__))
-
 
     def _check_position(self):
         rclpy.spin_once(self.drone.node)
@@ -150,24 +148,10 @@ class GPSController:
         :param lat (float): setpoint latitude (degrees)
         :param lon (float): setpoint longitute (degrees)
         """
-        lat, lon = map(np.radians, [lat, lon])
         lat1 = self.drone.get_gps.latitude
         lon1 = self.drone.get_gps.longitude
 
-        lat1, lon1 = map(np.radians, [lat1, lon1])
-
-        dlon = lon - lon1
-
-        x = np.sin(dlon) * np.cos(lat)
-        y = np.cos(lat1) * np.sin(lat) - (np.sin(lat1) * np.cos(lat) * np.cos(dlon))
-        bearing = np.arctan2(x, y)
-
-        bearing = np.degrees(bearing)
-
-        bearing = (bearing + 360) % 360
-
-        return bearing
-    
+        return GPSCalculate.bearing(lat1, lon1, lat, lon)
 
     def haversine_distance(self, lat: float, lon: float):
         """
@@ -176,36 +160,7 @@ class GPSController:
         :param lat (float): setpoint's latitude in degrees
         :param lon (float): setpoint's longitude in degrees
         """
-        lat, lon = map(np.radians, [lat, lon])
-
         lat1 = self.drone.get_gps.latitude
         lon1 = self.drone.get_gps.longitude
 
-        lat1, lon1 = map(np.radians, [lat1, lon1])
-        dlat = lat1 - lat
-        dlon = lon1 - lon
-
-        a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat) * np.sin(dlon / 2) ** 2
-        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-        return c * 6371000 # angle in the great-cricle between the two point times earth's radius
-    
-    def interp_geo(
-        self,
-        start: Tuple[float, float],
-        end: Tuple[float, float],
-        frac: float
-    ) -> Tuple[float, float]:
-        """
-        Computes geodesic interpolation between two GPS coordinates.
-
-        Args:
-            start (Tuple[float, float]): Starting GPS coordinate (lat, lon).
-            end (Tuple[float, float]): Ending GPS coordinate (lat, lon).
-            frac (float): Interpolation factor between 0.0 and 1.0.
-
-        Returns:
-            Tuple[float, float]: Interpolated GPS coordinate (lat, lon).
-        """
-        line = Geodesic.WGS84.InverseLine(start[0], start[1], end[0], end[1])
-        position = line.Position(line.s13 * frac)
-        return (position['lat2'], position['lon2'])
+        return GPSCalculate.haversine(lat1, lon1, lat, lon)
