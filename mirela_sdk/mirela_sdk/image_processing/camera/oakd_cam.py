@@ -188,16 +188,14 @@ class OakdCam(DepthCam):
 
         return camera
 
-    def init_cam(self, full_speed: bool = False) -> dai.Device:
+
+    def init_cam(self) -> dai.Device:
         """
         Initialize the device and return it
-
-        :param full_speed (bool): True for a FULL usb speed (USB 3.0), False for
-         HIGH speed (USB 2.0)
         """
 
-        usb_speed = dai.UsbSpeed.FULL if full_speed else dai.UsbSpeed.HIGH
-        self.device = dai.Device(self.pipeline, maxUsbSpeed=usb_speed)
+        self.device = dai.Device(self.pipeline)
+
         return self.device
 
     def color_camera(self) -> dai.node.ColorCamera:
