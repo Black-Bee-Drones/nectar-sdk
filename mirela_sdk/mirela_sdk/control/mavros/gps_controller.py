@@ -21,16 +21,16 @@ class GPSController:
         self.path = os.path.dirname(os.path.abspath(__file__))
 
     def _check_position(self):
+        rclpy.spin_once(self.drone.node, timeout_sec=0.1)
         current_lat: float = self.drone.get_gps.latitude
         current_long: float = self.drone.get_gps.longitude
-        print(f"Lat: {current_lat} Long: {current_long}")
+        self.drone.node.get_logger().info(f"Lat: {current_lat} Long: {current_long}")
 
         current_position = Point(current_lat, current_long)
 
         if not current_position.within(self.fence):
             self.drone.node.get_logger().info("-- Geofence breach")
             self.drone.rtl() if self.rtl else self.drone.kill_motors()
-            rclpy.shutdown()
 
     def geofence(self, coords: list[tuple[float, float]], rtl: bool):
         """
@@ -71,7 +71,7 @@ class GPSController:
         lat_setpoint: float,
         lon_setpoint: float,
         precision_radius: float,
-        timeout_sec: float | None = 180.0,
+        timeout_sec: float | None = 60.0,
         check_rate_hz: float = 10.0,
     ):
         """
@@ -123,7 +123,7 @@ class GPSController:
         heading: float,
         precision_radius: float,
         wait: bool = True,
-        timeout_sec: float | None = 180.0,
+        timeout_sec: float | None = 60.0,
         check_rate_hz: float = 10.0,
     ):
         """
