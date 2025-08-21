@@ -6,6 +6,7 @@ from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.subscription import Subscription
 from rclpy.client import Client
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 
 class Drone(ABC):
@@ -27,6 +28,10 @@ class Drone(ABC):
         # Common drone state variables
         self._is_flying = False
         self._driver_initialized = False
+
+        # Use a reentrant callback group so telemetry callbacks can run concurrently
+        # with control callbacks without deadlocking.
+        self._reentrant_cb_group = ReentrantCallbackGroup()
 
     @property
     def subscribers(self) -> list[Subscription]:
@@ -173,7 +178,9 @@ class Drone(ABC):
         :param callback (callable): Callback function for incoming messages.
         :param qos (QoSProfile): ROS2 Quality of Service profile.
         """
-        subscriber = self.node.create_subscription(msg_type, topic, callback, qos)
+        subscriber = self.node.create_subscription(
+            msg_type, topic, callback, qos, callback_group=self._reentrant_cb_group
+        )
         self._subscribers.append(subscriber)
         return subscriber
 
@@ -184,7 +191,9 @@ class Drone(ABC):
         :param srv_type: ROS2 service type.
         :param service_name (str): ROS2 service name.
         """
-        client = self.node.create_client(srv_type, service_name)
+        client = self.node.create_client(
+            srv_type, service_name, callback_group=self._reentrant_cb_group
+        )
         self._clients.append(client)
         return client
 
@@ -198,7 +207,9 @@ class Drone(ABC):
         :param topic (str): ROS2 topic name.
         :param qos (QoSProfile): ROS2 Quality of Service profile.
         """
-        publisher = self.node.create_publisher(msg_type, topic, qos)
+        publisher = self.node.create_publisher(
+            msg_type, topic, qos, callback_group=self._reentrant_cb_group
+        )
         self._publishers.append(publisher)
         return publisher
 
