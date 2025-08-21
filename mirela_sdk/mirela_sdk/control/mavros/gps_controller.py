@@ -89,7 +89,10 @@ class GPSController:
         start_time = time.monotonic()
         period = 1.0 / max(check_rate_hz, 1.0)
 
+        self.drone.node.get_logger().info(f"GPS Send using {precision_radius} m")
+
         while rclpy.ok():
+            rclpy.spin_once(self.drone.node, timeout_sec=0.1)
             current_lat = self.drone.get_gps.latitude
             current_long = self.drone.get_gps.longitude
             distance_target = geodesic(
