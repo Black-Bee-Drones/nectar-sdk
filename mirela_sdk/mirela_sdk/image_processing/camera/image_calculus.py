@@ -205,7 +205,8 @@ class ImageCalculus:
 
     def _calculate_calculate_line(
         self,
-        target_pixel: np.ndarray,
+        pixel_x: float,
+        pixel_y: float,
         pitch: float,
         roll: float,
     ) -> np.ndarray:
@@ -221,7 +222,8 @@ class ImageCalculus:
         4. Calculates the 3D direction vector of the line in the world/drone reference frame.
 
         Args:
-            target_pixel (np.ndarray): Pixel coordinates (x, y) of the target in the image.
+            pixel_x (float): Coordinates x of the target pixel in the image.
+            pixel_y (float): Coordinates y of the target pixel in the image.
             pitch (float): Pitch angle of the drone in radians.
             roll (float): Roll angle of the drone in radians.
 
@@ -239,7 +241,7 @@ class ImageCalculus:
         )
 
         centro = self.camera_resolution / 2
-        vector = centro - target_pixel
+        vector = centro - np.array(pixel_x, pixel_y)
         vector *= np.array((-1, 1))
 
         theta = np.arctan2(vector[1], vector[0])
@@ -285,7 +287,8 @@ class ImageCalculus:
 
     def calculate_ground_intersection(
         self, 
-        target_pixel: tuple[float | float],
+        pixel_x: float,
+        pixel_y: float,
         altitude: float,
         pitch: float = 0.0, 
         roll: float = 0.0,
@@ -297,7 +300,8 @@ class ImageCalculus:
         It returns the vector pointing from the drone/camera to the intersection point on the ground.
 
         Args:
-            target_pixel (tuple[float, float]): Coordinates (x, y) of the target pixel in the image.
+            pixel_x (float): Coordinates x of the target pixel in the image.
+            pixel_y (float): Coordinates y of the target pixel in the image.
             altitude (float): Height of the drone/camera above the ground.
             pitch (float, optional): Additional pitch angle of the drone in radians. Defaults to 0.0.
             roll (float, optional): Additional roll angle of the drone in radians. Defaults to 0.0.
@@ -306,7 +310,7 @@ class ImageCalculus:
             np.ndarray | None: 3D vector from the drone/camera to the intersection point on the ground,
                                or None if the line does not intersect the ground.
         '''
-        origin_point, direction_vector = self._calculate_calculate_line(np.array(target_pixel), pitch, roll)
+        origin_point, direction_vector = self._calculate_calculate_line(pixel_x, pixel_y, pitch, roll)
 
         origin_point += np.array((0, 0, altitude))
 
@@ -322,7 +326,8 @@ class ImageCalculus:
 
     def _calculate_gps_by_vector(
         self,
-        drone_gps: tuple[float, float],
+        latitude: float,
+        longitude: float,
         vector: np.ndarray,
         bearing: float,
     ) -> tuple[float, float]:
@@ -331,7 +336,8 @@ class ImageCalculus:
         into GPS coordinates (latitude, longitude), taking into account the drone's bearing.
 
         Args:
-            drone_gps (tuple[float, float]): GPS coordinates of the drone (latitude, longitude) in degrees.
+            latitude (float): latitude coordinates of the drone in degrees.
+            longitude (float): longitude coordinates of the drone in degrees.
             vector (np.ndarray): 3D vector from the drone to the point (x, y, z) in meters.
                                 x = forward, y = right, z = up (ignored for ground intersection).
             bearing (float): Drone bearing in radians (0 = North, positive clockwise).
@@ -339,7 +345,6 @@ class ImageCalculus:
         Returns:
             tuple[float, float]: GPS coordinates (latitude, longitude) of the target point.
         """
-        lat, lon = drone_gps
         x_local, y_local, _ = vector  # z ignored
 
         # Rotate vector by bearing to align with North-East frame
@@ -353,20 +358,22 @@ class ImageCalculus:
 
         # Offsets in radians
         dlat = x_global / R
-        dlon = y_global / (R * np.cos(np.radians(lat)))
+        dlon = y_global / (R * np.cos(np.radians(latitude)))
 
         # New GPS coordinates
-        new_lat = lat + np.degrees(dlat)
-        new_lon = lon + np.degrees(dlon)
+        new_lat = latitude + np.degrees(dlat)
+        new_lon = longitude + np.degrees(dlon)
 
         return (new_lat, new_lon)
 
 
     def calculate_gsp(
         self, 
-        target_pixel: tuple[float | float],
+        pixel_x: float,
+        pixel_y: float,
+        latitude: float,
+        longitude: float,
         altitude: float,
-        drone_gps: tuple[float, float],
         bearing: float,
         pitch: float = 0.0,
         roll: float = 0.0,
@@ -380,9 +387,11 @@ class ImageCalculus:
         coordinates using the drone's current GPS position and bearing (yaw).
 
         Args:
-            target_pixel (tuple[float, float]): Coordinates (x, y) of the target pixel in the image.
+            pixel_x (float): Coordinates x of the target pixel in the image.
+            pixel_y (float): Coordinates y of the target pixel in the image.
+            latitude (float): latitude coordinates of the drone in degrees.
+            longitude (float): longitude coordinates of the drone in degrees.
             altitude (float): Height of the drone/camera above the ground in meters.
-            drone_gps (tuple[float, float]): GPS coordinates of the drone (latitude, longitude) in degrees.
             bearing (float): Drone's yaw/bearing in radians (0 = North, positive clockwise).
             pitch (float, optional): Additional pitch angle of the drone in radians. Defaults to 0.0.
             roll (float, optional): Additional roll angle of the drone in radians. Defaults to 0.0.
@@ -391,14 +400,16 @@ class ImageCalculus:
             tuple[float, float]: GPS coordinates (latitude, longitude) of the target point on the ground.
         '''
         vector = self.calculate_ground_intersection(
-            target_pixel,
+            pixel_x,
+            pixel_y,
             altitude,
             pitch, 
             roll,
         )
 
         coordinate = self._calculate_gps_by_vector(
-            drone_gps,
+            latitude,
+            longitude,
             vector,
             bearing,
         )
