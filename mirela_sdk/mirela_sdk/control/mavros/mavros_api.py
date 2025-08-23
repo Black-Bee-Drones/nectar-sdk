@@ -683,7 +683,10 @@ class MavDrone(Drone):
         lon_setpoint: float = 0.0,
         alt_setpoint: float = 0.0,
         heading: float = 0.0,
-        precision_radius: float = 0.0,
+        precision_radius: float = 0.1,
+        wait: bool = True,
+        timeout_sec: float | None = 60.0,
+        check_rate_hz: float = 10.0,
         initial_heading: bool = False,
     ):
         """
@@ -703,7 +706,14 @@ class MavDrone(Drone):
             f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"
         )
         self.gps_controller.gps_send(
-            lat_setpoint, lon_setpoint, alt_setpoint, final_heading, precision_radius
+            lat_setpoint,
+            lon_setpoint,
+            alt_setpoint,
+            final_heading,
+            precision_radius,
+            wait,
+            timeout_sec,
+            check_rate_hz,
         )
 
     def offboard_velocity(
