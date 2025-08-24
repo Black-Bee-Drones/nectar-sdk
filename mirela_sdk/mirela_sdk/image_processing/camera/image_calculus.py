@@ -194,8 +194,14 @@ class ImageCalculus:
             theta + self.camera_orientation[2],
         )
 
-        vector = self._calculate_rotate_vector(
+        drone_vector = self._calculate_rotate_vector(
             camera_vector,
+            pitch = self.camera_orientation[1] + pitch,
+            roll = self.camera_orientation[0] + roll,
+        )
+
+        vector = self._calculate_rotate_vector(
+            drone_vector,
             pitch = self.camera_orientation[1] + pitch,
             roll = self.camera_orientation[0] + roll,
         )
@@ -241,7 +247,7 @@ class ImageCalculus:
         )
 
         centro = self.camera_resolution / 2
-        vector = centro - np.array(pixel_x, pixel_y)
+        vector = centro - np.array((pixel_x, pixel_y))
         vector *= np.array((-1, 1))
 
         theta = np.arctan2(vector[1], vector[0])
