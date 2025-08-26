@@ -452,7 +452,7 @@ class MavDrone(Drone):
         :param takeoff_alt (float): Altitude to takeoff
         """
         req = CommandTOL.Request()
-        req.altitude = takeoff_alt
+        req.altitude = float(takeoff_alt)
         self._call_service(
             self._takeoff_srv,
             req,
