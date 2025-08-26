@@ -8,6 +8,8 @@ import cv2
 from typing import Optional
 from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
 
+from rclpy.qos import QoSProfile
+
 import re
 import subprocess
 
@@ -34,6 +36,7 @@ class ImageHandler:
         cap: Optional[int] = 0,
         oakd_num: Optional[int] = 1,
         c920_config: Optional[int] = 1,
+        qos_profile: Optional[QoSProfile] = 10
     ):
         """
         Class to handle image processing from a ROS topic or webcam.
@@ -61,6 +64,7 @@ class ImageHandler:
         self.c920_config = c920_config
         self.cleaned = False
         self.bridge = CvBridge()
+        self.qos_profile = qos_profile
 
     def _configure_ros_topic(self):
         """
@@ -68,15 +72,17 @@ class ImageHandler:
             Could be a compressed image or a raw image
         """
 
+        subscriber_qos = self.qos_profile if self.qos_profile is not None else 10
+
         if self.image_source.endswith("compressed"):
             self.convert_bridge = self.bridge.compressed_imgmsg_to_cv2
             self.image_sub = self.node.create_subscription(
-                CompressedImage, self.image_source, self.ros_topic_callback, 10
+                CompressedImage, self.image_source, self.ros_topic_callback, subscriber_qos
             )
         else:
             self.convert_bridge = self.bridge.imgmsg_to_cv2
             self.image_sub = self.node.create_subscription(
-                Image, self.image_source, self.ros_topic_callback, 10
+                Image, self.image_source, self.ros_topic_callback, subscriber_qos
             )
 
     def process(self):
