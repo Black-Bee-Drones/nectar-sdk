@@ -1,0 +1,4 @@
+source;share/mirela_interfaces/local_setup.bash
+source;share/mirela_interfaces/local_setup.dsv
+source;share/mirela_interfaces/local_setup.sh
+source;share/mirela_interfaces/local_setup.zsh
