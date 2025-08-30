@@ -70,7 +70,9 @@ class GPSController:
         self,
         lat_setpoint: float,
         lon_setpoint: float,
-        precision_radius: float,
+        alt_setpoint: float,
+        precision_radius: float = 0.05,
+        alt_threshold: float = 0.1,
         timeout_sec: float | None = 60.0,
         check_rate_hz: float = 10.0,
     ):
@@ -98,11 +100,15 @@ class GPSController:
             distance_target = geodesic(
                 (current_lat, current_long), (lat_setpoint, lon_setpoint)
             ).meters
+            alt_distance = abs(self.drone.get_rel_alt.data - alt_setpoint)
             self.drone.node.get_logger().info(
                 f"Coordinate distance: {distance_target:.2f} m"
             )
+            self.drone.node.get_logger().info(
+                f"Altitude distance: {alt_distance:.2f} m"
+            )
 
-            if distance_target <= precision_radius:
+            if (distance_target <= precision_radius) and (alt_distance <= alt_threshold):
                 self.drone.node.get_logger().info("-- GPS setpoint reached")
                 return True
 
@@ -122,6 +128,7 @@ class GPSController:
         alt_setpoint: float,
         heading: float,
         precision_radius: float,
+        alt_threshold: float,
         wait: bool = True,
         timeout_sec: float | None = 60.0,
         check_rate_hz: float = 10.0,
@@ -160,7 +167,7 @@ class GPSController:
 
         if wait:
             self.gps_reach(
-                lat_setpoint, lon_setpoint, precision_radius, timeout_sec, check_rate_hz
+                lat_setpoint, lon_setpoint, alt_setpoint, precision_radius, timeout_sec, check_rate_hz
             )
 
     def calculate_bearing(self, lat: float, lon: float):
