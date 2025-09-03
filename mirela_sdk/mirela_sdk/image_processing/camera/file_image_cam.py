@@ -19,4 +19,4 @@ class FileImageCam(AbstractCam):
         return self._frame
 
     def close(self) -> None:
-        self._is_running = False 
+        self._is_running = False

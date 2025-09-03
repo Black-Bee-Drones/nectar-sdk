@@ -55,4 +55,4 @@ class OpenCVCam(AbstractCam):
         if self._cap:
             self._cap.release()
             self._cap = None
-        self._is_running = False 
+        self._is_running = False
