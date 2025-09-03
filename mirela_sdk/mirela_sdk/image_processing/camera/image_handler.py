@@ -5,8 +5,6 @@ import cv2
 
 from typing import Optional
 
-from time import sleep
-
 from .abstract_cam import AbstractCam
 from .realsense_cam import RealsenseCam
 from .opencv_cam import OpenCVCam
