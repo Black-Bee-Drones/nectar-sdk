@@ -81,6 +81,7 @@ class GPSController:
 
         :param lat_setpoint: Latitude of the setpoint
         :param lon_setpoint: Longitude of the setpoint
+        :param alt_setpoint: Altitude of the setpoint
         :param precision_radius: Radius of the precision
         :param timeout_sec: Maximum time to wait before giving up (None for infinite)
         :param check_rate_hz: Polling rate for distance checks
@@ -141,6 +142,7 @@ class GPSController:
         :param alt_setpoint (float): Altitude of the setpoint
         :param heading (float): Heading of the drone
         :param precision_radius (float): Radius of the precision
+        :param alt_threshold (float): Threshold of the altitude
         :param wait (bool): If True, block until reach (or timeout). If False, return immediately
         :param timeout_sec (float|None): Timeout for reach check
         :param check_rate_hz (float): Polling rate for reach check
@@ -167,7 +169,7 @@ class GPSController:
 
         if wait:
             self.gps_reach(
-                lat_setpoint, lon_setpoint, alt_setpoint, precision_radius, timeout_sec, check_rate_hz
+                lat_setpoint, lon_setpoint, alt_setpoint, precision_radius, alt_threshold, timeout_sec, check_rate_hz
             )
 
     def calculate_bearing(self, lat: float, lon: float):
