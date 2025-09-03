@@ -24,6 +24,8 @@ from mirela_sdk.image_processing.line import (
 )
 from mirela_interfaces.msg import LineInfo
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+
 
 class LineDetectionNode(Node):
 
@@ -545,12 +547,20 @@ class LineDetectionNode(Node):
 
         Uses the ROS parameters to determine if visualization should be shown.
         """
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         self.image_handler = ImageHandler(
             self,
             self.image_source,
             self.process_image,
             show_result=None,
             cap=self.cap,
+            qos_profile=qos_profile,
         )
 
         colors_str = ", ".join(self.line_colors)

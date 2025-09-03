@@ -9,6 +9,7 @@ import numpy as np
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.image_processing.color.color_detector import ColorDetector, ColorSpace
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 class ColorCalibrationNode(Node):
     def __init__(
@@ -45,11 +46,19 @@ class ColorCalibrationNode(Node):
 
         self.get_logger().info(f"Using webcam index: {self.cap}")
 
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         self.image_handler = ImageHandler(
             self,
             self.image_source,
             image_processing_callback=self.process,
             cap=self.cap,
+            qos_profile=qos_profile,
         )
         self.color_detector = ColorDetector("track", color_space=self.color_space)
         self.initialized = False

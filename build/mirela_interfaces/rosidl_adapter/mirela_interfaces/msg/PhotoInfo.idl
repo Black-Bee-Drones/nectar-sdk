@@ -1,0 +1,14 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from mirela_interfaces/msg/PhotoInfo.msg
+// generated code does not contain a copyright notice
+
+
+module mirela_interfaces {
+  module msg {
+    struct PhotoInfo {
+      sequence<double> coordinates;
+
+      string photo_num;
+    };
+  };
+};
