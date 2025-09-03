@@ -19,7 +19,7 @@ from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget
 from std_msgs.msg import Float64, Int64
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
-from sensor_msgs.msg import NavSatFix, Range
+from sensor_msgs.msg import NavSatFix, Range, Imu
 from rcl_interfaces.msg import Parameter
 from rcl_interfaces.srv import SetParameters
 
@@ -52,6 +52,7 @@ class MavDrone(Drone):
         self._local_pos = PoseStamped()
         self._vel_body = TwistStamped()
         self._heading = Float64()
+        self._imu_data = Imu()
 
         # Store takeoff position for custom RTL
         self._takeoff_lat = 0.0
@@ -96,11 +97,16 @@ class MavDrone(Drone):
             lambda data: self.__setattr__("_heading", data),
             qos_profile_sensor_data,
         )
-
         self._vel_body_sub = self._create_subscriber(
             TwistStamped,
             "/mavros/local_position/velocity_body",
             lambda data: self.__setattr__("_vel_body", data),
+            qos_profile_sensor_data,
+        )
+        self._imu_data_sub = self._create_subscriber(
+            Imu,
+            "/mavros/imu/data",
+            lambda data: self.__setattr__("_imu_data", data),
             qos_profile_sensor_data,
         )
 
@@ -220,13 +226,25 @@ class MavDrone(Drone):
     def get_vel_body(self) -> TwistStamped:
         """
         Return body velocity
+
         TwistStamped
         ------------
-
         http://docs.ros.org/en/melodic/api/geometry_msgs/html/msg/TwistStamped.html
         """
 
         return self._vel_body
+
+    @property
+    def get_imu_data(self) -> Imu:
+        """
+        Return imu data
+
+        Imu
+        ------------
+        http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Imu.html
+        """
+
+        return self._imu_data
 
     def __startup(self):
         """
@@ -434,7 +452,7 @@ class MavDrone(Drone):
         :param takeoff_alt (float): Altitude to takeoff
         """
         req = CommandTOL.Request()
-        req.altitude = takeoff_alt
+        req.altitude = float(takeoff_alt)
         self._call_service(
             self._takeoff_srv,
             req,
@@ -665,7 +683,10 @@ class MavDrone(Drone):
         lon_setpoint: float = 0.0,
         alt_setpoint: float = 0.0,
         heading: float = 0.0,
-        precision_radius: float = 0.0,
+        precision_radius: float = 0.1,
+        wait: bool = True,
+        timeout_sec: float | None = 60.0,
+        check_rate_hz: float = 10.0,
         initial_heading: bool = False,
     ):
         """
@@ -685,7 +706,14 @@ class MavDrone(Drone):
             f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"
         )
         self.gps_controller.gps_send(
-            lat_setpoint, lon_setpoint, alt_setpoint, final_heading, precision_radius
+            lat_setpoint,
+            lon_setpoint,
+            alt_setpoint,
+            final_heading,
+            precision_radius,
+            wait,
+            timeout_sec,
+            check_rate_hz,
         )
 
     def offboard_velocity(

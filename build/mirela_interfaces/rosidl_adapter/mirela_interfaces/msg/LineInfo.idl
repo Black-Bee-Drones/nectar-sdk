@@ -1,0 +1,20 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from mirela_interfaces/msg/LineInfo.msg
+// generated code does not contain a copyright notice
+
+
+module mirela_interfaces {
+  module msg {
+    struct LineInfo {
+      double center_x;
+
+      double center_y;
+
+      double angle;
+
+      double width;
+
+      double height;
+    };
+  };
+};
