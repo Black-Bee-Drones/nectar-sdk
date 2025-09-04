@@ -73,7 +73,7 @@ class ImageHandler:
             cam = OakdCam()
             # Use DepthCam-like start API for uniformity
             cam.start(
-                cam_num=int(self.oakd_num), enable_depth=False, usb_full_speed=True
+                cam_num=int(self.oakd_num), enable_depth=False,
             )
             return cam
         if os.path.isfile(src):

@@ -4,6 +4,7 @@ from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
 
 oakd = OakdCam()
 stereo = oakd.get_stereo_depth()
+oakd.post_processing_stereo_depth(stereo)
 
 oakd.configure_stereo_node_output(["disparity", "rectifiedLeft", "rectifiedRight"])
 oakd.init_cam()
@@ -17,9 +18,12 @@ disparityMultiplier = 255 / stereo.initialConfig.getMaxDisparity()
 
 while cv2.waitKey(1) & 0xFF != ord("q"):
 
+    
     disp = oakd.getFrame(disp_queue)
     left = oakd.getFrame(rectifiedLeftQueue)
     right = oakd.getFrame(rectifiedRightQueue)
+    
+    if disp is None or left is None or right is None: continue
 
     disp = (disp * disparityMultiplier).astype(np.uint8)
 
@@ -32,4 +36,4 @@ while cv2.waitKey(1) & 0xFF != ord("q"):
     cv2.imshow("Disparity", disp)
 
 cv2.destroyAllWindows()
-oakd.clean()
+oakd.close()
