@@ -1,11 +1,26 @@
 import depthai as dai
 import cv2
+
+from typing import Optional
+from enum import Enum
+
 import json
 from pathlib import Path
-from typing import Optional
 import numpy as np
 
 from .abstract_cam import DepthCam
+
+class OakdCameraResolution(Enum):
+
+    """
+    Enum class to color camera resolution types.
+
+    """
+
+    THE_540_P  = "THE_540_P"
+    THE_1080_P = dai.ColorCameraProperties.SensorResolution.THE_1080_P
+    THE_4K     = dai.ColorCameraProperties.SensorResolution.THE_4_K
+
 
 class OakdCam(DepthCam):
 
@@ -16,6 +31,8 @@ class OakdCam(DepthCam):
     class prevent it, but for standalone applications you must pay attention to this.
 
     """
+
+    #TODO: Enum for the following attributes:
     
     RGB               =               "rgb"
     LEFT              =              "left"
@@ -44,59 +61,62 @@ class OakdCam(DepthCam):
         board sockets
         """
 
+        super().__init__("oakd")
+
         self.pipeline = dai.Pipeline()
         self.oak_dict = {1: (OakdCam.RGB,   dai.CameraBoardSocket.CAM_A),
                          2: (OakdCam.LEFT,  dai.CameraBoardSocket.CAM_B),
                          3: (OakdCam.RIGHT, dai.CameraBoardSocket.CAM_C)}
         self.device = None
+        self.camera_resolution = OakdCameraResolution.THE_540_P
         
         # For DepthCam-style usage
-        self._cam_num: int = 1
-        self._link_out: bool = True
-        self._set_control: bool = True
-        self._have_depth: bool = False
-        self._rgb_queue = None
-        self._depth_queue = None
+        self.__cam_num: int = 1
+        self.__link_out: bool = True
+        self.__have_depth: bool = False
+        self.__rgb_queue = None
+        self.__depth_queue = None
 
 
-        # DepthCam-style API
+    # DepthCam-style API
     def start(self,
               cam_num: int = 1,
               *,
               enable_depth: bool = False,
+              camera_resolution: OakdCameraResolution = OakdCameraResolution.THE_540_P,
               set_control: bool = True) -> None:
         
 
-        self._cam_num = cam_num
-        self._set_control = set_control
-        self._link_out = True
 
         # Configure the color camera (keeps internal cam_type as RGB)
-        self.setup_camera(self._cam_num, link_out=True, set_control=set_control)
+        self.camera_resolution = camera_resolution
+        self.setup_camera(cam_num, 
+                          link_out=True, 
+                          set_control=set_control)
 
         if enable_depth:
             stereo = self.get_stereo_depth()
             self.post_processing_stereo_depth(stereo)
             self.configure_stereo_node_output(["depth"])  # expose depth stream
-            self._have_depth = True
+            self.__have_depth = True
         else:
-            self._have_depth = False
+            self.__have_depth = False
 
         self.init_cam()
         # Get queues explicitly by stream name to avoid relying on cam_type
-        self._rgb_queue = self.getQueue(OakdCam.RGB, maxSize=1, blocking=False)
-        if self._have_depth:
-            self._depth_queue = self.getQueue("depth", maxSize=1, blocking=False)
+        self.__rgb_queue = self.getQueue(OakdCam.RGB, maxSize=1, blocking=False)
+        if self.__have_depth:
+            self.__depth_queue = self.getQueue("depth", maxSize=1, blocking=False)
         self._is_running = True
 
 
     def get_frame(self) -> Optional[np.ndarray]:
         
         
-        if self._rgb_queue is None:
+        if self.__rgb_queue is None:
             return None
         try:
-            msg = self._rgb_queue.tryGet()
+            msg = self.__rgb_queue.tryGet()
             if msg is None:
                 return None
             return msg.getCvFrame()
@@ -107,10 +127,10 @@ class OakdCam(DepthCam):
     def get_depth_frame(self) -> Optional[np.ndarray]:
 
 
-        if not self._have_depth or self._depth_queue is None:
+        if not self.__have_depth or self.__depth_queue is None:
             return None
         try:
-            msg = self._depth_queue.tryGet()
+            msg = self.__depth_queue.tryGet()
             if msg is None:
                 return None
             depth_mm = msg.getCvFrame()
@@ -143,9 +163,35 @@ class OakdCam(DepthCam):
             if self.device is not None:
                 self.device.close()
         except Exception:...
-        self._rgb_queue = None
-        self._depth_queue = None
+
+        self.device = None
+        self.__rgb_queue = None
+        self.__depth_queue = None
         self._is_running = False
+
+    @property
+    def camera_resolution(self) -> OakdCameraResolution:
+        return self.__camera_resolution
+    
+    @camera_resolution.setter
+    def camera_resolution(self, 
+                          cam_resolution: OakdCameraResolution) -> None:
+        
+        """
+        Setter for the Color Camera resolution. This property has to be set before setup
+        camera to take effect.
+        
+        :param cam_resolution (OakdCameraResolution): the resolution for the color camera. 
+
+        Note: for 540P resolution, the resolution is set to 1080P and ISP scale to (1,2).
+        
+        """
+
+        if not isinstance(cam_resolution, OakdCameraResolution):
+            raise TypeError("camera resolution type is invalid. Use OakdCameraResolution types")
+   
+        self.__camera_resolution = cam_resolution
+        
         
 
     def setup_camera(self, 
@@ -162,9 +208,9 @@ class OakdCam(DepthCam):
         :param set_control (bool): True for set initial control settings. False for otherwise
         """
         
-        self.link_out = link_out
-        self.cam_num = cam_num
-        self.cam_type, self.boardSocket = self.oak_dict.get(self.cam_num, ("invalid", None))
+        self.__link_out = link_out
+        self.__cam_num = cam_num
+        self.cam_type, self.boardSocket = self.oak_dict.get(self.__cam_num, ("invalid", None))
 
         camera = None
         
@@ -201,10 +247,13 @@ class OakdCam(DepthCam):
 
         cam = self.pipeline.createColorCamera()
         cam.setBoardSocket(self.boardSocket)
-        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        cam.setIspScale(1,2) # 540P
-        cam.setFps(35)
+        isp_scale, cam_resolution = ((1, 1), self.camera_resolution) \
+                                    if self.camera_resolution != OakdCameraResolution.THE_540_P \
+                                    else ((1,2), OakdCameraResolution.THE_1080_P)
         
+        cam.setResolution(cam_resolution.value)
+        cam.setIspScale(isp_scale[0], isp_scale[1])
+                
         # Create communication link between camera and host(pc)
         xOut_rgb = self.pipeline.createXLinkOut()
         xOut_rgb.setStreamName(OakdCam.RGB)
@@ -227,7 +276,7 @@ class OakdCam(DepthCam):
         xout = self.pipeline.createXLinkOut()
         xout.setStreamName(self.cam_type)
 
-        if self.link_out: cam.out.link(xout.input)
+        if self.__link_out: cam.out.link(xout.input)
 
         return cam
     

@@ -1,6 +1,7 @@
 from .camera import (
     ImageHandler,
     OakdCam,
+    OakdCameraResolution,
     AbstractCam,
     DepthCam,
     OpenCVCam,
