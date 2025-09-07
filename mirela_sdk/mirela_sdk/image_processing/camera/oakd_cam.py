@@ -230,12 +230,12 @@ class OakdCam(DepthCam):
         return camera
 
 
-    def init_cam(self) -> dai.Device:
+    def init_cam(self, usb2_mode: bool = False) -> dai.Device:
         """
         Initialize the device and return it
         """
 
-        self.device = dai.Device(self.pipeline)
+        self.device = dai.Device(self.pipeline, usb2Mode = usb2_mode)
 
         return self.device
     
@@ -487,11 +487,11 @@ class OakdCam(DepthCam):
         self.__expTime = 20000
         self.__sensIso = 800
         
-        self.awb_modes =     {name: mode for name, mode in vars(self.ctrl.AutoWhiteBalanceMode).items() 
+        self.awb_modes     = {name: mode for name, mode in vars(self.ctrl.AutoWhiteBalanceMode).items() 
                               if name.isupper()}
         self.antband_modes = {name: mode for name, mode in vars(self.ctrl.AntiBandingMode).items() 
                               if name.isupper()}
-        self.effect_modes =  {name: mode for name, mode in vars(self.ctrl.EffectMode).items() 
+        self.effect_modes  = {name: mode for name, mode in vars(self.ctrl.EffectMode).items() 
                               if name.isupper()}
         self.aut_foc_modes = {name: mode for name, mode in vars(self.ctrl.AutoFocusMode).items() 
                               if name.isupper()}
@@ -564,8 +564,8 @@ class OakdCam(DepthCam):
         Set the variable control for OAK-D
 
         :param control (str): the control to change the value ( brightness | contrast | saturation
-         | sharpness | luma_denoise | chroma_denoise | ae_comp | autoexposure | anti_banding_mode | awb_mode
-         | effect_mode | autofocus )
+         | sharpness | luma_denoise | chroma_denoise | ae_comp | autoexposure | anti_banding_mode | 
+         awb_mode | effect_mode | autofocus )
         :param value (int): the integer value to set the control. Range -10 .. +10 for brightness, 
          contrast and saturation. For sharpness, luma denoise and chroma denoise the range is 0 .. +4
          For ae_comp -9 .. +9. Use this parameter if the control parameter needs an integer value.
@@ -665,7 +665,7 @@ class OakdCam(DepthCam):
         
         self.__get_model_settings(json_path)
 
-        confidence = confidence if confidence < 1.0 and confidence > 0.0 else self.confidence
+        confidence = confidence if confidence < 1.0 and confidence > 0.0 else self.confidence_threshold
 
         # Define sources and outputs
         camRgb = self.pipeline.create(dai.node.ColorCamera)
@@ -714,23 +714,47 @@ class OakdCam(DepthCam):
         """
 
         json_file:          dict  = OakdCam.__load_json(json_path)
-        self.nn_config:     dict  = json_file.get("nn_config",                  None)
-        if self.nn_config is None: raise ValueError("nn_config property not found in " \
-                                                                           "json file")
+        if not isinstance(json_file, dict): raise TypeError("JSON file is invalid")
 
-        self.metadata:      dict  = self.nn_config.get("NN_specific_metadata",  None)
-        self.labels:        list  = json_file     .get("mappings",              None)\
-                                                  .get("labels",                None)
-        self.classes:       int   = self.metadata .get("classes",               None)
-        self.coordinates:   int   = self.metadata .get("coordinates",           None)
 
-        self.anchors:       list  = self.metadata .get("anchors",               None)
-        self.anchor_masks:  dict  = self.metadata .get("anchor_masks",          None)
-        self.iou_threshold: float = self.metadata .get("iou_threshold",         None) 
-        self.confidence:    float = self.metadata .get("confidence_threshold",  None)
-        size:               str   = self.nn_config.get("input_size",            None)
+        nn_config:                 Optional[dict]  = json_file.get("nn_config",             None)
+        if nn_config is None: raise ValueError("Missing required key in JSON file: nn_config")
+        
+        metadata:                  Optional[dict ] = nn_config.get("NN_specific_metadata",  None)
+        if metadata is  None: raise ValueError("Missing required key in JSON file: " \
+                                                "NN_specific_metadata")
 
-        self.width, self.height = [int(value) for value in size.split("x")]
+        mappings:                  Optional[dict ] = json_file.get("mappings",              None)
+        if mappings is  None: raise ValueError("Missing required key in JSON file: mappings" )
+
+        self.labels:               Optional[list ] = None
+        self.classes:              Optional[int  ] = None
+        self.coordinates:          Optional[int  ] = None
+        self.anchors:              Optional[list ] = None
+        self.anchor_masks:         Optional[dict ] = None
+        self.iou_threshold:        Optional[float] = None
+        self.confidence_threshold: Optional[float] = None
+        self.input_size:           Optional[str  ] = None
+
+        validation_dict = {"labels"              : mappings,
+                           "classes"             : metadata,
+                           "coordinates"         : metadata,
+                           "anchors"             : metadata,
+                           "anchor_masks"        : metadata,
+                           "iou_threshold"       : metadata,
+                           "confidence_threshold": metadata,
+                           "input_size"          : nn_config
+                           }
+        
+        for name, prev_config in validation_dict.items():
+            if (config:= prev_config.get(name, None)) is None: 
+                raise ValueError(f"Missing required key in JSON file: {name}")
+            else: self.__setattr__(f"{name}", config)
+
+        if "x" not in self.input_size.lower():
+            raise ValueError("Key 'input_size' must be 'WxH', e.g. '640x640'")
+
+        self.width, self.height = [int(value) for value in self.input_size.split("x")]
 
 
     @staticmethod
