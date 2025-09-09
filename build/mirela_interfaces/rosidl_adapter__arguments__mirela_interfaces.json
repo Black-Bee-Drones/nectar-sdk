@@ -1,8 +1,0 @@
-{
-  "package_name": "mirela_interfaces",
-  "non_idl_tuples": [
-    "/home/ubuntu/ros2_ws/src/mirela-sdk/mirela_interfaces:msg/ArucoTransforms.msg",
-    "/home/ubuntu/ros2_ws/src/mirela-sdk/mirela_interfaces:msg/LineInfo.msg",
-    "/home/ubuntu/ros2_ws/src/mirela-sdk/mirela_interfaces:msg/PhotoInfo.msg"
-  ]
-}
