@@ -58,7 +58,6 @@ class ColorCalibrationNode(Node):
             self.image_source,
             image_processing_callback=self.process,
             cap=self.cap,
-            qos_profile=qos_profile,
         )
         self.color_detector = ColorDetector("track", color_space=self.color_space)
         self.initialized = False

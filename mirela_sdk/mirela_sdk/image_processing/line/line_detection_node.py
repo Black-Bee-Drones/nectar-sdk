@@ -560,7 +560,6 @@ class LineDetectionNode(Node):
             self.process_image,
             show_result=None,
             cap=self.cap,
-            qos_profile=qos_profile,
         )
 
         colors_str = ", ".join(self.line_colors)
