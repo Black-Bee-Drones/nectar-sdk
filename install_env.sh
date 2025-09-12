@@ -192,6 +192,9 @@ install_ros2() {
         "ros-humble-mavros-extras"
         "ros-humble-tf-transformations"
         "ros-humble-ament-cmake"
+        "ros-humble-vision-opencv"
+        "ros-humble-cv-bridge"
+        "ros-humble-image-geometry"
         "python3-colcon-common-extensions"
         "python3-rosdep"
     )
@@ -306,14 +309,6 @@ setup_ros2_workspace() {
     log_info "Atualizando rosdep..."
     rosdep update
     
-    # Clonar vision_opencv se não existir
-    if [ ! -d "src/vision_opencv" ]; then
-        log_info "Clonando vision_opencv..."
-        cd src
-        git clone -b humble https://github.com/ros-perception/vision_opencv.git
-        cd ..
-    fi
-    
     log_success "Workspace configurado!"
 }
 
@@ -418,6 +413,7 @@ main() {
     echo "1) Instalação completa (recomendado)"
     echo "2) Instalação personalizada"
     echo "3) Apenas verificar instalação"
+    echo "4) Instalar suporte RealSense D435i (para Jetson/Indoor)"
     
     read -p "Opção [1]: " option
     option=${option:-1}
@@ -471,6 +467,17 @@ main() {
             ;;
         3)
             verify_installation
+            ;;
+        4)
+            # Verificar se install_realsense.sh existe
+            if [ -f "./install_realsense.sh" ]; then
+                log_info "Executando instalação RealSense..."
+                ./install_realsense.sh
+            else
+                log_error "Script install_realsense.sh não encontrado!"
+                log_info "Certifique-se de que está no diretório mirela-sdk"
+                exit 1
+            fi
             ;;
         *)
             log_error "Opção inválida!"
