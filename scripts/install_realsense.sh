@@ -332,19 +332,31 @@ rebuild_workspace() {
 verify_installation() {
     log_section "VERIFICANDO INSTALAÇÃO REALSENSE"
 
-    # Verificar librealsense
-    if pkg-config --exists librealsense2; then
-        log_success "librealsense2 encontrado: $(pkg-config --modversion librealsense2)"
-    else
+    # Verificar librealsense - tentar múltiplos métodos
+    LIBREALSENSE_FOUND=false
+    
+    # Método 1: pkg-config (para instalação compilada)
+    if pkg-config --exists librealsense2 2>/dev/null; then
+        log_success "librealsense2 encontrado via pkg-config: $(pkg-config --modversion librealsense2)"
+        LIBREALSENSE_FOUND=true
+    # Método 2: dpkg (para instalação via apt)
+    elif dpkg -l | grep -q "ros-humble-librealsense2"; then
+        VERSION=$(dpkg -l | grep "ros-humble-librealsense2" | awk '{print $3}')
+        log_success "librealsense2 encontrado via apt: $VERSION"
+        LIBREALSENSE_FOUND=true
+    # Método 3: verificar se rs-enumerate-devices existe
+    elif command -v rs-enumerate-devices &> /dev/null; then
+        log_success "librealsense2 tools encontradas (rs-enumerate-devices)"
+        LIBREALSENSE_FOUND=true
+    # Método 4: verificar bibliotecas instaladas
+    elif [ -f "/usr/local/lib/librealsense2.so" ] || [ -f "/usr/lib/x86_64-linux-gnu/librealsense2.so" ] || [ -f "/usr/lib/aarch64-linux-gnu/librealsense2.so" ]; then
+        log_success "librealsense2 biblioteca encontrada"
+        LIBREALSENSE_FOUND=true
+    fi
+    
+    if [ "$LIBREALSENSE_FOUND" = false ]; then
         log_error "librealsense2 não encontrado!"
         return 1
-    fi
-
-    # Verificar pyrealsense2
-    if python3 -c "import pyrealsense2 as rs; print('pyrealsense2 versão:', rs.__version__)" 2>/dev/null; then
-        log_success "pyrealsense2 funcionando!"
-    else
-        log_warning "pyrealsense2 não encontrado ou não funcionando"
     fi
 
     # Verificar realsense-ros

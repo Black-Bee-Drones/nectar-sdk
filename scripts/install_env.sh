@@ -470,9 +470,9 @@ main() {
             ;;
         4)
             # Verificar se install_realsense.sh existe
-            if [ -f "./install_realsense.sh" ]; then
+            if [ -f "./scripts/install_realsense.sh" ]; then
                 log_info "Executando instalação RealSense..."
-                ./install_realsense.sh
+                ./scripts/install_realsense.sh
             else
                 log_error "Script install_realsense.sh não encontrado!"
                 log_info "Certifique-se de que está no diretório mirela-sdk"

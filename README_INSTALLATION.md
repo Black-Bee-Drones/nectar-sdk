@@ -15,7 +15,7 @@ Este guia fornece instruções para instalar e configurar o ambiente completo do
 
 ```bash
 # Baixe o script de instalação
-wget https://raw.githubusercontent.com/Black-Bee-Drones/mirela-sdk/main/install_env.sh
+wget https://raw.githubusercontent.com/Black-Bee-Drones/mirela-sdk/main/scripts/install_env.sh
 # Ou baixe o script de instalação direto pelo GitHub
 
 # Torna o script executável
