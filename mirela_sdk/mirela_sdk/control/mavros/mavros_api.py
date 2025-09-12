@@ -35,7 +35,7 @@ class MavDrone(Drone):
     Class to control the mav ros drone using ROS2.
     """
 
-    def __init__(self, node: Node, mavros: bool = False) -> None:
+    def __init__(self, node: Node, mavros: bool = False, indoor: bool = False) -> None:
         """
         Initialize the Mavros API
 
@@ -45,31 +45,29 @@ class MavDrone(Drone):
         super().__init__(node=node)
 
         # Variables:
+        self.indoor = indoor
         self._state = State()
-        self._gps = NavSatFix()
         self._rng_alt = Range()
-        self._rel_alt = Float64()
         self._local_pos = PoseStamped()
         self._vel_body = TwistStamped()
-        self._heading = Float64()
         self._imu_data = Imu()
-
-        # Store takeoff position for custom RTL
-        self._takeoff_lat = 0.0
-        self._takeoff_lon = 0.0
-        self._takeoff_alt = 0.0
-        self._takeoff_heading = 0.0
+        self._takeoff_position = PoseStamped()
         self._home_position_set = False
+        
+        # Outdoor only variables:
+        if self.indoor == False:
+            self._heading = Float64()
+            self._gps = NavSatFix()
+            self._rel_alt = Float64()
 
-        self.gps_controller = GPSController(self)
+            # Store takeoff position for custom RTL
+            self._takeoff_position = NavSatFix()
+            self._takeoff_heading = 0.0
+
+            self.gps_controller = GPSController(self)
+
 
         # Subscribers:
-        self._gps_sub = self._create_subscriber(
-            NavSatFix,
-            "/mavros/global_position/global",
-            lambda data: self.__setattr__("_gps", data),
-            qos_profile_sensor_data,
-        )
         self._state_sub = self._create_subscriber(
             State, "/mavros/state", lambda data: self.__setattr__("_state", data), 10
         )
@@ -79,22 +77,10 @@ class MavDrone(Drone):
             lambda data: self.__setattr__("_rng_alt", data),
             10,
         )
-        self._rel_alt_sub = self._create_subscriber(
-            Float64,
-            "/mavros/global_position/rel_alt",
-            lambda data: self.__setattr__("_rel_alt", data),
-            qos_profile_sensor_data,
-        )
         self._local_pos_sub = self._create_subscriber(
             PoseStamped,
             "/mavros/local_position/pose",
             lambda data: self.__setattr__("_local_pos", data),
-            qos_profile_sensor_data,
-        )
-        self._hdg_sub = self._create_subscriber(
-            Float64,
-            "/mavros/global_position/compass_hdg",
-            lambda data: self.__setattr__("_heading", data),
             qos_profile_sensor_data,
         )
         self._vel_body_sub = self._create_subscriber(
@@ -110,6 +96,29 @@ class MavDrone(Drone):
             qos_profile_sensor_data,
         )
 
+        # Outdoor only Subscribers:
+        if self.indoor == False:
+            self._gps_sub = self._create_subscriber(
+                NavSatFix,
+                "/mavros/global_position/global",
+                lambda data: self.__setattr__("_gps", data),
+                qos_profile_sensor_data,
+            )
+
+            self._rel_alt_sub = self._create_subscriber(
+            Float64,
+            "/mavros/global_position/rel_alt",
+            lambda data: self.__setattr__("_rel_alt", data),
+            qos_profile_sensor_data,
+            )
+
+            self._hdg_sub = self._create_subscriber(
+            Float64,
+            "/mavros/global_position/compass_hdg",
+            lambda data: self.__setattr__("_heading", data),
+            qos_profile_sensor_data,
+            )
+
         # Services:
         self._mode_srv = self._create_client(SetMode, "/mavros/set_mode")
         self._arm_srv = self._create_client(CommandBool, "/mavros/cmd/arming")
@@ -123,15 +132,18 @@ class MavDrone(Drone):
         self._command_srv = self._create_client(CommandLong, "/mavros/cmd/command")
 
         # Publishers:
-        self.gps_pub = self._create_publisher(
-            GeoPoseStamped, "/mavros/setpoint_position/global", 1
-        )
-        self.gps2_pub = self._create_publisher(
-            GlobalPositionTarget, "/mavros/setpoint_raw/global", 1
-        )
         self.local_pub = self._create_publisher(
             PositionTarget, "/mavros/setpoint_raw/local", 1
         )
+
+        # Outdoor only Publishers:
+        if self.indoor == False:
+            self.gps_pub = self._create_publisher(
+                GeoPoseStamped, "/mavros/setpoint_position/global", 1
+            )
+            self.gps2_pub = self._create_publisher(
+                GlobalPositionTarget, "/mavros/setpoint_raw/global", 1
+            )
 
         if mavros:
             self.init_drivers()
@@ -168,28 +180,6 @@ class MavDrone(Drone):
         return self._state
 
     @property
-    def get_gps(self) -> NavSatFix:
-        """
-        Return gps data
-
-        NavSatFix
-        ----------
-        http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
-        """
-        return self._gps
-
-    @property
-    def get_rel_alt(self) -> Float64:
-        """
-        Return relative altitude data from gps
-
-        Float64
-        ----------
-        http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
-        """
-        return self._rel_alt
-
-    @property
     def get_rng_alt(self) -> Range:
         """
         Return relative altitude data from lidar
@@ -210,17 +200,6 @@ class MavDrone(Drone):
         http://docs.ros.org/en/api/geometry_msgs/html/msg/PoseStamped.html
         """
         return self._local_pos
-
-    @property
-    def get_heading(self) -> Float64:
-        """
-        Return heading data
-
-        Float64
-        ----------
-        http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
-        """
-        return self._heading
 
     @property
     def get_vel_body(self) -> TwistStamped:
@@ -245,31 +224,93 @@ class MavDrone(Drone):
         """
 
         return self._imu_data
+    
+    @property
+    def get_gps(self) -> NavSatFix:
+        """
+        Return gps data
+
+        NavSatFix
+        ----------
+        http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
+        """
+        if self.indoor == False: 
+            return self._gps
+        else:
+            raise AttributeError("GPS data not available in indoor mode.")
+
+    @property
+    def get_rel_alt(self) -> Float64:
+        """
+        Return relative altitude data from gps
+
+        Float64
+        ----------
+        http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
+        """
+        if self.indoor == False:
+            return self._rel_alt
+        else:
+            raise AttributeError("Relative altitude data not available in indoor mode.")
+
+    @property
+    def get_heading(self) -> Float64:
+        """
+        Return heading data
+
+        Float64
+        ----------
+        http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
+        """
+        if self.indoor == False:
+            return self._heading
+        else:
+            raise AttributeError("Heading data not available in indoor mode.")
 
     def __startup(self):
         """
-        Get initial values for the drone state, gps, altitude and heading.
-        If data cannot be obtained within timeout period, log warnings and continue with defaults.
+        Test the position estimation sensors and get initial values.
+        If data cannot be obtained within timeout period, log warnings and continue with default values.
         """
         self.node.get_logger().info("Starting initialization of sensor data...")
-        sensors_initialized = True
+        sensors_initialized = False
+        start_time = self.node.get_clock().now()
+        timeout = Duration(seconds=10.0)
+        
+        if self.indoor == True:
+            while self.node.get_clock().now() - start_time < timeout:
+                self.node.get_logger().info("Waiting for local position data...")
+                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks]
+                if self.get_local_pos.pose.position.z != 0.0:
+                    sensors_initialized = True
+                    break
 
-        altitude_success = self.force_correct_altitude(timeout_sec=10.0)
-        if not altitude_success:
-            sensors_initialized = False
-            self.node.get_logger().warn("Failed to initialize GPS altitude data.")
+            if self.get_rng_alt.range == 0.0:
+                self.initial_altitude = self._local_pos.pose.position.z
+            else:
+                self.initial_altitude = self._rng_alt.range
+            self.initial_heading = 0.0  # No heading data in indoor mode
+        
+        else:
+            while self.node.get_clock().now() - start_time < timeout:
+                self.node.get_logger().info("Waiting for GPS data...")
+                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
+                if self.get_gps.altitude != 0.0 and self.get_heading.data != 0.0:
+                    sensors_initialized = True
+                    break
 
-        heading = self.force_correct_heading(timeout_sec=10.0)
-        if heading == 0.0:
-            sensors_initialized = False
-            self.node.get_logger().warn("Failed to initialize heading data.")
-
+            if self.get_rng_alt.range == 0.0:
+                self.initial_altitude = self._gps.altitude
+            else:
+                self.initial_altitude = self._rng_alt.range
+            self.initial_heading = self._heading.data
+            
         if not sensors_initialized:
             self.node.get_logger().warn(
                 "Initialization completed with warnings. Some sensors may not be available."
             )
             self.node.get_logger().warn(
-                "Check if MAVROS is running and GPS is properly connected."
+                "Check if MAVROS is running and GPS/SLAM is working properly."
             )
             self.node.get_logger().warn("Using default values for missing sensor data.")
         else:
@@ -277,72 +318,9 @@ class MavDrone(Drone):
                 "Sensor data initialization completed successfully."
             )
             self.node.get_logger().info(
-                f"Initial altitude: {self.initial_altitude}m, Initial heading: {heading}°"
+                f"Initial altitude: {self.initial_altitude}m, Initial heading: {self.initial_heading}°"
             )
 
-    def force_correct_altitude(self, timeout_sec=10.0):
-        """
-        Get initial altitude value from GPS with timeout.
-
-        :param timeout_sec: Maximum time in seconds to wait for valid data
-        :return: Boolean indicating success (True) or failure (False)
-        """
-        self.node.get_logger().info("Waiting for altitude data...")
-        self.initial_altitude = self.get_gps.altitude
-
-        start_time = self.node.get_clock().now()
-        timeout = Duration(seconds=timeout_sec)
-
-        # Try to get valid altitude value until timeout
-        while self.initial_altitude == 0.0:
-            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-            self.initial_altitude = self.get_gps.altitude
-
-            # Check if timeout reached
-            if self.node.get_clock().now() - start_time > timeout:
-                self.node.get_logger().warn(
-                    f"Timeout reached ({timeout_sec}s) while waiting for altitude data. "
-                    "Using default value of 0.0."
-                )
-                self.initial_altitude = 0.0
-                return False
-
-        self.node.get_logger().info(f"Altitude initialized: {self.initial_altitude}m")
-        return True
-
-    def force_correct_heading(self, timeout_sec=10.0) -> float:
-        """
-        Get initial heading value with timeout.
-
-        :param timeout_sec: Maximum time in seconds to wait for valid data
-        :return: Initial heading value (even if it's 0.0 after timeout)
-        """
-        self.node.get_logger().info("Waiting for heading data...")
-        self.initial_heading = self.get_heading.data
-
-        start_time = self.node.get_clock().now()
-        timeout = Duration(seconds=timeout_sec)
-        success = True
-
-        # Try to get valid heading value until timeout
-        while self.initial_heading == 0.0:
-            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-            self.initial_heading = self.get_heading.data
-
-            # Check if timeout reached
-            if self.node.get_clock().now() - start_time > timeout:
-                self.node.get_logger().warn(
-                    f"Timeout reached ({timeout_sec}s) while waiting for heading data. "
-                    "Using default value of 0.0."
-                )
-                self.initial_heading = 0.0
-                success = False
-                break
-
-        if success:
-            self.node.get_logger().info(f"Heading initialized: {self.initial_heading}°")
-
-        return self.initial_heading
 
     def _call_service(
         self,
@@ -353,6 +331,8 @@ class MavDrone(Drone):
         sync: bool = False,
     ):
         """
+        to-do: rclpy.spin_until_future_complete?
+
         Auxiliar function to call services and print result.
 
         :param service (Client): Service client
@@ -469,16 +449,12 @@ class MavDrone(Drone):
         takeoff_alt: float (meters)
         """
         # Store the takeoff position for custom RTL strategy
-        self._takeoff_lat = self.get_gps.latitude
-        self._takeoff_lon = self.get_gps.longitude
-        self._takeoff_alt = takeoff_alt
-        self._takeoff_heading = self.get_heading.data
         self._home_position_set = True
-
-        self.node.get_logger().info(
-            f"Stored takeoff position: Lat {self._takeoff_lat}, Lon {self._takeoff_lon}, "
-            f"Alt {self._takeoff_alt}, Heading {self._takeoff_heading}"
-        )
+        if self.indoor == True:
+            self.takeoff_position = self.get_local_pos
+        else:
+            self.takeoff_position = self.get_gps
+            self._takeoff_heading = self.get_heading.data
 
         self.arm()
         sleep(3.0)
@@ -551,6 +527,8 @@ class MavDrone(Drone):
         rtl_strategy: str = "default",
     ):
         """
+        todo: add custom rtl strategy for indoor
+
         Send return to launch command using the selected strategy.
 
         The copter will first rise to RTL_ALT before returning home or maintain the current
@@ -621,7 +599,7 @@ class MavDrone(Drone):
                 return_alt = (
                     self.get_rel_alt.data
                     if rtl_strategy == "gps_current_alt"
-                    else self._takeoff_alt
+                    else self._takeoff_position.altitude
                 )
 
                 # First climb to return altitude if needed
@@ -636,8 +614,8 @@ class MavDrone(Drone):
 
                 # Then return to takeoff position
                 self.offboard_gps_position(
-                    lat_setpoint=self._takeoff_lat,
-                    lon_setpoint=self._takeoff_lon,
+                    lat_setpoint=self._takeoff_position.latitude,
+                    lon_setpoint=self._takeoff_position.longitude,
                     alt_setpoint=return_alt,
                     heading=self._takeoff_heading,
                     precision_radius=1.0,
@@ -690,6 +668,8 @@ class MavDrone(Drone):
         initial_heading: bool = False,
     ):
         """
+        todo: add new offboard_position, and deprecate this one
+
         Move sending a GPS coordinate setpoint
 
         :param lat_setpoint (float): Latitude setpoint
@@ -852,9 +832,24 @@ class MavDrone(Drone):
     def snapshot(self):
         pass
 
+    def set_takeoff_position(self):
+        """
+        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
+        This method uses the current position as the takeoff position.
+        """
+        # Store the takeoff position for custom RTL
+        self._home_position_set = True
+        rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks to get latest position
+        if self.indoor == True:
+            self.takeoff_position = self.get_local_pos
+        else:
+            self.takeoff_position = self.get_gps
+            self._takeoff_heading = self.get_heading.data
+
     def set_takeoff_position(self, latitude, longitude, altitude, heading):
         """
-        Store the current position as the takeoff position for custom RTL.
+        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
+        This method is intended for outdoor use only and requires valid GPS coordinates.
 
         Parameters
         ----------
@@ -867,10 +862,46 @@ class MavDrone(Drone):
         heading : float
             Heading at the takeoff position.
         """
-        self._takeoff_lat = latitude
-        self._takeoff_lon = longitude
-        self._takeoff_alt = altitude
-        self._takeoff_heading = heading
+        if self.indoor == True:
+            raise RuntimeError("Takeoff position with GPS coordinates cannot be set in indoor mode.")
+        else:
+            self._takeoff_position.latitude = latitude
+            self._takeoff_position.longitude = longitude
+            self._takeoff_position.altitude = altitude
+            self._takeoff_heading = heading
+        self._home_position_set = True
+
+    def set_takeoff_position(self, pose: NavSatFix):
+        """
+        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
+        This method is intended for outdoor use only and requires a valid NavSatFix object.
+
+        Parameters
+        ----------
+        pose : NavSatFix
+            NavSatFix object containing latitude, longitude, and altitude of the takeoff position.
+        """
+        if self.indoor == True:
+            raise RuntimeError("Takeoff position with GPS coordinates cannot be set in indoor mode.")
+        else:
+            self._takeoff_position = pose
+        self._home_position_set = True
+
+
+    def set_takeoff_position(self, pose: PoseStamped):
+        """
+        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
+        This method is intended for indoor use only and requires a valid PoseStamped object.
+
+        Parameters
+        ----------
+        pose : PoseStamped
+            PoseStamped object containing position data of the takeoff position.
+        """
+        if self.indoor == False:
+            raise RuntimeError("Takeoff position with local coordinates cannot be set in outdoor mode.")
+        else:
+            self._takeoff_position = pose
         self._home_position_set = True
 
     def custom_rtl(self):
