@@ -17,7 +17,6 @@ class GPSController:
     def __init__(self, drone):
         self.drone = drone
         self._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
-        self.photo_count: int = 0
         self.path = os.path.dirname(os.path.abspath(__file__))
 
     def _check_position(self):
