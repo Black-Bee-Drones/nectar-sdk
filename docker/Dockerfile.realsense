@@ -1,0 +1,100 @@
+FROM mirela-sdk:base
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependências RealSense
+RUN echo "📷 Instalando dependências RealSense..." && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    libgtk-3-dev \
+    libglfw3-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    qtcreator \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar CUDA toolkit se disponível (para Jetson)
+RUN echo "🔧 Verificando CUDA..." && \
+    if command -v nvcc >/dev/null 2>&1; then \
+        echo "CUDA encontrado, instalando dependências OpenGL..."; \
+        apt-get update && apt-get install -y \
+        libgles2-mesa-dev \
+        libegl1-mesa-dev \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "CUDA não encontrado, pulando dependências específicas"; \
+    fi
+
+# Baixar e instalar librealsense
+RUN echo "🔨 Baixando e instalando librealsense..." && \
+    cd /tmp && \
+    git clone https://github.com/IntelRealSense/librealsense.git && \
+    cd librealsense && \
+    git checkout v2.55.1 && \
+    mkdir build && cd build && \
+    if command -v nvcc >/dev/null 2>&1; then \
+        echo "Construindo com suporte CUDA..."; \
+        cmake ../ -DBUILD_EXAMPLES=true \
+                 -DFORCE_RSUSB_BACKEND=true \
+                 -DBUILD_WITH_CUDA=true \
+                 -DCMAKE_BUILD_TYPE=release \
+                 -DBUILD_PYTHON_BINDINGS=bool:true \
+                 -DPYTHON_EXECUTABLE=$(which python3); \
+    else \
+        echo "Construindo sem suporte CUDA..."; \
+        cmake ../ -DBUILD_EXAMPLES=true \
+                 -DFORCE_RSUSB_BACKEND=true \
+                 -DBUILD_WITH_CUDA=false \
+                 -DCMAKE_BUILD_TYPE=release \
+                 -DBUILD_PYTHON_BINDINGS=bool:true \
+                 -DPYTHON_EXECUTABLE=$(which python3); \
+    fi && \
+    make -j$(nproc) && \
+    make install && \
+    cd /tmp && rm -rf librealsense
+
+# Configurar PYTHONPATH para pyrealsense2
+RUN echo "🐍 Configurando PYTHONPATH..." && \
+    echo 'export PYTHONPATH=$PYTHONPATH:/usr/local/lib' >> ~/.bashrc
+
+# Configurar udev rules para RealSense
+RUN echo "🔧 Configurando regras udev..." && \
+    cd /tmp && \
+    git clone https://github.com/IntelRealSense/librealsense.git && \
+    cd librealsense && \
+    cp config/99-realsense-libusb.rules /etc/udev/rules.d/ && \
+    cd /tmp && rm -rf librealsense && \
+    udevadm control --reload-rules && \
+    udevadm trigger
+
+# Instalar realsense-ros
+RUN echo "📦 Instalando realsense-ros..." && \
+    cd /home/ros2_ws/src && \
+    git clone https://github.com/IntelRealSense/realsense-ros.git -b ros2-development
+
+# Instalar vision_to_mavros
+RUN echo "🎯 Instalando vision_to_mavros..." && \
+    cd /home/ros2_ws/src && \
+    git clone https://github.com/Black-Bee-Drones/vision_to_mavros.git
+
+# Copiar o repositório mirela-sdk
+COPY . /home/ros2_ws/src/mirela-sdk
+
+# Instalar dependências Python do mirela-sdk
+RUN echo "🐍 Instalando dependências Python do mirela-sdk..." && \
+    cd /home/ros2_ws/src/mirela-sdk && \
+    pip install -r requirements.txt
+
+# Reconstruir workspace com todos os pacotes
+RUN echo "🔨 Construindo workspace completo..." && \
+    /bin/bash -c "source /opt/ros/humble/setup.bash && \
+    cd /home/ros2_ws && \
+    rosdep fix-permissions && \
+    rosdep update && \
+    rosdep install -i --from-path src --rosdistro humble -r -y && \
+    colcon build --symlink-install && \
+    source /home/ros2_ws/install/local_setup.bash"
+
+RUN echo "🚀🐝 MIRELA SDK com RealSense D435i pronto!"
+
+CMD ["/bin/bash"]

@@ -1,62 +1,151 @@
-# [![dock](https://img.icons8.com/?size=30&id=GZxgGaKN8jxz&format=png&color=000000)](#) Docker Environment for BlackBee Project
+# [![dock](https://img.icons8.com/?size=30&id=GZxgGaKN8jxz&format=png&color=000000)](#) Docker Environment for MIRELA SDK
 
-This repository provides a streamlined Docker setup for developing and running the BlackBee project within a ROS2 Humble environment. It includes MAVROS, computer vision support (vision_opencv), and a custom SDK (mirela-sdk). The provided scripts simplify the build and execution process across Linux and Windows operating systems.
+This repository provides a multi-stage Docker setup for the MIRELA SDK, supporting both outdoor GPS-based drone control and indoor VSLAM operations. The setup includes MAVROS, computer vision support, RealSense D435i integration, and vision_to_mavros for seamless indoor navigation.
 
-## 🐳 Dockerized ROS2 Humble Environment
+## 🐳 Multi-Stage Docker Environment
 
-The core of this setup is a Docker image built using the provided [`Dockerfile`](Dockerfile). This image encapsulates all the necessary dependencies, ensuring a consistent and reproducible development environment.
+### Available Images:
+
+1. **`mirela-sdk:base`** - Base image with ROS2 Humble, MAVROS, and computer vision support
+2. **`mirela-sdk:realsense`** - Extended image with RealSense D435i support and VSLAM capabilities
 
 ### Key Features:
 
-* **ROS2 Humble Desktop Full:** Provides the complete ROS2 Humble desktop installation.
-* **MAVROS & MAVROS Extras:** Enables communication with MAVLink-compatible autopilots.
-* **Computer Vision Support:** Integrates `vision_opencv` for image processing and computer vision tasks.
-* **Custom SDK Integration:** Includes the `mirela-sdk` and installs its Python dependencies.
-* **GeographicLib Datasets:** Provides necessary geographic data.
-* **Pre-configured Environment:** Configures the ROS2 environment within the container.
+#### Base Image (`mirela-sdk:base`):
+* **ROS2 Humble Desktop Full:** Complete ROS2 Humble desktop installation
+* **MAVROS & MAVROS Extras:** Communication with MAVLink-compatible autopilots
+* **Computer Vision Support:** `vision_opencv` for image processing
+* **Custom SDK Integration:** `mirela-sdk` with all Python dependencies
+* **GeographicLib Datasets:** Essential geographic data for MAVROS
+* **Pre-configured Environment:** ROS2 environment ready to use
 
-### 🛠️ Building the Docker Image
+#### RealSense Image (`mirela-sdk:realsense`):
+* **All Base Features:** Everything from the base image
+* **Intel RealSense D435i Support:** Complete librealsense2 installation with CUDA support
+* **RealSense ROS2 Driver:** `realsense-ros` package for ROS2 integration
+* **Vision to MAVROS:** `vision_to_mavros` for indoor pose estimation
+* **VSLAM Ready:** Optimized for indoor navigation tasks
+* **CUDA Acceleration:** GPU-accelerated processing on Jetson platforms
 
-The `Dockerfile` handles the image creation process, installing all required packages and dependencies, including:
+### 🛠️ Building the Docker Images
 
-* `nano`, `git`, `python3-pip`, `python3-colcon-common-extensions`, `tmux`, `wget`
-* `ros-humble-mavros`, `ros-humble-mavros-extras`, `ros-humble-tf-transformations`, `ros-humble-ament-cmake`
+#### Automated Build (Recommended):
+```bash
+# Build all images
+./build_images.sh all
 
-It also clones the `vision_opencv` repository, copies the local `mirela-sdk` repository, installs its Python dependencies, and builds the ROS2 workspace using `colcon`.
+# Or build specific images
+./build_images.sh base       # Only base image
+./build_images.sh realsense  # Only RealSense image
+```
 
-## 🏎️ Running the Docker Container
+#### Manual Build:
+```bash
+# Build base image
+docker build --network=host -t mirela-sdk:base -f Dockerfile.base .
 
-Platform-specific scripts are provided for seamless execution:
+# Build RealSense image (requires base image)
+docker build --network=host -t mirela-sdk:realsense -f Dockerfile.realsense .
+```
+
+## 🏎️ Running the Docker Containers
 
 ### Linux: [`run_docker_linux.sh`](run_docker_linux.sh) 🐧
 
-This bash script builds and runs the Docker container named `ros2_black_bee`. Key functionalities include:
+The updated script supports both image types with flexible options:
 
-* **X11 Forwarding:** Enables graphical applications within the container to display on the host X server.
-* **Device Mounting:** Mounts `/dev/video0` inside the container, likely for camera access.
-* **Host Networking:** Uses `--net=host` for shared network access (use with caution!).
-
-**Usage:**
+#### Usage Examples:
 
 ```bash
-bash run_docker_linux.sh
+# Run base image (default)
+./run_docker_linux.sh --base
+
+# Run RealSense image
+./run_docker_linux.sh --realsense
+
+# Build and run RealSense image
+./run_docker_linux.sh --realsense --build
+
+# Custom container name
+./run_docker_linux.sh --realsense --name my_custom_container
+
+# Show help
+./run_docker_linux.sh --help
 ```
 
-### Windows: [`run_docker_win.ps1`](run_docker_win.ps1) & [`run_docker_win.cmd`](run_docker_win.cmd) 🪟
+#### Key Features:
 
-Both scripts achieve the same goal on Windows: building and running the `ros2_black_bee` container. They handle setting the `DISPLAY` environment variable for GUI applications and use host networking.
+* **Multi-Image Support:** Choose between base and RealSense images
+* **X11 Forwarding:** Graphical applications display on host X server
+* **Device Mounting:** Access to cameras (`/dev/video0`, `/dev/video1`) and USB devices
+* **Volume Mounting:** Mount host workspace for development
+* **Host Networking:** Shared network access with host
+* **Privileged Mode:** Full access to hardware devices
 
-**PowerShell Usage:**
+#### Container Specifications:
 
-```powershell
-.\run_docker_win.ps1
+**Base Container:**
+- Image: `mirela-sdk:base`
+- Use case: Outdoor GPS-based drone control
+- Dependencies: MAVROS, vision_opencv, mirela-sdk
+
+**RealSense Container:**
+- Image: `mirela-sdk:realsense`
+- Use case: Indoor VSLAM with RealSense D435i
+- Dependencies: All base + librealsense2, realsense-ros, vision_to_mavros
+
+### Windows Support
+
+Windows scripts are available but may need updates for the new multi-stage setup. For Windows development, consider using WSL2 with the Linux scripts above.
+
+## 🎯 Usage Scenarios
+
+### Outdoor GPS-Based Missions
+For outdoor competitions with GPS availability:
+```bash
+# Use base image for GPS navigation
+./run_docker_linux.sh --base
+
+# Inside container, run your GPS-based control scripts
+ros2 run mirela_sdk gps_control_node
 ```
 
-**Command Prompt Usage:**
+### Indoor VSLAM Missions
+For indoor environments with RealSense D435i:
+```bash
+# Use RealSense image for indoor navigation
+./run_docker_linux.sh --realsense
 
-```cmd
-run_docker_win.cmd
+# Inside container, launch RealSense and vision_to_mavros
+ros2 launch realsense2_camera rs_launch.py
+ros2 launch vision_to_mavros t265_tf_to_mavros_launch.py
 ```
+
+### Development Workflow
+For active development and testing:
+```bash
+# Mount your host workspace for live editing
+./run_docker_linux.sh --realsense --name dev_container
+
+# Your changes in ~/ros2_ws/src/mirela-sdk will be reflected immediately
+```
+
+## 🔧 Best Practices
+
+### Environment Selection
+- **Use `base` image** for outdoor GPS missions (smaller, faster)
+- **Use `realsense` image** for indoor VSLAM missions (includes RealSense support)
+- **Both images** can run simultaneously with different container names
+
+### Performance Optimization
+- **Jetson Orin Nano:** Use RealSense image for CUDA acceleration
+- **Raspberry Pi:** Use base image to save resources
+- **Development:** Use volume mounting for live code editing
+
+### Container Management
+- **Persistent data:** Use named containers for development
+- **Clean restarts:** Containers auto-remove on exit (use `--name` to persist)
+- **Resource monitoring:** Use `docker stats` to monitor resource usage
 
 ## Docker Installation Guide
 
