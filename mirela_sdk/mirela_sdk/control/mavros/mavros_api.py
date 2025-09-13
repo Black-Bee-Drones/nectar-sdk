@@ -1,3 +1,5 @@
+import numpy as np
+
 import rclpy
 from rclpy.node import Node
 from rclpy.client import Client
@@ -28,6 +30,9 @@ from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
 from mirela_sdk.utils.process import ProcessUtils
+from mirela_sdk.utils.gps_calculate import GPSCalculate
+
+from tf_transformations import quaternion_from_euler
 
 
 class MavDrone(Drone):
@@ -654,6 +659,97 @@ class MavDrone(Drone):
             f"-- Servo {aux_out} set to {pwm_value}",
             f"-- Set servo {aux_out} failed",
         )
+    
+    def offboard_position(
+            self,
+            x: float = 0.0,
+            y: float = 0.0,
+            z: float = 0.0,
+            yaw: float | None = None,
+            precision_radius: float = 0.5,
+            timeout_sec: float | None = 60.0,
+    ):
+        """
+        NEEDS REVISION!
+        Move sending a local position setpoint
+
+        :param x (float): X setpoint (meters)
+            (+) Forward
+            (-) Backward
+        :param y (float): Y setpoint (meters)
+            (+) Left
+            (-) Right
+        :param z (float): Z setpoint (meters)
+            (+) Up
+            (-) Down
+        :param yaw (float | None): Yaw setpoint (degrees). If None, keep current yaw.
+            (+) Counter clockwise
+            (-) Clockwise
+        :param timeout_sec (float | None): Timeout in seconds to reach the position. If None, no timeout.
+        """
+
+        if self.indoor == False:
+            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks to get latest position
+            
+            lat, lon, alt = GPSCalculate.calculate_gps_offset(
+                x=x, y=y, z=z,
+                latitude=self.get_gps.latitude,
+                longitude=self.get_gps.longitude,
+                altitude=self.get_gps.altitude
+            )
+
+            final_yaw = self.get_heading.data
+            if yaw is not None:
+                final_yaw -= yaw # CHECK SIGN!!!
+
+            gps_setpoint = GeoPoseStamped()
+            gps_setpoint.pose.position.latitude = lat
+            gps_setpoint.pose.position.longitude = lon
+            gps_setpoint.pose.position.altitude = alt
+            [qx, qy, qz, qw] = quaternion_from_euler(0, 0, np.radians(yaw))
+
+            gps_setpoint.pose.orientation.x = qx
+            gps_setpoint.pose.orientation.y = qy
+            gps_setpoint.pose.orientation.z = qz
+            gps_setpoint.pose.orientation.w = qw
+
+            self.node.get_logger().info(
+                f"-- Moving to local position: {x}, {y}, {z}\n" +
+                f"   GPS coordinate: {lat}, {lon}, {alt}, {final_yaw}"
+            )
+
+            self.gps_pub.publish(gps_setpoint)
+
+
+            start_time = self.node.get_clock().now()
+            timeout = Duration(seconds=timeout_sec)
+            sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
+
+            while True:
+                sleep_time = self.node.get_clock().now()
+                while self.node.get_clock().now() - sleep_time < sleep_duration:
+                    rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
+                current_pos = self.get_gps
+                distance = GPSCalculate.haversine_distance(
+                    current_pos.latitude, current_pos.longitude,
+                    lat, lon
+                )
+
+                distance = np.sqrt(distance**2 + (current_pos.altitude - alt)**2)
+
+                self.node.get_logger().info(f"-- Distance to target: {distance:.2f} m", throttle_duration_sec=1.0)
+
+                if distance < precision_radius:
+                    self.node.get_logger().info("-- Reached target position")
+                    return
+                
+                if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout:
+                    self.node.get_logger().warn("-- Timeout reached before arriving at target position")
+                    return
+
+                self.gps_pub.publish(gps_setpoint)
+
+
 
     def offboard_gps_position(
         self,
