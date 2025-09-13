@@ -279,7 +279,7 @@ class MavDrone(Drone):
         
         if self.indoor == True:
             while self.node.get_clock().now() - start_time < timeout:
-                self.node.get_logger().info("Waiting for local position data...")
+                self.node.get_logger().info("Waiting for local position data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks]
                 if self.get_local_pos.pose.position.z != 0.0:
                     sensors_initialized = True
@@ -293,7 +293,7 @@ class MavDrone(Drone):
         
         else:
             while self.node.get_clock().now() - start_time < timeout:
-                self.node.get_logger().info("Waiting for GPS data...")
+                self.node.get_logger().info("Waiting for GPS data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
                 if self.get_gps.altitude != 0.0 and self.get_heading.data != 0.0:
                     sensors_initialized = True
