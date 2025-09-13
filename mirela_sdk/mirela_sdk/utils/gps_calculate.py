@@ -65,7 +65,42 @@ class GPSCalculate:
 
         return bearing
 
+    @staticmethod
+    def calculate_gps_offset(
+        x: float,
+        y: float,
+        z: float,
+        latitude: float,
+        longitude: float,
+        altitude: float,
+        heading: float,
+    ) -> Tuple[float, float, float]:
+        """
+        Calculate new GPS coordinates given an initial GPS point and offsets in meters.
 
+        :param x (float): Offset in meters along the East-West axis (positive eastward).
+        :param y (float): Offset in meters along the North-South axis (positive northward).
+        :param z (float): Offset in meters along the vertical axis (positive upward).
+        :param latitude (float): Initial latitude in degrees.
+        :param longitude (float): Initial longitude in degrees.
+        :param altitude (float): Initial altitude in meters.
+        :param heading (float): Initial heading in degrees.
+        :return: Tuple containing new latitude, longitude, and altitude.
+        """
+        geod = Geodesic.WGS84
+        # Calculate the distance and bearing from the offsets
+        horizontal_distance = np.sqrt(x**2 + y**2)
+        bearing = (heading + np.degrees(np.arctan2(y, x))) % 360
+
+        # Compute the new GPS coordinates using the geodesic direct method
+        g = geod.Direct(latitude, longitude, bearing, horizontal_distance)
+
+        new_latitude = g['lat2']
+        new_longitude = g['lon2']
+        new_altitude = altitude + z  # Adjust altitude by vertical offset
+
+        return new_latitude, new_longitude, new_altitude
+    
     @staticmethod
     def interp_geo(
         start: Tuple[float, float],
