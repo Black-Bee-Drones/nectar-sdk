@@ -422,7 +422,7 @@ class MavDrone(Drone):
         #Sends first service request
         self.send_velocity_req(vel)
         #Dummy waypoint
-        self.offboard_move_body_frame(forward_m=0.0, right_m=0.0, up_m=0.0)
+        self.offboard_position(x=0.0, y=0.0, z=0.0, precision_radius=0.1, timeout_sec=5.0)
         #Sends request again in order for it to be effective
         self.send_velocity_req(vel)
 
@@ -507,6 +507,8 @@ class MavDrone(Drone):
         self.arm()
         sleep(3.0)
         self.takeoff(takeoff_alt)
+        sleep(takeoff_alt)
+        self.set_environment_velocity()
 
     def land(self):
         """
