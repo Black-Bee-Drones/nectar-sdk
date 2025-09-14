@@ -1,7 +1,8 @@
 import os
 from rclpy.node import Node
 import cv2
-from typing import Optional, Callable
+import time
+from typing import Optional, Callable, Any
 
 from .abstract_cam import AbstractCam
 from .camera_factory import CameraFactory
@@ -83,6 +84,45 @@ class ImageHandler:
         self.cam_timer = self.node.create_timer(
             self.poll_interval, self._camera_callback
         )
+
+    def take_photo(self, timeout_sec: float = 5.0) -> Optional[Any]:
+        """
+        Captures a single frame, processes it, and returns the result.
+
+        This method starts the camera, waits for a frame, processes it once
+        using the provided callback, and then shuts down the camera.
+
+        :param timeout_sec: Maximum time to wait for a frame.
+        :return: The result from the image_processing_callback, or the raw
+                 frame if no callback is provided. Returns None on timeout.
+        """
+        self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
+        camera = self._build_camera_from_source()
+        try:
+            if not camera.is_running:
+                camera.start()
+
+            start_time = time.time()
+            frame = None
+            while time.time() - start_time < timeout_sec:
+                frame = camera.get_frame()
+                if frame is not None:
+                    break
+                time.sleep(0.1) 
+
+            if frame is None:
+                self.node.get_logger().error("Failed to capture frame within timeout.")
+                return None
+
+            self.img = frame
+            if self.image_processing_callback:
+                return self.image_processing_callback(self.img)
+            return self.img
+
+        finally:
+            if camera.is_running:
+                camera.close()
+            self.node.get_logger().info("Photo capture finished.")
 
     def cleanup(self):
         if not self.cleaned:
