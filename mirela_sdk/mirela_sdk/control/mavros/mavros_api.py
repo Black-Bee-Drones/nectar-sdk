@@ -786,6 +786,9 @@ class MavDrone(Drone):
         sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
 
         while True:
+            gps_setpoint.header.stamp = self.node.get_clock().now().to_msg()
+            self.gps_pub.publish(gps_setpoint)
+            
             sleep_time = self.node.get_clock().now()
             while self.node.get_clock().now() - sleep_time < sleep_duration:
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
@@ -807,7 +810,7 @@ class MavDrone(Drone):
                 self.node.get_logger().warn("-- Timeout reached before arriving at target position")
                 return
 
-            self.gps_pub.publish(gps_setpoint)
+            
         
     def offboard_position(
             self,
