@@ -811,9 +811,7 @@ class MavDrone(Drone):
             if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout:
                 self.node.get_logger().warn("-- Timeout reached before arriving at target position")
                 return
-
-            
-        
+       
     def offboard_position(
             self,
             latitude: float = 0.0,
@@ -1138,80 +1136,6 @@ class MavDrone(Drone):
                 (t_now - t_start).nanoseconds / 1000000000
             )
         )
-
-    def offboard_move_body_frame(
-        self,
-        forward_m: float,
-        right_m: float,
-        up_m: float,
-        precision_m: float = 0.2,
-        timeout_sec: float = 15.0,
-        pub_rate_hz: int = 20
-    ):
-        """
-        Moves drone relatively to its own frame (body) using closed 
-        loop position control.
-
-        Parameters
-        ----------
-        forward_m : float
-            Meters to move forward (+forward, -backwards).
-        right_m : float
-            Meters to move to the right (+left, -right).
-        up_m : float
-            Meters to move up (+up, -down).
-        precision_m : float
-            Precision radius in meters. Movement is considered done when inside this
-            target radius.
-        timeout_sec : float
-            Maximum time, in seconds, to try to reach the target
-        pub_rate_hz : int
-            Setpoint publication frequency.
-        """
-        self.node.get_logger().info(f"-- Body relative movement: [Forward:{forward_m}m, Right:{right_m}m, Up:{up_m}m]")
-
-        #Get current pose and yaw 
-        while self._local_pos == None:
-            rclpy.spin_once(self)
-            self.node.get_logger().info("Waiting for pose messages")
-        _local_pos = self._local_pos.pose
-        current_position = _local_pos.position
-        current_yaw_rad = euler_from_quaternion(self.get_local_pos.pose.orientation)[2]
-        self.node.get_logger().info(f"   Yaw atual: {math.degrees(current_yaw_rad):.2f}°")
-
-        #Turns body frame movement into world's frame (local ENU)
-        dx_world = forward_m * math.cos(current_yaw_rad) - right_m * math.sin(current_yaw_rad)
-        dy_world = forward_m * math.sin(current_yaw_rad) + right_m * math.cos(current_yaw_rad)
-        dz_world = up_m
-
-        #Calculates absolute target position
-        target_pos_x = current_position.x + dx_world
-        target_pos_y = current_position.y + dy_world
-        target_pos_z = current_position.z + dz_world
-
-        self.node.get_logger().info(f"   Target position calculated (ENU): [X={target_pos_x:.2f}, Y={target_pos_y:.2f}, Z={target_pos_z:.2f}]")
-
-        #Prepares pose message (keeping current orientation)
-        pose_msg = PositionTarget()
-        pose_msg.header.frame_id = 'map'
-        pose_msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
-
-        #Mask: ignores acceleration and yaw rate values
-        pose_msg.type_mask = (
-            PositionTarget.IGNORE_AFX |
-            PositionTarget.IGNORE_AFY |
-            PositionTarget.IGNORE_AFZ |
-            PositionTarget.IGNORE_YAW_RATE|
-            PositionTarget.IGNORE_VX|
-            PositionTarget.IGNORE_VY|
-            PositionTarget.IGNORE_VZ
-        )
-
-
-        pose_msg.position.x = target_pos_x
-        pose_msg.position.y = target_pos_y
-        pose_msg.position.z = target_pos_z
-        pose_msg.yaw = current_yaw_rad
 
     def image_viewer(self):
         """
