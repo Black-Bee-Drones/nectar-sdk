@@ -34,6 +34,7 @@ from mirela_sdk.utils.process import ProcessUtils
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 
 from tf_transformations import quaternion_from_euler
+from tf_transformations import euler_from_quaternion
 
 INDOOR = 0.3
 OUTDOOR = 1.6
@@ -701,7 +702,70 @@ class MavDrone(Drone):
             f"-- Servo {aux_out} set to {pwm_value}",
             f"-- Set servo {aux_out} failed",
         )
-    
+
+    def offboard_position(
+        self,
+        gps_setpoint: GeoPoseStamped = GeoPoseStamped(),
+        precision_radius: float = 0.5,
+        timeout_sec: float | None = 60.0,
+    ):
+        """
+        Navigate to a GPS coordinate setpoint, using closed loop control to ensure arrival.
+        Maximum speed is limited at 1.6 m/s.
+        
+        Parameters
+        ----------
+
+        gps_setpoint : GeoPoseStamped()
+            GPS coordinate setpoint to navigate to.
+
+        precision_radius : float (meters)
+            Radius of the precision
+
+        timeout_sec : float|None (seconds)
+            Timeout for reach check
+            If None, no timeout
+
+        """
+        if self.indoor == True:
+            raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
+
+        target_position = gps_setpoint.pose.position
+        target_heading = np.degrees(euler_from_quaternion(gps_setpoint.pose.orientation)[2])
+        self.node.get_logger().info(
+            "-- Moving to GPS coordinate:\n" +
+            f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
+        )
+
+        self.gps_pub.publish(gps_setpoint)
+        start_time = self.node.get_clock().now()
+        timeout = Duration(seconds=timeout_sec)
+        sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
+
+        while True:
+            sleep_time = self.node.get_clock().now()
+            while self.node.get_clock().now() - sleep_time < sleep_duration:
+                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
+            current_pos = self.get_gps
+            distance = GPSCalculate.haversine_distance(
+                current_pos.latitude, current_pos.longitude,
+                target_position.latitude, target_position.longitude
+            )
+
+            distance = np.sqrt(distance**2 + (current_pos.altitude - target_position.altitude)**2)
+
+            self.node.get_logger().info(f"-- Distance to target: {distance:.2f} m", throttle_duration_sec=1.0)
+
+            if distance < precision_radius:
+                self.node.get_logger().info("-- Reached target position")
+                return
+            
+            if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout:
+                self.node.get_logger().warn("-- Timeout reached before arriving at target position")
+                return
+
+            self.gps_pub.publish(gps_setpoint)
+        
     def offboard_position(
             self,
             latitude: float = 0.0,
@@ -759,41 +823,12 @@ class MavDrone(Drone):
         gps_setpoint.pose.orientation.z = qz
         gps_setpoint.pose.orientation.w = qw
 
-        self.node.get_logger().info(
-            f"-- Moving to GPS coordinate:\n{latitude}, {longitude}, {altitude}, {heading}"
+        self.offboard_position(
+            gps_setpoint=gps_setpoint,
+            precision_radius=precision_radius,
+            timeout_sec=timeout_sec
         )
 
-        self.gps_pub.publish(gps_setpoint)
-
-
-        start_time = self.node.get_clock().now()
-        timeout = Duration(seconds=timeout_sec)
-        sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
-
-        while True:
-            sleep_time = self.node.get_clock().now()
-            while self.node.get_clock().now() - sleep_time < sleep_duration:
-                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
-            current_pos = self.get_gps
-            distance = GPSCalculate.haversine_distance(
-                current_pos.latitude, current_pos.longitude,
-                latitude, longitude
-            )
-
-            distance = np.sqrt(distance**2 + (current_pos.altitude - altitude)**2)
-
-            self.node.get_logger().info(f"-- Distance to target: {distance:.2f} m", throttle_duration_sec=1.0)
-
-            if distance < precision_radius:
-                self.node.get_logger().info("-- Reached target position")
-                return
-            
-            if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout:
-                self.node.get_logger().warn("-- Timeout reached before arriving at target position")
-                return
-
-            self.gps_pub.publish(gps_setpoint)
-    
     def offboard_position(
             self,
             x: float = 0.0,
@@ -1058,7 +1093,7 @@ class MavDrone(Drone):
             self.node.get_logger().info("Waiting for pose messages")
         _local_pos = self._local_pos.pose
         current_position = _local_pos.position
-        current_yaw_rad = self._quaternion_to_yaw(_local_pos.orientation)
+        current_yaw_rad = euler_from_quaternion(self.get_local_pos.pose.orientation)[2]
         self.node.get_logger().info(f"   Yaw atual: {math.degrees(current_yaw_rad):.2f}°")
 
         #Turns body frame movement into world's frame (local ENU)
