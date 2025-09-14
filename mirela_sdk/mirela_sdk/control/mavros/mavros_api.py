@@ -413,7 +413,7 @@ class MavDrone(Drone):
         env: str
         Indoor ou outdoor environment"""
 
-        if self.indoor:
+        if self.indoor == True:
             vel = INDOOR
         else:
             vel = OUTDOOR
