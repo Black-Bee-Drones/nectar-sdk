@@ -16,6 +16,7 @@ from mavros_msgs.srv import (
     ParamSetV2,
 )
 from time import sleep
+import math
 
 from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget
 from std_msgs.msg import Float64, Int64
@@ -34,6 +35,8 @@ from mirela_sdk.utils.gps_calculate import GPSCalculate
 
 from tf_transformations import quaternion_from_euler
 
+INDOOR = 0.3
+OUTDOOR = 1.6
 
 class MavDrone(Drone):
     """
@@ -382,6 +385,49 @@ class MavDrone(Drone):
         else:
             future = service.call_async(request)
             future.add_done_callback(_handle_future)
+
+
+    def send_velocity_req(self, vel: float):
+        """Uses the command MAV_CMD_DO_CHANGE_SPEED to alter the horizontal speed
+        of the drone."""
+        
+        self.node.get_logger().info("Acessing MAV_CMD_DO_CHANGE_SPEED parameter")
+        self.node.get_logger().info("Sending service request...")
+        request = CommandLong.Request()
+        request.command = 178   # MAV_CMD_DO_CHANGE_SPEED
+        request.confirmation = False
+        request.param1 = 1.0
+        request.param2 = vel
+        request.param3 = -1.0
+        request.param4 = 0.0
+        request.param5 = 0.0
+        request.param6 = 0.0
+        request.param7 = 0.0
+        self._call_service(self._command_srv, request, f"Sucess: MAV_DO_CHANGE_SPEED -> {vel} m/s ",
+                           "Error: Failed to access MAV_DO_CHANGE_SPEED")
+        
+
+    def set_environment_velocity(self):
+        """Sets a pre defined limit for the horizontal speed based on the current
+         environment (indoor ou outdoor)
+        
+        Parameters
+        ----------
+        env: str
+        Indoor ou outdoor environment"""
+
+        if self.indoor:
+            vel = INDOOR
+        else:
+            vel = OUTDOOR
+        
+        #Sends first service request
+        self.send_velocity_req(vel)
+        #Dummy waypoint
+        self.offboard_move_body_frame(forward_m=0.0, right_m=0.0, up_m=0.0)
+        #Sends request again in order for it to be effective
+        self.send_velocity_req(vel)
+
 
     def kill_motors(self):
         """
@@ -909,6 +955,112 @@ class MavDrone(Drone):
                 (t_now - t_start).nanoseconds / 1000000000
             )
         )
+
+    def offboard_move_body_frame(
+        self,
+        forward_m: float,
+        right_m: float,
+        up_m: float,
+        precision_m: float = 0.2,
+        timeout_sec: float = 15.0,
+        pub_rate_hz: int = 20
+    ):
+        """
+        Moves drone relatively to its own frame (body) using closed 
+        loop position control.
+
+        Parameters
+        ----------
+        forward_m : float
+            Meters to move forward (+forward, -backwards).
+        right_m : float
+            Meters to move to the right (+left, -right).
+        up_m : float
+            Meters to move up (+up, -down).
+        precision_m : float
+            Precision radius in meters. Movement is considered done when inside this
+            target radius.
+        timeout_sec : float
+            Maximum time, in seconds, to try to reach the target
+        pub_rate_hz : int
+            Setpoint publication frequency.
+        """
+        self.node.get_logger().info(f"-- Body relative movement: [Forward:{forward_m}m, Right:{right_m}m, Up:{up_m}m]")
+
+        #Get current pose and yaw 
+        while self._local_pos == None:
+            rclpy.spin_once(self)
+            self.node.get_logger().info("Waiting for pose messages")
+        _local_pos = self._local_pos.pose
+        current_position = _local_pos.position
+        current_yaw_rad = self._quaternion_to_yaw(_local_pos.orientation)
+        self.node.get_logger().info(f"   Yaw atual: {math.degrees(current_yaw_rad):.2f}°")
+
+        #Turns body frame movement into world's frame (local ENU)
+        dx_world = forward_m * math.cos(current_yaw_rad) - right_m * math.sin(current_yaw_rad)
+        dy_world = forward_m * math.sin(current_yaw_rad) + right_m * math.cos(current_yaw_rad)
+        dz_world = up_m
+
+        #Calculates absolute target position
+        target_pos_x = current_position.x + dx_world
+        target_pos_y = current_position.y + dy_world
+        target_pos_z = current_position.z + dz_world
+
+        self.node.get_logger().info(f"   Target position calculated (ENU): [X={target_pos_x:.2f}, Y={target_pos_y:.2f}, Z={target_pos_z:.2f}]")
+
+        #Prepares pose message (keeping current orientation)
+        pose_msg = PositionTarget()
+        pose_msg.header.frame_id = 'map'
+        pose_msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
+
+        #Mask: ignores acceleration and yaw rate values
+        pose_msg.type_mask = (
+            PositionTarget.IGNORE_AFX |
+            PositionTarget.IGNORE_AFY |
+            PositionTarget.IGNORE_AFZ |
+            PositionTarget.IGNORE_YAW_RATE|
+            PositionTarget.IGNORE_VX|
+            PositionTarget.IGNORE_VY|
+            PositionTarget.IGNORE_VZ
+        )
+
+
+        pose_msg.position.x = target_pos_x
+        pose_msg.position.y = target_pos_y
+        pose_msg.position.z = target_pos_z
+        pose_msg.yaw = current_yaw_rad
+
+        start_time = self.get_clock().now()
+        rate = 1.0 / pub_rate_hz
+
+        while True:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            elapsed_time = (self.get_clock().now() - start_time).nanoseconds / 1e9
+            if elapsed_time > timeout_sec:
+                self.node.get_logger().error(f"   Timeout! Não foi possível alcançar o alvo em {timeout_sec}s.")
+                break
+
+            #Calculates distance to target
+            current_pos = self._local_pos.pose.position
+            dist_to_target = math.sqrt(
+                (current_pos.x - target_pos_x)**2 +
+                (current_pos.y - target_pos_y)**2
+                (current_pos.z - target_pos_z)**2
+            )
+
+            #Checks if arrival is is complete
+            if dist_to_target <= precision_m:
+                self.node.get_logger().info(f"\033[32;1m   Alvo alcançado! Distância: {dist_to_target:.2f}m\033[0m")
+                break
+            
+            #Publishe setpoint and wait
+            pose_msg.header.stamp = self.get_clock().now().to_msg()
+            self.local_pub.publish(pose_msg)
+            sleep(rate)
+
+        #Publishes one last command for guarantee
+        self.local_pub.publish(pose_msg)
+        self.node.get_logger().info("-- Movimento finalizado.")
 
     def image_viewer(self):
         """
