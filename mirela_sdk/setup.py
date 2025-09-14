@@ -34,7 +34,7 @@ setup(
             "aruco_node = mirela_sdk.image_processing.aruco.aruco_node:main",
             "test_velocity = mirela_sdk.examples.test_velocity:main",
             "test_gps = mirela_sdk.examples.test_gps:main",
-            "test_raspicam = mirela_sdk.examples.raspicam_viewer:main",
+            "camera_example = mirela_sdk.examples.camera_example:main",
             "color_calibration_node = mirela_sdk.image_processing.color.color_calibration_node:main",
             "click_color_calibration_node = mirela_sdk.image_processing.color.click_color_calibration_node:main",
             "camera_calibration = mirela_sdk.image_processing.camera.calibration.calibration:main",
