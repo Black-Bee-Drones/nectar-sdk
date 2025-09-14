@@ -874,10 +874,12 @@ class MavDrone(Drone):
             If None, no timeout.
 
         """
+        start_t = self.node.get_clock().now()
+        sleep_duration = Duration(seconds=0.1)
+        while self.node.get_clock().now() - start_t < sleep_duration:
+            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks to get latest position
 
         if self.indoor == False:
-            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks to get latest position
-            
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
                 x=x, y=y, z=z,
                 latitude=self.get_gps.latitude,
