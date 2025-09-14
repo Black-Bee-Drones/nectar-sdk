@@ -1037,7 +1037,7 @@ class MavDrone(Drone):
             rclpy.spin_once(self, timeout_sec=0.1)
             elapsed_time = (self.get_clock().now() - start_time).nanoseconds / 1e9
             if elapsed_time > timeout_sec:
-                self.node.get_logger().error(f"   Timeout! Não foi possível alcançar o alvo em {timeout_sec}s.")
+                self.node.get_logger().error(f"   Timeout! Couldn't reach the target in {timeout_sec}s.")
                 break
 
             #Calculates distance to target
@@ -1050,7 +1050,7 @@ class MavDrone(Drone):
 
             #Checks if arrival is is complete
             if dist_to_target <= precision_m:
-                self.node.get_logger().info(f"\033[32;1m   Alvo alcançado! Distância: {dist_to_target:.2f}m\033[0m")
+                self.node.get_logger().info(f"\033[32;1m   Target reached! Distance: {dist_to_target:.2f}m\033[0m")
                 break
             
             #Publishe setpoint and wait
@@ -1060,7 +1060,7 @@ class MavDrone(Drone):
 
         #Publishes one last command for guarantee
         self.local_pub.publish(pose_msg)
-        self.node.get_logger().info("-- Movimento finalizado.")
+        self.node.get_logger().info("-- Movement done.")
 
     def image_viewer(self):
         """
