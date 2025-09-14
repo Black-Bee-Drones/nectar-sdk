@@ -705,6 +705,49 @@ class MavDrone(Drone):
 
     def offboard_position(
         self,
+        target_position: PositionTarget = None,
+        precision_radius: float = 0.2,
+        timeout_sec: float | None = 60.0,
+    ):
+        
+        if self.indoor == False:
+            self.node.get_logger().warn("offboard_position with local coordinates should not be used in outdoor mode, since it has less precision when using the GPS.")
+
+        start_time = self.node.get_clock().now()
+        timeout_duration = Duration(seconds=timeout_sec) if timeout_sec is not None else None
+        sleep_duration = Duration(seconds=0.1)
+
+        while True:
+            target_position.header.stamp = self.get_clock().now().to_msg()
+            self.local_pub.publish(target_position)
+
+            #Calculates distance to target
+            current_pos = self._local_pos.pose.position
+            dist_to_target = math.sqrt(
+                (current_pos.x - target_position.position.x)**2 +
+                (current_pos.y - target_position.position.x)**2
+                (current_pos.z - target_position.position.x)**2
+            )
+
+            self.node.get_logger().info(f"   Distance to target: {dist_to_target:.2f}m", throttle_duration_sec=1.0)
+
+            #Checks if arrival is is complete
+            if dist_to_target <= precision_radius:
+                self.node.get_logger().info(f"\033[32;1m   Target reached! Distance: {dist_to_target:.2f}m\033[0m")
+                return
+
+            #Checks for timeout
+            if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout_duration:
+                self.node.get_logger().warn(f"\033[33;1m   Timeout reached before arriving at target position. Distance: {dist_to_target:.2f}m\033[0m")
+                return
+
+            #Sleep to maintain loop rate
+            sleep_time = self.node.get_clock().now()
+            while self.node.get_clock().now() - sleep_time < sleep_duration:
+                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
+
+    def offboard_position(
+        self,
         gps_setpoint: GeoPoseStamped = GeoPoseStamped(),
         precision_radius: float = 0.5,
         timeout_sec: float | None = 60.0,
@@ -1164,38 +1207,6 @@ class MavDrone(Drone):
         pose_msg.position.y = target_pos_y
         pose_msg.position.z = target_pos_z
         pose_msg.yaw = current_yaw_rad
-
-        start_time = self.get_clock().now()
-        rate = 1.0 / pub_rate_hz
-
-        while True:
-            rclpy.spin_once(self, timeout_sec=0.1)
-            elapsed_time = (self.get_clock().now() - start_time).nanoseconds / 1e9
-            if elapsed_time > timeout_sec:
-                self.node.get_logger().error(f"   Timeout! Couldn't reach the target in {timeout_sec}s.")
-                break
-
-            #Calculates distance to target
-            current_pos = self._local_pos.pose.position
-            dist_to_target = math.sqrt(
-                (current_pos.x - target_pos_x)**2 +
-                (current_pos.y - target_pos_y)**2
-                (current_pos.z - target_pos_z)**2
-            )
-
-            #Checks if arrival is is complete
-            if dist_to_target <= precision_m:
-                self.node.get_logger().info(f"\033[32;1m   Target reached! Distance: {dist_to_target:.2f}m\033[0m")
-                break
-            
-            #Publishe setpoint and wait
-            pose_msg.header.stamp = self.get_clock().now().to_msg()
-            self.local_pub.publish(pose_msg)
-            sleep(rate) 
-
-        #Publishes one last command for guarantee
-        self.local_pub.publish(pose_msg)
-        self.node.get_logger().info("-- Movement done.")
 
     def image_viewer(self):
         """
