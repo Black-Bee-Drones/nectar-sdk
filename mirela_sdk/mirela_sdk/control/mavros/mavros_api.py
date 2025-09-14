@@ -719,19 +719,36 @@ class MavDrone(Drone):
         NEEDS REVISION!
         Move sending a local position setpoint
 
-        :param x (float): X setpoint (meters)
+        Parameters
+        ----------
+
+        x : float (meters)
             (+) Forward
+
             (-) Backward
-        :param y (float): Y setpoint (meters)
+
+        y : float (meters)
             (+) Left
+            
             (-) Right
-        :param z (float): Z setpoint (meters)
+
+        z : float (meters)
             (+) Up
+
             (-) Down
-        :param yaw (float | None): Yaw setpoint (degrees). If None, keep current yaw.
+
+        yaw : float|None (degrees)
+            If None, keep current yaw.
+
             (+) Counter clockwise
+
             (-) Clockwise
-        :param timeout_sec (float | None): Timeout in seconds to reach the position. If None, no timeout.
+
+        timeout_sec : float|None (seconds)
+            Timeout in seconds to reach the position.
+
+            If None, no timeout.
+
         """
 
         if self.indoor == False:
