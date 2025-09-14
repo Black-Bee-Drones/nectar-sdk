@@ -329,7 +329,6 @@ class MavDrone(Drone):
                 f"Initial altitude: {self.initial_altitude}m, Initial heading: {self.initial_heading}°"
             )
 
-
     def _call_service(
         self,
         service: Client,
@@ -386,7 +385,6 @@ class MavDrone(Drone):
             future = service.call_async(request)
             future.add_done_callback(_handle_future)
 
-
     def send_velocity_req(self, vel: float):
         """Uses the command MAV_CMD_DO_CHANGE_SPEED to alter the horizontal speed
         of the drone."""
@@ -427,7 +425,6 @@ class MavDrone(Drone):
         self.offboard_move_body_frame(forward_m=0.0, right_m=0.0, up_m=0.0)
         #Sends request again in order for it to be effective
         self.send_velocity_req(vel)
-
 
     def kill_motors(self):
         """
@@ -797,7 +794,6 @@ class MavDrone(Drone):
                 return
 
             self.gps_pub.publish(gps_setpoint)
-
     
     def offboard_position(
             self,
@@ -866,8 +862,6 @@ class MavDrone(Drone):
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec
             )            
-
-
 
     def offboard_gps_position(
         self,
@@ -1128,7 +1122,7 @@ class MavDrone(Drone):
             #Publishe setpoint and wait
             pose_msg.header.stamp = self.get_clock().now().to_msg()
             self.local_pub.publish(pose_msg)
-            sleep(rate)
+            sleep(rate) 
 
         #Publishes one last command for guarantee
         self.local_pub.publish(pose_msg)
@@ -1206,7 +1200,6 @@ class MavDrone(Drone):
         else:
             self._takeoff_position = pose
         self._home_position_set = True
-
 
     def set_takeoff_position(self, pose: PoseStamped):
         """
