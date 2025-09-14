@@ -776,7 +776,8 @@ class MavDrone(Drone):
             timeout_sec: float | None = 60.0,
     ):
         """
-        Move sending a GPS coordinate setpoint
+        Navigate to a GPS coordinate setpoint, using closed loop control to ensure arrival.
+        Maximum speed is limited at 1.6 m/s.
 
         Parameters
         ----------
