@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 from .abstract_cam import AbstractCam
+from .camera_config import C920Config
 
 
 class C920Cam(AbstractCam):
@@ -13,16 +14,9 @@ class C920Cam(AbstractCam):
         "Logi Webcam C920e": "focus_auto=0",
     }
 
-    def __init__(
-        self,
-        *,
-        profile: int = 1,
-        fallback_device_index: int | str = 0,
-        name: str = "c920_cam",
-    ) -> None:
-        super().__init__(name=name)
-        self._profile = profile  # 0: 640x480, 1: 1280x720, 2: 1920x1080
-        self._fallback_device_index = fallback_device_index
+    def __init__(self, config: C920Config) -> None:
+        super().__init__(name=config.name)
+        self._config = config
         self._device: Optional[str] = None
         self._cap: Optional[cv2.VideoCapture] = None
 
@@ -61,15 +55,15 @@ class C920Cam(AbstractCam):
                 pass
 
     def _profile_resolution(self) -> tuple[int, int]:
-        if self._profile == 0:
+        if self._config.profile == 0:
             return 640, 480
-        if self._profile == 2:
+        if self._config.profile == 2:
             return 1920, 1080
         return 1280, 720
 
     def start(self) -> None:
         device, ctrl_param = self._find_device_and_ctrl()
-        self._device = device or self._fallback_device_index
+        self._device = device or self._config.fallback_device_index
 
         self._apply_controls(device, ctrl_param)
 
@@ -78,7 +72,7 @@ class C920Cam(AbstractCam):
         self._cap = cv2.VideoCapture(self._device, cv2.CAP_V4L2)
         if self._cap is None or not self._cap.isOpened():
             # Fallback to plain VideoCapture
-            self._cap = cv2.VideoCapture(self._fallback_device_index)
+            self._cap = cv2.VideoCapture(self._config.fallback_device_index)
 
         if self._cap is not None:
             self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
