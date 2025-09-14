@@ -898,7 +898,39 @@ class MavDrone(Drone):
                 heading=heading,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec
-            )            
+            )
+
+        else:
+            if yaw is not None:
+                self.node.get_logger().warn("Yaw control not implemented in indoor mode, ignoring yaw parameter.")
+
+            current_position = self.get_local_pos.pose.position
+            current_yaw_rad = euler_from_quaternion(self.get_local_pos.pose.orientation)[2]
+            dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
+            dy_world = x * math.sin(current_yaw_rad) + y * math.cos(current_yaw_rad)
+            dz_world = z
+
+            #Prepares pose message (keeping current orientation)
+            pose_msg = PositionTarget()
+            pose_msg.header.frame_id = 'map'
+            pose_msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
+
+            #Mask: ignores acceleration and yaw rate values
+            pose_msg.type_mask = (
+                PositionTarget.IGNORE_AFX |
+                PositionTarget.IGNORE_AFY |
+                PositionTarget.IGNORE_AFZ |
+                PositionTarget.IGNORE_YAW_RATE|
+                PositionTarget.IGNORE_VX|
+                PositionTarget.IGNORE_VY|
+                PositionTarget.IGNORE_VZ
+            )
+
+
+            pose_msg.position.x = current_position.x + dx_world
+            pose_msg.position.y = current_position.y + dy_world
+            pose_msg.position.z = current_position.z + dz_world
+            pose_msg.yaw = current_yaw_rad
 
     def offboard_gps_position(
         self,
