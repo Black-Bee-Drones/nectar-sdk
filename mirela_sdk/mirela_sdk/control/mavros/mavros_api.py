@@ -403,7 +403,7 @@ class MavDrone(Drone):
         request.param6 = 0.0
         request.param7 = 0.0
         self._call_service(self._command_srv, request, f"Sucess: MAV_DO_CHANGE_SPEED -> {vel} m/s ",
-                           "Error: Failed to access MAV_DO_CHANGE_SPEED", sync=True)      
+                           "Error: Failed to access MAV_DO_CHANGE_SPEED", sync=False)      
 
     def set_environment_velocity(self):
         """Sets a pre defined limit for the horizontal speed based on the current
