@@ -727,7 +727,7 @@ class MavDrone(Drone):
             current_pos = self._local_pos.pose.position
             dist_to_target = math.sqrt(
                 (current_pos.x - target_position.position.x)**2 +
-                (current_pos.y - target_position.position.x)**2
+                (current_pos.y - target_position.position.x)**2 +
                 (current_pos.z - target_position.position.x)**2
             )
 
