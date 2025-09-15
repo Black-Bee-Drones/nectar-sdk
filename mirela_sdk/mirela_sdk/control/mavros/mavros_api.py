@@ -422,7 +422,7 @@ class MavDrone(Drone):
         #Sends first service request
         self.send_velocity_req(vel)
         #Dummy waypoint
-        self.offboard_position(x=0.0, y=0.0, z=0.0, precision_radius=0.1, timeout_sec=5.0)
+        self.offboard_position(x=0.0, y=0.0, z=0.0, yaw=0.0, precision_radius=0.1, timeout_sec=5.0)
         #Sends request again in order for it to be effective
         self.send_velocity_req(vel)
 
