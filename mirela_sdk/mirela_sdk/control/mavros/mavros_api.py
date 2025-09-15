@@ -930,7 +930,8 @@ class MavDrone(Drone):
                 x=x, y=y, z=z,
                 latitude=self.get_gps.latitude,
                 longitude=self.get_gps.longitude,
-                altitude=self.get_gps.altitude
+                altitude=self.get_gps.altitude,
+                heading=self.get_heading.data
             )
 
             heading = self.get_heading.data
