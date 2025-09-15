@@ -705,7 +705,7 @@ class MavDrone(Drone):
             f"-- Set servo {aux_out} failed",
         )
 
-    def offboard_position(
+    def offboard_position_local_msg(
         self,
         target_position: PositionTarget = None,
         precision_radius: float = 0.2,
@@ -748,7 +748,7 @@ class MavDrone(Drone):
             while self.node.get_clock().now() - sleep_time < sleep_duration:
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
 
-    def offboard_position(
+    def offboard_position_gps_msg(
         self,
         gps_setpoint: GeoPoseStamped = GeoPoseStamped(),
         precision_radius: float = 0.5,
@@ -812,7 +812,7 @@ class MavDrone(Drone):
                 self.node.get_logger().warn("-- Timeout reached before arriving at target position")
                 return
        
-    def offboard_position(
+    def offboard_position_gps_coords(
             self,
             latitude: float = 0.0,
             longitude: float = 0.0,
@@ -870,7 +870,7 @@ class MavDrone(Drone):
         gps_setpoint.pose.orientation.z = qz
         gps_setpoint.pose.orientation.w = qw
 
-        self.offboard_position(
+        self.offboard_position_gps_msg(
             gps_setpoint=gps_setpoint,
             precision_radius=precision_radius,
             timeout_sec=timeout_sec
@@ -938,7 +938,7 @@ class MavDrone(Drone):
             if yaw is not None:
                 heading = (heading - yaw) % 360 # Check sign convention
                 
-            self.offboard_position(
+            self.offboard_position_gps_coords(
                 latitude=lat,
                 longitude=lon,
                 altitude=alt,
