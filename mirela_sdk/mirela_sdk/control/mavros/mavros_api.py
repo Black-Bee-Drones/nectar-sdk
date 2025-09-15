@@ -952,7 +952,9 @@ class MavDrone(Drone):
                 self.node.get_logger().warn("Yaw control not implemented in indoor mode, ignoring yaw parameter.")
 
             current_position = self.get_local_pos.pose.position
-            current_yaw_rad = euler_from_quaternion(self.get_local_pos.pose.orientation)[2]
+            orientation = self.get_local_pos.pose.orientation
+            quat = [orientation.x, orientation.y, orientation.z, orientation.w]
+            current_yaw_rad = euler_from_quaternion(quat)[2]
             dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
             dy_world = x * math.sin(current_yaw_rad) + y * math.cos(current_yaw_rad)
             dz_world = z
