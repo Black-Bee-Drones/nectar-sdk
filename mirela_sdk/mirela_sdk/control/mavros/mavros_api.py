@@ -975,11 +975,16 @@ class MavDrone(Drone):
                 PositionTarget.IGNORE_VZ
             )
 
-
             pose_msg.position.x = current_position.x + dx_world
             pose_msg.position.y = current_position.y + dy_world
             pose_msg.position.z = current_position.z + dz_world
             pose_msg.yaw = current_yaw_rad
+
+            self.offboard_position_local_msg(
+                target_position=pose_msg,
+                precision_radius=precision_radius,
+                timeout_sec=timeout_sec
+            )
 
     def offboard_gps_position(
         self,
