@@ -30,6 +30,7 @@ from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
+from mirela_sdk.control.mavros.position_controller import PositionController
 from mirela_sdk.utils.process import ProcessUtils
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 
@@ -62,6 +63,7 @@ class MavDrone(Drone):
         self._imu_data = Imu()
         self._takeoff_position = PoseStamped()
         self._home_position_set = False
+        self._pose_controller = PositionController(self)
         
         # Outdoor only variables:
         if self.indoor == False:
@@ -406,7 +408,7 @@ class MavDrone(Drone):
                            "Error: Failed to access MAV_DO_CHANGE_SPEED", sync=False)      
 
     def set_environment_velocity(self):
-        """Sets a pre defined limit for the horizontal speed based on the current
+        """(NOT WORKING!!!) Sets a pre defined limit for the horizontal speed based on the current
          environment (indoor ou outdoor)
         
         Parameters
@@ -508,7 +510,6 @@ class MavDrone(Drone):
         sleep(3.0)
         self.takeoff(takeoff_alt)
         sleep(takeoff_alt)
-        self.set_environment_velocity()
 
     def land(self):
         """
@@ -704,115 +705,6 @@ class MavDrone(Drone):
             f"-- Servo {aux_out} set to {pwm_value}",
             f"-- Set servo {aux_out} failed",
         )
-
-    def offboard_position_local_msg(
-        self,
-        target_position: PositionTarget = None,
-        precision_radius: float = 0.2,
-        timeout_sec: float | None = 60.0,
-    ):
-        
-        if self.indoor == False:
-            self.node.get_logger().warn("offboard_position with local coordinates should not be used in outdoor mode, since it has less precision when using the GPS.")
-
-        start_time = self.node.get_clock().now()
-        timeout_duration = Duration(seconds=timeout_sec) if timeout_sec is not None else None
-        sleep_duration = Duration(seconds=0.1)
-
-        while True:
-            target_position.header.stamp = self.node.get_clock().now().to_msg()
-            self.local_pub.publish(target_position)
-
-            #Calculates distance to target
-            current_pos = self._local_pos.pose.position
-            dist_to_target = math.sqrt(
-                (current_pos.x - target_position.position.x)**2 +
-                (current_pos.y - target_position.position.y)**2 +
-                (current_pos.z - target_position.position.z)**2
-            )
-
-            self.node.get_logger().info(f"   Distance to target: {dist_to_target:.2f}m", throttle_duration_sec=1.0)
-
-            #Checks if arrival is is complete
-            if dist_to_target <= precision_radius:
-                self.node.get_logger().info(f"\033[32;1m   Target reached! Distance: {dist_to_target:.2f}m\033[0m")
-                return
-
-            #Checks for timeout
-            if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout_duration:
-                self.node.get_logger().warn(f"\033[33;1m   Timeout reached before arriving at target position. Distance: {dist_to_target:.2f}m\033[0m")
-                return
-
-            #Sleep to maintain loop rate
-            sleep_time = self.node.get_clock().now()
-            while self.node.get_clock().now() - sleep_time < sleep_duration:
-                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
-
-    def offboard_position_gps_msg(
-        self,
-        gps_setpoint: GeoPoseStamped = GeoPoseStamped(),
-        precision_radius: float = 0.5,
-        timeout_sec: float | None = 60.0,
-    ):
-        """
-        Navigate to a GPS coordinate setpoint, using closed loop control to ensure arrival.
-        Maximum speed is limited at 1.6 m/s.
-        
-        Parameters
-        ----------
-
-        gps_setpoint : GeoPoseStamped()
-            GPS coordinate setpoint to navigate to.
-
-        precision_radius : float (meters)
-            Radius of the precision
-
-        timeout_sec : float|None (seconds)
-            Timeout for reach check
-            If None, no timeout
-
-        """
-        if self.indoor == True:
-            raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
-
-        target_position = gps_setpoint.pose.position
-        target_orientation = gps_setpoint.pose.orientation
-        quat = [target_orientation.x, target_orientation.y, target_orientation.z, target_orientation.w]
-        target_heading = np.degrees(euler_from_quaternion(quat)[2])
-        self.node.get_logger().info(
-            "-- Moving to GPS coordinate:\n" +
-            f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
-        )
-
-        self.gps_pub.publish(gps_setpoint)
-        start_time = self.node.get_clock().now()
-        timeout = Duration(seconds=timeout_sec)
-        sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
-
-        while True:
-            gps_setpoint.header.stamp = self.node.get_clock().now().to_msg()
-            self.gps_pub.publish(gps_setpoint)
-            
-            sleep_time = self.node.get_clock().now()
-            while self.node.get_clock().now() - sleep_time < sleep_duration:
-                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks during sleep
-            current_pos = self.get_gps
-            distance = GPSCalculate.haversine_distance(
-                current_pos.latitude, current_pos.longitude,
-                target_position.latitude, target_position.longitude
-            )
-
-            distance = np.sqrt(distance**2 + (current_pos.altitude - target_position.altitude)**2)
-
-            self.node.get_logger().info(f"-- Distance to target: {distance:.2f} m", throttle_duration_sec=1.0)
-
-            if distance < precision_radius:
-                self.node.get_logger().info("-- Reached target position")
-                return
-            
-            if timeout_sec is not None and (self.node.get_clock().now() - start_time) > timeout:
-                self.node.get_logger().warn("-- Timeout reached before arriving at target position")
-                return
        
     def offboard_position_gps_coords(
             self,
@@ -822,10 +714,10 @@ class MavDrone(Drone):
             heading: float | None = None,
             precision_radius: float = 0.5,
             timeout_sec: float | None = 60.0,
+            strategy: str = "default"
     ):
         """
         Navigate to a GPS coordinate setpoint, using closed loop control to ensure arrival.
-        Maximum speed is limited at 1.6 m/s.
 
         Parameters
         ----------
@@ -854,6 +746,11 @@ class MavDrone(Drone):
             Timeout for reach check
 
             If None, no timeout
+
+        strategy : str
+            Position control strategy:
+                - "default": Use position setpoint messages
+                - "PID": Use closed loop PID control to reach the target position
         """
         if self.indoor == True:
             raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
@@ -872,11 +769,20 @@ class MavDrone(Drone):
         gps_setpoint.pose.orientation.z = qz
         gps_setpoint.pose.orientation.w = qw
 
-        self.offboard_position_gps_msg(
-            gps_setpoint=gps_setpoint,
-            precision_radius=precision_radius,
-            timeout_sec=timeout_sec
-        )
+        if strategy == "PID":
+            self._pose_controller.navigate_PID(
+                target_position=gps_setpoint,
+                precision_radius=precision_radius,
+                timeout_sec=timeout_sec
+            )
+        else:
+            if strategy != "default":
+                self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
+            self._pose_controller.navigate_gps_msg(
+                target_position=gps_setpoint,
+                precision_radius=precision_radius,
+                timeout_sec=timeout_sec
+            )
 
     def offboard_position(
             self,
@@ -886,6 +792,7 @@ class MavDrone(Drone):
             yaw: float | None = None,
             precision_radius: float = 0.5,
             timeout_sec: float | None = 60.0,
+            strategy: str = "default"
     ):
         """
         NEEDS REVISION!
@@ -916,10 +823,18 @@ class MavDrone(Drone):
 
             (-) Clockwise
 
+        precision_radius : float (meters)
+            Radius of the precision
+
         timeout_sec : float|None (seconds)
             Timeout in seconds to reach the position.
 
             If None, no timeout.
+
+        strategy : str
+            Position control strategy:
+                - "default": Use position setpoint messages
+                - "PID": Use closed loop PID control to reach the target position        
 
         """
         start_t = self.node.get_clock().now()
@@ -939,14 +854,16 @@ class MavDrone(Drone):
             heading = self.get_heading.data
             if yaw is not None:
                 heading = (heading - yaw) % 360 # Check sign convention
-                
+            
+
             self.offboard_position_gps_coords(
                 latitude=lat,
                 longitude=lon,
                 altitude=alt,
                 heading=heading,
                 precision_radius=precision_radius,
-                timeout_sec=timeout_sec
+                timeout_sec=timeout_sec,
+                strategy=strategy
             )
 
         else:
@@ -982,11 +899,21 @@ class MavDrone(Drone):
             pose_msg.position.z = current_position.z + dz_world
             pose_msg.yaw = current_yaw_rad
 
-            self.offboard_position_local_msg(
-                target_position=pose_msg,
-                precision_radius=precision_radius,
-                timeout_sec=timeout_sec
-            )
+            if strategy == "PID":
+                self._pose_controller.navigate_PID(
+                    target_position=pose_msg,
+                    precision_radius=precision_radius,
+                    timeout_sec=timeout_sec
+                )
+            else:
+                if strategy != "default":
+                    self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
+                self._pose_controller.navigate_local_msg(
+                    target_position=pose_msg,
+                    precision_radius=precision_radius,
+                    timeout_sec=timeout_sec
+                )
+                
 
     def offboard_gps_position(
         self,
