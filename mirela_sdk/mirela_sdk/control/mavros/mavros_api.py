@@ -720,7 +720,7 @@ class MavDrone(Drone):
         sleep_duration = Duration(seconds=0.1)
 
         while True:
-            target_position.header.stamp = self.get_clock().now().to_msg()
+            target_position.header.stamp = self.node.get_clock().now().to_msg()
             self.local_pub.publish(target_position)
 
             #Calculates distance to target
