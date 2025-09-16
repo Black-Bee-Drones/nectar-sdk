@@ -776,7 +776,9 @@ class MavDrone(Drone):
             raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
 
         target_position = gps_setpoint.pose.position
-        target_heading = np.degrees(euler_from_quaternion(gps_setpoint.pose.orientation)[2])
+        target_orientation = gps_setpoint.pose.orientation
+        quat = [target_orientation.x, target_orientation.y, target_orientation.z, target_orientation.w]
+        target_heading = np.degrees(euler_from_quaternion(quat)[2])
         self.node.get_logger().info(
             "-- Moving to GPS coordinate:\n" +
             f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
