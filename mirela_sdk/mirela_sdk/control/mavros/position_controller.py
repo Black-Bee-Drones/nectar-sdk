@@ -1,9 +1,12 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:  # for type checking only
+    from mirela_sdk.control.mavros.mavros_api import MavDrone
+
 import rclpy
 from rclpy.duration import Duration
 
 import numpy as np
 
-from mirela_sdk.control.mavros.mavros_api import MavDrone
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 
 from tf_transformations import euler_from_quaternion
@@ -75,7 +78,7 @@ class PID:
         return output
 
 class PositionController:
-    def __init__(self, drone: MavDrone):
+    def __init__(self, drone: "MavDrone"):  # Quotes here are required for runtime, but IDEs and mypy will resolve the type!
         self.drone = drone
 
     def _get_body_distance_indoor(self, target: PositionTarget, current: PoseStamped) -> float:
