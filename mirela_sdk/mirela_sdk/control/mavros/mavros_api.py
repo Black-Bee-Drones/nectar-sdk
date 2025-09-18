@@ -779,7 +779,7 @@ class MavDrone(Drone):
             if strategy != "default":
                 self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
             self._pose_controller.navigate_gps_msg(
-                target_position=gps_setpoint,
+                gps_setpoint=gps_setpoint,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec
             )
