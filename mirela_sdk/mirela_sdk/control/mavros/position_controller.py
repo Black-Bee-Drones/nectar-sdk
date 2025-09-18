@@ -176,9 +176,9 @@ class PositionController:
                 rclpy.spin_once(self.drone.node, timeout_sec=timeout)
 
         if self.drone.indoor == True:
-            return self.drone.get_local_pos()
+            return self.drone.get_local_pos
         else:
-            return self.drone.get_gps()
+            return self.drone.get_gps
         
     def navigate_local_msg(
         self,
@@ -218,9 +218,9 @@ class PositionController:
 
             #Calculates distance to target
             dist_to_target = np.sqrt(
-                (current_pos.x - target_position.position.x)**2 +
-                (current_pos.y - target_position.position.y)**2 +
-                (current_pos.z - target_position.position.z)**2
+                (current_pos.pose.position.x - target_position.position.x)**2 +
+                (current_pos.pose.position.y - target_position.position.y)**2 +
+                (current_pos.pose.position.z - target_position.position.z)**2
             )
 
             self.drone.node.get_logger().info(f"   Distance to target: {dist_to_target:.2f}m", throttle_duration_sec=1.0)
@@ -265,7 +265,7 @@ class PositionController:
         target_orientation = gps_setpoint.pose.orientation
         quat = [target_orientation.x, target_orientation.y, target_orientation.z, target_orientation.w]
         target_heading = np.degrees(euler_from_quaternion(quat)[2])
-        self.node.get_logger().info(
+        self.drone.node.get_logger().info(
             "-- Moving to GPS coordinate:\n" +
             f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
         )
@@ -276,7 +276,7 @@ class PositionController:
         sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
 
         while True:
-            gps_setpoint.header.stamp = self.dronenode.get_clock().now().to_msg()
+            gps_setpoint.header.stamp = self.drone.node.get_clock().now().to_msg()
             self.drone.gps_pub.publish(gps_setpoint)
             
             current_pos: NavSatFix = self.get_current_position(timeout=0.1)
