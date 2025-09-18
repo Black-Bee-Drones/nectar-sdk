@@ -55,6 +55,9 @@ class PID:
         self.integral = 0.0
         self.prev_error = 0.0
 
+        self.max_output = max_output
+        self.min_output = min_output
+
     def reset(self):
         self.integral = 0.0
         self.prev_error = 0.0
