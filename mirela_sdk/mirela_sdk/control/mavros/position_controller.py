@@ -207,8 +207,9 @@ class PositionController:
         if self.drone.indoor == False:
             self.drone.node.get_logger().warn("offboard_position with local coordinates should not be used in outdoor mode, since it has less precision when using the GPS.")
 
-        start_time = self.drone.node.get_clock().now()
-        timeout_duration = Duration(seconds=timeout_sec) if timeout_sec is not None else None
+        if timeout_sec is not None:
+            start_time = self.drone.node.get_clock().now()
+            timeout_duration = Duration(seconds=timeout_sec)
 
         while True:
             target_position.header.stamp = self.drone.node.get_clock().now().to_msg()
@@ -271,9 +272,9 @@ class PositionController:
         )
 
         self.drone.gps_pub.publish(gps_setpoint)
-        start_time = self.drone.node.get_clock().now()
-        timeout = Duration(seconds=timeout_sec)
-        sleep_duration = Duration(seconds=1.0 / 10.0)  # 10 Hz check rate
+        if timeout_sec is not None:
+            start_time = self.drone.node.get_clock().now()
+            timeout = Duration(seconds=timeout_sec)
 
         while True:
             gps_setpoint.header.stamp = self.drone.node.get_clock().now().to_msg()
