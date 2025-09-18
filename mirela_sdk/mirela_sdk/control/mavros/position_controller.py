@@ -335,7 +335,7 @@ class PositionController:
             pid_z = PID(VERTICAL_OUTDOOR_KP, VERTICAL_OUTDOOR_KI, VERTICAL_OUTDOOR_KD, dt=0.1, max_output=VERTICAL_OUTDOOR_MAX_SPEED, min_output=VERTICAL_OUTDOOR_MIN_SPEED)
 
         while True:
-            current_pose: PoseStamped = self.get_current_position(timeout=0.1)
+            current_pose: PoseStamped|NavSatFix = self.get_current_position(timeout=0.1)
 
             #Calculates distance to target in body frame
             if self.drone.indoor == True:
