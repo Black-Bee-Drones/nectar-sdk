@@ -347,6 +347,13 @@ class PositionController:
             vy = pid_y.compute(abs(dy_body)) if dy_body > 0 else -pid_y.compute(abs(dy_body))
             vz = pid_z.compute(abs(dz_body)) if dz_body > 0 else -pid_z.compute(abs(dz_body))
 
+            if abs(dx_body) < precision_radius / 2:
+                vx = 0.0
+            if abs(dy_body) < precision_radius / 2:
+                vy = 0.0
+            if abs(dz_body) < precision_radius / 2:
+                vz = 0.0
+
             self.drone.node.get_logger().info(f"   E: dx: {dx_body:.2f}, dy: {dy_body:.2f}, dz: {dz_body:.2f}")
             self.drone.node.get_logger().info(f"   V: vx: {vx:.2f}, vy: {vy:.2f}, vz: {vz:.2f}")
 
