@@ -854,6 +854,7 @@ class MavDrone(Drone):
             heading = self.get_heading.data
             if yaw is not None:
                 heading = (heading - yaw) % 360 # Check sign convention
+            self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
             
 
             self.offboard_position_gps_coords(
