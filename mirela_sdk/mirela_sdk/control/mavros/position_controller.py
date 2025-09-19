@@ -16,6 +16,8 @@ from geometry_msgs.msg import PoseStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix
 
+# LIDAR ALTITUDE LIMIT
+LIDAR_ALTITUDE_LIMIT = 15.0  # meters
 
 # INDOOR PID PARAMETERS
 HORIZONTAL_INDOOR_KP = 0.5
@@ -265,7 +267,7 @@ class PositionController:
         target_position = gps_setpoint.pose.position
         target_orientation = gps_setpoint.pose.orientation
         quat = [target_orientation.x, target_orientation.y, target_orientation.z, target_orientation.w]
-        target_heading = np.degrees(euler_from_quaternion(quat)[2])
+        target_heading = np.degrees(euler_from_quaternion(quat)[2]) - 90
         self.drone.node.get_logger().info(
             "-- Moving to GPS coordinate:\n" +
             f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
@@ -302,6 +304,7 @@ class PositionController:
     def navigate_PID(
         self,
         target_position: PositionTarget | GeoPoseStamped = None,
+        lidar_target_alt: float | None = None,
         precision_radius: float = 0.2,
         timeout_sec: float | None = 60.0,
     ):
@@ -312,6 +315,11 @@ class PositionController:
         ----------
         target_position : PositionTarget | GeoPoseStamped
             Target local position setpoint.
+
+        lidar_target_alt : float | None (meters)
+            If not None, use this altitude as reference instead of the target_position.z.
+
+            Lidar altitude control is limited to 15m above ground level.
 
         precision_radius : float (meters)
             Radius of the precision
@@ -324,6 +332,15 @@ class PositionController:
 
         start_time = self.drone.node.get_clock().now()
         timeout = Duration(seconds=timeout_sec) if timeout_sec is not None else None
+
+        if lidar_target_alt is not None and self.drone.lidar_on == True:
+            self.drone.node.get_logger().info("Using lidar for altitude control.")
+            if lidar_target_alt > LIDAR_ALTITUDE_LIMIT:
+                self.drone.node.get_logger().warn("Requested altitude exceeds 15m limit for lidar-based control, using altitude parameter instead.")
+                lidar_target_alt = None
+        elif lidar_target_alt is not None and self.drone.lidar_on == False:
+            self.drone.node.get_logger().warn("Lidar altitude setpoint provided, but lidar is not enabled. Ignoring lidar altitude.")
+            lidar_target_alt = None
 
         if self.drone.indoor == True:
             pid_x = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.1, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
@@ -343,6 +360,9 @@ class PositionController:
                 dist_to_target, dx_body, dy_body, dz_body = self._get_body_distance_indoor(target_position, current_pose)
             else:
                 dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose)
+
+            if lidar_target_alt is not None:
+                dz_body = lidar_target_alt - self.drone.get_rng_alt.range
 
             vx = pid_x.compute(abs(dx_body)) if dx_body > 0 else -pid_x.compute(abs(dx_body))
             vy = pid_y.compute(abs(dy_body)) if dy_body > 0 else -pid_y.compute(abs(dy_body))
