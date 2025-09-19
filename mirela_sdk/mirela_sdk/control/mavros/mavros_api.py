@@ -56,12 +56,14 @@ class MavDrone(Drone):
 
         # Variables:
         self.indoor = indoor
+        self.lidar_on = False
         self._state = State()
         self._rng_alt = Range()
         self._local_pos = PoseStamped()
         self._vel_body = TwistStamped()
         self._imu_data = Imu()
         self._takeoff_position = PoseStamped()
+        self._takeoff_height = None
         self._home_position_set = False
         self._pose_controller = PositionController(self)
         
@@ -287,22 +289,29 @@ class MavDrone(Drone):
         sensors_initialized = False
         start_time = self.node.get_clock().now()
         timeout = Duration(seconds=10.0)
-        
+
+        while self.node.get_clock().now() - start_time < timeout:
+                self.node.get_logger().info("Waiting for lidar data...", throttle_duration_sec=1.0)
+                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
+                if self.get_rng_alt.range != 0.0:
+                    self._takeoff_height = self.get_rng_alt.range
+                    self.lidar_on = True
+                    break
+
         if self.indoor == True:
+            start_time = self.node.get_clock().now()
             while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for local position data...", throttle_duration_sec=1.0)
-                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks]
+                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
                 if self.get_local_pos.pose.position.z != 0.0:
                     sensors_initialized = True
                     break
 
-            if self.get_rng_alt.range == 0.0:
-                self.initial_altitude = self._local_pos.pose.position.z
-            else:
-                self.initial_altitude = self._rng_alt.range
+            self.initial_altitude = 0.0 # No altitude data in indoor mode
             self.initial_heading = 0.0  # No heading data in indoor mode
         
         else:
+            start_time = self.node.get_clock().now()
             while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for GPS data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
@@ -310,11 +319,11 @@ class MavDrone(Drone):
                     sensors_initialized = True
                     break
 
-            if self.get_rng_alt.range == 0.0:
-                self.initial_altitude = self._gps.altitude
-            else:
-                self.initial_altitude = self._rng_alt.range
+            self.initial_altitude = self._gps.altitude
             self.initial_heading = self._heading.data
+
+        if self.lidar_on == True:
+            self.node.get_logger().warn("Lidar data not available.")
             
         if not sensors_initialized:
             self.node.get_logger().warn(
@@ -711,46 +720,54 @@ class MavDrone(Drone):
             latitude: float = 0.0,
             longitude: float = 0.0,
             altitude: float | None = None,
+            lidar_altitude: float | None = None,
             heading: float | None = None,
             precision_radius: float = 0.5,
             timeout_sec: float | None = 60.0,
             strategy: str = "default"
     ):
         """
-        Navigate to a GPS coordinate setpoint, using closed loop control to ensure arrival.
+        Move the drone to a specified GPS coordinate using closed-loop control.
 
         Parameters
         ----------
-        latitude : float (degrees)
-            Latitude of the setpoint 
+        latitude : float
+            Target latitude in degrees.
         
-        longitude : float (degrees)
-            Longitude of the setpoint
+        longitude : float
+            Target longitude in degrees.
         
-        altitude : float|None (meters)
-            NOT RELATIVE TO TAKEOFF!
+        altitude : float or None
+            Target altitude in meters (absolute, not relative to takeoff).
+            
+            If None, uses the current altitude.
 
-            Absolute altitude (meters) of the setpoint
+        lidar_altitude : float or None
+            Desired altitude above ground level (meters), limited to 15m.
+            
+            If provided, the drone will use lidar data (ONLY USED IN PID STRATEGY).
+            
+            This overrides the altitude parameter unless the requested height exceeds 15m.
 
-            If None, keep current altitude
+        heading : float or None
+            Desired heading in degrees (0 = North, clockwise positive).
+            
+            If None, maintains current heading.
         
-        heading : float|None (degrees | Zero points North | Clockwise)
-            Heading of the drone
-
-            If None, keep current heading
+        precision_radius : float
+            Acceptable radius (meters) for reaching the target position.
         
-        precision_radius : float (meters)
-            Radius of the precision
-        
-        timeout_sec : float|None (seconds)
-            Timeout for reach check
-
-            If None, no timeout
+        timeout_sec : float or None
+            Maximum time allowed (seconds) to reach the target.
+            
+            If None, no timeout is applied.
 
         strategy : str
             Position control strategy:
-                - "default": Use position setpoint messages
-                - "PID": Use closed loop PID control to reach the target position
+            
+            - "default": Use position setpoint messages.
+            
+            - "PID": Use closed-loop PID control to reach the target position.
         """
         if self.indoor == True:
             raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
@@ -762,7 +779,7 @@ class MavDrone(Drone):
         gps_setpoint.pose.position.latitude = latitude
         gps_setpoint.pose.position.longitude = longitude
         gps_setpoint.pose.position.altitude = altitude
-        [qx, qy, qz, qw] = quaternion_from_euler(0, 0, np.radians(heading))
+        [qx, qy, qz, qw] = quaternion_from_euler(0, 0, np.radians(90 - heading))
 
         gps_setpoint.pose.orientation.x = qx
         gps_setpoint.pose.orientation.y = qy
@@ -772,6 +789,7 @@ class MavDrone(Drone):
         if strategy == "PID":
             self._pose_controller.navigate_PID(
                 target_position=gps_setpoint,
+                lidar_target_alt=lidar_altitude,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec
             )
@@ -855,12 +873,19 @@ class MavDrone(Drone):
             if yaw is not None:
                 heading = (heading - yaw) % 360 # Check sign convention
             self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
+
+            if strategy == "PID" and self.lidar_on == True:
+                lidar_target_alt = self.get_rng_alt.range + z
+            else:
+                lidar_target_alt = None
+
             
 
             self.offboard_position_gps_coords(
                 latitude=lat,
                 longitude=lon,
                 altitude=alt,
+                lidar_altitude=lidar_target_alt,
                 heading=heading,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec,
@@ -900,9 +925,15 @@ class MavDrone(Drone):
             pose_msg.position.z = current_position.z + dz_world
             pose_msg.yaw = current_yaw_rad
 
+            if self.lidar_on == True:
+                lidar_target_alt = self.get_rng_alt.range + z
+            else:
+                lidar_target_alt = None
+
             if strategy == "PID":
                 self._pose_controller.navigate_PID(
                     target_position=pose_msg,
+                    lidar_target_alt=lidar_target_alt,
                     precision_radius=precision_radius,
                     timeout_sec=timeout_sec
                 )
