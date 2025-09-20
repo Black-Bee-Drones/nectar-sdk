@@ -43,7 +43,7 @@ VERTICAL_OUTDOOR_KP = 0.5
 VERTICAL_OUTDOOR_KI = 0.0
 VERTICAL_OUTDOOR_KD = 0.0
 
-HORIZONTAL_OUTDOOR_MAX_SPEED = 1.6  # m/s
+HORIZONTAL_OUTDOOR_MAX_SPEED = 1.0  # m/s
 HORIZONTAL_OUTDOOR_MIN_SPEED = 0.1  # m/s
 
 VERTICAL_OUTDOOR_MAX_SPEED = 0.8  # m/s
@@ -175,7 +175,7 @@ class PositionController:
             start_t = self.drone.node.get_clock().now()
             sleep_dur = Duration(seconds=timeout)
             while self.drone.node.get_clock().now() - start_t < sleep_dur:
-                rclpy.spin_once(self.drone.node, timeout_sec=timeout)
+                rclpy.spin_once(self.drone.node, timeout_sec=0.01)
 
         if self.drone.indoor == True:
             return self.drone.get_local_pos
@@ -217,7 +217,7 @@ class PositionController:
             target_position.header.stamp = self.drone.node.get_clock().now().to_msg()
             self.drone.local_pub.publish(target_position)
 
-            current_pos: PoseStamped = self.get_current_position(timeout=0.1)
+            current_pos: PoseStamped = self.get_current_position(timeout=0.01)
 
             #Calculates distance to target
             dist_to_target = np.sqrt(
@@ -267,7 +267,7 @@ class PositionController:
         target_position = gps_setpoint.pose.position
         target_orientation = gps_setpoint.pose.orientation
         quat = [target_orientation.x, target_orientation.y, target_orientation.z, target_orientation.w]
-        target_heading = np.degrees(euler_from_quaternion(quat)[2]) - 90
+        target_heading = np.degrees(euler_from_quaternion(quat)[2])
         self.drone.node.get_logger().info(
             "-- Moving to GPS coordinate:\n" +
             f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
@@ -282,7 +282,7 @@ class PositionController:
             gps_setpoint.header.stamp = self.drone.node.get_clock().now().to_msg()
             self.drone.gps_pub.publish(gps_setpoint)
             
-            current_pos: NavSatFix = self.get_current_position(timeout=0.1)
+            current_pos: NavSatFix = self.get_current_position(timeout=0.01)
 
             distance = GPSCalculate.haversine(
                 current_pos.latitude, current_pos.longitude,
@@ -343,17 +343,17 @@ class PositionController:
             lidar_target_alt = None
 
         if self.drone.indoor == True:
-            pid_x = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.1, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
-            pid_y = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.1, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
-            pid_z = PID(VERTICAL_INDOOR_KP, VERTICAL_INDOOR_KI, VERTICAL_INDOOR_KD, dt=0.1, max_output=VERTICAL_INDOOR_MAX_SPEED, min_output=VERTICAL_INDOOR_MIN_SPEED)
+            pid_x = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.01, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
+            pid_y = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.01, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
+            pid_z = PID(VERTICAL_INDOOR_KP, VERTICAL_INDOOR_KI, VERTICAL_INDOOR_KD, dt=0.01, max_output=VERTICAL_INDOOR_MAX_SPEED, min_output=VERTICAL_INDOOR_MIN_SPEED)
 
         else:
-            pid_x = PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD, dt=0.1, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED)
-            pid_y = PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD, dt=0.1, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED)
-            pid_z = PID(VERTICAL_OUTDOOR_KP, VERTICAL_OUTDOOR_KI, VERTICAL_OUTDOOR_KD, dt=0.1, max_output=VERTICAL_OUTDOOR_MAX_SPEED, min_output=VERTICAL_OUTDOOR_MIN_SPEED)
+            pid_x = PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD, dt=0.01, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED)
+            pid_y = PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD, dt=0.01, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED)
+            pid_z = PID(VERTICAL_OUTDOOR_KP, VERTICAL_OUTDOOR_KI, VERTICAL_OUTDOOR_KD, dt=0.01, max_output=VERTICAL_OUTDOOR_MAX_SPEED, min_output=VERTICAL_OUTDOOR_MIN_SPEED)
 
         while True:
-            current_pose: PoseStamped|NavSatFix = self.get_current_position(timeout=0.1)
+            current_pose: PoseStamped|NavSatFix = self.get_current_position(timeout=0.01)
 
             #Calculates distance to target in body frame
             if self.drone.indoor == True:
@@ -362,6 +362,7 @@ class PositionController:
                 dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose)
 
             if lidar_target_alt is not None:
+                self.drone.node.get_logger().info(f"lidar target: {lidar_target_alt} e {self.drone.get_rng_alt.range}")
                 dz_body = lidar_target_alt - self.drone.get_rng_alt.range
 
             vx = pid_x.compute(abs(dx_body)) if dx_body > 0 else -pid_x.compute(abs(dx_body))
