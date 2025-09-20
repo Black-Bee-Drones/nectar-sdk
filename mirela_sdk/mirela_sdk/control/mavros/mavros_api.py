@@ -293,7 +293,7 @@ class MavDrone(Drone):
         while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for lidar data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_rng_alt.range != 0.0:
+                if self.get_rng_alt.range != -1.0: # drone tá sem o trem de pé, aí o lidar mede 0.0
                     self._takeoff_height = self.get_rng_alt.range
                     self.lidar_on = True
                     break
@@ -779,7 +779,7 @@ class MavDrone(Drone):
         gps_setpoint.pose.position.latitude = latitude
         gps_setpoint.pose.position.longitude = longitude
         gps_setpoint.pose.position.altitude = altitude
-        [qx, qy, qz, qw] = quaternion_from_euler(0, 0, np.radians(90 - heading))
+        [qx, qy, qz, qw] = quaternion_from_euler(0, 0, np.radians(heading))
 
         gps_setpoint.pose.orientation.x = qx
         gps_setpoint.pose.orientation.y = qy
@@ -875,6 +875,7 @@ class MavDrone(Drone):
             self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
 
             if strategy == "PID" and self.lidar_on == True:
+                print(f"lidar para setar: {self.get_rng_alt.range}")
                 lidar_target_alt = self.get_rng_alt.range + z
             else:
                 lidar_target_alt = None
