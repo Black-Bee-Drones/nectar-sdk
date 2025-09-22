@@ -83,7 +83,21 @@ class PositionController:
     def __init__(self, drone: "MavDrone"):  # Quotes here are required for runtime, but IDEs and mypy will resolve the type!
         self.drone = drone
 
-    def _get_body_distance_indoor(self, target: PositionTarget, current: PoseStamped) -> float:
+    def calculate_body_distance(self, target: PositionTarget | GeoPoseStamped, current: PoseStamped | NavSatFix) -> float:
+        if self.drone.indoor == True:
+            if isinstance(target, PositionTarget) and isinstance(current, PoseStamped):
+                return self.get_body_distance_indoor(target=target, current=current)
+            else:
+                raise ValueError("For indoor drones, target and current parameters must be PositionTarget() and PoseStamped(), respectivelly.")
+            
+        elif isinstance(target, GeoPoseStamped) and isinstance(current, NavSatFix):
+            return self.get_body_distance_outdoor(target=target, current=current)
+
+        else:
+            raise ValueError("For outdoor drones, target and current parameters must be GeoPoseStamped() and NavSatFix(), respectivelly.")
+
+    @staticmethod
+    def get_body_distance_indoor(target: PositionTarget, current: PoseStamped) -> float:
         """
         Calculate the distance from the current position to the target position in the body frame.
 
@@ -119,7 +133,8 @@ class PositionController:
 
         return dist_to_target, dx_body, dy_body, dz_body
     
-    def get_body_distance_outdoor(self, target: GeoPoseStamped, current: NavSatFix) -> float:
+    @staticmethod
+    def get_body_distance_outdoor(target: GeoPoseStamped, current: NavSatFix) -> float:
         """
         Calculate the distance from the current GPS position to the target GPS position in the body frame.
 
