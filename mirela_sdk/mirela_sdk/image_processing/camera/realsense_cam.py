@@ -2,29 +2,18 @@ from typing import Optional, Tuple
 import numpy as np
 
 from .abstract_cam import DepthCam
+from .camera_config import RealSenseConfig
 
 try:
     import pyrealsense2 as rs
-except Exception as e:  
+except Exception as e:
     rs = None
 
 
 class RealsenseCam(DepthCam):
-    def __init__(
-        self,
-        *,
-        color_res: Tuple[int, int] = (640, 480),
-        depth_res: Tuple[int, int] = (640, 480),
-        fps: int = 30,
-        align_to_color: bool = True,
-        name: str = "realsense_cam",
-    ) -> None:
-        super().__init__(name=name)
-        self._color_res = color_res
-        self._depth_res = depth_res
-        self._fps = fps
-        self._align_to_color = align_to_color
-
+    def __init__(self, config: RealSenseConfig) -> None:
+        super().__init__(name=config.name)
+        self._config = config
         self._pipeline = None
         self._align = None
         self._depth_scale: Optional[float] = None
@@ -40,17 +29,17 @@ class RealsenseCam(DepthCam):
         config = rs.config()
         config.enable_stream(
             rs.stream.color,
-            self._color_res[0],
-            self._color_res[1],
+            self._config.color_res[0],
+            self._config.color_res[1],
             rs.format.bgr8,
-            self._fps,
+            self._config.fps,
         )
         config.enable_stream(
             rs.stream.depth,
-            self._depth_res[0],
-            self._depth_res[1],
+            self._config.depth_res[0],
+            self._config.depth_res[1],
             rs.format.z16,
-            self._fps,
+            self._config.fps,
         )
 
         self._pipeline = rs.pipeline()
@@ -59,7 +48,7 @@ class RealsenseCam(DepthCam):
         depth_sensor = profile.get_device().first_depth_sensor()
         self._depth_scale = float(depth_sensor.get_depth_scale())  # meters per unit
 
-        if self._align_to_color:
+        if self._config.align_to_color:
             self._align = rs.align(rs.stream.color)
         else:
             self._align = None

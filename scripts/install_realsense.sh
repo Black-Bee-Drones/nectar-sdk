@@ -1,24 +1,25 @@
- #!/bin/bash
+#!/bin/bash
+
 # =============================================================================
-# MIRELA SDK - Script de Instalação RealSense D435i
+# MIRELA SDK - Script de Instalação RealSense D435i (Fixed Version)
 # =============================================================================
-# Este script instala o librealsense2 e dependências para Intel RealSense D435i
+# Este script instala o librealsense2 v2.55.1 e realsense-ros 4.55.1
 # com suporte CUDA para Jetson Orin Nano.
-# Baseado nos scripts do projeto VSLAM-UAV.
 # =============================================================================
 
-set -e  # Sair em caso de erro
+set -e  
 
-# Cores para output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m' 
 
-# Função para logging
+LIBREALSENSE_VERSION="v2.55.1"
+REALSENSE_ROS_TAG="4.55.1"
+
 log_info() {
     echo -e "${BLUE}ℹ️  $1${NC}"
 }
@@ -39,7 +40,6 @@ log_section() {
     echo -e "\n${PURPLE}=== $1 ===${NC}\n"
 }
 
-# Verificar se está rodando como root
 check_root() {
     if [[ $EUID -eq 0 ]]; then
         log_error "Este script não deve ser executado como root!"
@@ -48,31 +48,105 @@ check_root() {
     fi
 }
 
-# Verificar se CUDA está disponível
+check_existing_installations() {
+    log_section "VERIFICANDO INSTALAÇÕES EXISTENTES"
+    
+    EXISTING_LIBREALSENSE=false
+    EXISTING_ROS_LIBREALSENSE=false
+    EXISTING_REALSENSE_ROS=false
+   
+    if [ -d "$HOME/librealsense" ]; then
+        cd "$HOME/librealsense"
+        CURRENT_VERSION=$(git describe --tags 2>/dev/null || echo "unknown")
+        log_info "librealsense fonte encontrado: $CURRENT_VERSION"
+        EXISTING_LIBREALSENSE=true
+    fi
+    
+    if pkg-config --exists librealsense2 2>/dev/null; then
+        PKG_VERSION=$(pkg-config --modversion librealsense2)
+        log_info "librealsense2 (pkg-config): $PKG_VERSION"
+    fi
+    
+    if dpkg -l | grep -q "ros-humble-librealsense2"; then
+        ROS_VERSION=$(dpkg -l | grep "ros-humble-librealsense2" | awk '{print $3}')
+        log_warning "ros-humble-librealsense2 (apt) encontrado: $ROS_VERSION"
+        EXISTING_ROS_LIBREALSENSE=true
+    fi
+    
+    if [ -d "$HOME/ros2_ws/src/realsense-ros" ]; then
+        cd "$HOME/ros2_ws/src/realsense-ros"
+        CURRENT_TAG=$(git describe --tags 2>/dev/null || git rev-parse --short HEAD || echo "unknown")
+        log_info "realsense-ros encontrado (describe/commit): $CURRENT_TAG"
+        EXISTING_REALSENSE_ROS=true
+    fi
+    
+    if command -v rs-enumerate-devices &> /dev/null; then
+        RS_VERSION=$(rs-enumerate-devices --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+        log_info "rs-enumerate-devices: $RS_VERSION"
+    fi
+}
+
+remove_existing_installations() {
+    log_section "REMOVENDO INSTALAÇÕES CONFLITANTES"
+
+    if dpkg -l | grep -q "ros-humble-librealsense2"; then
+        log_warning "Pacotes ros-humble-librealsense2 encontrados! Removendo automaticamente..."
+        sudo apt remove -y ros-humble-librealsense2* || true
+        sudo apt autoremove -y || true
+        log_success "ros-humble-librealsense2 removido!"
+    fi
+    
+    if [[ "$EXISTING_LIBREALSENSE" == "true" ]]; then
+        read -p "Deseja reinstalar librealsense $LIBREALSENSE_VERSION? (Y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+            log_info "Removendo instalação anterior do librealsense..."
+            cd "$HOME/librealsense"
+            if [ -d "build" ]; then
+                cd build
+                sudo make uninstall 2>/dev/null || true
+                cd ..
+            fi
+            cd "$HOME"
+            rm -rf librealsense
+            EXISTING_LIBREALSENSE=false
+        fi
+    fi
+    
+    if [[ "$EXISTING_REALSENSE_ROS" == "true" ]]; then
+        read -p "Deseja reinstalar realsense-ros $REALSENSE_ROS_TAG? (Y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+            log_info "Removendo realsense-ros anterior..."
+            rm -rf "$HOME/ros2_ws/src/realsense-ros"
+            EXISTING_REALSENSE_ROS=false
+        fi
+    fi
+}
+
 check_cuda() {
     log_section "VERIFICANDO CUDA"
     
-    # Primeiro, tentar encontrar nvcc no PATH
     if command -v nvcc &> /dev/null; then
         log_success "CUDA encontrado no PATH: $(nvcc --version | grep "release" | sed -n 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/p')"
         USE_CUDA=true
         NVCC_PATH=$(which nvcc)
         log_info "NVCC path: $NVCC_PATH"
-    # Se não estiver no PATH, procurar em locais comuns (Jetson)
+
     elif [ -f /usr/local/cuda/bin/nvcc ]; then
         log_success "CUDA encontrado em /usr/local/cuda"
         USE_CUDA=true
         NVCC_PATH="/usr/local/cuda/bin/nvcc"
-        # Adicionar ao PATH temporariamente
+      
         export PATH=/usr/local/cuda/bin:$PATH
         export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
         CUDA_VERSION=$($NVCC_PATH --version | grep "release" | sed -n 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/p')
         log_success "CUDA versão: $CUDA_VERSION"
         log_info "NVCC path: $NVCC_PATH"
-    # Verificar se nvidia-smi está disponível (indicativo de CUDA)
+  
     elif command -v nvidia-smi &> /dev/null; then
         log_info "nvidia-smi encontrado, procurando CUDA..."
-        # Tentar encontrar CUDA em outros locais
+        
         for cuda_dir in /usr/local/cuda-12* /usr/local/cuda-11*; do
             if [ -f "$cuda_dir/bin/nvcc" ]; then
                 log_success "CUDA encontrado em $cuda_dir"
@@ -97,7 +171,6 @@ check_cuda() {
         USE_CUDA=false
     fi
     
-    # Se CUDA foi encontrado, verificar se está funcionando
     if [ "$USE_CUDA" == "true" ]; then
         if $NVCC_PATH --version &> /dev/null; then
             log_success "CUDA está funcionando corretamente!"
@@ -108,7 +181,6 @@ check_cuda() {
     fi
 }
 
-# Instalar dependências do RealSense
 install_realsense_dependencies() {
     log_section "INSTALANDO DEPENDÊNCIAS REALSENSE"
 
@@ -129,7 +201,6 @@ install_realsense_dependencies() {
         python3 \
         python3-dev
 
-    # Instalar OpenGL para Jetson
     if [[ "$USE_CUDA" == "true" ]]; then
         log_info "Instalando bibliotecas OpenGL para Jetson..."
         sudo apt-get install -y \
@@ -140,26 +211,23 @@ install_realsense_dependencies() {
     log_success "Dependências RealSense instaladas!"
 }
 
-# Clonar e compilar librealsense
 build_librealsense() {
-    log_section "COMPILANDO LIBREALSENSE"
+    log_section "COMPILANDO LIBREALSENSE $LIBREALSENSE_VERSION"
 
     LIBREALSENSE_DIRECTORY=${HOME}/librealsense
     INSTALL_DIR=$PWD
 
-    # Verificar versão mais recente do librealsense
-    log_info "Verificando versão mais recente do librealsense..."
-    LIBREALSENSE_VERSION=$(wget -qO- https://api.github.com/repos/IntelRealSense/librealsense/releases/latest |
-        grep -Po '"tag_name": "\K.*?(?=")')
-
-    if [[ -z "$LIBREALSENSE_VERSION" ]]; then
-        log_warning "Não foi possível obter versão mais recente, usando v2.55.1"
-        LIBREALSENSE_VERSION="v2.55.1"
+    if [[ "$EXISTING_LIBREALSENSE" == "true" ]]; then
+        cd "$LIBREALSENSE_DIRECTORY"
+        CURRENT_VERSION=$(git describe --tags 2>/dev/null || echo "unknown")
+        if [[ "$CURRENT_VERSION" == "$LIBREALSENSE_VERSION" ]]; then
+            log_info "librealsense $LIBREALSENSE_VERSION já está instalado"
+            return 0
+        fi
     fi
 
-    log_info "Versão do librealsense: $LIBREALSENSE_VERSION"
+    log_info "Versão do librealsense: $LIBREALSENSE_VERSION (FIXA)"
 
-    # Clonar se não existir
     if [ ! -d "$LIBREALSENSE_DIRECTORY" ]; then
         log_info "Clonando librealsense..."
         cd ${HOME}
@@ -168,23 +236,35 @@ build_librealsense() {
 
     cd $LIBREALSENSE_DIRECTORY
 
-    # Verificar se a versão existe
-    VERSION_TAG=$(git tag -l $LIBREALSENSE_VERSION)
-    if [ ! "$VERSION_TAG" ]; then
+    if [ -d "build" ]; then
+        log_info "Limpando build anterior..."
+        rm -rf build
+    fi
+
+    git fetch --tags
+
+    if ! git tag -l | grep -q "^${LIBREALSENSE_VERSION}$"; then
         log_error "Versão $LIBREALSENSE_VERSION não encontrada!"
         log_info "Versões disponíveis:"
-        git tag -l | tail -10
+        git tag -l | grep "^v2\." | tail -10
         exit 1
     fi
 
-    # Checkout da versão
+    log_info "Fazendo checkout da versão $LIBREALSENSE_VERSION..."
     git checkout $LIBREALSENSE_VERSION
+    
+    CURRENT_VERSION=$(git describe --tags)
+    if [[ "$CURRENT_VERSION" != "$LIBREALSENSE_VERSION" ]]; then
+        log_error "Falha ao fazer checkout da versão $LIBREALSENSE_VERSION"
+        log_error "Versão atual: $CURRENT_VERSION"
+        exit 1
+    fi
+    
+    log_success "Checkout realizado: $CURRENT_VERSION"
 
-    # Criar diretório de build
     mkdir -p build
     cd build
 
-    # Configurar build com CUDA se disponível
     log_info "Configurando build do librealsense..."
     if [[ "$USE_CUDA" == "true" ]]; then
         log_info "Configurando com suporte CUDA..."
@@ -208,11 +288,9 @@ build_librealsense() {
                  -DPYTHON_EXECUTABLE=$(which python3)
     fi
 
-    # Compilar
     log_info "Compilando librealsense..."
     NUM_PROCS=$(nproc)
 
-    # Tentar compilar
     if ! time make -j$NUM_PROCS; then
         log_warning "Build falhou, tentando com 1 processo..."
         if ! time make; then
@@ -221,11 +299,10 @@ build_librealsense() {
         fi
     fi
 
-    # Instalar
     log_info "Instalando librealsense..."
     sudo make install
+    sudo ldconfig
 
-    # Configurar PYTHONPATH
     if grep -Fxq 'export PYTHONPATH=$PYTHONPATH:/usr/local/lib' ~/.bashrc; then
         log_info "PYTHONPATH já configurado no .bashrc"
     else
@@ -235,17 +312,15 @@ build_librealsense() {
 
     cd $LIBREALSENSE_DIRECTORY
 
-    # Configurar udev rules
     log_info "Configurando regras udev..."
     sudo cp config/99-realsense-libusb.rules /etc/udev/rules.d/
     sudo udevadm control --reload-rules && sudo udevadm trigger
 
-    log_success "librealsense instalado com sucesso!"
+    log_success "librealsense $LIBREALSENSE_VERSION instalado com sucesso!"
 }
 
-# Instalar realsense-ros
 install_realsense_ros() {
-    log_section "INSTALANDO REALSENSE-ROS"
+    log_section "INSTALANDO REALSENSE-ROS (tag: $REALSENSE_ROS_TAG)"
 
     WORKSPACE_DIR="$HOME/ros2_ws"
 
@@ -257,29 +332,53 @@ install_realsense_ros() {
 
     cd "$WORKSPACE_DIR/src"
 
-    # Clonar realsense-ros se não existir
-    if [ ! -d "realsense-ros" ]; then
-        log_info "Clonando realsense-ros..."
-        # Usar branch compatível com librealsense2 instalado via apt
-        git clone https://github.com/IntelRealSense/realsense-ros.git -b r/4.56.4
-    else
-        log_info "Atualizando realsense-ros..."
+    if [[ "$EXISTING_REALSENSE_ROS" == "true" ]]; then
         cd realsense-ros
-        # Verificar branch atual
-        CURRENT_BRANCH=$(git branch --show-current)
-        if [ "$CURRENT_BRANCH" != "r/4.56.4" ]; then
-            log_warning "Mudando para branch compatível r/4.56.4..."
-            git checkout r/4.56.4
-        else
-            git pull origin r/4.56.4
+        CURRENT_DESCRIBE=$(git describe --tags 2>/dev/null || echo "")
+        if [[ "$CURRENT_DESCRIBE" == "$REALSENSE_ROS_TAG" ]]; then
+            log_info "realsense-ros tag $REALSENSE_ROS_TAG já está instalado"
+            cd ..
+            return 0
         fi
         cd ..
     fi
 
-    log_success "realsense-ros preparado!"
+    if [ ! -d "realsense-ros" ]; then
+        log_info "Clonando realsense-ros..."
+        git clone https://github.com/IntelRealSense/realsense-ros.git
+        cd realsense-ros
+        git fetch --tags origin
+        if git tag -l | grep -q "^${REALSENSE_ROS_TAG}$"; then
+            log_info "Fazendo checkout do tag ${REALSENSE_ROS_TAG}..."
+            git checkout ${REALSENSE_ROS_TAG} || git checkout tags/${REALSENSE_ROS_TAG}
+            log_success "realsense-ros ajustado para tag ${REALSENSE_ROS_TAG}"
+        else
+            log_error "Tag ${REALSENSE_ROS_TAG} não encontrada no repositório!"
+            log_info "Tags disponíveis (últimas 20):"
+            git tag -l | tail -20
+            exit 1
+        fi
+    else
+        log_info "Atualizando realsense-ros e ajustando para tag $REALSENSE_ROS_TAG..."
+        cd realsense-ros
+
+        git fetch --tags origin
+
+        if git tag -l | grep -q "^${REALSENSE_ROS_TAG}$"; then
+            git checkout ${REALSENSE_ROS_TAG} || git checkout tags/${REALSENSE_ROS_TAG}
+            log_success "realsense-ros agora em tag ${REALSENSE_ROS_TAG}"
+        else
+            log_error "Tag ${REALSENSE_ROS_TAG} não encontrada!"
+            log_info "Tags disponíveis (últimas 20):"
+            git tag -l | tail -20
+            exit 1
+        fi
+        cd ..
+    fi
+
+    log_success "realsense-ros (tag: $REALSENSE_ROS_TAG) preparado!"
 }
 
-# Instalar vision_to_mavros
 install_vision_to_mavros() {
     log_section "INSTALANDO VISION_TO_MAVROS"
 
@@ -293,7 +392,6 @@ install_vision_to_mavros() {
 
     cd "$WORKSPACE_DIR/src"
 
-    # Clonar vision_to_mavros se não existir
     if [ ! -d "vision_to_mavros" ]; then
         log_info "Clonando vision_to_mavros..."
         git clone https://github.com/Black-Bee-Drones/vision_to_mavros.git
@@ -307,7 +405,6 @@ install_vision_to_mavros() {
     log_success "vision_to_mavros preparado!"
 }
 
-# Reconstruir workspace ROS2
 rebuild_workspace() {
     log_section "RECONSTRUINDO WORKSPACE ROS2"
 
@@ -315,12 +412,14 @@ rebuild_workspace() {
 
     cd "$WORKSPACE_DIR"
 
-    # Source ROS2
     source /opt/ros/humble/setup.bash
 
     log_info "Atualizando dependências..."
     rosdep update
-    rosdep install -i --from-path src --rosdistro humble -r -y
+    rosdep install -i --from-path src --rosdistro humble --skip-keys=librealsense2 -y
+
+    log_info "Limpando builds anteriores..."
+    rm -rf build/ install/ log/
 
     log_info "Construindo workspace..."
     colcon build --symlink-install
@@ -328,74 +427,103 @@ rebuild_workspace() {
     log_success "Workspace reconstruído!"
 }
 
-# Verificar instalação
 verify_installation() {
     log_section "VERIFICANDO INSTALAÇÃO REALSENSE"
 
-    # Verificar librealsense - tentar múltiplos métodos
     LIBREALSENSE_FOUND=false
-    
-    # Método 1: pkg-config (para instalação compilada)
+
     if pkg-config --exists librealsense2 2>/dev/null; then
-        log_success "librealsense2 encontrado via pkg-config: $(pkg-config --modversion librealsense2)"
+        PKG_VERSION=$(pkg-config --modversion librealsense2)
+        log_success "librealsense2 encontrado via pkg-config: $PKG_VERSION"
         LIBREALSENSE_FOUND=true
-    # Método 2: dpkg (para instalação via apt)
-    elif dpkg -l | grep -q "ros-humble-librealsense2"; then
-        VERSION=$(dpkg -l | grep "ros-humble-librealsense2" | awk '{print $3}')
-        log_success "librealsense2 encontrado via apt: $VERSION"
+
+        if [[ "$PKG_VERSION" == "2.55.1" ]]; then
+            log_success "Versão correta (2.55.1) instalada!"
+        else
+            log_warning "Versão $PKG_VERSION encontrada, esperada 2.55.1"
+        fi
+    fi
+
+    if command -v rs-enumerate-devices &> /dev/null; then
+        RS_VERSION=$(rs-enumerate-devices --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+        log_success "rs-enumerate-devices versão: $RS_VERSION"
         LIBREALSENSE_FOUND=true
-    # Método 3: verificar se rs-enumerate-devices existe
-    elif command -v rs-enumerate-devices &> /dev/null; then
-        log_success "librealsense2 tools encontradas (rs-enumerate-devices)"
-        LIBREALSENSE_FOUND=true
-    # Método 4: verificar bibliotecas instaladas
-    elif [ -f "/usr/local/lib/librealsense2.so" ] || [ -f "/usr/lib/x86_64-linux-gnu/librealsense2.so" ] || [ -f "/usr/lib/aarch64-linux-gnu/librealsense2.so" ]; then
-        log_success "librealsense2 biblioteca encontrada"
+
+        if [[ "$RS_VERSION" == "2.55.1.0" ]]; then
+            log_success "Versão correta das ferramentas (2.55.1.0) instalada!"
+        else
+            log_warning "Versão das ferramentas $RS_VERSION encontrada, esperada 2.55.1.0"
+        fi
+    fi
+
+    if [ -f "/usr/local/lib/librealsense2.so" ] || [ -f "/usr/lib/x86_64-linux-gnu/librealsense2.so" ] || [ -f "/usr/lib/aarch64-linux-gnu/librealsense2.so" ]; then
+        log_success "librealsense2 biblioteca encontrada no sistema"
         LIBREALSENSE_FOUND=true
     fi
-    
+
     if [ "$LIBREALSENSE_FOUND" = false ]; then
         log_error "librealsense2 não encontrado!"
         return 1
     fi
 
-    # Verificar realsense-ros
+    if dpkg -l | grep -q "ros-humble-librealsense2"; then
+        log_warning "ATENÇÃO: ros-humble-librealsense2 (apt) ainda está instalado!"
+        log_warning "Isso pode causar conflitos. Considere remover com:"
+        log_warning "sudo apt remove ros-humble-librealsense2*"
+    fi
+
+    source /opt/ros/humble/setup.bash
+    if [ -f "$HOME/ros2_ws/install/local_setup.bash" ]; then
+        source "$HOME/ros2_ws/install/local_setup.bash"
+    fi
+
     PKG_LIST=$(ros2 pkg list 2>/dev/null)
     if echo "$PKG_LIST" | grep -q "realsense2_camera"; then
-        log_success "realsense2_camera encontrado!"
+        log_success "realsense2_camera encontrado no workspace!"
     else
         log_warning "realsense2_camera não encontrado no workspace"
     fi
 
-    # Verificar vision_to_mavros
     if echo "$PKG_LIST" | grep -q "vision_to_mavros"; then
         log_success "vision_to_mavros encontrado!"
     else
         log_warning "vision_to_mavros não encontrado no workspace"
     fi
 
+    if [ -d "$HOME/librealsense" ]; then
+        cd "$HOME/librealsense"
+        CURRENT_VERSION=$(git describe --tags 2>/dev/null || echo "unknown")
+        log_info "librealsense fonte: $CURRENT_VERSION"
+    fi
+
+    if [ -d "$HOME/ros2_ws/src/realsense-ros" ]; then
+        cd "$HOME/ros2_ws/src/realsense-ros"
+        CURRENT_TAG=$(git describe --tags 2>/dev/null || git rev-parse --short HEAD)
+        log_info "realsense-ros describe/commit: $CURRENT_TAG"
+    fi
+
     log_success "Verificação concluída!"
 }
 
-# Função principal
 main() {
-    log_section "MIRELA SDK - INSTALAÇÃO REALSENSE D435i"
-    log_info "Iniciando instalação do suporte RealSense..."
+    log_info "Instalando librealsense $LIBREALSENSE_VERSION e realsense-ros tag $REALSENSE_ROS_TAG"
 
     check_root
+    check_existing_installations
     check_cuda
 
-    # Menu de opções
     echo "Selecione as etapas a executar:"
-    echo "1) Instalação completa (recomendado)"
+    echo "1) Instalação completa com versões fixas (recomendado)"
     echo "2) Instalação personalizada"
     echo "3) Apenas verificar instalação"
+    echo "4) Remover apenas instalações conflitantes"
 
     read -p "Opção [1]: " option
     option=${option:-1}
 
     case $option in
         1)
+            remove_existing_installations
             install_realsense_dependencies
             build_librealsense
             install_realsense_ros
@@ -405,29 +533,34 @@ main() {
             ;;
         2)
             echo "Selecione as etapas (separadas por espaço, ex: 1 3 5):"
-            echo "1) Instalar dependências RealSense"
-            echo "2) Compilar librealsense"
-            echo "3) Instalar realsense-ros"
-            echo "4) Instalar vision_to_mavros"
-            echo "5) Reconstruir workspace"
-            echo "6) Verificar instalação"
+            echo "1) Remover instalações conflitantes"
+            echo "2) Instalar dependências RealSense"
+            echo "3) Compilar librealsense $LIBREALSENSE_VERSION"
+            echo "4) Instalar realsense-ros $REALSENSE_ROS_TAG"
+            echo "5) Instalar vision_to_mavros"
+            echo "6) Reconstruir workspace"
+            echo "7) Verificar instalação"
 
             read -p "Etapas: " steps
 
             for step in $steps; do
                 case $step in
-                    1) install_realsense_dependencies ;;
-                    2) build_librealsense ;;
-                    3) install_realsense_ros ;;
-                    4) install_vision_to_mavros ;;
-                    5) rebuild_workspace ;;
-                    6) verify_installation ;;
+                    1) remove_existing_installations ;;
+                    2) install_realsense_dependencies ;;
+                    3) build_librealsense ;;
+                    4) install_realsense_ros ;;
+                    5) install_vision_to_mavros ;;
+                    6) rebuild_workspace ;;
+                    7) verify_installation ;;
                     *) log_warning "Etapa $step inválida" ;;
                 esac
             done
             ;;
         3)
             verify_installation
+            ;;
+        4)
+            remove_existing_installations
             ;;
         *)
             log_error "Opção inválida!"
@@ -436,9 +569,10 @@ main() {
     esac
 
     echo ""
-    log_success "🚀🐝 AVANTE! Suporte RealSense D435i instalado com sucesso!"
+    log_success "🐝 AVANTE!"
+    log_info "librealsense: $LIBREALSENSE_VERSION"
+    log_info "realsense-ros: $REALSENSE_ROS_TAG"
     
-    # Se CUDA foi detectado mas não está no PATH, sugerir adicionar
     if [ "$USE_CUDA" == "true" ] && ! command -v nvcc &> /dev/null; then
         log_warning "CUDA foi usado mas não está no PATH permanentemente."
         log_info "Para adicionar CUDA ao PATH permanentemente, execute:"
@@ -447,8 +581,7 @@ main() {
     fi
     
     log_info "Para usar: source ~/.bashrc"
-    log_info "Para testar: ros2 launch realsense2_camera rs_launch.py"
+    log_info "Para testar IMU: ros2 launch realsense2_camera rs_launch.py enable_gyro:=true enable_accel:=true"
 }
 
-# Executar função principal
 main "$@"

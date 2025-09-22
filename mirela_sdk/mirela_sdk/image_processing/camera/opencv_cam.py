@@ -3,46 +3,32 @@ import cv2
 import numpy as np
 
 from .abstract_cam import AbstractCam
+from .camera_config import OpenCVConfig
 
 
 class OpenCVCam(AbstractCam):
-    def __init__(
-        self,
-        device_index: int | str = 0,
-        *,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        fps: Optional[int] = 30,
-        fourcc: Optional[str] = "MJPG",
-        autofocus: Optional[bool] = None,
-        focus: Optional[int] = None,
-        name: str = "opencv_cam",
-    ) -> None:
-        super().__init__(name=name)
-        self._device_index = device_index
-        self._width = width
-        self._height = height
-        self._fps = fps
-        self._fourcc = fourcc
-        self._autofocus = autofocus
-        self._focus = focus
+    def __init__(self, config: OpenCVConfig) -> None:
+        super().__init__(name=config.name)
+        self._config = config
         self._cap: Optional[cv2.VideoCapture] = None
 
     def start(self) -> None:
-        self._cap = cv2.VideoCapture(self._device_index, cv2.CAP_V4L2)
-        if self._fourcc:
-            self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self._fourcc))
-        if self._fps is not None:
-            self._cap.set(cv2.CAP_PROP_FPS, self._fps)
-        if self._width is not None:
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
-        if self._height is not None:
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
-        if self._autofocus is not None:
-            self._cap.set(cv2.CAP_PROP_AUTOFOCUS, 1 if self._autofocus else 0)
-        if self._focus is not None:
+        self._cap = cv2.VideoCapture(self._config.device_index, cv2.CAP_V4L2)
+        if self._config.fourcc:
+            self._cap.set(
+                cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self._config.fourcc)
+            )
+        if self._config.fps is not None:
+            self._cap.set(cv2.CAP_PROP_FPS, self._config.fps)
+        if self._config.width is not None:
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._config.width)
+        if self._config.height is not None:
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._config.height)
+        if self._config.autofocus is not None:
+            self._cap.set(cv2.CAP_PROP_AUTOFOCUS, 1 if self._config.autofocus else 0)
+        if self._config.focus is not None:
             # Some cameras accept manual focus when autofocus disabled
-            self._cap.set(cv2.CAP_PROP_FOCUS, self._focus)
+            self._cap.set(cv2.CAP_PROP_FOCUS, self._config.focus)
         self._is_running = True
 
     def get_frame(self) -> Optional[np.ndarray]:
