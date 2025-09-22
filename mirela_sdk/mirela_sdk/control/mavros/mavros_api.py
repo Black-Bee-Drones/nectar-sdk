@@ -786,18 +786,19 @@ class MavDrone(Drone):
         gps_setpoint.pose.orientation.z = qz
         gps_setpoint.pose.orientation.w = qw
 
-        if strategy == "PID":
-            self._pose_controller.navigate_PID(
-                target_position=gps_setpoint,
-                lidar_target_alt=lidar_altitude,
+        if strategy == "mavros":
+            self._pose_controller.navigate_gps_msg(
+                gps_setpoint=gps_setpoint,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec
             )
+            
         else:
-            if strategy != "default":
+            if strategy != "default" and strategy != "PID":
                 self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
-            self._pose_controller.navigate_gps_msg(
-                gps_setpoint=gps_setpoint,
+            self._pose_controller.navigate_PID(
+                target_position=gps_setpoint,
+                lidar_target_alt=lidar_altitude,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec
             )
@@ -862,7 +863,7 @@ class MavDrone(Drone):
 
         if self.indoor == False:
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                x=x, y=y, z=z,
+                x=x, y=-y, z=z,
                 latitude=self.get_gps.latitude,
                 longitude=self.get_gps.longitude,
                 altitude=self.get_gps.altitude,
@@ -931,22 +932,22 @@ class MavDrone(Drone):
             else:
                 lidar_target_alt = None
 
-            if strategy == "PID":
-                self._pose_controller.navigate_PID(
-                    target_position=pose_msg,
-                    lidar_target_alt=lidar_target_alt,
-                    precision_radius=precision_radius,
-                    timeout_sec=timeout_sec
-                )
-            else:
-                if strategy != "default":
-                    self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
+            if strategy == "mavros":
                 self._pose_controller.navigate_local_msg(
                     target_position=pose_msg,
                     precision_radius=precision_radius,
                     timeout_sec=timeout_sec
                 )
                 
+            else:
+                if strategy != "default" and strategy != "PID":
+                    self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
+                self._pose_controller.navigate_PID(
+                    target_position=pose_msg,
+                    lidar_target_alt=lidar_target_alt,
+                    precision_radius=precision_radius,
+                    timeout_sec=timeout_sec
+                )
 
     def offboard_gps_position(
         self,
