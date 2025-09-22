@@ -378,7 +378,7 @@ class PositionController:
 
             #Calculates distance to target in body frame
             if self.drone.indoor == True:
-                dist_to_target, dx_body, dy_body, dz_body = self._get_body_distance_indoor(target_position, current_pose)
+                dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_indoor(target_position, current_pose)
             else:
                 dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose)
 
