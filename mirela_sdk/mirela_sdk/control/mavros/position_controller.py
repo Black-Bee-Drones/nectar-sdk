@@ -167,7 +167,7 @@ class PositionController:
 
         # Transform difference to body frame
         dx_body =  np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
-        dy_body = -np.sin(yaw) * dx_world + np.cos(yaw) * dy_world
+        dy_body = np.sin(yaw) * dx_world - np.cos(yaw) * dy_world
         dz_body = dz  # No change in z axis
 
         return dist_to_target, dx_body, dy_body, dz_body
@@ -287,6 +287,12 @@ class PositionController:
             "-- Moving to GPS coordinate:\n" +
             f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
         )
+
+        # fix height issue?
+        # gps_setpoint.pose.position.altitude -= self.egm96.height(
+        #     gps_setpoint.pose.position.latitude,
+        #     gps_setpoint.pose.position.longitude
+        #     )
 
         self.drone.gps_pub.publish(gps_setpoint)
         if timeout_sec is not None:
