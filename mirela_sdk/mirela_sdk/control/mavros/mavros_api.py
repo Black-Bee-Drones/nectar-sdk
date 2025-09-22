@@ -397,46 +397,6 @@ class MavDrone(Drone):
             future = service.call_async(request)
             future.add_done_callback(_handle_future)
 
-    def send_velocity_req(self, vel: float):
-        """Uses the command MAV_CMD_DO_CHANGE_SPEED to alter the horizontal speed
-        of the drone."""
-        
-        self.node.get_logger().info("Acessing MAV_CMD_DO_CHANGE_SPEED parameter")
-        self.node.get_logger().info("Sending service request...")
-        request = CommandLong.Request()
-        request.command = 178   # MAV_CMD_DO_CHANGE_SPEED
-        request.confirmation = False
-        request.param1 = 1.0
-        request.param2 = vel
-        request.param3 = -1.0
-        request.param4 = 0.0
-        request.param5 = 0.0
-        request.param6 = 0.0
-        request.param7 = 0.0
-        self._call_service(self._command_srv, request, f"Sucess: MAV_DO_CHANGE_SPEED -> {vel} m/s ",
-                           "Error: Failed to access MAV_DO_CHANGE_SPEED", sync=False)      
-
-    def set_environment_velocity(self):
-        """(NOT WORKING!!!) Sets a pre defined limit for the horizontal speed based on the current
-         environment (indoor ou outdoor)
-        
-        Parameters
-        ----------
-        env: str
-        Indoor ou outdoor environment"""
-
-        if self.indoor == True:
-            vel = INDOOR
-        else:
-            vel = OUTDOOR
-        
-        #Sends first service request
-        self.send_velocity_req(vel)
-        #Dummy waypoint
-        self.offboard_position(x=0.0, y=0.0, z=0.0, yaw=0.0, precision_radius=0.1, timeout_sec=5.0)
-        #Sends request again in order for it to be effective
-        self.send_velocity_req(vel)
-
     def kill_motors(self):
         """
         Forced disarm
@@ -1177,22 +1137,6 @@ class MavDrone(Drone):
         """
         if self.indoor == True:
             raise RuntimeError("Takeoff position with GPS coordinates cannot be set in indoor mode.")
-        else:
-            self._takeoff_position = pose
-        self._home_position_set = True
-
-    def set_takeoff_position(self, pose: PoseStamped):
-        """
-        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
-        This method is intended for indoor use only and requires a valid PoseStamped object.
-
-        Parameters
-        ----------
-        pose : PoseStamped
-            PoseStamped object containing position data of the takeoff position.
-        """
-        if self.indoor == False:
-            raise RuntimeError("Takeoff position with local coordinates cannot be set in outdoor mode.")
         else:
             self._takeoff_position = pose
         self._home_position_set = True
