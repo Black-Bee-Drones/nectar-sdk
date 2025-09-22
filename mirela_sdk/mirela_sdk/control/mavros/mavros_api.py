@@ -62,7 +62,7 @@ class MavDrone(Drone):
         self._local_pos = PoseStamped()
         self._vel_body = TwistStamped()
         self._imu_data = Imu()
-        self._takeoff_position = PoseStamped()
+        self._takeoff_position = PositionTarget()
         self._takeoff_height = None
         self._home_position_set = False
         self._pose_controller = PositionController(self)
@@ -74,7 +74,7 @@ class MavDrone(Drone):
             self._rel_alt = Float64()
 
             # Store takeoff position for custom RTL
-            self._takeoff_position = NavSatFix()
+            self._takeoff_position = GeoPoseStamped()
             self._takeoff_heading = 0.0
 
             self.gps_controller = GPSController(self)
@@ -470,9 +470,16 @@ class MavDrone(Drone):
         # Store the takeoff position for custom RTL strategy
         self._home_position_set = True
         if self.indoor == True:
-            self.takeoff_position = self.get_local_pos
+            msg = PositionTarget()
+            msg.position.x = self.get_local_pos.pose.position.x
+            msg.position.y = self.get_local_pos.pose.position.y
+            msg.position.z = self.get_local_pos.pose.position.z
         else:
-            self.takeoff_position = self.get_gps
+            msg = GeoPoseStamped()
+            msg.pose.position.latitude = self.get_gps.latitude
+            msg.pose.position.longitude = self.get_gps.longitude
+            msg.pose.position.altitude = self.get_gps.altitude
+            self.takeoff_position = msg
             self._takeoff_heading = self.get_heading.data
 
         self.arm()
@@ -1125,7 +1132,7 @@ class MavDrone(Drone):
             self._takeoff_heading = heading
         self._home_position_set = True
 
-    def set_takeoff_position(self, pose: NavSatFix):
+    def set_takeoff_position(self, pose: PoseStamped|NavSatFix):
         """
         Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
         This method is intended for outdoor use only and requires a valid NavSatFix object.
