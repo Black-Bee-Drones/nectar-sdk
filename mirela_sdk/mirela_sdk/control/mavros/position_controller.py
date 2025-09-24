@@ -289,7 +289,9 @@ class PositionController:
         )
 
         # fix height issue?
-        # gps_setpoint.pose.position.altitude -= self.egm96.height(
+        # https://wiki.ros.org/mavros#mavros.2FPlugins.Avoiding_Pitfalls_Related_to_Ellipsoid_Height_and_Height_Above_Mean_Sea_Level
+        # https://wiki.ros.org/mavros/Plugins#:~:text=~global_position/global%20(,for%20more.
+        # gps_setpoint.pose.position.altitude (+-?)= self.egm96.height(
         #     gps_setpoint.pose.position.latitude,
         #     gps_setpoint.pose.position.longitude
         #     )
