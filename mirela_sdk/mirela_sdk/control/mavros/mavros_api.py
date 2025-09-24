@@ -1,5 +1,7 @@
 import numpy as np
 
+from typing import Optional
+
 import rclpy
 from rclpy.node import Node
 from rclpy.client import Client
@@ -72,10 +74,7 @@ class MavDrone(Drone):
             self._heading = Float64()
             self._gps = NavSatFix()
             self._rel_alt = Float64()
-
-            # Store takeoff position for custom RTL
             self._takeoff_position = GeoPoseStamped()
-            self._takeoff_heading = 0.0
 
             self.gps_controller = GPSController(self)
 
@@ -597,7 +596,7 @@ class MavDrone(Drone):
         rtl_strategy: str = "default",
     ):
         """
-        todo: add custom rtl strategy for indoor
+        Deprecate this method
 
         Send return to launch command using the selected strategy.
 
@@ -1121,46 +1120,7 @@ class MavDrone(Drone):
     def snapshot(self):
         pass
 
-    def set_takeoff_position(self):
-        """
-        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
-        This method uses the current position as the takeoff position.
-        """
-        # Store the takeoff position for custom RTL
-        self._home_position_set = True
-        rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks to get latest position
-        if self.indoor == True:
-            self.takeoff_position = self.get_local_pos
-        else:
-            self.takeoff_position = self.get_gps
-            self._takeoff_heading = self.get_heading.data
-
-    def set_takeoff_position(self, latitude, longitude, altitude, heading):
-        """
-        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
-        This method is intended for outdoor use only and requires valid GPS coordinates.
-
-        Parameters
-        ----------
-        latitude : float
-            Latitude of the takeoff position.
-        longitude : float
-            Longitude of the takeoff position.
-        altitude : float
-            Altitude of the takeoff position.
-        heading : float
-            Heading at the takeoff position.
-        """
-        if self.indoor == True:
-            raise RuntimeError("Takeoff position with GPS coordinates cannot be set in indoor mode.")
-        else:
-            self._takeoff_position.latitude = latitude
-            self._takeoff_position.longitude = longitude
-            self._takeoff_position.altitude = altitude
-            self._takeoff_heading = heading
-        self._home_position_set = True
-
-    def set_takeoff_position(self, pose: PoseStamped|NavSatFix):
+    def set_takeoff_position(self, pose: Optional[PoseStamped|NavSatFix] = None):
         """
         Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
         This method is intended for outdoor use only and requires a valid NavSatFix object.
@@ -1170,10 +1130,23 @@ class MavDrone(Drone):
         pose : NavSatFix
             NavSatFix object containing latitude, longitude, and altitude of the takeoff position.
         """
+        if pose == None:
+            self._takeoff_position = self._convert_position_to_target(self.get_position)
+
         if self.indoor == True:
-            raise RuntimeError("Takeoff position with GPS coordinates cannot be set in indoor mode.")
+            if not isinstance(pose, PoseStamped):
+                raise ValueError("In indoor mode, pose parameter must be of type PoseStamped")
+                          
+            else:
+                self._takeoff_position = self._convert_position_to_target(pose)
+
         else:
-            self._takeoff_position = pose
+            if not isinstance(pose, NavSatFix):
+                raise ValueError("In outdoor mode, pose parameter must be of type NavSatFix")
+                          
+            else:
+                self._takeoff_position = self._convert_position_to_target(pose)
+
         self._home_position_set = True
 
     def custom_rtl(self):
