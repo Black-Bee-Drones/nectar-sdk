@@ -49,6 +49,10 @@ HORIZONTAL_OUTDOOR_MIN_SPEED = 0.1  # m/s
 VERTICAL_OUTDOOR_MAX_SPEED = 0.8  # m/s
 VERTICAL_OUTDOOR_MIN_SPEED = 0.1  # m/s
 
+# LIDAR OVER OBSTACLE PARAMETER
+OBSTACLE_TIMEOUT = 8.0 # s
+OBSTACLE_HEIGHT = 0.5 # m
+
 
 class PID:
     def __init__(self, kp: float, ki: float, kd: float, dt: float, max_output: float = 1.0, min_output: float = 0.0):
@@ -356,11 +360,19 @@ class PositionController:
         start_time = self.drone.node.get_clock().now()
         timeout = Duration(seconds=timeout_sec) if timeout_sec is not None else None
 
+        obstacle_flag = False
+        obstacle_duration = Duration(seconds=OBSTACLE_TIMEOUT)
+        obstacle_start_time = None
+
         if lidar_target_alt is not None and self.drone.lidar_on == True:
             self.drone.node.get_logger().info("Using lidar for altitude control.")
+            last_lidar_read = None
+            d_lidar = 0.0
+
             if lidar_target_alt > LIDAR_ALTITUDE_LIMIT:
                 self.drone.node.get_logger().warn("Requested altitude exceeds 15m limit for lidar-based control, using altitude parameter instead.")
                 lidar_target_alt = None
+
         elif lidar_target_alt is not None and self.drone.lidar_on == False:
             self.drone.node.get_logger().warn("Lidar altitude setpoint provided, but lidar is not enabled. Ignoring lidar altitude.")
             lidar_target_alt = None
@@ -387,10 +399,25 @@ class PositionController:
             if lidar_target_alt is not None:
                 self.drone.node.get_logger().info(f"lidar target: {lidar_target_alt} e {self.drone.get_rng_alt.range}")
                 dz_body = lidar_target_alt - self.drone.get_rng_alt.range
+                if last_lidar_read is not None:
+                    d_lidar = last_lidar_read - self.drone.get_rng_alt
+
+                if abs(d_lidar) > OBSTACLE_HEIGHT:
+                    obstacle_flag = True
+                    obstacle_start_time = self.drone.node.get_clock().now()
 
             vx = pid_x.compute(abs(dx_body)) if dx_body > 0 else -pid_x.compute(abs(dx_body))
             vy = pid_y.compute(abs(dy_body)) if dy_body > 0 else -pid_y.compute(abs(dy_body))
             vz = pid_z.compute(abs(dz_body)) if dz_body > 0 else -pid_z.compute(abs(dz_body))
+
+            if obstacle_flag == True:  # Drone is currently over an obstacle
+                # Check if the obstacle avoidance duration has elapsed
+                if self.drone.node.get_clock().now() - obstacle_start_time > obstacle_duration:
+                    obstacle_flag = False
+
+                # While over the obstacle, set vertical velocity to zero to prevent descent.
+                # The drone will automatically climb to clear the obstacle, after 5s (ArduPilor Parameter).
+                vz = 0.0
 
             if abs(dx_body) < precision_radius / 2:
                 vx = 0.0
