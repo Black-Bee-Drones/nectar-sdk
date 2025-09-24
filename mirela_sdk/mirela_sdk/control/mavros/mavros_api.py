@@ -818,7 +818,6 @@ class MavDrone(Drone):
             x: float = 0.0,
             y: float = 0.0,
             z: float = 0.0,
-            yaw: float | None = None,
             precision_radius: float = 0.5,
             timeout_sec: float | None = 60.0,
             strategy: str = "default"
@@ -844,13 +843,6 @@ class MavDrone(Drone):
             (+) Up
 
             (-) Down
-
-        yaw : float|None (degrees)
-            If None, keep current yaw.
-
-            (+) Counter clockwise
-
-            (-) Clockwise
 
         precision_radius : float (meters)
             Radius of the precision
@@ -881,8 +873,6 @@ class MavDrone(Drone):
             )
 
             heading = self.get_heading.data
-            if yaw is not None:
-                heading = (heading - yaw) % 360 # Check sign convention
             self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
 
             if strategy == "PID" and self.lidar_on == True:
@@ -905,9 +895,6 @@ class MavDrone(Drone):
             )
 
         else:
-            if yaw is not None:
-                self.node.get_logger().warn("Yaw control not implemented in indoor mode, ignoring yaw parameter.")
-
             current_position = self.get_local_pos.pose.position
             orientation = self.get_local_pos.pose.orientation
             quat = [orientation.x, orientation.y, orientation.z, orientation.w]
