@@ -390,7 +390,7 @@ class PositionController:
         while True:
             current_pose: PoseStamped|NavSatFix = self.get_current_position(timeout=0.01)
 
-            #Calculates distance to target in body frame
+            # Calculates distance to target in body frame
             if self.drone.indoor == True:
                 dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_indoor(target_position, current_pose)
             else:
@@ -440,7 +440,7 @@ class PositionController:
 
             self.drone.node.get_logger().info(f"   Distance to target: {dist_to_target:.2f}m", throttle_duration_sec=1.0)
 
-            #Checks if arrival is is complete
+            # Checks if arrival is is complete
             if dist_to_target <= precision_radius:
                 pid_x.reset()
                 pid_y.reset()
@@ -449,7 +449,7 @@ class PositionController:
                 self.drone.node.get_logger().info(f"\033[32;1m   Target reached! Distance: {dist_to_target:.2f}m\033[0m")
                 return
 
-            #Checks for timeout
+            # Checks for timeout
             if timeout_sec is not None and (self.drone.node.get_clock().now() - start_time) > timeout:
                 self.drone.node.get_logger().warn(f"\033[33;1m   Timeout reached before arriving at target position. Distance: {dist_to_target:.2f}m\033[0m")
                 return
