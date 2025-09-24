@@ -202,6 +202,21 @@ class MavDrone(Drone):
         http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Range.html
         """
         return self._rng_alt
+    
+    @property
+    def get_position(self) -> PoseStamped | NavSatFix:
+        """
+        Return drone position according to the flight mode.
+
+        Indoor mode: returns get_local_pos
+
+        Outdoor mode: returns get_gps
+        """
+        if self.indoor == True:
+            return self.get_local_pos
+        
+        else:
+            return self.get_gps
 
     @property
     def get_local_pos(self) -> PoseStamped:
@@ -341,6 +356,33 @@ class MavDrone(Drone):
                 f"Initial altitude: {self.initial_altitude}m, Initial heading: {self.initial_heading}°"
             )
 
+    @staticmethod
+    def _convert_position_to_target(pose: PoseStamped|NavSatFix) -> PositionTarget|GeoPoseStamped:
+        """
+        Converts objects, ignoring orientation:
+
+        PoseStamped -> PositionTarget
+
+        NavSatFix -> GeoPoseStamped
+        """
+        if isinstance(pose, PoseStamped):
+            msg = PositionTarget()
+            msg.position.x = pose.pose.position.x
+            msg.position.y = pose.pose.position.y
+            msg.position.z = pose.pose.position.z
+            return msg
+            
+        elif isinstance(pose, NavSatFix):
+            msg = GeoPoseStamped()
+            msg.pose.position.latitude = pose.latitude
+            msg.pose.position.longitude = pose.longitude
+            msg.pose.position.altitude = pose.altitude
+            return msg
+        
+        else:
+            raise ValueError("pose parameter must be of type PoseStamped or NavSatFix")
+        
+
     def _call_service(
         self,
         service: Client,
@@ -463,27 +505,28 @@ class MavDrone(Drone):
         """
         Send command to arm, take off and hold
 
+        After calling arm service, waits for 3 seconds, and stores takeoff_position
+
+        Then, after calling takeoff service, sleeps for [takeoff_alt] seconds
+
         Parameters
         ----------
         takeoff_alt: float (meters)
         """
-        # Store the takeoff position for custom RTL strategy
-        self._home_position_set = True
-        if self.indoor == True:
-            msg = PositionTarget()
-            msg.position.x = self.get_local_pos.pose.position.x
-            msg.position.y = self.get_local_pos.pose.position.y
-            msg.position.z = self.get_local_pos.pose.position.z
-        else:
-            msg = GeoPoseStamped()
-            msg.pose.position.latitude = self.get_gps.latitude
-            msg.pose.position.longitude = self.get_gps.longitude
-            msg.pose.position.altitude = self.get_gps.altitude
-            self.takeoff_position = msg
-            self._takeoff_heading = self.get_heading.data
 
         self.arm()
-        sleep(3.0)
+
+        # Store the takeoff position for custom RTL strategy
+        self._home_position_set = True
+
+        # Update variables
+        sleep_duration = Duration(seconds=3.0)
+        sleep_start_t = self.node.get_clock().now()
+        while self.node.get_clock().now() - sleep_start_t < sleep_duration:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        
+        self._takeoff_position = self._convert_position_to_target(self.get_position)
+        
         self.takeoff(takeoff_alt)
         sleep(takeoff_alt)
 
