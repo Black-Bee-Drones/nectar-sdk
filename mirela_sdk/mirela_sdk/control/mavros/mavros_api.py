@@ -60,8 +60,8 @@ class MavDrone(Drone):
         self.indoor = indoor
         self.lidar_on = False
         self._state = State()
-        self._rng_alt = Range()
-        self._local_pos = PoseStamped()
+        self._rng_alt = None
+        self._local_pos = None
         self._vel_body = TwistStamped()
         self._imu_data = Imu()
         self._takeoff_position = PositionTarget()
@@ -71,8 +71,8 @@ class MavDrone(Drone):
         
         # Outdoor only variables:
         if self.indoor == False:
-            self._heading = Float64()
-            self._gps = NavSatFix()
+            self._heading = None()
+            self._gps = None
             self._rel_alt = Float64()
             self._takeoff_position = GeoPoseStamped()
 
@@ -307,7 +307,7 @@ class MavDrone(Drone):
         while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for lidar data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_rng_alt.range != -1.0: # drone tá sem o trem de pé, aí o lidar mede 0.0
+                if self.get_rng_alt is not None:
                     self._takeoff_height = self.get_rng_alt.range
                     self.lidar_on = True
                     break
@@ -317,7 +317,7 @@ class MavDrone(Drone):
             while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for local position data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_local_pos.pose.position.z != 0.0:
+                if self.get_local_pos is not None:
                     sensors_initialized = True
                     break
 
@@ -329,7 +329,7 @@ class MavDrone(Drone):
             while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for GPS data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_gps.altitude != 0.0 and self.get_heading.data != 0.0:
+                if self.get_gps.altitude is not None and self.get_heading.data is not None:
                     sensors_initialized = True
                     break
 
