@@ -971,16 +971,14 @@ class MavDrone(Drone):
         :param initial_heading (bool): True for keep initial heading value, False for value passed
         """
 
-        final_heading = self.force_correct_heading() if initial_heading else heading
-
         self.node.get_logger().info(
-            f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {final_heading}"
+            f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {heading}"
         )
         self.gps_controller.gps_send(
             lat_setpoint,
             lon_setpoint,
             alt_setpoint,
-            final_heading,
+            heading,
             precision_radius,
             wait,
             timeout_sec,
