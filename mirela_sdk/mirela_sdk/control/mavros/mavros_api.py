@@ -203,6 +203,28 @@ class MavDrone(Drone):
         return self._rng_alt
     
     @property
+    def get_height(self) -> float:
+        """
+        Return drone height, using the adequate sensor.
+
+        Primary: Lidar
+
+        Secondary:
+        
+        For Indoor: local_pos.pose.z
+
+        For Outdoor: gps rel_alt
+        """
+        if self.lidar_on == True:
+            return self.get_rng_alt.range
+        
+        elif self.indoor == True:
+            return self.get_local_pos.pose.position.z
+        
+        else:
+            return self.get_rel_alt.data
+    
+    @property
     def get_position(self) -> PoseStamped | NavSatFix:
         """
         Return drone position according to the flight mode.
