@@ -71,7 +71,7 @@ class MavDrone(Drone):
         
         # Outdoor only variables:
         if self.indoor == False:
-            self._heading = None()
+            self._heading = None
             self._gps = None
             self._rel_alt = Float64()
             self._takeoff_position = GeoPoseStamped()
