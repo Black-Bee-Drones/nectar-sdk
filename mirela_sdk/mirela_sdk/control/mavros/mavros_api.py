@@ -22,7 +22,7 @@ import math
 
 from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget
 from std_msgs.msg import Float64, Int64
-from geometry_msgs.msg import TwistStamped, PoseStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix, Range, Imu
 from rcl_interfaces.msg import Parameter
@@ -61,8 +61,7 @@ class MavDrone(Drone):
         self.lidar_on = False
         self._state = State()
         self._rng_alt = None
-        self._local_pos = None
-        self._vel_body = TwistStamped()
+        self._visual_pos = None
         self._imu_data = Imu()
         self._takeoff_position = PositionTarget()
         self._takeoff_height = None
@@ -89,24 +88,27 @@ class MavDrone(Drone):
             lambda data: self.__setattr__("_rng_alt", data),
             10,
         )
-        self._local_pos_sub = self._create_subscriber(
-            PoseStamped,
-            "/mavros/local_position/pose",
-            lambda data: self.__setattr__("_local_pos", data),
-            qos_profile_sensor_data,
-        )
-        self._vel_body_sub = self._create_subscriber(
-            TwistStamped,
-            "/mavros/local_position/velocity_body",
-            lambda data: self.__setattr__("_vel_body", data),
-            qos_profile_sensor_data,
-        )
         self._imu_data_sub = self._create_subscriber(
             Imu,
             "/mavros/imu/data",
             lambda data: self.__setattr__("_imu_data", data),
             qos_profile_sensor_data,
         )
+
+        # Indoor only Subscribers:
+        if self.indoor == True:
+            # self._local_pos_sub = self._create_subscriber(
+            #     PoseStamped,
+            #     "/mavros/local_position/pose",
+            #     lambda data: self.__setattr__("_visual_pos", data),
+            #     qos_profile_sensor_data,
+            # )
+            self._visual_pos_sub = self._create_subscriber(
+                PoseWithCovarianceStamped,
+                "/mavros/vision_pose/pose_cov",
+                lambda data: self.__setattr__("_vision_pos", data),
+                10
+            )
 
         # Outdoor only Subscribers:
         if self.indoor == False:
@@ -219,48 +221,36 @@ class MavDrone(Drone):
             return self.get_rng_alt.range
         
         elif self.indoor == True:
-            return self.get_local_pos.pose.position.z
+            return self.get_visual_pos.pose.position.z
         
         else:
             return self.get_rel_alt.data
     
     @property
-    def get_position(self) -> PoseStamped | NavSatFix:
+    def get_position(self) -> PoseWithCovarianceStamped | NavSatFix:
         """
         Return drone position according to the flight mode.
 
-        Indoor mode: returns get_local_pos
+        Indoor mode: returns get_visual_pos
 
         Outdoor mode: returns get_gps
         """
         if self.indoor == True:
-            return self.get_local_pos
+            return self.get_visual_pos
         
         else:
             return self.get_gps
 
     @property
-    def get_local_pos(self) -> PoseStamped:
+    def get_visual_pos(self) -> PoseWithCovarianceStamped:
         """
         Return relative position data
 
-        PoseStamped
+        PoseWithCovarianceStamped
         ----------
-        http://docs.ros.org/en/api/geometry_msgs/html/msg/PoseStamped.html
+        http://docs.ros.org/en/api/geometry_msgs/html/msg/PoseWithCovarianceStamped.html
         """
-        return self._local_pos
-
-    @property
-    def get_vel_body(self) -> TwistStamped:
-        """
-        Return body velocity
-
-        TwistStamped
-        ------------
-        http://docs.ros.org/en/melodic/api/geometry_msgs/html/msg/TwistStamped.html
-        """
-
-        return self._vel_body
+        return self._visual_pos
 
     @property
     def get_imu_data(self) -> Imu:
@@ -327,19 +317,19 @@ class MavDrone(Drone):
         timeout = Duration(seconds=10.0)
 
         while self.node.get_clock().now() - start_time < timeout:
-                self.node.get_logger().info("Waiting for lidar data...", throttle_duration_sec=1.0)
-                rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_rng_alt is not None:
-                    self._takeoff_height = self.get_rng_alt.range
-                    self.lidar_on = True
-                    break
+            self.node.get_logger().info("Waiting for lidar data...", throttle_duration_sec=1.0)
+            rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
+            if self.get_rng_alt is not None:
+                self._takeoff_height = self.get_rng_alt.range
+                self.lidar_on = True
+                break
 
         if self.indoor == True:
             start_time = self.node.get_clock().now()
             while self.node.get_clock().now() - start_time < timeout:
-                self.node.get_logger().info("Waiting for local position data...", throttle_duration_sec=1.0)
+                self.node.get_logger().info("Waiting for vision pose data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_local_pos is not None:
+                if self.get_visual_pos is not None:
                     sensors_initialized = True
                     break
 
@@ -378,15 +368,15 @@ class MavDrone(Drone):
             )
 
     @staticmethod
-    def _convert_position_to_target(pose: PoseStamped|NavSatFix) -> PositionTarget|GeoPoseStamped:
+    def _convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix) -> PositionTarget|GeoPoseStamped:
         """
         Converts objects, ignoring orientation:
 
-        PoseStamped -> PositionTarget
+        PoseWithCovarianceStamped -> PositionTarget
 
         NavSatFix -> GeoPoseStamped
         """
-        if isinstance(pose, PoseStamped):
+        if isinstance(pose, PoseWithCovarianceStamped):
             msg = PositionTarget()
             msg.position.x = pose.pose.position.x
             msg.position.y = pose.pose.position.y
@@ -401,7 +391,7 @@ class MavDrone(Drone):
             return msg
         
         else:
-            raise ValueError("pose parameter must be of type PoseStamped or NavSatFix")
+            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped or NavSatFix")
         
 
     def _call_service(
@@ -863,8 +853,8 @@ class MavDrone(Drone):
             )
 
         else:
-            current_position = self.get_local_pos.pose.position
-            orientation = self.get_local_pos.pose.orientation
+            current_position = self.get_visual_pos.pose.position
+            orientation = self.get_visual_pos.pose.orientation
             quat = [orientation.x, orientation.y, orientation.z, orientation.w]
             current_yaw_rad = euler_from_quaternion(quat)[2]
             dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
@@ -1089,7 +1079,7 @@ class MavDrone(Drone):
     def snapshot(self):
         pass
 
-    def set_takeoff_position(self, pose: Optional[PoseStamped|NavSatFix] = None):
+    def set_takeoff_position(self, pose: Optional[PoseWithCovarianceStamped|NavSatFix] = None):
         """
         Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
         This method is intended for outdoor use only and requires a valid NavSatFix object.
@@ -1103,8 +1093,8 @@ class MavDrone(Drone):
             self._takeoff_position = self._convert_position_to_target(self.get_position)
 
         if self.indoor == True:
-            if not isinstance(pose, PoseStamped):
-                raise ValueError("In indoor mode, pose parameter must be of type PoseStamped")
+            if not isinstance(pose, PoseWithCovarianceStamped):
+                raise ValueError("In indoor mode, pose parameter must be of type PoseWithCovarianceStamped")
                           
             else:
                 self._takeoff_position = self._convert_position_to_target(pose)
