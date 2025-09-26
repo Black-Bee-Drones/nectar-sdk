@@ -101,7 +101,7 @@ class PositionController:
             raise ValueError("For outdoor drones, target and current parameters must be GeoPoseStamped() and NavSatFix(), respectivelly.")
 
     @staticmethod
-    def get_body_distance_indoor(target: PositionTarget, current: PoseStamped) -> float:
+    def get_body_distance_indoor(target: PositionTarget, current: PoseStamped) -> tuple[float, float, float]:
         """
         Calculate the distance from the current position to the target position in the body frame.
 
