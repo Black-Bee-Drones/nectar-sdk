@@ -131,23 +131,36 @@ class PositionController:
         return dx_body, dy_body, dz_body
     
     @staticmethod
-    def get_body_distance_outdoor(self, target: GeoPoseStamped, current: NavSatFix, heading: float) -> float:
+    def get_body_distance_outdoor(target: GeoPoseStamped, current: NavSatFix, heading: float) -> tuple[float, float, float]:
         """
         Calculate the distance from the current GPS position to the target GPS position in the body frame.
-
+        
         :param target: Target position as GeoPoseStamped
-        :param current: Current position as NavSatFix
-        :return: Distance to target in meters
-        :rtype: float
+        :param current: Current position as NavSatFix  
+        :param heading: Current heading of the vehicle in degrees (0 = North, positive clockwise)
+        :return: Distance to target in meters (dx_body, dy_body, dz_body)
+        :rtype: tuple[float, float, float]
         """
         c_lat, c_lon, c_alt = current.latitude, current.longitude, current.altitude
         t_lat, t_lon, t_alt = target.pose.position.latitude, target.pose.position.longitude, target.pose.position.altitude
-
+        
+        # Calculate bearing from current position to target position (in degrees, 0 = North, positive clockwise)
+        bearing_to_target = GPSCalculate.bearing(c_lat, c_lon, t_lat, t_lon)
+        
+        # Calculate distance using Haversine formula
         dist = GPSCalculate.haversine(c_lat, c_lon, t_lat, t_lon)
-
-        dx_body = dist * np.cos(heading)
-        dy_body = dist * np.sin(heading)
-        dz_body = t_alt - c_alt
+        
+        # Convert from world frame (North-East) to body frame
+        # The angle we need is: "where is the target relative to where I'm pointing?"
+        relative_angle = bearing_to_target - heading
+        
+        # Convert to radians for trigonometry
+        relative_angle_rad = np.radians(relative_angle)
+        
+        # In body frame: x = forward, y = right
+        dx_body = dist * np.cos(relative_angle_rad)  # Forward distance
+        dy_body = dist * np.sin(relative_angle_rad)  # Right distance  
+        dz_body = t_alt - c_alt                     # Altitude difference
         
         return dx_body, dy_body, dz_body
 
@@ -370,7 +383,7 @@ class PositionController:
             if self.drone.indoor == True:
                 dx_body, dy_body, dz_body = self.get_body_distance_indoor(target_position, current_pose)
             else:
-                dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose)
+                dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose, self.drone.get_heading.data)
 
             if lidar_target_alt is not None:
                 self.drone.node.get_logger().info(f"lidar target: {lidar_target_alt} e {self.drone.get_rng_alt.range}")
