@@ -351,7 +351,7 @@ class MavDrone(Drone):
             while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for GPS data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_gps.altitude is not None and self.get_heading.data is not None:
+                if self.get_gps is not None and self.get_heading is not None:
                     sensors_initialized = True
                     break
 
