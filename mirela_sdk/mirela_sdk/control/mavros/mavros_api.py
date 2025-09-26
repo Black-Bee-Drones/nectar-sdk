@@ -632,6 +632,7 @@ class MavDrone(Drone):
                 y=0.0,
                 z=target_alt,
                 timeout_sec=None,
+                precision_radius=precision_radius,
                 strategy="PID"
             )
 
