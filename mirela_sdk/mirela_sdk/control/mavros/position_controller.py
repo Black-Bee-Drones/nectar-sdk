@@ -95,7 +95,7 @@ class PositionController:
                 raise ValueError("For indoor drones, target and current parameters must be PositionTarget() and PoseStamped(), respectivelly.")
             
         elif isinstance(target, GeoPoseStamped) and isinstance(current, NavSatFix):
-            return self.get_body_distance_outdoor(target=target, current=current)
+            return self.get_body_distance_outdoor(target=target, current=current, heading=self.drone.get_heading.data)
 
         else:
             raise ValueError("For outdoor drones, target and current parameters must be GeoPoseStamped() and NavSatFix(), respectivelly.")
@@ -113,13 +113,6 @@ class PositionController:
         cx, cy, cz = current.pose.position.x, current.pose.position.y, current.pose.position.z
         tx, ty, tz = target.position.x, target.position.y, target.position.z
 
-        # Calculate distance to target
-        dist_to_target = np.sqrt(
-            (cx - tx)**2 +
-            (cy - ty)**2 +
-            (cz - tz)**2
-        )
-
         # Calculate difference in world frame
         dx_world = tx - cx
         dy_world = ty - cy
@@ -135,10 +128,10 @@ class PositionController:
         dy_body = -np.sin(yaw) * dx_world + np.cos(yaw) * dy_world
         dz_body = dz  # No change in z axis
 
-        return dist_to_target, dx_body, dy_body, dz_body
+        return dx_body, dy_body, dz_body
     
     @staticmethod
-    def get_body_distance_outdoor(target: GeoPoseStamped, current: NavSatFix) -> float:
+    def get_body_distance_outdoor(self, target: GeoPoseStamped, current: NavSatFix, heading: float) -> float:
         """
         Calculate the distance from the current GPS position to the target GPS position in the body frame.
 
@@ -147,34 +140,16 @@ class PositionController:
         :return: Distance to target in meters
         :rtype: float
         """
-        cx, cy, cz = current.latitude, current.longitude, current.altitude
-        tx, ty, tz = target.pose.position.latitude, target.pose.position.longitude, target.pose.position.altitude
+        c_lat, c_lon, c_alt = current.latitude, current.longitude, current.altitude
+        t_lat, t_lon, t_alt = target.pose.position.latitude, target.pose.position.longitude, target.pose.position.altitude
 
-        # Calculate distance to target using Haversine formula for lat/lon and Pythagorean for altitude
-        horizontal_distance = GPSCalculate.haversine(cx, cy, tx, ty)
-        dist_to_target = np.sqrt(horizontal_distance**2 + (cz - tz)**2)
+        dist = GPSCalculate.haversine(c_lat, c_lon, t_lat, t_lon)
 
-        # Calculate difference in world frame
-        dx_world = GPSCalculate.haversine(cx, cy, tx, cy)  # North-South distance
-        dy_world = GPSCalculate.haversine(cx, cy, cx, ty)  # East-West distance
-        dz = tz - cz
-
-        if tx < cx:
-            dx_world = -dx_world
-        if ty < cy:
-            dy_world = -dy_world
-
-        # Get current yaw from target orientation (assuming drone is facing target direction)
-        orientation = target.pose.orientation
-        quat = [orientation.x, orientation.y, orientation.z, orientation.w]
-        _, _, yaw = euler_from_quaternion(quat)  # Returns roll, pitch, yaw
-
-        # Transform difference to body frame
-        dx_body =  np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
-        dy_body = np.sin(yaw) * dx_world - np.cos(yaw) * dy_world
-        dz_body = dz  # No change in z axis
-
-        return dist_to_target, dx_body, dy_body, dz_body
+        dx_body = dist * np.cos(heading)
+        dy_body = dist * np.sin(heading)
+        dz_body = t_alt - c_alt
+        
+        return dx_body, dy_body, dz_body
 
     def get_current_position(self, timeout: float|None = None) -> PoseStamped | NavSatFix:
         """
@@ -363,6 +338,7 @@ class PositionController:
         obstacle_flag = False
         obstacle_duration = Duration(seconds=OBSTACLE_TIMEOUT)
         obstacle_start_time = None
+        obstacle_height = 0.0
 
         if lidar_target_alt is not None and self.drone.lidar_on == True:
             self.drone.node.get_logger().info("Using lidar for altitude control.")
@@ -392,9 +368,9 @@ class PositionController:
 
             # Calculates distance to target in body frame
             if self.drone.indoor == True:
-                dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_indoor(target_position, current_pose)
+                dx_body, dy_body, dz_body = self.get_body_distance_indoor(target_position, current_pose)
             else:
-                dist_to_target, dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose)
+                dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose)
 
             if lidar_target_alt is not None:
                 self.drone.node.get_logger().info(f"lidar target: {lidar_target_alt} e {self.drone.get_rng_alt.range}")
@@ -403,7 +379,9 @@ class PositionController:
                     d_lidar = last_lidar_read - self.drone.get_rng_alt
 
                 if abs(d_lidar) > OBSTACLE_HEIGHT:
+                    self.drone.node.get_logger().info("Obstacle detected with lidar data!")
                     obstacle_flag = True
+                    obstacle_height = d_lidar
                     obstacle_start_time = self.drone.node.get_clock().now()
 
             vx = pid_x.compute(abs(dx_body)) if dx_body > 0 else -pid_x.compute(abs(dx_body))
@@ -412,11 +390,18 @@ class PositionController:
 
             if obstacle_flag == True:  # Drone is currently over an obstacle
                 # Check if the obstacle avoidance duration has elapsed
+                elapsed_time = self.drone.node.get_clock().now() - obstacle_start_time
+                self.drone.node.get_logger().info(
+                    f"Holding height controller for {elapsed_time.seconds_nanoseconds[0]} seconds...",
+                    throttle_duration_sec=1.0
+                )
                 if self.drone.node.get_clock().now() - obstacle_start_time > obstacle_duration:
                     obstacle_flag = False
+                    obstacle_height = 0.0
 
                 # While over the obstacle, set vertical velocity to zero to prevent descent.
                 # The drone will automatically climb to clear the obstacle, after 5s (ArduPilor Parameter).
+                dz_body += obstacle_height
                 vz = 0.0
 
             if abs(dx_body) < precision_radius / 2:
@@ -437,6 +422,8 @@ class PositionController:
                 angular_z=0.0,
                 ground_reference=False
             )
+
+            dist_to_target = np.sqrt(dx_body ** 2 + dy_body ** 2 + dz_body ** 2)
 
             self.drone.node.get_logger().info(f"   Distance to target: {dist_to_target:.2f}m", throttle_duration_sec=1.0)
 
