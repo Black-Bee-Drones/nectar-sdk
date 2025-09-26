@@ -44,7 +44,7 @@ class TestGPS(Node):
         rel_alt = self.drone.get_rel_alt
         rng_alt = self.drone.get_rng_alt
         heading = self.drone.get_heading
-        local_pos = self.drone.get_local_pos
+        local_pos = self.drone.get_visual_pos
 
         self.get_logger().info(
             f"--- GPS Data (Message #{self.msg_counters['gps_msgs']}) ---"

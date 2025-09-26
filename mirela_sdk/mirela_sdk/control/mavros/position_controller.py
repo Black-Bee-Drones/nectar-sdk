@@ -12,7 +12,7 @@ from mirela_sdk.utils.gps_calculate import GPSCalculate
 from tf_transformations import euler_from_quaternion
 
 from mavros_msgs.msg import PositionTarget
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix
 
@@ -87,12 +87,12 @@ class PositionController:
     def __init__(self, drone: "MavDrone"):  # Quotes here are required for runtime, but IDEs and mypy will resolve the type!
         self.drone = drone
 
-    def calculate_body_distance(self, target: PositionTarget | GeoPoseStamped, current: PoseStamped | NavSatFix) -> float:
+    def calculate_body_distance(self, target: PositionTarget | GeoPoseStamped, current: PoseWithCovarianceStamped | NavSatFix) -> float:
         if self.drone.indoor == True:
-            if isinstance(target, PositionTarget) and isinstance(current, PoseStamped):
+            if isinstance(target, PositionTarget) and isinstance(current, PoseWithCovarianceStamped):
                 return self.get_body_distance_indoor(target=target, current=current)
             else:
-                raise ValueError("For indoor drones, target and current parameters must be PositionTarget() and PoseStamped(), respectivelly.")
+                raise ValueError("For indoor drones, target and current parameters must be PositionTarget() and PoseWithCovarianceStamped(), respectivelly.")
             
         elif isinstance(target, GeoPoseStamped) and isinstance(current, NavSatFix):
             return self.get_body_distance_outdoor(target=target, current=current, heading=self.drone.get_heading.data)
@@ -101,12 +101,12 @@ class PositionController:
             raise ValueError("For outdoor drones, target and current parameters must be GeoPoseStamped() and NavSatFix(), respectivelly.")
 
     @staticmethod
-    def get_body_distance_indoor(target: PositionTarget, current: PoseStamped) -> tuple[float, float, float]:
+    def get_body_distance_indoor(target: PositionTarget, current: PoseWithCovarianceStamped) -> tuple[float, float, float]:
         """
         Calculate the distance from the current position to the target position in the body frame.
 
         :param target: Target position as PositionTarget
-        :param current: Current position as PoseStamped
+        :param current: Current position as PoseWithCovarianceStamped
         :return: Distance to target in meters
         :rtype: float
         """
@@ -164,9 +164,9 @@ class PositionController:
         
         return dx_body, dy_body, dz_body
 
-    def get_current_position(self, timeout: float|None = None) -> PoseStamped | NavSatFix:
+    def get_current_position(self, timeout: float|None = None) -> PoseWithCovarianceStamped | NavSatFix:
         """
-        Get the current position of the drone, either in local coordinates (PoseStamped) or GPS coordinates (NavSatFix),
+        Get the current position of the drone, either in local coordinates (PoseWithCovarianceStamped) or GPS coordinates (NavSatFix),
 
         depending on whether the drone is in indoor or outdoor mode.
 
@@ -174,8 +174,8 @@ class PositionController:
         
         If None, it will return immediately with the latest data.
         
-        :return: PoseStamped or NavSatFix
-        :rtype: PoseStamped | NavSatFix
+        :return: PoseWithCovarianceStamped or NavSatFix
+        :rtype: PoseWithCovarianceStamped | NavSatFix
         """
 
         if timeout is not None:
@@ -185,7 +185,7 @@ class PositionController:
                 rclpy.spin_once(self.drone.node, timeout_sec=0.01)
 
         if self.drone.indoor == True:
-            return self.drone.get_local_pos
+            return self.drone.get_visual_pos
         else:
             return self.drone.get_gps
         
@@ -224,7 +224,7 @@ class PositionController:
             target_position.header.stamp = self.drone.node.get_clock().now().to_msg()
             self.drone.local_pub.publish(target_position)
 
-            current_pos: PoseStamped = self.get_current_position(timeout=0.01)
+            current_pos: PoseWithCovarianceStamped = self.get_current_position(timeout=0.01)
 
             #Calculates distance to target
             dist_to_target = np.sqrt(
@@ -377,7 +377,7 @@ class PositionController:
             pid_z = PID(VERTICAL_OUTDOOR_KP, VERTICAL_OUTDOOR_KI, VERTICAL_OUTDOOR_KD, dt=0.01, max_output=VERTICAL_OUTDOOR_MAX_SPEED, min_output=VERTICAL_OUTDOOR_MIN_SPEED)
 
         while True:
-            current_pose: PoseStamped|NavSatFix = self.get_current_position(timeout=0.01)
+            current_pose: PoseWithCovarianceStamped|NavSatFix = self.get_current_position(timeout=0.01)
 
             # Calculates distance to target in body frame
             if self.drone.indoor == True:
