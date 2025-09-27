@@ -35,6 +35,7 @@ from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
 from mirela_sdk.control.mavros.position_controller import PositionController
 from mirela_sdk.utils.process import ProcessUtils
 from mirela_sdk.utils.gps_calculate import GPSCalculate
+from mirela_sdk.utils.position_utils import PositionUtils
 
 from tf_transformations import quaternion_from_euler
 from tf_transformations import euler_from_quaternion
@@ -240,6 +241,20 @@ class MavDrone(Drone):
         
         else:
             return self.get_gps
+        
+    @property
+    def get_position_as_target(self) -> PositionTarget | GeoPoseStamped:
+        """
+        Return drone position as PositionTarget or GeoPoseStamped according to the flight mode.
+
+        Indoor mode: returns get_visual_pos as PositionTarget
+
+        Outdoor mode: returns get_gps as GeoPoseStamped
+        """
+        if self.indoor == True:
+            return PositionUtils.convert_position_to_target(self.get_visual_pos)
+        else:
+            return PositionUtils.convert_position_to_target(self.get_gps)
 
     @property
     def get_visual_pos(self) -> PoseWithCovarianceStamped:
@@ -365,34 +380,7 @@ class MavDrone(Drone):
             )
             self.node.get_logger().info(
                 f"Initial altitude: {self.initial_altitude}m, Initial heading: {self.initial_heading}°"
-            )
-
-    @staticmethod
-    def _convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix) -> PositionTarget|GeoPoseStamped:
-        """
-        Converts objects, ignoring orientation:
-
-        PoseWithCovarianceStamped -> PositionTarget
-
-        NavSatFix -> GeoPoseStamped
-        """
-        if isinstance(pose, PoseWithCovarianceStamped):
-            msg = PositionTarget()
-            msg.position.x = pose.pose.position.x
-            msg.position.y = pose.pose.position.y
-            msg.position.z = pose.pose.position.z
-            return msg
-            
-        elif isinstance(pose, NavSatFix):
-            msg = GeoPoseStamped()
-            msg.pose.position.latitude = pose.latitude
-            msg.pose.position.longitude = pose.longitude
-            msg.pose.position.altitude = pose.altitude
-            return msg
-        
-        else:
-            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped or NavSatFix")
-        
+            )        
 
     def _call_service(
         self,
@@ -536,7 +524,7 @@ class MavDrone(Drone):
         while self.node.get_clock().now() - sleep_start_t < sleep_duration:
             rclpy.spin_once(self.node, timeout_sec=0.1)
         
-        self._takeoff_position = self._convert_position_to_target(self.get_position)
+        self._takeoff_position = self.get_position_as_target
         
         self.takeoff(takeoff_alt)
         sleep(takeoff_alt)
@@ -781,40 +769,42 @@ class MavDrone(Drone):
             strategy: str = "default"
     ):
         """
-        NEEDS REVISION!
-        Move sending a local position setpoint
+        Move the drone to a position relative to its current location and heading.
+
+        The movement is relative to the drone's current orientation:
+        - x-axis: forward/backward relative to drone's heading
+        - y-axis: right/left relative to drone's heading  
+        - z-axis: up/down relative to current altitude
 
         Parameters
         ----------
-
-        x : float (meters)
-            (+) Forward
-
-            (-) Backward
-
-        y : float (meters)
-            (+) Left
+        x : float
+            Distance to move forward (+) or backward (-) in meters.
             
-            (-) Right
-
-        z : float (meters)
-            (+) Up
-
-            (-) Down
-
-        precision_radius : float (meters)
-            Radius of the precision
-
-        timeout_sec : float|None (seconds)
-            Timeout in seconds to reach the position.
-
-            If None, no timeout.
+        y : float
+            Distance to move right (+) or left (-) in meters.
+            
+        z : float
+            Distance to move up (+) or down (-) in meters.
+            
+        precision_radius : float
+            Acceptable radius in meters for reaching the target position.
+            
+        timeout_sec : float, optional
+            Maximum time in seconds to reach the target position.
+            If None, no timeout is applied.
 
         strategy : str
             Position control strategy:
-                - "default": Use position setpoint messages
-                - "PID": Use closed loop PID control to reach the target position        
+            
+            - "default": Use PID control with position setpoints
+            - "PID": Use closed-loop PID control to reach the target position
+            - "mavros": Use MAVROS position setpoint messages
 
+        Raises
+        ------
+        RuntimeError
+            If called in indoor mode with GPS coordinates (should not happen).
         """
         start_t = self.node.get_clock().now()
         sleep_duration = Duration(seconds=0.05)
@@ -838,8 +828,6 @@ class MavDrone(Drone):
                 lidar_target_alt = self.get_rng_alt.range + z
             else:
                 lidar_target_alt = None
-
-            
 
             self.offboard_position_gps_coords(
                 latitude=lat,
@@ -917,7 +905,7 @@ class MavDrone(Drone):
         initial_heading: bool = False,
     ):
         """
-        todo: add new offboard_position, and deprecate this one
+        Deprecated. Use offboard_position_gps_coords instead.
 
         Move sending a GPS coordinate setpoint
 
@@ -928,6 +916,10 @@ class MavDrone(Drone):
         :param precision_radius (float): Precision radius setpoint (meters)
         :param initial_heading (bool): True for keep initial heading value, False for value passed
         """
+
+        self.node.get_logger().warn(
+            "offboard_gps_position is deprecated. Use offboard_position_gps_coords instead."
+        )
 
         self.node.get_logger().info(
             f"-- Moving to GPS position: {lat_setpoint}, {lon_setpoint}, {alt_setpoint}, {heading}"
@@ -1090,21 +1082,22 @@ class MavDrone(Drone):
             NavSatFix object containing latitude, longitude, and altitude of the takeoff position.
         """
         if pose == None:
-            self._takeoff_position = self._convert_position_to_target(self.get_position)
+            self._takeoff_position = self.get_position_as_target
+            self.node.get_logger().info("Takeoff position set to current position.")
 
         if self.indoor == True:
             if not isinstance(pose, PoseWithCovarianceStamped):
                 raise ValueError("In indoor mode, pose parameter must be of type PoseWithCovarianceStamped")
                           
             else:
-                self._takeoff_position = self._convert_position_to_target(pose)
+                self._takeoff_position = PositionUtils.convert_position_to_target(pose)
 
         else:
             if not isinstance(pose, NavSatFix):
                 raise ValueError("In outdoor mode, pose parameter must be of type NavSatFix")
                           
             else:
-                self._takeoff_position = self._convert_position_to_target(pose)
+                self._takeoff_position = PositionUtils.convert_position_to_target(pose)
 
         self._home_position_set = True
 
