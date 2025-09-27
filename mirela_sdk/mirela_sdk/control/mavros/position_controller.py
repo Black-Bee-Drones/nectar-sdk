@@ -50,7 +50,7 @@ VERTICAL_OUTDOOR_MIN_SPEED = 0.1  # m/s
 
 # LIDAR OVER OBSTACLE PARAMETER
 OBSTACLE_TIMEOUT = 8.0 # s
-OBSTACLE_HEIGHT = 0.5 # m
+OBSTACLE_HEIGHT = 0.35 # m
 
 
 class PID:
@@ -260,134 +260,264 @@ class PositionController:
         timeout_sec: float | None = 60.0,
     ):
         """
-        Navigate to a local position setpoint using a PID controller for closed loop control.
+        Navigate to a position setpoint using PID controllers for precise closed-loop control.
+
+        Uses separate PID controllers for X, Y, and Z axes to compute velocity commands
+        that will guide the drone to the target position. Includes obstacle detection
+        using lidar data with EMA filtering when lidar altitude control is enabled.
 
         Parameters
         ----------
         target_position : PositionTarget | GeoPoseStamped
-            Target local position setpoint.
+            Target position setpoint:
+            - PositionTarget: for indoor/local coordinates (NED frame)
+            - GeoPoseStamped: for outdoor/GPS coordinates
 
-        lidar_target_alt : float | None (meters)
-            If not None, use this altitude as reference instead of the target_position.z.
+        lidar_target_alt : float, optional
+            Desired altitude above ground level in meters, measured by lidar.
+            If provided, overrides the Z component of target_position.
+            Limited to 15m maximum for safety. Enables obstacle detection.
 
-            Lidar altitude control is limited to 15m above ground level.
+        precision_radius : float
+            Acceptable distance in meters to consider the target reached.
+            Controller stops when 3D distance to target is within this radius.
 
-        precision_radius : float (meters)
-            Radius of the precision
+        timeout_sec : float, optional
+            Maximum time in seconds to reach the target position.
+            If None, no timeout is applied.
 
-        timeout_sec : float|None (seconds)
-            Timeout for reach check
-            If None, no timeout
-
+        Notes
+        -----
+        - Uses velocity control commands to reach the target position
+        - Obstacle detection activates when lidar_target_alt is provided
+        - PID gains are automatically selected based on indoor/outdoor mode
+        - Resets PID controllers and stops movement when target is reached
         """
 
+        # Initialize timing and obstacle detection variables
         start_time = self.drone.node.get_clock().now()
         timeout = Duration(seconds=timeout_sec) if timeout_sec is not None else None
 
-        obstacle_flag = False
-        obstacle_duration = Duration(seconds=OBSTACLE_TIMEOUT)
-        obstacle_start_time = None
-        obstacle_height = 0.0
+        obstacle_state = {
+            'detected': False,
+            'start_time': None,
+            'height_offset': 0.0,
+            'duration': Duration(seconds=OBSTACLE_TIMEOUT)
+        }
 
-        if lidar_target_alt is not None and self.drone.lidar_on == True:
-            self.drone.node.get_logger().info("Using lidar for altitude control.")
-            last_lidar_read = None
-            d_lidar = 0.0
-
-            if lidar_target_alt > LIDAR_ALTITUDE_LIMIT:
-                self.drone.node.get_logger().warn("Requested altitude exceeds 15m limit for lidar-based control, using altitude parameter instead.")
-                lidar_target_alt = None
-
-        elif lidar_target_alt is not None and self.drone.lidar_on == False:
-            self.drone.node.get_logger().warn("Lidar altitude setpoint provided, but lidar is not enabled. Ignoring lidar altitude.")
-            lidar_target_alt = None
-
-        if self.drone.indoor == True:
-            pid_x = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.01, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
-            pid_y = PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, dt=0.01, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED)
-            pid_z = PID(VERTICAL_INDOOR_KP, VERTICAL_INDOOR_KI, VERTICAL_INDOOR_KD, dt=0.01, max_output=VERTICAL_INDOOR_MAX_SPEED, min_output=VERTICAL_INDOOR_MIN_SPEED)
-
-        else:
-            pid_x = PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD, dt=0.01, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED)
-            pid_y = PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD, dt=0.01, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED)
-            pid_z = PID(VERTICAL_OUTDOOR_KP, VERTICAL_OUTDOOR_KI, VERTICAL_OUTDOOR_KD, dt=0.01, max_output=VERTICAL_OUTDOOR_MAX_SPEED, min_output=VERTICAL_OUTDOOR_MIN_SPEED)
+        # Configure lidar altitude control and obstacle detection
+        lidar_config = self._setup_lidar_control(lidar_target_alt)
+        lidar_ema = None  # Method-level EMA variable
+        
+        # Initialize PID controllers based on flight mode
+        pid_controllers = self._initialize_pid_controllers()
 
         while True:
-            current_pose: PoseWithCovarianceStamped|NavSatFix = self.get_current_position(timeout=0.01)
+            current_pose = self.get_current_position(timeout=0.01)
 
-            # Calculates distance to target in body frame
-            if self.drone.indoor:
-                heading = None  # Indoor mode doesn't need heading parameter
-            else:
-                heading = self.drone.get_heading.data
-            
+            # Calculate distance to target in body frame
+            heading = None if self.drone.indoor else self.drone.get_heading.data
             dx_body, dy_body, dz_body = PositionUtils.get_body_distance(target_position, current_pose, heading)
 
-            if lidar_target_alt is not None:
-                self.drone.node.get_logger().info(f"lidar target: {lidar_target_alt} e {self.drone.get_rng_alt.range}")
-                dz_body = lidar_target_alt - self.drone.get_rng_alt.range
-                if last_lidar_read is not None:
-                    d_lidar = last_lidar_read - self.drone.get_rng_alt
-
-                if abs(d_lidar) > OBSTACLE_HEIGHT:
-                    self.drone.node.get_logger().info("Obstacle detected with lidar data!")
-                    obstacle_flag = True
-                    obstacle_height = d_lidar
-                    obstacle_start_time = self.drone.node.get_clock().now()
-
-            vx = pid_x.compute(abs(dx_body)) if dx_body > 0 else -pid_x.compute(abs(dx_body))
-            vy = pid_y.compute(abs(dy_body)) if dy_body > 0 else -pid_y.compute(abs(dy_body))
-            vz = pid_z.compute(abs(dz_body)) if dz_body > 0 else -pid_z.compute(abs(dz_body))
-
-            if obstacle_flag == True:  # Drone is currently over an obstacle
-                # Check if the obstacle avoidance duration has elapsed
-                elapsed_time = self.drone.node.get_clock().now() - obstacle_start_time
-                self.drone.node.get_logger().info(
-                    f"Holding height controller for {elapsed_time.seconds_nanoseconds[0]} seconds...",
-                    throttle_duration_sec=1.0
+            # Process lidar data for altitude control and obstacle detection
+            if lidar_config['enabled']:
+                dz_body, obstacle_state, lidar_ema = self._process_lidar_data(
+                    lidar_config, obstacle_state, dz_body, lidar_ema
                 )
-                if self.drone.node.get_clock().now() - obstacle_start_time > obstacle_duration:
-                    obstacle_flag = False
-                    obstacle_height = 0.0
 
-                # While over the obstacle, set vertical velocity to zero to prevent descent.
-                # The drone will automatically climb to clear the obstacle, after 5s (ArduPilor Parameter).
-                dz_body += obstacle_height
-                vz = 0.0
+            # Compute PID control outputs
+            vx, vy, vz = self._compute_pid_velocities(pid_controllers, dx_body, dy_body, dz_body)
 
-            if abs(dx_body) < precision_radius / 2:
-                vx = 0.0
-            if abs(dy_body) < precision_radius / 2:
-                vy = 0.0
-            if abs(dz_body) < precision_radius / 2:
-                vz = 0.0
+            # Apply obstacle avoidance if needed
+            if obstacle_state['detected']:
+                vz = self._handle_obstacle_avoidance(obstacle_state, dz_body)
 
-            self.drone.node.get_logger().info(f"   E: dx: {dx_body:.2f}, dy: {dy_body:.2f}, dz: {dz_body:.2f}")
-            self.drone.node.get_logger().info(f"   V: vx: {vx:.2f}, vy: {vy:.2f}, vz: {vz:.2f}")
+            # Apply precision radius dead zones
+            vx, vy, vz = self._apply_precision_zones(vx, vy, vz, dx_body, dy_body, dz_body, precision_radius)
 
-            # Compute PID outputs
+            # Log current state
+            self._log_controller_state(dx_body, dy_body, dz_body, vx, vy, vz)
+
+            # Send velocity commands to drone
             self.drone.offboard_velocity(
-                linear_x=vx,
-                linear_y=vy,
-                linear_z=vz,
-                angular_z=0.0,
-                ground_reference=False
+                linear_x=vx, linear_y=vy, linear_z=vz, angular_z=0.0, ground_reference=False
             )
 
-            dist_to_target = np.sqrt(dx_body ** 2 + dy_body ** 2 + dz_body ** 2)
-
-            self.drone.node.get_logger().info(f"   Distance to target: {dist_to_target:.2f}m", throttle_duration_sec=1.0)
-
-            # Checks if arrival is is complete
-            if dist_to_target <= precision_radius:
-                pid_x.reset()
-                pid_y.reset()
-                pid_z.reset()
-                self.drone.offboard_velocity(0.0, 0.0, 0.0, 0.0, ground_reference=False)
-                self.drone.node.get_logger().info(f"\033[32;1m   Target reached! Distance: {dist_to_target:.2f}m\033[0m")
+            # Check for arrival or timeout
+            if self._check_arrival_conditions(dx_body, dy_body, dz_body, precision_radius, pid_controllers):
+                return
+            
+            if self._check_timeout(start_time, timeout):
                 return
 
-            # Checks for timeout
-            if timeout_sec is not None and (self.drone.node.get_clock().now() - start_time) > timeout:
-                self.drone.node.get_logger().warn(f"\033[33;1m   Timeout reached before arriving at target position. Distance: {dist_to_target:.2f}m\033[0m")
-                return
+    def _setup_lidar_control(self, lidar_target_alt: float | None) -> dict:
+        """Setup lidar configuration for altitude control and obstacle detection."""
+        config = {
+            'enabled': False,
+            'target_alt': None,
+            'ema_alpha': 0.1  # EMA smoothing factor
+        }
+        
+        if lidar_target_alt is not None:
+            if not self.drone.lidar_on:
+                self.drone.node.get_logger().warn(
+                    "Lidar altitude setpoint provided, but lidar is not enabled. Ignoring lidar altitude."
+                )
+                return config
+            
+            if lidar_target_alt > LIDAR_ALTITUDE_LIMIT:
+                self.drone.node.get_logger().warn(
+                    f"Requested altitude {lidar_target_alt}m exceeds {LIDAR_ALTITUDE_LIMIT}m limit "
+                    "for lidar-based control, using altitude parameter instead."
+                )
+                return config
+            
+            config['enabled'] = True
+            config['target_alt'] = lidar_target_alt
+            self.drone.node.get_logger().info("Using lidar for altitude control with obstacle detection.")
+        
+        return config
+
+    def _initialize_pid_controllers(self) -> dict:
+        """Initialize PID controllers based on indoor/outdoor flight mode."""
+        if self.drone.indoor:
+            return {
+                'x': PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD, 
+                        dt=0.01, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED),
+                'y': PID(HORIZONTAL_INDOOR_KP, HORIZONTAL_INDOOR_KI, HORIZONTAL_INDOOR_KD,
+                        dt=0.01, max_output=HORIZONTAL_INDOOR_MAX_SPEED, min_output=HORIZONTAL_INDOOR_MIN_SPEED),
+                'z': PID(VERTICAL_INDOOR_KP, VERTICAL_INDOOR_KI, VERTICAL_INDOOR_KD,
+                        dt=0.01, max_output=VERTICAL_INDOOR_MAX_SPEED, min_output=VERTICAL_INDOOR_MIN_SPEED)
+            }
+        else:
+            return {
+                'x': PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD,
+                        dt=0.01, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED),
+                'y': PID(HORIZONTAL_OUTDOOR_KP, HORIZONTAL_OUTDOOR_KI, HORIZONTAL_OUTDOOR_KD,
+                        dt=0.01, max_output=HORIZONTAL_OUTDOOR_MAX_SPEED, min_output=HORIZONTAL_OUTDOOR_MIN_SPEED),
+                'z': PID(VERTICAL_OUTDOOR_KP, VERTICAL_OUTDOOR_KI, VERTICAL_OUTDOOR_KD,
+                        dt=0.01, max_output=VERTICAL_OUTDOOR_MAX_SPEED, min_output=VERTICAL_OUTDOOR_MIN_SPEED)
+            }
+
+    def _process_lidar_data(self, lidar_config: dict, obstacle_state: dict, dz_body: float, lidar_ema: float | None) -> tuple[float, dict, float]:
+        """Process lidar data for altitude control and obstacle detection."""
+        if not lidar_config['enabled']:
+            return dz_body, obstacle_state, lidar_ema
+        
+        current_lidar = self.drone.get_rng_alt.range
+        
+        # Initialize EMA on first reading
+        if lidar_ema is None:
+            lidar_ema = current_lidar
+        
+        # Update EMA for obstacle detection
+        lidar_ema = (lidar_config['ema_alpha'] * current_lidar + 
+                    (1 - lidar_config['ema_alpha']) * lidar_ema)
+        
+        # Use lidar for altitude control
+        dz_body = lidar_config['target_alt'] - current_lidar
+        
+        # Detect obstacles using EMA filtering
+        lidar_deviation = abs(current_lidar - lidar_ema)
+        if lidar_deviation > OBSTACLE_HEIGHT and not obstacle_state['detected']:
+            self.drone.node.get_logger().info(
+                f"Obstacle detected! Lidar deviation: {lidar_deviation:.2f}m (threshold: {OBSTACLE_HEIGHT}m)"
+            )
+            obstacle_state.update({
+                'detected': True,
+                'start_time': self.drone.node.get_clock().now(),
+                'height_offset': current_lidar - lidar_ema
+            })
+        
+        return dz_body, obstacle_state, lidar_ema
+
+    def _compute_pid_velocities(self, pid_controllers: dict, dx_body: float, dy_body: float, dz_body: float) -> tuple[float, float, float]:
+        """Compute velocity commands using PID controllers."""
+        # Use signed error directly with PID controllers that have symmetric limits
+        vx = pid_controllers['x'].compute(dx_body)
+        vy = pid_controllers['y'].compute(dy_body)
+        vz = pid_controllers['z'].compute(dz_body)
+
+        if dx_body < 0: vx = -vx
+        if dy_body < 0: vy = -vy
+        if dz_body < 0: vz = -vz
+
+        return vx, vy, vz
+
+    def _handle_obstacle_avoidance(self, obstacle_state: dict, dz_body: float) -> float:
+        """Handle obstacle avoidance logic."""
+        elapsed_time = self.drone.node.get_clock().now() - obstacle_state['start_time']
+        
+        self.drone.node.get_logger().info(
+            f"Obstacle avoidance active for {elapsed_time.nanoseconds / 1e9:.1f}s "
+            f"(timeout: {OBSTACLE_TIMEOUT}s)",
+            throttle_duration_sec=1.0
+        )
+        
+        # Check if obstacle avoidance timeout has elapsed
+        if elapsed_time > obstacle_state['duration']:
+            self.drone.node.get_logger().info("Obstacle avoidance timeout reached, resuming normal operation.")
+            obstacle_state.update({
+                'detected': False,
+                'start_time': None,
+                'height_offset': 0.0
+            })
+            return 0.0  # Resume normal altitude control
+        
+        # During obstacle avoidance, halt vertical movement to let ArduPilot's
+        # obstacle avoidance take over (typically climbs automatically)
+        return 0.0
+
+    def _apply_precision_zones(self, vx: float, vy: float, vz: float, 
+                              dx_body: float, dy_body: float, dz_body: float, 
+                              precision_radius: float) -> tuple[float, float, float]:
+        """Apply dead zones near target to prevent oscillation."""
+        dead_zone = precision_radius / 2
+        
+        if abs(dx_body) < dead_zone: vx = 0.0
+        if abs(dy_body) < dead_zone: vy = 0.0
+        if abs(dz_body) < dead_zone: vz = 0.0
+            
+        return vx, vy, vz
+
+    def _log_controller_state(self, dx_body: float, dy_body: float, dz_body: float, 
+                             vx: float, vy: float, vz: float):
+        """Log current controller state for debugging."""
+        self.drone.node.get_logger().info(
+            f"Error: dx={dx_body:.2f}, dy={dy_body:.2f}, dz={dz_body:.2f}m"
+        )
+        self.drone.node.get_logger().info(
+            f"Velocity: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}m/s"
+        )
+
+    def _check_arrival_conditions(self, dx_body: float, dy_body: float, dz_body: float,
+                                 precision_radius: float, pid_controllers: dict) -> bool:
+        """Check if drone has arrived at target position."""
+        dist_to_target = np.sqrt(dx_body ** 2 + dy_body ** 2 + dz_body ** 2)
+        
+        self.drone.node.get_logger().info(
+            f"Distance to target: {dist_to_target:.2f}m (precision: {precision_radius}m)",
+            throttle_duration_sec=1.0
+        )
+        
+        if dist_to_target <= precision_radius:
+            # Reset PID controllers and stop movement
+            for controller in pid_controllers.values():
+                controller.reset()
+            
+            self.drone.offboard_velocity(0.0, 0.0, 0.0, 0.0, ground_reference=False)
+            self.drone.node.get_logger().info(
+                f"\033[32;1mTarget reached! Final distance: {dist_to_target:.2f}m\033[0m"
+            )
+            return True
+        
+        return False
+
+    def _check_timeout(self, start_time, timeout: Duration | None) -> bool:
+        """Check if navigation timeout has been exceeded."""
+        if timeout is not None and (self.drone.node.get_clock().now() - start_time) > timeout:
+            self.drone.node.get_logger().warn(
+                f"\033[33;1mTimeout reached before arriving at target position\033[0m"
+            )
+            return True
+        return False
