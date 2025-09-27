@@ -8,8 +8,7 @@ from rclpy.duration import Duration
 import numpy as np
 
 from mirela_sdk.utils.gps_calculate import GPSCalculate
-
-from tf_transformations import euler_from_quaternion
+from mirela_sdk.utils.position_utils import PositionUtils
 
 from mavros_msgs.msg import PositionTarget
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -86,84 +85,7 @@ class PID:
 class PositionController:
     def __init__(self, drone: "MavDrone"):  # Quotes here are required for runtime, but IDEs and mypy will resolve the type!
         self.drone = drone
-
-    def calculate_body_distance(self, target: PositionTarget | GeoPoseStamped, current: PoseWithCovarianceStamped | NavSatFix) -> float:
-        if self.drone.indoor == True:
-            if isinstance(target, PositionTarget) and isinstance(current, PoseWithCovarianceStamped):
-                return self.get_body_distance_indoor(target=target, current=current)
-            else:
-                raise ValueError("For indoor drones, target and current parameters must be PositionTarget() and PoseWithCovarianceStamped(), respectivelly.")
-            
-        elif isinstance(target, GeoPoseStamped) and isinstance(current, NavSatFix):
-            return self.get_body_distance_outdoor(target=target, current=current, heading=self.drone.get_heading.data)
-
-        else:
-            raise ValueError("For outdoor drones, target and current parameters must be GeoPoseStamped() and NavSatFix(), respectivelly.")
-
-    @staticmethod
-    def get_body_distance_indoor(target: PositionTarget, current: PoseWithCovarianceStamped) -> tuple[float, float, float]:
-        """
-        Calculate the distance from the current position to the target position in the body frame.
-
-        :param target: Target position as PositionTarget
-        :param current: Current position as PoseWithCovarianceStamped
-        :return: Distance to target in meters
-        :rtype: float
-        """
-        cx, cy, cz = current.pose.position.x, current.pose.position.y, current.pose.position.z
-        tx, ty, tz = target.position.x, target.position.y, target.position.z
-
-        # Calculate difference in world frame
-        dx_world = tx - cx
-        dy_world = ty - cy
-        dz = tz - cz
-
-        # Get current yaw
-        orientation = current.pose.orientation
-        quat = [orientation.x, orientation.y, orientation.z, orientation.w]
-        _, _, yaw = euler_from_quaternion(quat)  # Returns roll, pitch, yaw
-
-        # Transform difference to body frame
-        dx_body =  np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
-        dy_body = -np.sin(yaw) * dx_world + np.cos(yaw) * dy_world
-        dz_body = dz  # No change in z axis
-
-        return dx_body, dy_body, dz_body
     
-    @staticmethod
-    def get_body_distance_outdoor(target: GeoPoseStamped, current: NavSatFix, heading: float) -> tuple[float, float, float]:
-        """
-        Calculate the distance from the current GPS position to the target GPS position in the body frame.
-        
-        :param target: Target position as GeoPoseStamped
-        :param current: Current position as NavSatFix  
-        :param heading: Current heading of the vehicle in degrees (0 = North, positive clockwise)
-        :return: Distance to target in meters (dx_body, dy_body, dz_body)
-        :rtype: tuple[float, float, float]
-        """
-        c_lat, c_lon, c_alt = current.latitude, current.longitude, current.altitude
-        t_lat, t_lon, t_alt = target.pose.position.latitude, target.pose.position.longitude, target.pose.position.altitude
-        
-        # Calculate bearing from current position to target position (in degrees, 0 = North, positive clockwise)
-        bearing_to_target = GPSCalculate.bearing(c_lat, c_lon, t_lat, t_lon)
-        
-        # Calculate distance using Haversine formula
-        dist = GPSCalculate.haversine(c_lat, c_lon, t_lat, t_lon)
-        
-        # Convert from world frame (North-East) to body frame
-        # The angle we need is: "where is the target relative to where I'm pointing?"
-        relative_angle = bearing_to_target - heading
-        
-        # Convert to radians for trigonometry
-        relative_angle_rad = np.radians(relative_angle)
-        
-        # In body frame: x = forward, y = right
-        dx_body = dist * np.cos(relative_angle_rad)  # Forward distance
-        dy_body = -dist * np.sin(relative_angle_rad)  # Left distance  
-        dz_body = t_alt - c_alt                     # Altitude difference
-        
-        return dx_body, dy_body, dz_body
-
     def get_current_position(self, timeout: float|None = None) -> PoseWithCovarianceStamped | NavSatFix:
         """
         Get the current position of the drone, either in local coordinates (PoseWithCovarianceStamped) or GPS coordinates (NavSatFix),
@@ -196,21 +118,27 @@ class PositionController:
         timeout_sec: float | None = 60.0,
     ):
         """
-        Navigate to a local position setpoint, using closed loop control to ensure arrival.
+        Navigate to a local position setpoint using closed-loop control.
         
+        Publishes position setpoint messages until the target is reached within
+        the specified precision radius or timeout is exceeded.
+
         Parameters
         ----------
-
         target_position : PositionTarget
             Target local position setpoint.
 
-        precision_radius : float (meters)
-            Radius of the precision
+        precision_radius : float
+            Acceptable distance in meters to consider target reached.
 
-        timeout_sec : float|None (seconds)
-            Timeout for reach check
-            If None, no timeout
+        timeout_sec : float, optional
+            Maximum time in seconds to reach the target.
+            If None, no timeout is applied.
 
+        Warnings
+        --------
+        This method is not recommended for outdoor mode due to reduced
+        precision when using GPS coordinates.
         """
         
         if self.drone.indoor == False:
@@ -247,26 +175,34 @@ class PositionController:
 
     def navigate_gps_msg(
         self,
-        gps_setpoint: GeoPoseStamped = GeoPoseStamped(),
+        gps_setpoint: GeoPoseStamped = None,
         precision_radius: float = 0.5,
         timeout_sec: float | None = 60.0,
     ):
         """
-        Navigate to a GPS coordinate setpoint, using closed loop control to ensure arrival.
+        Navigate to a GPS coordinate setpoint using closed-loop control.
         
+        Publishes GPS position setpoint messages until the target is reached
+        within the specified precision radius or timeout is exceeded.
+
         Parameters
         ----------
+        gps_setpoint : GeoPoseStamped
+            GPS coordinate setpoint containing latitude, longitude, altitude,
+            and orientation information.
 
-        gps_setpoint : GeoPoseStamped()
-            GPS coordinate setpoint to navigate to.
+        precision_radius : float
+            Acceptable distance in meters to consider target reached.
+            Takes into account both horizontal and vertical distance.
 
-        precision_radius : float (meters)
-            Radius of the precision
+        timeout_sec : float, optional
+            Maximum time in seconds to reach the target.
+            If None, no timeout is applied.
 
-        timeout_sec : float|None (seconds)
-            Timeout for reach check
-            If None, no timeout
-
+        Raises
+        ------
+        RuntimeError
+            If called in indoor mode where GPS coordinates are not available.
         """
         if self.drone.indoor == True:
             raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
@@ -274,7 +210,7 @@ class PositionController:
         target_position = gps_setpoint.pose.position
         target_orientation = gps_setpoint.pose.orientation
         quat = [target_orientation.x, target_orientation.y, target_orientation.z, target_orientation.w]
-        target_heading = np.degrees(euler_from_quaternion(quat)[2])
+        target_heading = PositionUtils.get_yaw_from_pose(gps_setpoint)
         self.drone.node.get_logger().info(
             "-- Moving to GPS coordinate:\n" +
             f"{target_position.latitude}, {target_position.longitude}, {target_position.altitude}, {target_heading}"
@@ -380,10 +316,12 @@ class PositionController:
             current_pose: PoseWithCovarianceStamped|NavSatFix = self.get_current_position(timeout=0.01)
 
             # Calculates distance to target in body frame
-            if self.drone.indoor == True:
-                dx_body, dy_body, dz_body = self.get_body_distance_indoor(target_position, current_pose)
+            if self.drone.indoor:
+                heading = None  # Indoor mode doesn't need heading parameter
             else:
-                dx_body, dy_body, dz_body = self.get_body_distance_outdoor(target_position, current_pose, self.drone.get_heading.data)
+                heading = self.drone.get_heading.data
+            
+            dx_body, dy_body, dz_body = PositionUtils.get_body_distance(target_position, current_pose, heading)
 
             if lidar_target_alt is not None:
                 self.drone.node.get_logger().info(f"lidar target: {lidar_target_alt} e {self.drone.get_rng_alt.range}")
