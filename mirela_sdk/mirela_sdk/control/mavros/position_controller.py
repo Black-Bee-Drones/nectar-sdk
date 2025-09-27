@@ -159,7 +159,7 @@ class PositionController:
         
         # In body frame: x = forward, y = right
         dx_body = dist * np.cos(relative_angle_rad)  # Forward distance
-        dy_body = dist * np.sin(relative_angle_rad)  # Right distance  
+        dy_body = -dist * np.sin(relative_angle_rad)  # Left distance  
         dz_body = t_alt - c_alt                     # Altitude difference
         
         return dx_body, dy_body, dz_body
