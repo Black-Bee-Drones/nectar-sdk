@@ -484,10 +484,12 @@ class PositionController:
                              vx: float, vy: float, vz: float):
         """Log current controller state for debugging."""
         self.drone.node.get_logger().info(
-            f"Error: dx={dx_body:.2f}, dy={dy_body:.2f}, dz={dz_body:.2f}m"
+            f"Error: dx={dx_body:.2f}, dy={dy_body:.2f}, dz={dz_body:.2f}m",
+            throttle_duration_sec=0.1
         )
         self.drone.node.get_logger().info(
-            f"Velocity: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}m/s"
+            f"Velocity: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}m/s",
+            throttle_duration_sec=0.1
         )
 
     def _check_arrival_conditions(self, dx_body: float, dy_body: float, dz_body: float,
