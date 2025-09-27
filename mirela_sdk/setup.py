@@ -27,7 +27,6 @@ setup(
     maintainer_email="samuellimabraz@gmail.com",
     description="TODO: Package description",
     license="Apache-2.0",
-    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "gui = mirela_sdk.interface.gui:main",
