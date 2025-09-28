@@ -328,9 +328,9 @@ class PositionController:
             # Compute PID control outputs
             vx, vy, vz = self._compute_pid_velocities(pid_controllers, dx_body, dy_body, dz_body)
 
-            # Apply obstacle avoidance if needed
+            # Override vertical velocity if obstacle detected
             if obstacle_state['detected']:
-                vz = self._handle_obstacle_avoidance(obstacle_state, dz_body)
+                vz = 0.0 # halt vertical movement to let ArduPilot's obstacle avoidance take over
 
             # Apply precision radius dead zones
             vx, vy, vz = self._apply_precision_zones(vx, vy, vz, dx_body, dy_body, dz_body, precision_radius)
@@ -410,6 +410,9 @@ class PositionController:
         if lidar_ema is None:
             lidar_ema = current_lidar
         
+        # Calculate deviation from EMA
+        lidar_deviation = current_lidar - lidar_ema
+
         # Update EMA for obstacle detection
         lidar_ema = (lidar_config['ema_alpha'] * current_lidar + 
                     (1 - lidar_config['ema_alpha']) * lidar_ema)
@@ -418,17 +421,45 @@ class PositionController:
         dz_body = lidar_config['target_alt'] - current_lidar
         
         # Detect obstacles using EMA filtering
-        lidar_deviation = abs(current_lidar - lidar_ema)
-        if lidar_deviation > OBSTACLE_HEIGHT and not obstacle_state['detected']:
+        if abs(lidar_deviation) > OBSTACLE_HEIGHT and not obstacle_state['detected']:
             self.drone.node.get_logger().info(
                 f"Obstacle detected! Lidar deviation: {lidar_deviation:.2f}m (threshold: {OBSTACLE_HEIGHT}m)"
             )
             obstacle_state.update({
                 'detected': True,
                 'start_time': self.drone.node.get_clock().now(),
-                'height_offset': current_lidar - lidar_ema
+                'height_offset': lidar_deviation
             })
+
+        if obstacle_state['detected']:
+            elapsed_time = self.drone.node.get_clock().now() - obstacle_state['start_time']
+
+            # Log obstacle avoidance status
+            self.drone.node.get_logger().info(
+                f"Obstacle avoidance active for {elapsed_time.nanoseconds / 1e9:.1f}s "
+                f"(timeout: {OBSTACLE_TIMEOUT}s)",
+                throttle_duration_sec=1.0
+            )
+
+            # Check if obstacle avoidance timeout has elapsed
+            if elapsed_time > obstacle_state['duration']:
+                self.drone.node.get_logger().info("Obstacle avoidance timeout reached, resuming normal operation.")
+                obstacle_state.update({
+                    'detected': False,
+                    'start_time': None,
+                    'height_offset': 0.0
+                })
         
+            # Check if obstacle is cleared
+            if (lidar_deviation < -obstacle_state["height_offset"] + 0.05) and (lidar_deviation > -obstacle_state["height_offset"] - 0.05):
+                self.drone.node.get_logger().info(f"Obstacle cleared. Lidar deviation: {lidar_deviation:.2f}m. Height offset was {obstacle_state['height_offset']:.2f}m.")
+                obstacle_state.update({
+                    'detected': False,
+                    'start_time': None,
+                    'height_offset': 0.0
+                })
+                lidar_ema = current_lidar  # Reset EMA to current reading to avoid false positives
+                
         return dz_body, obstacle_state, lidar_ema
 
     def _compute_pid_velocities(self, pid_controllers: dict, dx_body: float, dy_body: float, dz_body: float) -> tuple[float, float, float]:
@@ -443,30 +474,6 @@ class PositionController:
         if dz_body < 0: vz = -vz
 
         return vx, vy, vz
-
-    def _handle_obstacle_avoidance(self, obstacle_state: dict, dz_body: float) -> float:
-        """Handle obstacle avoidance logic."""
-        elapsed_time = self.drone.node.get_clock().now() - obstacle_state['start_time']
-        
-        self.drone.node.get_logger().info(
-            f"Obstacle avoidance active for {elapsed_time.nanoseconds / 1e9:.1f}s "
-            f"(timeout: {OBSTACLE_TIMEOUT}s)",
-            throttle_duration_sec=1.0
-        )
-        
-        # Check if obstacle avoidance timeout has elapsed
-        if elapsed_time > obstacle_state['duration']:
-            self.drone.node.get_logger().info("Obstacle avoidance timeout reached, resuming normal operation.")
-            obstacle_state.update({
-                'detected': False,
-                'start_time': None,
-                'height_offset': 0.0
-            })
-            return 0.0  # Resume normal altitude control
-        
-        # During obstacle avoidance, halt vertical movement to let ArduPilot's
-        # obstacle avoidance take over (typically climbs automatically)
-        return 0.0
 
     def _apply_precision_zones(self, vx: float, vy: float, vz: float, 
                               dx_body: float, dy_body: float, dz_body: float, 
