@@ -27,8 +27,8 @@ VERTICAL_INDOOR_KP = 0.5
 VERTICAL_INDOOR_KI = 0.0
 VERTICAL_INDOOR_KD = 0.0
 
-HORIZONTAL_INDOOR_MAX_SPEED = 0.3  # m/s
-HORIZONTAL_INDOOR_MIN_SPEED = 0.1  # m/s
+HORIZONTAL_INDOOR_MAX_SPEED = 0.42  # m/s
+HORIZONTAL_INDOOR_MIN_SPEED = 0.12  # m/s
 
 VERTICAL_INDOOR_MAX_SPEED = 0.2  # m/s
 VERTICAL_INDOOR_MIN_SPEED = 0.1  # m/s
@@ -77,10 +77,11 @@ class PID:
         output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
 
         self.prev_error = error
-
-        output = max(min(output, self.max_output), self.min_output)
-
-        return output
+        if output < 0: flag = -1
+        else: flag = 1
+        output = max(min(abs(output), self.max_output), self.min_output)
+            
+        return output * flag
 
 class PositionController:
     def __init__(self, drone: "MavDrone"):  # Quotes here are required for runtime, but IDEs and mypy will resolve the type!
@@ -133,7 +134,7 @@ class PositionController:
 
         timeout_sec : float, optional
             Maximum time in seconds to reach the target.
-            If None, no timeout is applied.
+            If None, no timeout is applied.Pose
 
         Warnings
         --------
@@ -468,10 +469,6 @@ class PositionController:
         vx = pid_controllers['x'].compute(dx_body)
         vy = pid_controllers['y'].compute(dy_body)
         vz = pid_controllers['z'].compute(dz_body)
-
-        if dx_body < 0: vx = -vx
-        if dy_body < 0: vy = -vy
-        if dz_body < 0: vz = -vz
 
         return vx, vy, vz
 
