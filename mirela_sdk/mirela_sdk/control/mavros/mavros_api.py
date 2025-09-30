@@ -393,8 +393,6 @@ class MavDrone(Drone):
         sync: bool = False,
     ):
         """
-        to-do: rclpy.spin_until_future_complete?
-
         Auxiliar function to call services and print result.
 
         :param service (Client): Service client
