@@ -45,7 +45,7 @@ class PositionUtils:
             If invalid combination of target and current position types is provided.
         """
         if isinstance(target, PositionTarget) and isinstance(current, PoseWithCovarianceStamped):
-            cx, cy, cz = current.pose.position.x, current.pose.position.y, current.pose.position.z
+            cx, cy, cz = current.pose.pose.position.x, current.pose.pose.position.y, current.pose.pose.position.z
             tx, ty, tz = target.position.x, target.position.y, target.position.z
 
             # Calculate difference in world frame
@@ -105,7 +105,7 @@ class PositionUtils:
         float
             Yaw angle in radians (-π to π).
         """
-        orientation_q = pose.pose.orientation
+        orientation_q = pose.pose.pose.orientation
         orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         (_, _, yaw) = euler_from_quaternion(orientation_list)
         return yaw
@@ -138,9 +138,9 @@ class PositionUtils:
         """
         if isinstance(pose, PoseWithCovarianceStamped):
             msg = PositionTarget()
-            msg.position.x = pose.pose.position.x
-            msg.position.y = pose.pose.position.y
-            msg.position.z = pose.pose.position.z
+            msg.position.x = pose.pose.pose.position.x
+            msg.position.y = pose.pose.pose.position.y
+            msg.position.z = pose.pose.pose.position.z
             # Convert orientation from quaternion to yaw and set it
             yaw = PositionUtils.get_yaw_from_pose(pose)
             msg.yaw = yaw
