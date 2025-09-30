@@ -764,6 +764,7 @@ class MavDrone(Drone):
             x: float = 0.0,
             y: float = 0.0,
             z: float = 0.0,
+            ground_reference: bool = False,
             precision_radius: float = 0.5,
             timeout_sec: float | None = 60.0,
             strategy: str = "default"
@@ -786,6 +787,9 @@ class MavDrone(Drone):
             
         z : float
             Distance to move up (+) or down (-) in meters.
+
+        ground_reference : bool
+            If True, x, y and z are relative to the takeoff_position (ground reference).
             
         precision_radius : float
             Acceptable radius in meters for reaching the target position.
@@ -812,13 +816,23 @@ class MavDrone(Drone):
             rclpy.spin_once(self.node, timeout_sec=0.05)  # Process callbacks to get latest position
 
         if self.indoor == False:
-            lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                x=x, y=-y, z=z,
-                latitude=self.get_gps.latitude,
-                longitude=self.get_gps.longitude,
-                altitude=self.get_gps.altitude,
-                heading=self.get_heading.data
-            )
+            if ground_reference == False:
+                lat, lon, alt = GPSCalculate.calculate_gps_offset(
+                    x=x, y=-y, z=z,
+                    latitude=self.get_gps.latitude,
+                    longitude=self.get_gps.longitude,
+                    altitude=self.get_gps.altitude,
+                    heading=self.get_heading.data
+                )
+
+            else:
+                lat, lon, alt = GPSCalculate.calculate_gps_offset(
+                    x=x, y=-y, z=z,
+                    latitude=self._takeoff_position.pose.position.latitude,
+                    longitude=self._takeoff_position.pose.position.longitude,
+                    altitude=self._takeoff_position.pose.position.altitude,
+                    heading=PositionUtils.get_yaw_from_pose(self._takeoff_position)
+                )
 
             heading = self.get_heading.data
             self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
@@ -841,10 +855,12 @@ class MavDrone(Drone):
             )
 
         else:
-            current_position = self.get_visual_pos.pose.pose.position
-            orientation = self.get_visual_pos.pose.pose.orientation
-            quat = [orientation.x, orientation.y, orientation.z, orientation.w]
-            current_yaw_rad = euler_from_quaternion(quat)[2]
+            if ground_reference == False:
+                current_position = self.get_vision_pos.pose.pose.position
+                current_yaw_rad = PositionUtils.get_yaw_from_pose(self.get_vision_pos)
+            else:
+                current_position = self._takeoff_position.pose.position
+                current_yaw_rad = self._takeoff_position.yaw
             dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
             dy_world = x * math.sin(current_yaw_rad) + y * math.cos(current_yaw_rad)
             dz_world = z
