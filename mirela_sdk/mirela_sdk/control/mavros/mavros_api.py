@@ -101,10 +101,10 @@ class MavDrone(Drone):
             # self._local_pos_sub = self._create_subscriber(
             #     PoseStamped,
             #     "/mavros/local_position/pose",
-            #     lambda data: self.__setattr__("_visual_pos", data),
+            #     lambda data: self.__setattr__("_vision_pos", data),
             #     qos_profile_sensor_data,
             # )
-            self._visual_pos_sub = self._create_subscriber(
+            self._vision_pos_sub = self._create_subscriber(
                 PoseWithCovarianceStamped,
                 "/mavros/vision_pose/pose_cov",
                 lambda data: self.__setattr__("_vision_pos", data),
@@ -222,7 +222,7 @@ class MavDrone(Drone):
             return self.get_rng_alt.range
         
         elif self.indoor == True:
-            return self.get_visual_pos.pose.position.z
+            return self.get_vision_pos.pose.position.z
         
         else:
             return self.get_rel_alt.data
@@ -232,12 +232,12 @@ class MavDrone(Drone):
         """
         Return drone position according to the flight mode.
 
-        Indoor mode: returns get_visual_pos
+        Indoor mode: returns get_vision_pos
 
         Outdoor mode: returns get_gps
         """
         if self.indoor == True:
-            return self.get_visual_pos
+            return self.get_vision_pos
         
         else:
             return self.get_gps
@@ -247,17 +247,17 @@ class MavDrone(Drone):
         """
         Return drone position as PositionTarget or GeoPoseStamped according to the flight mode.
 
-        Indoor mode: returns get_visual_pos as PositionTarget
+        Indoor mode: returns get_vision_pos as PositionTarget
 
         Outdoor mode: returns get_gps as GeoPoseStamped
         """
         if self.indoor == True:
-            return PositionUtils.convert_position_to_target(self.get_visual_pos)
+            return PositionUtils.convert_position_to_target(self.get_vision_pos)
         else:
-            return PositionUtils.convert_position_to_target(self.get_gps)
+            return PositionUtils.convert_position_to_target(self.get_gps, self.get_heading.data)
 
     @property
-    def get_visual_pos(self) -> PoseWithCovarianceStamped:
+    def get_vision_pos(self) -> PoseWithCovarianceStamped:
         """
         Return relative position data
 
@@ -345,7 +345,7 @@ class MavDrone(Drone):
             while self.node.get_clock().now() - start_time < timeout:
                 self.node.get_logger().info("Waiting for vision pose data...", throttle_duration_sec=1.0)
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
-                if self.get_visual_pos is not None:
+                if self.get_vision_pos is not None:
                     sensors_initialized = True
                     self.node.get_logger().info("vSLAM data received")
                     break
