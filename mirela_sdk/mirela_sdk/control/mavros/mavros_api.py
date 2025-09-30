@@ -50,10 +50,16 @@ class MavDrone(Drone):
 
     def __init__(self, node: Node, mavros: bool = False, indoor: bool = False) -> None:
         """
-        Initialize the Mavros API
+        Initialize the Mavros API.
 
-        :param node (Node): ROS2 node to run the API
-        :param mavros (bool): True to start the mavros node
+        Parameters
+        ----------
+        node : Node
+            ROS2 node to run the API.
+        mavros : bool, optional
+            True to start the mavros node.
+        indoor : bool, optional
+            True if running in indoor mode.
         """
         super().__init__(node=node)
 
@@ -66,7 +72,6 @@ class MavDrone(Drone):
         self._imu_data = Imu()
         self._takeoff_position = PositionTarget()
         self._takeoff_height = None
-        self._home_position_set = False
         self._pose_controller = PositionController(self)
         
         # Outdoor only variables:
@@ -169,87 +174,101 @@ class MavDrone(Drone):
 
     def start_driver_node(self) -> None:
         """
-        Start the mavros launch
-            ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:57600
+        Start the mavros launch process.
+
+        Launches:
+            ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:921600
         """
 
         # Start the ros2 launch mavros apm
         result = ProcessUtils.start_process(
-            "ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:57600",
+            "ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyUSB0:921600",
             "mavros_node",
         )
         self._driver_initialized = result
 
     def get_driver_node_name(self) -> str:
+        """
+        Get the name of the MAVROS driver node.
+
+        Returns
+        -------
+        str
+            Name of the MAVROS driver node.
+        """
         return "mavros_node"
 
     @property
     def get_state(self) -> State:
         """
-        Return state data
+        Get the current MAVROS state.
 
+        Returns
+        -------
         State
-        ----------
-        http://docs.ros.org/en/api/mavros_msgs/html/msg/State.html
+            MAVROS state message. See:
+            http://docs.ros.org/en/api/mavros_msgs/html/msg/State.html
         """
         return self._state
 
     @property
     def get_rng_alt(self) -> Range:
         """
-        Return relative altitude data from lidar
+        Get relative altitude data from lidar.
 
+        Returns
+        -------
         Range
-        ----------
-        http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Range.html
+            Lidar range message. See:
+            http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Range.html
         """
         return self._rng_alt
     
     @property
     def get_height(self) -> float:
         """
-        Return drone height, using the adequate sensor.
+        Get drone height using the appropriate sensor.
 
-        Primary: Lidar
-
-        Secondary:
-        
-        For Indoor: local_pos.pose.z
-
-        For Outdoor: gps rel_alt
+        Returns
+        -------
+        float
+            Height in meters. Uses lidar if available, otherwise:
+            - Indoor: vision_pos.pose.z
+            - Outdoor: GPS rel_alt
         """
         if self.lidar_on == True:
             return self.get_rng_alt.range
-        
         elif self.indoor == True:
             return self.get_vision_pos.pose.position.z
-        
         else:
             return self.get_rel_alt.data
     
     @property
     def get_position(self) -> PoseWithCovarianceStamped | NavSatFix:
         """
-        Return drone position according to the flight mode.
+        Get drone position according to the flight mode.
 
-        Indoor mode: returns get_vision_pos
-
-        Outdoor mode: returns get_gps
+        Returns
+        -------
+        PoseWithCovarianceStamped or NavSatFix
+            - Indoor: returns get_vision_pos as PoseWithCovarianceStamped
+            - Outdoor: returns get_gps as NavSatFix
         """
         if self.indoor == True:
             return self.get_vision_pos
-        
         else:
             return self.get_gps
         
     @property
     def get_position_as_target(self) -> PositionTarget | GeoPoseStamped:
         """
-        Return drone position as PositionTarget or GeoPoseStamped according to the flight mode.
+        Get drone position as PositionTarget or GeoPoseStamped according to the flight mode.
 
-        Indoor mode: returns get_vision_pos as PositionTarget
-
-        Outdoor mode: returns get_gps as GeoPoseStamped
+        Returns
+        -------
+        PositionTarget or GeoPoseStamped
+            - Indoor: returns get_vision_pos as PositionTarget
+            - Outdoor: returns get_gps as GeoPoseStamped
         """
         if self.indoor == True:
             return PositionUtils.convert_position_to_target(self.get_vision_pos)
@@ -259,34 +278,43 @@ class MavDrone(Drone):
     @property
     def get_vision_pos(self) -> PoseWithCovarianceStamped:
         """
-        Return relative position data
+        Get relative position data.
 
+        Returns
+        -------
         PoseWithCovarianceStamped
-        ----------
-        http://docs.ros.org/en/api/geometry_msgs/html/msg/PoseWithCovarianceStamped.html
+            Relative position message. See:
+            http://docs.ros.org/en/api/geometry_msgs/html/msg/PoseWithCovarianceStamped.html
         """
         return self._vision_pos
 
     @property
     def get_imu_data(self) -> Imu:
         """
-        Return imu data
+        Get IMU data.
 
+        Returns
+        -------
         Imu
-        ------------
-        http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Imu.html
+            IMU message. See:
+            http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Imu.html
         """
-
         return self._imu_data
     
     @property
     def get_gps(self) -> NavSatFix:
         """
-        Return gps data
+        Get GPS data.
 
+        Returns
+        -------
         NavSatFix
-        ----------
-        http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
+            GPS message. See:
+            http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
+        Raises
+        ------
+        AttributeError
+            If called in indoor mode.
         """
         if self.indoor == False: 
             return self._gps
@@ -296,11 +324,17 @@ class MavDrone(Drone):
     @property
     def get_rel_alt(self) -> Float64:
         """
-        Return relative altitude data from gps
+        Get relative altitude data from GPS.
 
+        Returns
+        -------
         Float64
-        ----------
-        http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
+            Relative altitude message. See:
+            http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
+        Raises
+        ------
+        AttributeError
+            If called in indoor mode.
         """
         if self.indoor == False:
             return self._rel_alt
@@ -310,11 +344,17 @@ class MavDrone(Drone):
     @property
     def get_heading(self) -> Float64:
         """
-        Return heading data
+        Get heading data.
 
+        Returns
+        -------
         Float64
-        ----------
-        http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
+            Heading message. See:
+            http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
+        Raises
+        ------
+        AttributeError
+            If called in indoor mode.
         """
         if self.indoor == False:
             return self._heading
@@ -395,12 +435,18 @@ class MavDrone(Drone):
         """
         Auxiliar function to call services and print result.
 
-        :param service (Client): Service client
-        :param request (Request): Service request
-        :param success_message (str): Message to print if success
-        :param failure_message (str): Message to print if failure
-        :param sync: If True, call the service synchronously, otherwise asynchronously.
-            Synchoronous call will block the code until the service is done
+        Parameters
+        ----------
+        service : Client
+            Service client.
+        request : SrvTypeRequest
+            Service request.
+        success_message : str
+            Message to print if success.
+        failure_message : str
+            Message to print if failure.
+        sync : bool, optional
+            If True, call the service synchronously, otherwise asynchronously. Synchronous call will block until the service is done.
         """
 
         def _wait_for_service():
@@ -440,9 +486,9 @@ class MavDrone(Drone):
 
     def kill_motors(self):
         """
-        Forced disarm
+        Forced disarm.
 
-        Caution: it will disarm even during a flight
+        Caution: it will disarm even during a flight.
         """
         command = CommandLong.Request()
         command.command = 400
@@ -460,9 +506,15 @@ class MavDrone(Drone):
     def set_mode(self, mode: str):
         """
         Modify the FCU flight mode.
-        https://ardupilot.org/copter/docs/flight-modes.html
 
-        :param mode (strig): (stabilize, alt_hold ,auto, guided, loiter, rtl, land, guided_nogps)
+        Parameters
+        ----------
+        mode : str
+            Flight mode (e.g., 'stabilize', 'alt_hold', 'auto', 'guided', 'loiter', 'rtl', 'land', 'guided_nogps').
+
+        See Also
+        --------
+        https://ardupilot.org/copter/docs/flight-modes.html
         """
         req = SetMode.Request()
         req.custom_mode = mode
@@ -489,7 +541,10 @@ class MavDrone(Drone):
         """
         Send command to takeoff the drone.
 
-        :param takeoff_alt (float): Altitude to takeoff
+        Parameters
+        ----------
+        takeoff_alt : float
+            Altitude to takeoff in meters.
         """
         req = CommandTOL.Request()
         req.altitude = float(takeoff_alt)
@@ -502,21 +557,18 @@ class MavDrone(Drone):
 
     def arm_takeoff(self, takeoff_alt: float):
         """
-        Send command to arm, take off and hold
+        Send command to arm, take off, and hold.
 
-        After calling arm service, waits for 3 seconds, and stores takeoff_position
-
-        Then, after calling takeoff service, sleeps for [takeoff_alt] seconds
+        After calling arm service, waits for 3 seconds, and stores takeoff_position.
+        Then, after calling takeoff service, sleeps for `takeoff_alt` seconds.
 
         Parameters
         ----------
-        takeoff_alt: float (meters)
+        takeoff_alt : float
+            Target takeoff altitude in meters.
         """
 
         self.arm()
-
-        # Store the takeoff position for custom RTL strategy
-        self._home_position_set = True
 
         # Update variables
         sleep_duration = Duration(seconds=3.0)
@@ -541,15 +593,20 @@ class MavDrone(Drone):
         self, current_gps: bool, yaw=0.0, latitude=0.0, longitude=0.0, altitude=0.0
     ):
         """
-        Change home position. Could be current position or a specified coordinates
+        Change home position. Could be current position or specified coordinates.
 
-        :param current_gps (bool): True to set current position as home
-                                   False, enter the reaming parameters
-
-        :param yaw (float): Yaw angle in degrees
-        :param latitude (float): Latitude in degrees
-        :param longitude (float): Longitude in degrees
-        :param altitude (float): Altitude in meters
+        Parameters
+        ----------
+        current_gps : bool
+            True to set current position as home; False to use provided coordinates.
+        yaw : float, optional
+            Yaw angle in degrees.
+        latitude : float, optional
+            Latitude in degrees.
+        longitude : float, optional
+            Longitude in degrees.
+        altitude : float, optional
+            Altitude in meters.
         """
 
         rclpy.spin_once(self.node)
@@ -568,10 +625,14 @@ class MavDrone(Drone):
 
     def set_param(self, param_id: str, param_value: Int64):
         """
-        Set a parameter value
+        Set a parameter value.
 
-        :param param_id (str): Parameter name
-        :param param_value (Int64): Parameter value
+        Parameters
+        ----------
+        param_id : str
+            Parameter name.
+        param_value : Int64
+            Parameter value.
         """
 
         value = Parameter()
@@ -596,7 +657,22 @@ class MavDrone(Drone):
         land: bool = True
     ):
         """
-        bla bla bla
+        Return-to-Launch (RTL) operation.
+
+        Moves the drone to a specified altitude, then returns to the takeoff position using the selected strategy,
+        and lands if specified.
+
+        Parameters
+        ----------
+        rtl_alt : float, optional
+            Target altitude for RTL (meters).
+            If None, uses the current altitude.
+        precision_radius : float, optional
+            Precision radius for reaching the target (meters).
+        rtl_strategy : str, optional
+            RTL strategy to use ("default", "PID", or "AP").
+        land : bool, optional
+            Whether to land after reaching the takeoff position.
         """
         self.node.get_logger().info(f"RTL using strategy: {rtl_strategy}")
 
@@ -654,10 +730,14 @@ class MavDrone(Drone):
 
     def do_servo(self, aux_out: float, pwm_value: float):
         """
-        Send a PWM signal to moviment a servo motor connected *aux_out*
+        Send a PWM signal to move a servo motor connected to *aux_out*.
 
-        :param aux_out (float): Auxiliar port (1-6)
-        :param pwm_value (float): PWM value (usually between 1000 ~ 2000)
+        Parameters
+        ----------
+        aux_out : float
+            Auxiliar port (1-6).
+        pwm_value : float
+            PWM value (usually between 1000 ~ 2000).
         """
 
         command = CommandLong.Request()
@@ -1046,7 +1126,7 @@ class MavDrone(Drone):
             (False)Body reference
 
         time: float (seconds)
-            Moviment time duration
+            Movement time duration
         """
         t_start = t_now = self.node.get_clock().now()
 
@@ -1054,7 +1134,7 @@ class MavDrone(Drone):
         # rate = self.node.create_rate(pub_rate, self.node.get_clock())
         rate = 1.0 / pub_rate
 
-        self.node.get_logger().info("-- Moviment start")
+        self.node.get_logger().info("-- Movement start")
 
         while t_now <= t_start + duration:
             self.offboard_velocity(
@@ -1082,20 +1162,32 @@ class MavDrone(Drone):
         self.image_handler.run()
 
     def record(self, record):
+        """
+        Not implemented.
+
+        Parameters
+        ----------
+        record : any
+            Placeholder parameter.
+        """
         pass
 
     def snapshot(self):
+        """
+        Not implemented.
+        """
         pass
 
     def set_takeoff_position(self, pose: Optional[PoseWithCovarianceStamped|NavSatFix|PositionTarget|GeoPoseStamped] = None, heading: Optional[float] = None):
         """
-        Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
-        This method is intended for outdoor use only and requires a valid NavSatFix object.
+        Sets the takeoff position for Return-To-Launch (RTL) and Ground Referenced operations.
 
         Parameters
         ----------
-        pose : NavSatFix
-            NavSatFix object containing latitude, longitude, and altitude of the takeoff position.
+        pose : PoseWithCovarianceStamped, NavSatFix, PositionTarget, or GeoPoseStamped, optional
+            The takeoff position object.
+        heading : float, optional
+            Heading to use for NavSatFix.
         """
         if pose is None:
             self._takeoff_position = self.get_position_as_target
@@ -1120,70 +1212,29 @@ class MavDrone(Drone):
                           
             else:
                 raise ValueError("In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified")
-                
-
-        self._home_position_set = True
 
     def custom_rtl(self):
         """
-        Perform a custom return-to-launch (RTL) maneuver.
-
-        The drone will ascend to the takeoff altitude, then navigate to the
-        takeoff latitude and longitude, and finally descend to the takeoff
-        altitude.
+        Deprecated method. Use rtl() instead.
         """
 
-        if not self._home_position_set:
-            self.node.get_logger().warn(
-                "Home position not set, using current position."
-            )
-            # If home position is not set, use current position as home
-            home_lat = self.get_gps.latitude
-            home_lon = self.get_gps.longitude
-            home_alt = self.get_rng_alt.range
-            home_heading = self.get_heading.data
+        self.node.get_logger().warn("custom_rtl() is deprecated. Use rtl() instead.")
 
-            self.set_takeoff_position(home_lat, home_lon, home_alt, home_heading)
-
-        # Ascend to takeoff altitude
-        self.node.get_logger().info(
-            f"Ascending to takeoff altitude: {self._takeoff_alt}m"
+        self.rtl(
+            rtl_alt=None,
+            precision_radius=0.3,
+            rtl_strategy="default",
+            land=True
         )
-        self.offboard_velocity_timer(
-            linear_z=0.5, time=(self._takeoff_alt / 0.5)
-        )  # Ascend at 0.5 m/s
-
-        # Navigate to takeoff position
-        self.node.get_logger().info(
-            f"Navigating to takeoff position: {self._takeoff_lat}, {self._takeoff_lon}"
-        )
-        self.gps_controller.gps_send(
-            self._takeoff_lat,
-            self._takeoff_lon,
-            self._takeoff_alt,
-            self._takeoff_heading,
-            precision_radius=0.5,
-        )
-
-        # Descend to takeoff altitude
-        self.node.get_logger().info(
-            f"Descending to takeoff altitude: {self._takeoff_alt}m"
-        )
-        self.offboard_velocity_timer(
-            linear_z=-0.5, time=(self._takeoff_alt / 0.5)
-        )  # Descend at 0.5 m/s
-
-        # Land
-        self.node.get_logger().info("Landing...")
-        self.land()
-
-        self.node.get_logger().info("Custom RTL completed.")
 
     def delay(self, seconds: float):
         """
         Simple delay function that allows processing of callbacks.
 
-        :param seconds (float): Time to delay in seconds
+        Parameters
+        ----------
+        seconds : float
+            Time to delay in seconds.
         """
         start_time = self.node.get_clock().now()
         while (self.node.get_clock().now() - start_time).nanoseconds / 1e9 < seconds:
