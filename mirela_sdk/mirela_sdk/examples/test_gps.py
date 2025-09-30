@@ -44,7 +44,6 @@ class TestGPS(Node):
         rel_alt = self.drone.get_rel_alt
         rng_alt = self.drone.get_rng_alt
         heading = self.drone.get_heading
-        local_pos = self.drone.get_visual_pos
 
         self.get_logger().info(
             f"--- GPS Data (Message #{self.msg_counters['gps_msgs']}) ---"
@@ -56,9 +55,6 @@ class TestGPS(Node):
         self.get_logger().info(f"Relative Altitude: {rel_alt.data}")
         self.get_logger().info(f"Rangefinder Altitude: {rng_alt.range}")
         self.get_logger().info(f"Heading: {heading.data}")
-        self.get_logger().info(
-            f"Local Position (X,Y,Z): ({local_pos.pose.position.x}, {local_pos.pose.position.y}, {local_pos.pose.position.z})"
-        )
         self.get_logger().info("-----------------------------")
 
     def run(self):

@@ -108,7 +108,7 @@ class PositionController:
                 rclpy.spin_once(self.drone.node, timeout_sec=0.01)
 
         if self.drone.indoor == True:
-            return self.drone.get_visual_pos
+            return self.drone.get_vision_pos
         else:
             return self.drone.get_gps
         
