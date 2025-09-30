@@ -111,7 +111,7 @@ class PositionUtils:
         return yaw
 
     @staticmethod
-    def convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix) -> PositionTarget|GeoPoseStamped:
+    def convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix, heading: float = None) -> PositionTarget|GeoPoseStamped:
         """
         Convert position messages to their corresponding target message types.
 
@@ -123,6 +123,11 @@ class PositionUtils:
         ----------
         pose : PoseWithCovarianceStamped | NavSatFix
             Input position message to convert.
+
+        heading : float, optional
+            Current heading in degrees (0 = North, positive clockwise).
+            Required when converting NavSatFix to GeoPoseStamped to set orientation.
+            Ignored when converting PoseWithCovarianceStamped to PositionTarget.
 
         Returns
         -------
@@ -146,16 +151,17 @@ class PositionUtils:
             msg.yaw = yaw
             return msg
             
-        elif isinstance(pose, NavSatFix):
+        elif isinstance(pose, NavSatFix) and heading is not None:
             msg = GeoPoseStamped()
             msg.pose.position.latitude = pose.latitude
             msg.pose.position.longitude = pose.longitude
             msg.pose.position.altitude = pose.altitude
-            # Set neutral orientation (no rotation)
-            msg.pose.orientation.x = 0.0
-            msg.pose.orientation.y = 0.0
-            msg.pose.orientation.z = 0.0
-            msg.pose.orientation.w = 1.0
+            # Convert heading (degrees) to quaternion
+            quaternion = quaternion_from_euler(0, 0, np.radians(heading))
+            msg.pose.orientation.x = quaternion[0]
+            msg.pose.orientation.y = quaternion[1]
+            msg.pose.orientation.z = quaternion[2]
+            msg.pose.orientation.w = quaternion[3]
             return msg
         
         else:

@@ -524,7 +524,7 @@ class MavDrone(Drone):
         while self.node.get_clock().now() - sleep_start_t < sleep_duration:
             rclpy.spin_once(self.node, timeout_sec=0.1)
         
-        self._takeoff_position = self.get_position_as_target
+        self.set_takeoff_position()
         
         self.takeoff(takeoff_alt)
         sleep(takeoff_alt)
@@ -1071,7 +1071,7 @@ class MavDrone(Drone):
     def snapshot(self):
         pass
 
-    def set_takeoff_position(self, pose: Optional[PoseWithCovarianceStamped|NavSatFix] = None):
+    def set_takeoff_position(self, pose: Optional[PoseWithCovarianceStamped|NavSatFix|PositionTarget|GeoPoseStamped] = None, heading: Optional[float] = None):
         """
         Sets the takeoff position for custom Return-To-Launch (RTL) operations. 
         This method is intended for outdoor use only and requires a valid NavSatFix object.
@@ -1081,23 +1081,30 @@ class MavDrone(Drone):
         pose : NavSatFix
             NavSatFix object containing latitude, longitude, and altitude of the takeoff position.
         """
-        if pose == None:
+        if pose is None:
             self._takeoff_position = self.get_position_as_target
             self.node.get_logger().info("Takeoff position set to current position.")
 
         if self.indoor == True:
-            if not isinstance(pose, PoseWithCovarianceStamped):
-                raise ValueError("In indoor mode, pose parameter must be of type PoseWithCovarianceStamped")
+            if isinstance(pose, PoseWithCovarianceStamped):
+                self._takeoff_position = PositionUtils.convert_position_to_target(pose)
+            
+            elif isinstance(pose, PositionTarget):
+                self._takeoff_position = pose
                           
             else:
-                self._takeoff_position = PositionUtils.convert_position_to_target(pose)
+                raise ValueError("In indoor mode, pose parameter must be of type PoseWithCovarianceStamped or PositionTarget")
 
         else:
-            if not isinstance(pose, NavSatFix):
-                raise ValueError("In outdoor mode, pose parameter must be of type NavSatFix")
+            if isinstance(pose, NavSatFix) and heading is not None:
+                self._takeoff_position = PositionUtils.convert_position_to_target(pose, heading)
+            
+            elif isinstance(pose, GeoPoseStamped):
+                self._takeoff_position = pose
                           
             else:
-                self._takeoff_position = PositionUtils.convert_position_to_target(pose)
+                raise ValueError("In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified")
+                
 
         self._home_position_set = True
 
