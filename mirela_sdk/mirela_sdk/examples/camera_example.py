@@ -42,7 +42,7 @@ class CameraExampleNode(Node):
         if camera_type == "webcam":
             return OpenCVConfig(device_index=0, width=1280, height=720, fps=30)
         if camera_type == "imx219":
-            return IMX219Config(sensor_id=0, width=1280, height=720, flip=2)
+            return IMX219Config(sensor_id=1, width=1280, height=720, flip=2)
         if camera_type == "realsense":
             return RealSenseConfig(
                 color_res=(1280, 720), depth_res=(1280, 720), fps=30
@@ -57,7 +57,7 @@ class CameraExampleNode(Node):
     def process_frame(self, frame):
         if frame is not None:
             self.get_logger().info(
-                f"Received frame with shape: {frame.shape}", throttle_duration_sec=5
+                f"Received frame with shape: {frame.shape}"
             )
 
     def destroy_node(self):

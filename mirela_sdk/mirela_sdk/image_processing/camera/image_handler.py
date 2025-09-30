@@ -47,12 +47,31 @@ class ImageHandler:
         self.poll_interval = poll_interval
         self.cam_timer = None
 
+
     def _build_camera_from_source(self) -> AbstractCam:
         if self.camera is not None:
             return self.camera
         return CameraFactory.from_source(
             self.image_source, config=self.config, node=self.node
         )
+
+    def open(self):
+        """
+        Explicitly open the camera.
+        """
+        if self.camera is None:
+            self.camera = self._build_camera_from_source()
+        if not self.camera.is_running:
+            self.camera.start()
+        self.node.get_logger().info(f"Camera [{self.image_source}] opened.")
+
+    def close(self):
+        """
+        Explicitly close the camera.
+        """
+        if self.camera is not None and self.camera.is_running:
+            self.camera.close()
+            self.node.get_logger().info(f"Camera [{self.image_source}] closed.")
 
     def _camera_callback(self):
         try:
@@ -76,11 +95,8 @@ class ImageHandler:
         self.node.get_logger().info(f"Running image handler [{self.image_source}]")
         if self.camera is None:
             self.camera = self._build_camera_from_source()
-            if not self.camera.is_running:
-                self.camera.start()
-        else:
-            if not self.camera.is_running:
-                self.camera.start()
+        if not self.camera.is_running:
+            self.camera.start()
         self.cam_timer = self.node.create_timer(
             self.poll_interval, self._camera_callback
         )
@@ -89,50 +105,38 @@ class ImageHandler:
         """
         Captures a single frame, processes it, and returns the result.
 
-        This method starts the camera, waits for a frame, processes it once
-        using the provided callback, and then shuts down the camera.
+        Requires the camera to be opened first using open().
 
         :param timeout_sec: Maximum time to wait for a frame.
         :return: The result from the image_processing_callback, or the raw
                  frame if no callback is provided. Returns None on timeout.
         """
+        if self.camera is None or not self.camera.is_running:
+            raise RuntimeError("Camera must be opened before calling take_photo(). Call open() first.")
+
         self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
-        camera = self._build_camera_from_source()
-        try:
-            if not camera.is_running:
-                camera.start()
+        start_time = time.time()
+        frame = None
+        while time.time() - start_time < timeout_sec:
+            frame = self.camera.get_frame()
+            if frame is not None:
+                break
+            time.sleep(0.1)
 
-            start_time = time.time()
-            frame = None
-            while time.time() - start_time < timeout_sec:
-                frame = camera.get_frame()
-                if frame is not None:
-                    break
-                time.sleep(0.1) 
+        if frame is None:
+            self.node.get_logger().error("Failed to capture frame within timeout.")
+            return None
 
-            if frame is None:
-                self.node.get_logger().error("Failed to capture frame within timeout.")
-                return None
-
-            self.img = frame
-            if self.image_processing_callback:
-                return self.image_processing_callback(self.img)
-            return self.img
-
-        finally:
-            if camera.is_running:
-                camera.close()
-            self.node.get_logger().info("Photo capture finished.")
+        self.img = frame
+        if self.image_processing_callback:
+            return self.image_processing_callback(self.img)
+        return self.img
 
     def cleanup(self):
         if not self.cleaned:
             self.node.get_logger().info("Image Handler Shutting Down")
             self.cleaned = True
-            if self.camera is not None:
-                try:
-                    self.camera.close()
-                except Exception as ex:
-                    self.node.get_logger().error(f"{ex}")
+            self.close()
             if self.cam_timer is not None:
                 self.node.destroy_timer(self.cam_timer)
             if self.show_result is not None:
