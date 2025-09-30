@@ -1140,7 +1140,7 @@ class MavDrone(Drone):
             self.offboard_velocity(
                 linear_x, linear_y, linear_z, angular_z, ground_reference
             )
-            sleep(rate)
+            self.delay(rate)
             t_now = self.node.get_clock().now()
 
         self.node.get_logger().info(
@@ -1236,7 +1236,7 @@ class MavDrone(Drone):
         seconds : float
             Time to delay in seconds.
         """
+        duration = Duration(seconds=seconds)
         start_time = self.node.get_clock().now()
-        while (self.node.get_clock().now() - start_time).nanoseconds / 1e9 < seconds:
+        while (self.node.get_clock().now() - start_time) < duration:
             rclpy.spin_once(self.node, timeout_sec=0.1)
-            sleep(0.1)
