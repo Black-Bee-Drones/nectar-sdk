@@ -40,9 +40,6 @@ from mirela_sdk.utils.position_utils import PositionUtils
 from tf_transformations import quaternion_from_euler
 from tf_transformations import euler_from_quaternion
 
-INDOOR = 0.3
-OUTDOOR = 1.6
-
 class MavDrone(Drone):
     """
     Class to control the mav ros drone using ROS2.
@@ -402,8 +399,12 @@ class MavDrone(Drone):
                     sensors_initialized = True
                     break
 
-            self.initial_altitude = self._gps.altitude
-            self.initial_heading = self._heading.data
+            if sensors_initialized == True:
+                self.initial_altitude = self._gps.altitude
+                self.initial_heading = self._heading.data
+            else:
+                self.initial_altitude = 0.0
+                self.initial_heading = 0.0
 
         if not self.lidar_on:
             self.node.get_logger().warn("Lidar data not available.")
@@ -939,7 +940,7 @@ class MavDrone(Drone):
                 current_position = self.get_vision_pos.pose.pose.position
                 current_yaw_rad = PositionUtils.get_yaw_from_pose(self.get_vision_pos)
             else:
-                current_position = self._takeoff_position.pose.position
+                current_position = self._takeoff_position.position
                 current_yaw_rad = self._takeoff_position.yaw
             dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
             dy_world = x * math.sin(current_yaw_rad) + y * math.cos(current_yaw_rad)
@@ -1192,13 +1193,16 @@ class MavDrone(Drone):
         if pose is None:
             self._takeoff_position = self.get_position_as_target
             self.node.get_logger().info("Takeoff position set to current position.")
+            return
 
         if self.indoor == True:
             if isinstance(pose, PoseWithCovarianceStamped):
                 self._takeoff_position = PositionUtils.convert_position_to_target(pose)
+                return
             
             elif isinstance(pose, PositionTarget):
                 self._takeoff_position = pose
+                return
                           
             else:
                 raise ValueError("In indoor mode, pose parameter must be of type PoseWithCovarianceStamped or PositionTarget")
@@ -1206,9 +1210,11 @@ class MavDrone(Drone):
         else:
             if isinstance(pose, NavSatFix) and heading is not None:
                 self._takeoff_position = PositionUtils.convert_position_to_target(pose, heading)
+                return
             
             elif isinstance(pose, GeoPoseStamped):
                 self._takeoff_position = pose
+                return
                           
             else:
                 raise ValueError("In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified")

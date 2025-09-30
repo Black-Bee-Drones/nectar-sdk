@@ -105,7 +105,12 @@ class PositionUtils:
         float
             Yaw angle in radians (-π to π).
         """
-        orientation_q = pose.pose.pose.orientation
+        if isinstance(pose, PoseWithCovarianceStamped):
+            orientation_q = pose.pose.pose.orientation
+        elif isinstance(pose, GeoPoseStamped):
+            orientation_q = pose.pose.orientation
+        else:
+            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped or GeoPoseStamped")
         orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         (_, _, yaw) = euler_from_quaternion(orientation_list)
         return yaw
