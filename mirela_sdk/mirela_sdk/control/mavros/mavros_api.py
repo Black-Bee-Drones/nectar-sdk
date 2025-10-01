@@ -898,24 +898,25 @@ class MavDrone(Drone):
 
         if self.indoor == False:
             if ground_reference == False:
+                heading = self.get_heading.data
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
                     x=x, y=-y, z=z,
                     latitude=self.get_gps.latitude,
                     longitude=self.get_gps.longitude,
                     altitude=self.get_gps.altitude,
-                    heading=self.get_heading.data
+                    heading=heading
                 )
 
             else:
+                heading = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position.pose.orientation))
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
                     x=x, y=-y, z=z,
                     latitude=self._takeoff_position.pose.position.latitude,
                     longitude=self._takeoff_position.pose.position.longitude,
                     altitude=self._takeoff_position.pose.position.altitude,
-                    heading=PositionUtils.get_yaw_from_pose(self._takeoff_position)
+                    heading=heading
                 )
 
-            heading = self.get_heading.data
             self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
 
             if strategy == "PID" and self.lidar_on == True:
