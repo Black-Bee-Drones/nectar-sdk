@@ -2,16 +2,16 @@ import math
 from geopy.distance import distance
 from geopy.point import Point
 import numpy as np
-from typing import Callable
+from scipy.spatial.transform import Rotation as R
+from typing import Tuple
 
 
 class ImageCalculus:
     def __init__(self):
         '''Initializes the class with default settings.'''
-        self.camera_offset: np.ndarray = np.array((0, 0, 0)) # Forward, right, up
-        self.camera_orientation: np.ndarray = np.array((0, np.deg2rad(-90), 0)) # Roll, pitch, rotation
-        self.camera_resolution: np.ndarray = np.array((1920, 1080))
-        self.pixels_to_degree: Callable[[float], float] = lambda p: p/25
+        self.camera_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self.camera_resolution: tuple[int, int] = (1920, 1080)
+        self.pixels_per_degree: float = 20.0
 
 
     def update_camera_offset(
@@ -26,45 +26,17 @@ class ImageCalculus:
         Args:
             x (float | None): Forward position (+X) in meters. If None, keeps the current value.
             y (float | None): Right position (+Y) in meters. If None, keeps the current value.
-            z (float | None): Up position (+Z) in meters. If None, keeps the current value.
+            z (float | None): Downward position (+Z) in meters. If None, keeps the current value.
 
         Returns:
             bool: True if the update was successful.
         '''
         try:
-            self.camera_offset = np.array((
+            self.camera_offset = (
                 self.camera_offset[0] if x is None else x,
                 self.camera_offset[1] if y is None else y,
                 self.camera_offset[2] if z is None else z,
-            ))
-            return True
-        except:
-            return False
-
-
-    def update_camera_orientation(
-        self,
-        roll: float | None = None,
-        pitch: float | None = None,
-        rotation: float | None = None,
-    ) -> bool:
-        '''
-        Updates the camera's orientation relative to the drone.
-
-        Args:
-            roll (float | None): Rotation around the X-axis (roll) in degrees. If None, keeps the current value.
-            pitch (float | None): Rotation around the Y-axis (pitch) in degrees. If None, keeps the current value.
-            rotation (float | None): Rotation around the camera-axis in degrees. If None, keeps the current value.
-
-        Returns:
-            bool: True if the update was successful.
-        '''
-        try:
-            self.camera_orientation = np.array((
-                self.camera_orientation[0] if roll is None else roll,
-                self.camera_orientation[1] if pitch is None else pitch,
-                self.camera_orientation[2] if rotation is None else rotation,
-            ))
+            )
             return True
         except:
             return False
@@ -86,341 +58,139 @@ class ImageCalculus:
             bool: True if the update was successful.
         '''
         try:
-            self.camera_resolution = np.array((
+            self.camera_resolution = (
                 self.camera_resolution[0] if width is None else width,
                 self.camera_resolution[1] if height is None else height,
-            ))
+            )
             return True
         except:
             return False
 
 
-    def update_pixels_to_degree(
+    def update_pixels_per_degree(
         self,
-        pixels_to_degree: Callable[[float], float],
+        pixels_per_degree: float | None = None,
     ) -> bool:
         '''
         Sets the camera's angular resolution.
 
         Args:
-            pixels_to_degree (float | None): Pixels-per-degree conversion factor.
+            pixels_per_degree (float | None): Pixels-per-degree conversion factor.
                 If None, keeps the current value.
 
         Returns:
             bool: True if the update was successful.
         '''
         try:
-            self.pixels_to_degree = self.pixels_to_degree if pixels_to_degree is None else pixels_to_degree
+            self.pixels_per_degree = self.pixels_per_degree if pixels_per_degree is None else pixels_per_degree
             return True
         except:
             return False
 
 
-    def _calculate_camera_vector(
-        self, 
-        alfa: float, 
-        theta: float,
-    ) -> np.ndarray:
-        '''
-        calculate a unit vector pointing towards a pixel in the camera reference frame.
-
-        The vector is defined in the camera coordinate system, assuming:
-        - X axis pointing forward,
-        - Y axis pointing to the right,
-        - Z axis pointing upward (or according to your frame convention).
-
-        Args:
-            alfa (float): Angle in radians around the X axis.
-            theta (float): Angle in radians around the Y axis in the YZ plane.
-
-        Returns:
-            np.ndarray: 3D vector (x, y, z) pointing in the direction of the pixel.
-        '''
-        x = np.cos(alfa)
-        y = np.sin(alfa) * np.cos(theta)
-        z = np.sin(alfa) * np.sin(theta)
-        return (x, y, z)
-
-
-    def _calculate_rotate_vector(
+    def calculate_vector_from_drone_to_ground(
         self,
-        vector: np.ndarray,
-        pitch: float,
-        roll: float,
-    ) -> np.ndarray:
+        altura: float,
+        target_pixel: tuple[float, float],
+        drone_orientation: tuple[float, float, float] = (0, 0, 0),
+    ) -> np.ndarray | None:
         '''
-        Rotates a 3D vector by the given pitch and roll angles.
+        Calculates the vector from the drone's position to the ground intersection point.
+
+        drone_orientation not work!!!!!!!!!!!!
 
         Args:
-            vector (np.ndarray): 3D vector (x, y, z) to be rotated.
-            pitch (float): Rotation angle in radians.
-            roll (float): Rotation angle in radians.
+            altura (float): The drone's altitude relative to the ground (Z=0).
+            target_pixel (tuple[float, float]): The (px, py) coordinates of the target pixel in the image.
+            drone_orientation (tuple[float, float, float]): Drone orientation (Roll, Pitch, Yaw) in degrees.
 
         Returns:
-            np.ndarray: Rotated 3D vector (x, y, z).
+            np.ndarray | None: Vector from the drone's position to the ground intersection point,
+                               or None if there is no intersection.
         '''
-        x = vector[0] * np.cos(pitch) - vector[2] * np.sin(pitch)
-        y = vector[1] * np.cos(roll) - vector[2] * np.sin(roll)
-        z = vector[0] * np.sin(pitch) + vector[1] * np.sin(roll) + vector[2] * np.cos(pitch) * np.cos(roll)
-        return np.array((x, y, z))
-
-
-    def _calculate_direction_vector(
-        self,
-        alfa: float,
-        theta: float,
-        pitch: float,
-        roll: float,
-    ) -> np.ndarray:
-        '''
-        Computes the 3D direction vector from the camera to a target pixel, taking into account 
-        the camera's orientation and the drone's pitch and roll.
-
-        This function first calculates a vector in the camera reference frame pointing toward
-        the target pixel, then rotates it according to the camera's fixed orientation offset 
-        and the drone's current pitch and roll.
-
-        Args:
-            alfa (float): Angle in radians around the camera's X-axis (roll in the camera frame).
-            theta (float): Angle in radians around the camera's Y-axis (pitch in the camera frame).
-            pitch (float): Additional pitch angle of the drone in radians.
-            roll (float): Additional roll angle of the drone in radians.
-
-        Returns:
-            np.ndarray: Rotated 3D direction vector in the world or drone reference frame.
-        '''
-        camera_vector = self._calculate_camera_vector(
-            alfa,
-            theta + self.camera_orientation[2],
+        camera_vector = self._calc_unit_vector_from_camera(
+            target_pixel = target_pixel,
         )
 
-        drone_vector = self._calculate_rotate_vector(
-            camera_vector,
-            pitch = self.camera_orientation[1] + pitch,
-            roll = self.camera_orientation[0] + roll,
-        )
-
-        vector = self._calculate_rotate_vector(
-            drone_vector,
-            pitch = self.camera_orientation[1] + pitch,
-            roll = self.camera_orientation[0] + roll,
+        vector = self._calc_ground_intersection_vector(
+            camera_vector = camera_vector,
+            alt = altura,
         )
 
         return vector
 
 
-    def _calculate_calculate_line(
-        self,
-        pixel_x: float,
-        pixel_y: float,
-        pitch: float,
-        roll: float,
-    ) -> np.ndarray:
-        '''
-        Calculates a line from the camera to a target pixel in 3D space, returning the origin 
-        point and the direction vector of the line, taking into account the camera offset 
-        and the drone's pitch and roll.
+    def _calc_unit_vector_from_camera(self, target_pixel: Tuple[float, float]):
+        """
+        Compute a normalized direction vector from the camera center to a target pixel.
 
-        The function performs the following steps:
-        1. Applies the camera offset and drone orientation to determine the origin point.
-        2. Computes the vector from the image center to the target pixel.
-        3. Converts this pixel offset into an angular displacement (`alfa` and `theta`).
-        4. Calculates the 3D direction vector of the line in the world/drone reference frame.
+        This function calculates the camera ray corresponding to a given pixel in the image,
+        expressed in the drone's reference frame. The resulting vector points from the camera
+        center toward the target pixel.
 
         Args:
-            pixel_x (float): Coordinates x of the target pixel in the image.
-            pixel_y (float): Coordinates y of the target pixel in the image.
-            pitch (float): Pitch angle of the drone in radians.
-            roll (float): Roll angle of the drone in radians.
+            target_pixel (Tuple[float, float]): 
+                The (x, y) coordinates of the target pixel in image space (in pixels).
 
         Returns:
-            tuple:
-                origin_point (np.ndarray): 3D point representing the origin of the line 
-                    (camera position in world/drone frame).
-                direction_vector (np.ndarray): 3D unit vector pointing from the origin towards 
-                    the target pixel in space.
-        '''
-        origin_point = self._calculate_rotate_vector(
-            self.camera_offset,
-            pitch,
-            roll,
-        )
+            Tuple[float, float, float]: 
+                A normalized direction vector (y, x, -1) in the drone's reference frame, where:
+                
+                - **x** (float): Forward displacement (positive = forward).
+                - **y** (float): Lateral displacement (positive = right).
+                - **z** (float): Fixed at -1, indicating the camera points downward.
+        """
+        pixel_center_x = self.camera_resolution[0] / 2
+        pixel_center_y = self.camera_resolution[1] / 2
 
-        centro = self.camera_resolution / 2
-        vector = centro - np.array((pixel_x, pixel_y))
-        vector *= np.array((-1, 1))
+        pixel_vector_x = target_pixel[0] - pixel_center_x
+        pixel_vector_y = pixel_center_y - target_pixel[1]
 
-        theta = np.arctan2(vector[1], vector[0])
+        degrees_x = pixel_vector_x / self.pixels_per_degree
+        degrees_y = pixel_vector_y / self.pixels_per_degree
 
-        r = np.linalg.norm(vector)
-        alfa = np.deg2rad(self.pixels_to_degree(r))
+        x = math.tan(math.radians(degrees_x))
+        y = math.tan(math.radians(degrees_y))
 
-        direction_vector = self._calculate_direction_vector(
-            alfa,
-            theta,
-            pitch,
-            roll,
-        )
+        vector = (y, x, -1)  # converts camera XY into drone coordinates
 
-        return origin_point, direction_vector
+        return vector
 
 
-    def _calculate_ground_intersection_by_line(
-        self, 
-        origin_point: np.ndarray, 
-        direction_vector: np.ndarray
-    ) -> np.ndarray | None:
-        '''
-        Calculates the intersection of a line with the ground.
+    def _calc_ground_intersection_vector(self, alt: float, camera_vector: Tuple[float, float, float]):
+        """
+        Project a camera ray vector onto the ground plane in meters.
+
+        This function scales the camera direction vector so that it intersects
+        the ground plane at the given altitude, considering the camera's vertical offset.
 
         Args:
-            origin_point (np.ndarray): The origin point of the line.
-            direction_vector (np.ndarray): The direction vector of the line.
+            alt (float): 
+                The drone's altitude above the ground in **meters**.
+            camera_vector (Tuple[float, float, float]): 
+                A normalized direction vector (y, x, -1) from the camera center 
+                in the drone's reference frame (unitless).
 
         Returns:
-            np.ndarray | None: The (X, Y, Z) coordinates of the intersection point,
-                               or None if the line does not intersect the ground.
-        '''
-        if direction_vector[2] == 0:
+            Optional[Tuple[float, float, float]]: 
+                A 3D point in **meters** on the ground plane (y, x, z) expressed 
+                in the drone's reference frame, where:
+                
+                - **x** (float): Forward displacement from the drone center (meters).  
+                - **y** (float): Lateral displacement from the drone center (meters).  
+                - **z** (float): Vertical coordinate in meters, representing the ground 
+                (typically ≈ 0, but offset-adjusted).  
+
+                Returns **None** if the scale factor is zero (no valid ground intersection).
+        """
+        scale_factor = alt + self.camera_offset[2]
+
+        if scale_factor == 0:
             return None
 
-        t = - origin_point[2] / direction_vector[2]
+        ground_vector = tuple((vector * scale_factor + self.camera_offset[i]) for i, vector in enumerate(camera_vector))
 
-        intersection_point = origin_point + t * direction_vector
-
-        return intersection_point
-
-
-    def calculate_ground_intersection(
-        self, 
-        pixel_x: float,
-        pixel_y: float,
-        altitude: float,
-        pitch: float = 0.0, 
-        roll: float = 0.0,
-    ) -> np.ndarray | None:
-        '''
-        Computes the 3D vector from the drone/camera center to the ground intersection of a target pixel.
-
-        The function considers the camera offset, drone pitch/roll, and the drone's altitude. 
-        It returns the vector pointing from the drone/camera to the intersection point on the ground.
-
-        Args:
-            pixel_x (float): Coordinates x of the target pixel in the image.
-            pixel_y (float): Coordinates y of the target pixel in the image.
-            altitude (float): Height of the drone/camera above the ground.
-            pitch (float, optional): Additional pitch angle of the drone in radians. Defaults to 0.0.
-            roll (float, optional): Additional roll angle of the drone in radians. Defaults to 0.0.
-
-        Returns:
-            np.ndarray | None: 3D vector from the drone/camera to the intersection point on the ground,
-                               or None if the line does not intersect the ground.
-        '''
-        origin_point, direction_vector = self._calculate_calculate_line(pixel_x, pixel_y, pitch, roll)
-
-        origin_point += np.array((0, 0, altitude))
-
-        point = self._calculate_ground_intersection_by_line(origin_point, direction_vector)
-
-        if point is not None:
-            vector = point - np.array((0, 0, altitude))
-
-            return vector
-
-        return point
-
-
-    def _calculate_gps_by_vector(
-        self,
-        latitude: float,
-        longitude: float,
-        vector: np.ndarray,
-        bearing: float,
-    ) -> tuple[float, float]:
-        """
-        Converts a local 3D vector from the drone to a target point on the ground 
-        into GPS coordinates (latitude, longitude), taking into account the drone's bearing.
-
-        Args:
-            latitude (float): latitude coordinates of the drone in degrees.
-            longitude (float): longitude coordinates of the drone in degrees.
-            vector (np.ndarray): 3D vector from the drone to the point (x, y, z) in meters.
-                                x = forward, y = right, z = up (ignored for ground intersection).
-            bearing (float): Drone bearing in radians (0 = North, positive clockwise).
-
-        Returns:
-            tuple[float, float]: GPS coordinates (latitude, longitude) of the target point.
-        """
-        x_local, y_local, _ = vector  # z ignored
-
-        # Rotate vector by bearing to align with North-East frame
-        cos_bearing = np.cos(bearing)
-        sin_bearing = np.sin(bearing)
-        x_global = x_local * cos_bearing - y_local * sin_bearing  # North
-        y_global = x_local * sin_bearing + y_local * cos_bearing  # East
-
-        # Earth's radius in meters
-        R = 6378137  
-
-        # Offsets in radians
-        dlat = x_global / R
-        dlon = y_global / (R * np.cos(np.radians(latitude)))
-
-        # New GPS coordinates
-        new_lat = latitude + np.degrees(dlat)
-        new_lon = longitude + np.degrees(dlon)
-
-        return (new_lat, new_lon)
-
-
-    def calculate_gsp(
-        self, 
-        pixel_x: float,
-        pixel_y: float,
-        latitude: float,
-        longitude: float,
-        altitude: float,
-        bearing: float,
-        pitch: float = 0.0,
-        roll: float = 0.0,
-    ) -> tuple[float, float]:
-        '''
-        Calculates the GPS coordinates of a point on the ground corresponding to a target pixel 
-        in the camera image.
-
-        This function first computes the 3D vector from the drone/camera to the ground point using
-        the camera geometry, altitude, pitch, and roll. It then converts this vector into GPS 
-        coordinates using the drone's current GPS position and bearing (yaw).
-
-        Args:
-            pixel_x (float): Coordinates x of the target pixel in the image.
-            pixel_y (float): Coordinates y of the target pixel in the image.
-            latitude (float): latitude coordinates of the drone in degrees.
-            longitude (float): longitude coordinates of the drone in degrees.
-            altitude (float): Height of the drone/camera above the ground in meters.
-            bearing (float): Drone's yaw/bearing in radians (0 = North, positive clockwise).
-            pitch (float, optional): Additional pitch angle of the drone in radians. Defaults to 0.0.
-            roll (float, optional): Additional roll angle of the drone in radians. Defaults to 0.0.
-
-        Returns:
-            tuple[float, float]: GPS coordinates (latitude, longitude) of the target point on the ground.
-        '''
-        vector = self.calculate_ground_intersection(
-            pixel_x,
-            pixel_y,
-            altitude,
-            pitch, 
-            roll,
-        )
-
-        coordinate = self._calculate_gps_by_vector(
-            latitude,
-            longitude,
-            vector,
-            bearing,
-        )
-
-        return coordinate
+        return ground_vector
 
 
     @staticmethod
@@ -486,7 +256,6 @@ class ImageCalculus:
         destination = distance(meters=distance_m).destination(origin, absolute_bearing)
 
         return destination.latitude, destination.longitude
-
 
     @staticmethod
     def calculate_offset_pixels(
