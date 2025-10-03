@@ -31,21 +31,25 @@ from rcl_interfaces.srv import SetParameters
 from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
-from mirela_sdk.control.mavros.precision_landing import PrecisionLanding
 from mirela_sdk.control.mavros.position_controller import PositionController
 from mirela_sdk.utils.process import ProcessUtils
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 from mirela_sdk.utils.position_utils import PositionUtils
 
 from tf_transformations import quaternion_from_euler
-from tf_transformations import euler_from_quaternion
+
 
 class MavDrone(Drone):
     """
     Class to control the mav ros drone using ROS2.
     """
 
-    def __init__(self, node: Node, mavros: bool = False, indoor: bool = False) -> None:
+    def __init__(
+        self,
+        node: Node,
+        mavros: bool = False,
+        indoor: bool = False,
+    ) -> None:
         """
         Initialize the Mavros API.
 
@@ -70,7 +74,7 @@ class MavDrone(Drone):
         self._takeoff_position = PositionTarget()
         self._takeoff_height = None
         self._pose_controller = PositionController(self)
-        
+
         # Outdoor only variables:
         if self.indoor == False:
             self._heading = None
@@ -79,7 +83,6 @@ class MavDrone(Drone):
             self._takeoff_position = GeoPoseStamped()
 
             self.gps_controller = GPSController(self)
-
 
         # Subscribers:
         self._state_sub = self._create_subscriber(
@@ -110,7 +113,7 @@ class MavDrone(Drone):
                 PoseWithCovarianceStamped,
                 "/mavros/vision_pose/pose_cov",
                 lambda data: self.__setattr__("_vision_pos", data),
-                qos_profile_sensor_data
+                qos_profile_sensor_data,
             )
 
         # Outdoor only Subscribers:
@@ -123,17 +126,17 @@ class MavDrone(Drone):
             )
 
             self._rel_alt_sub = self._create_subscriber(
-            Float64,
-            "/mavros/global_position/rel_alt",
-            lambda data: self.__setattr__("_rel_alt", data),
-            qos_profile_sensor_data,
+                Float64,
+                "/mavros/global_position/rel_alt",
+                lambda data: self.__setattr__("_rel_alt", data),
+                qos_profile_sensor_data,
             )
 
             self._hdg_sub = self._create_subscriber(
-            Float64,
-            "/mavros/global_position/compass_hdg",
-            lambda data: self.__setattr__("_heading", data),
-            qos_profile_sensor_data,
+                Float64,
+                "/mavros/global_position/compass_hdg",
+                lambda data: self.__setattr__("_heading", data),
+                qos_profile_sensor_data,
             )
 
         # Services:
@@ -220,7 +223,7 @@ class MavDrone(Drone):
             http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Range.html
         """
         return self._rng_alt
-    
+
     @property
     def get_height(self) -> float:
         """
@@ -239,7 +242,7 @@ class MavDrone(Drone):
             return self.get_vision_pos.pose.position.z
         else:
             return self.get_rel_alt.data
-    
+
     @property
     def get_position(self) -> PoseWithCovarianceStamped | NavSatFix:
         """
@@ -255,7 +258,7 @@ class MavDrone(Drone):
             return self.get_vision_pos
         else:
             return self.get_gps
-        
+
     @property
     def get_position_as_target(self) -> PositionTarget | GeoPoseStamped:
         """
@@ -270,7 +273,9 @@ class MavDrone(Drone):
         if self.indoor == True:
             return PositionUtils.convert_position_to_target(self.get_vision_pos)
         else:
-            return PositionUtils.convert_position_to_target(self.get_gps, self.get_heading.data)
+            return PositionUtils.convert_position_to_target(
+                self.get_gps, self.get_heading.data
+            )
 
     @property
     def get_vision_pos(self) -> PoseWithCovarianceStamped:
@@ -297,7 +302,7 @@ class MavDrone(Drone):
             http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Imu.html
         """
         return self._imu_data
-    
+
     @property
     def get_gps(self) -> NavSatFix:
         """
@@ -313,7 +318,7 @@ class MavDrone(Drone):
         AttributeError
             If called in indoor mode.
         """
-        if self.indoor == False: 
+        if self.indoor == False:
             return self._gps
         else:
             raise AttributeError("GPS data not available in indoor mode.")
@@ -369,7 +374,9 @@ class MavDrone(Drone):
         timeout = Duration(seconds=10.0)
 
         while self.node.get_clock().now() - start_time < timeout:
-            self.node.get_logger().info("Waiting for lidar data...", throttle_duration_sec=1.0)
+            self.node.get_logger().info(
+                "Waiting for lidar data...", throttle_duration_sec=1.0
+            )
             rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
             if self.get_rng_alt is not None:
                 self._takeoff_height = self.get_rng_alt.range
@@ -380,20 +387,24 @@ class MavDrone(Drone):
         if self.indoor == True:
             start_time = self.node.get_clock().now()
             while self.node.get_clock().now() - start_time < timeout:
-                self.node.get_logger().info("Waiting for vision pose data...", throttle_duration_sec=1.0)
+                self.node.get_logger().info(
+                    "Waiting for vision pose data...", throttle_duration_sec=1.0
+                )
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
                 if self.get_vision_pos is not None:
                     sensors_initialized = True
                     self.node.get_logger().info("vSLAM data received")
                     break
 
-            self.initial_altitude = 0.0 # No altitude data in indoor mode
+            self.initial_altitude = 0.0  # No altitude data in indoor mode
             self.initial_heading = 0.0  # No heading data in indoor mode
-        
+
         else:
             start_time = self.node.get_clock().now()
             while self.node.get_clock().now() - start_time < timeout:
-                self.node.get_logger().info("Waiting for GPS data...", throttle_duration_sec=1.0)
+                self.node.get_logger().info(
+                    "Waiting for GPS data...", throttle_duration_sec=1.0
+                )
                 rclpy.spin_once(self.node, timeout_sec=0.1)  # Process callbacks
                 if self.get_gps is not None and self.get_heading is not None:
                     sensors_initialized = True
@@ -408,7 +419,7 @@ class MavDrone(Drone):
 
         if not self.lidar_on:
             self.node.get_logger().warn("Lidar data not available.")
-            
+
         if not sensors_initialized:
             self.node.get_logger().warn(
                 "Initialization completed with warnings. Some sensors may not be available."
@@ -423,7 +434,7 @@ class MavDrone(Drone):
             )
             self.node.get_logger().info(
                 f"Initial altitude: {self.initial_altitude}m, Initial heading: {self.initial_heading}°"
-            )        
+            )
 
     def _call_service(
         self,
@@ -576,9 +587,9 @@ class MavDrone(Drone):
         sleep_start_t = self.node.get_clock().now()
         while self.node.get_clock().now() - sleep_start_t < sleep_duration:
             rclpy.spin_once(self.node, timeout_sec=0.1)
-        
+
         self.set_takeoff_position()
-        
+
         self.takeoff(takeoff_alt)
         sleep(takeoff_alt)
 
@@ -655,7 +666,7 @@ class MavDrone(Drone):
         rtl_alt: float = None,
         precision_radius: float = 0.1,
         rtl_strategy: str = "default",
-        land: bool = True
+        land: bool = True,
     ):
         """
         Return-to-Launch (RTL) operation.
@@ -681,17 +692,17 @@ class MavDrone(Drone):
             target_alt = rtl_alt - self.get_height
 
             self.node.get_logger().info(f"Moving drone to rtl_alt: {rtl_alt}")
-            
+
             self.offboard_position(
                 x=0.0,
                 y=0.0,
                 z=target_alt,
                 timeout_sec=None,
                 precision_radius=precision_radius,
-                strategy="PID"
+                strategy="PID",
             )
 
-        if rtl_strategy == "AP": # ArduPilot RTL
+        if rtl_strategy == "AP":  # ArduPilot RTL
 
             self.node.get_logger().info(f"Sending RLT command...")
 
@@ -705,10 +716,11 @@ class MavDrone(Drone):
             self.delay(1)
             self.set_mode("rtl")
 
-
         else:
             if not (rtl_strategy == "default" or rtl_strategy == "PID"):
-                self.node.get_logger().warn(f"Unknown rtl_strategy: {rtl_strategy}, using default.")
+                self.node.get_logger().warn(
+                    f"Unknown rtl_strategy: {rtl_strategy}, using default."
+                )
 
             if self.lidar_on:
                 lidar_alt = self.get_rng_alt.range
@@ -717,7 +729,7 @@ class MavDrone(Drone):
                 lidar_alt = None
 
             self.node.get_logger().info(f"Navigating towards takeoff position...")
-            
+
             self._pose_controller.navigate_PID(
                 target_position=self._takeoff_position,
                 lidar_target_alt=lidar_alt,
@@ -751,17 +763,17 @@ class MavDrone(Drone):
             f"-- Servo {aux_out} set to {pwm_value}",
             f"-- Set servo {aux_out} failed",
         )
-       
+
     def offboard_position_gps_coords(
-            self,
-            latitude: float = 0.0,
-            longitude: float = 0.0,
-            altitude: float | None = None,
-            lidar_altitude: float | None = None,
-            heading: float | None = None,
-            precision_radius: float = 0.5,
-            timeout_sec: float | None = 60.0,
-            strategy: str = "default"
+        self,
+        latitude: float = 0.0,
+        longitude: float = 0.0,
+        altitude: float | None = None,
+        lidar_altitude: float | None = None,
+        heading: float | None = None,
+        precision_radius: float = 0.5,
+        timeout_sec: float | None = 60.0,
+        strategy: str = "default",
     ):
         """
         Move the drone to a specified GPS coordinate using closed-loop control.
@@ -770,47 +782,51 @@ class MavDrone(Drone):
         ----------
         latitude : float
             Target latitude in degrees.
-        
+
         longitude : float
             Target longitude in degrees.
-        
+
         altitude : float or None
             Target altitude in meters (absolute, not relative to takeoff).
-            
+
             If None, uses the current altitude.
 
         lidar_altitude : float or None
             Desired altitude above ground level (meters), limited to 15m.
-            
+
             If provided, the drone will use lidar data (ONLY USED IN PID STRATEGY).
-            
+
             This overrides the altitude parameter unless the requested height exceeds 15m.
 
         heading : float or None
             Desired heading in degrees (0 = North, clockwise positive).
-            
+
             If None, maintains current heading.
-        
+
         precision_radius : float
             Acceptable radius (meters) for reaching the target position.
-        
+
         timeout_sec : float or None
             Maximum time allowed (seconds) to reach the target.
-            
+
             If None, no timeout is applied.
 
         strategy : str
             Position control strategy:
-            
+
             - "default": Use position setpoint messages.
-            
+
             - "PID": Use closed-loop PID control to reach the target position.
         """
         if self.indoor == True:
-            raise RuntimeError("offboard_position with GPS coordinates cannot be used in indoor mode.")
-        
-        if heading is None: heading = self.get_heading.data
-        if altitude is None: altitude = self.get_gps.altitude
+            raise RuntimeError(
+                "offboard_position with GPS coordinates cannot be used in indoor mode."
+            )
+
+        if heading is None:
+            heading = self.get_heading.data
+        if altitude is None:
+            altitude = self.get_gps.altitude
 
         gps_setpoint = GeoPoseStamped()
         gps_setpoint.pose.position.latitude = latitude
@@ -827,61 +843,63 @@ class MavDrone(Drone):
             self._pose_controller.navigate_gps_msg(
                 gps_setpoint=gps_setpoint,
                 precision_radius=precision_radius,
-                timeout_sec=timeout_sec
+                timeout_sec=timeout_sec,
             )
-            
+
         else:
             if strategy != "default" and strategy != "PID":
-                self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
+                self.node.get_logger().warn(
+                    f"Unknown strategy {strategy}, using default."
+                )
             self._pose_controller.navigate_PID(
                 target_position=gps_setpoint,
                 lidar_target_alt=lidar_altitude,
                 precision_radius=precision_radius,
-                timeout_sec=timeout_sec
+                timeout_sec=timeout_sec,
             )
 
     def offboard_position(
-            self,
-            x: float = 0.0,
-            y: float = 0.0,
-            z: float = 0.0,
-            ground_reference: bool = False,
-            precision_radius: float = 0.5,
-            timeout_sec: float | None = 60.0,
-            strategy: str = "default"
+        self,
+        x: float = 0.0,
+        y: float = 0.0,
+        z: float = 0.0,
+        ground_reference: bool = False,
+        precision_radius: float = 0.5,
+        timeout_sec: float | None = 60.0,
+        strategy: str = "default",
     ):
         """
         Move the drone to a position relative to its current location and heading.
 
         The movement is relative to the drone's current orientation:
         - x-axis: forward/backward relative to drone's heading
-        - y-axis: right/left relative to drone's heading  
+        - y-axis: right/left relative to drone's heading
         - z-axis: up/down relative to current altitude
 
         Parameters
         ----------
         x : float
             Distance to move forward (+) or backward (-) in meters.
-            
+
         y : float
             Distance to move right (+) or left (-) in meters.
-            
+
         z : float
             Distance to move up (+) or down (-) in meters.
 
         ground_reference : bool
             If True, x, y and z are relative to the takeoff_position (ground reference).
-            
+
         precision_radius : float
             Acceptable radius in meters for reaching the target position.
-            
+
         timeout_sec : float, optional
             Maximum time in seconds to reach the target position.
             If None, no timeout is applied.
 
         strategy : str
             Position control strategy:
-            
+
             - "default": Use PID control with position setpoints
             - "PID": Use closed-loop PID control to reach the target position
             - "mavros": Use MAVROS position setpoint messages
@@ -894,30 +912,42 @@ class MavDrone(Drone):
         start_t = self.node.get_clock().now()
         sleep_duration = Duration(seconds=0.05)
         while self.node.get_clock().now() - start_t < sleep_duration:
-            rclpy.spin_once(self.node, timeout_sec=0.05)  # Process callbacks to get latest position
+            rclpy.spin_once(
+                self.node, timeout_sec=0.05
+            )  # Process callbacks to get latest position
 
         if self.indoor == False:
             if ground_reference == False:
                 heading = self.get_heading.data
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                    x=x, y=-y, z=z,
+                    x=x,
+                    y=-y,
+                    z=z,
                     latitude=self.get_gps.latitude,
                     longitude=self.get_gps.longitude,
                     altitude=self.get_gps.altitude,
-                    heading=heading
+                    heading=heading,
                 )
 
             else:
-                heading = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position.pose.orientation))
+                heading = np.degrees(
+                    PositionUtils.get_yaw_from_pose(
+                        self._takeoff_position.pose.orientation
+                    )
+                )
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                    x=x, y=-y, z=z,
+                    x=x,
+                    y=-y,
+                    z=z,
                     latitude=self._takeoff_position.pose.position.latitude,
                     longitude=self._takeoff_position.pose.position.longitude,
                     altitude=self._takeoff_position.pose.position.altitude,
-                    heading=heading
+                    heading=heading,
                 )
 
-            self.node.get_logger().info(f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}")
+            self.node.get_logger().info(
+                f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}"
+            )
 
             if strategy == "PID" and self.lidar_on == True:
                 print(f"lidar para setar: {self.get_rng_alt.range}")
@@ -933,7 +963,7 @@ class MavDrone(Drone):
                 heading=heading,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec,
-                strategy=strategy
+                strategy=strategy,
             )
 
         else:
@@ -947,20 +977,20 @@ class MavDrone(Drone):
             dy_world = x * math.sin(current_yaw_rad) + y * math.cos(current_yaw_rad)
             dz_world = z
 
-            #Prepares pose message (keeping current orientation)
+            # Prepares pose message (keeping current orientation)
             pose_msg = PositionTarget()
-            pose_msg.header.frame_id = 'map'
+            pose_msg.header.frame_id = "map"
             pose_msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
 
-            #Mask: ignores acceleration and yaw rate values
+            # Mask: ignores acceleration and yaw rate values
             pose_msg.type_mask = (
-                PositionTarget.IGNORE_AFX |
-                PositionTarget.IGNORE_AFY |
-                PositionTarget.IGNORE_AFZ |
-                PositionTarget.IGNORE_YAW_RATE|
-                PositionTarget.IGNORE_VX|
-                PositionTarget.IGNORE_VY|
-                PositionTarget.IGNORE_VZ
+                PositionTarget.IGNORE_AFX
+                | PositionTarget.IGNORE_AFY
+                | PositionTarget.IGNORE_AFZ
+                | PositionTarget.IGNORE_YAW_RATE
+                | PositionTarget.IGNORE_VX
+                | PositionTarget.IGNORE_VY
+                | PositionTarget.IGNORE_VZ
             )
 
             pose_msg.position.x = current_position.x + dx_world
@@ -977,17 +1007,19 @@ class MavDrone(Drone):
                 self._pose_controller.navigate_local_msg(
                     target_position=pose_msg,
                     precision_radius=precision_radius,
-                    timeout_sec=timeout_sec
+                    timeout_sec=timeout_sec,
                 )
-                
+
             else:
                 if strategy != "default" and strategy != "PID":
-                    self.node.get_logger().warn(f"Unknown strategy {strategy}, using default.")
+                    self.node.get_logger().warn(
+                        f"Unknown strategy {strategy}, using default."
+                    )
                 self._pose_controller.navigate_PID(
                     target_position=pose_msg,
                     lidar_target_alt=lidar_target_alt,
                     precision_radius=precision_radius,
-                    timeout_sec=timeout_sec
+                    timeout_sec=timeout_sec,
                 )
 
     def offboard_gps_position(
@@ -1180,7 +1212,13 @@ class MavDrone(Drone):
         """
         pass
 
-    def set_takeoff_position(self, pose: Optional[PoseWithCovarianceStamped|NavSatFix|PositionTarget|GeoPoseStamped] = None, heading: Optional[float] = None):
+    def set_takeoff_position(
+        self,
+        pose: Optional[
+            PoseWithCovarianceStamped | NavSatFix | PositionTarget | GeoPoseStamped
+        ] = None,
+        heading: Optional[float] = None,
+    ):
         """
         Sets the takeoff position for Return-To-Launch (RTL) and Ground Referenced operations.
 
@@ -1200,39 +1238,88 @@ class MavDrone(Drone):
             if isinstance(pose, PoseWithCovarianceStamped):
                 self._takeoff_position = PositionUtils.convert_position_to_target(pose)
                 return
-            
+
             elif isinstance(pose, PositionTarget):
                 self._takeoff_position = pose
                 return
-                          
+
             else:
-                raise ValueError("In indoor mode, pose parameter must be of type PoseWithCovarianceStamped or PositionTarget")
+                raise ValueError(
+                    "In indoor mode, pose parameter must be of type PoseWithCovarianceStamped or PositionTarget"
+                )
 
         else:
             if isinstance(pose, NavSatFix) and heading is not None:
-                self._takeoff_position = PositionUtils.convert_position_to_target(pose, heading)
+                self._takeoff_position = PositionUtils.convert_position_to_target(
+                    pose, heading
+                )
                 return
-            
+
             elif isinstance(pose, GeoPoseStamped):
                 self._takeoff_position = pose
                 return
-                          
+
             else:
-                raise ValueError("In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified")
+                raise ValueError(
+                    "In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified"
+                )
 
-    def custom_rtl(self):
+    def set_pid_config(self, config: str | dict | "PositionPIDConfig"):
         """
-        Deprecated method. Use rtl() instead.
+        Set PID configuration for position control.
+
+        Parameters
+        ----------
+        config : str, dict, or PositionPIDConfig
+            PID configuration. Can be:
+            - str: Path to YAML configuration file
+            - dict: Dictionary with x, y, z PID parameters
+            - PositionPIDConfig: Direct configuration object
+
+        Examples
+        --------
+        From file:
+        >>> drone.set_pid_config("/path/to/config.yaml")
+
+        From dict:
+        >>> drone.set_pid_config({
+        ...     "x": {"kp": 0.5, "output_min": -0.5, "output_max": 0.5},
+        ...     "y": {"kp": 0.5, "output_min": -0.5, "output_max": 0.5},
+        ...     "z": {"kp": 0.3, "output_min": -0.2, "output_max": 0.2}
+        ... })
+
+        From object:
+        >>> from mirela_sdk.control.pid import PositionPIDConfig, PIDConfig
+        >>> config = PositionPIDConfig(
+        ...     x=PIDConfig(kp=0.5, output_min=-0.5, output_max=0.5),
+        ...     y=PIDConfig(kp=0.5, output_min=-0.5, output_max=0.5),
+        ...     z=PIDConfig(kp=0.3, output_min=-0.2, output_max=0.2)
+        ... )
+        >>> drone.set_pid_config(config)
         """
+        from mirela_sdk.control.pid import PositionPIDConfig, PIDConfig
 
-        self.node.get_logger().warn("custom_rtl() is deprecated. Use rtl() instead.")
+        if isinstance(config, str):
+            # Load from YAML file
+            pid_config = PositionPIDConfig.from_yaml(config)
+        elif isinstance(config, dict):
+            # Create from dictionary
+            pid_config = PositionPIDConfig(
+                x=PIDConfig.from_dict(config.get("x", {})),
+                y=PIDConfig.from_dict(config.get("y", {})),
+                z=PIDConfig.from_dict(config.get("z", {})),
+            )
+        elif isinstance(config, PositionPIDConfig):
+            # Use directly
+            pid_config = config
+        else:
+            raise TypeError(
+                f"config must be str, dict, or PositionPIDConfig, got {type(config)}"
+            )
 
-        self.rtl(
-            rtl_alt=None,
-            precision_radius=0.3,
-            rtl_strategy="default",
-            land=True
-        )
+        # Update position controller configuration
+        self._pose_controller.set_pid_config(pid_config)
+        self.node.get_logger().info("PID configuration updated")
 
     def delay(self, seconds: float):
         """
