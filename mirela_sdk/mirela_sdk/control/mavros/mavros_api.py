@@ -1,6 +1,9 @@
 import numpy as np
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Union
+
+if TYPE_CHECKING:
+    from mirela_sdk.control.pid.config import PositionPIDConfig
 
 import rclpy
 from rclpy.node import Node
@@ -1264,7 +1267,7 @@ class MavDrone(Drone):
                     "In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified"
                 )
 
-    def set_pid_config(self, config: str | dict | "PositionPIDConfig"):
+    def set_pid_config(self, config: Union[str, dict, "PositionPIDConfig"]):
         """
         Set PID configuration for position control.
 

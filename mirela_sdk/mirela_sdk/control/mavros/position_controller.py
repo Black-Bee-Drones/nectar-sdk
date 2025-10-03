@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from mirela_sdk.control.mavros.mavros_api import MavDrone
+
 from pathlib import Path
 import numpy as np
 
@@ -9,7 +13,6 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from geographic_msgs.msg import GeoPoseStamped
 from sensor_msgs.msg import NavSatFix
 
-from mirela_sdk.control.mavros.mavros_api import MavDrone
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 from mirela_sdk.utils.position_utils import PositionUtils
 from mirela_sdk.control.pid import PIDController, PIDConfig, PositionPIDConfig
