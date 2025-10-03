@@ -20,6 +20,10 @@ setup(
             os.path.join("share", package_name, "config"),
             glob(os.path.join("config", "*.yaml")),
         ),
+        (
+            os.path.join("share", package_name, "config", "mavros"),
+            glob(os.path.join("config", "mavros", "*.yaml")),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -39,6 +43,7 @@ setup(
             "camera_calibration = mirela_sdk.image_processing.camera.calibration.calibration:main",
             "line_detection_node = mirela_sdk.image_processing.line.line_detection_node:main",
             "webcam_publisher = mirela_sdk.image_processing.camera.webcam_publisher_node:main",
+            "pid_controller_node = mirela_sdk.control.pid.pid_node:main",
         ],
     },
 )
