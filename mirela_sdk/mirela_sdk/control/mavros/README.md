@@ -307,14 +307,16 @@ time_over_plate = 3s  # Enough for detection + clearing
 ```python
 GRID_ALTITUDE = 1.8  # meters above ground
 
+drone.arm_takeoff(GRID_ALTITUDE)  # Sets takeoff position automatically
+
 for waypoint in grid_waypoints:
     drone.offboard_position(
         x=waypoint.x - current_x,
         y=waypoint.y - current_y,
         z=0.0,  # Maintain altitude
         precision_radius=0.3,
-        strategy="PID"
-        # No lidar_target_alt
+        strategy="PID",
+        ground_reference=True  # Requires takeoff position set
     )
 ```
 
@@ -525,6 +527,43 @@ drone.set_pid_config(config)
 
 # Navigate with new configuration
 drone.offboard_position(x=5.0, y=0.0, z=1.0, strategy="PID")
+```
+
+---
+
+## Exception Handling
+
+### Custom Exceptions
+
+```python
+from mirela_sdk.control.mavros import (
+    TakeoffPositionNotSetError,
+    SensorNotAvailableError,
+    InvalidModeError
+)
+```
+
+**TakeoffPositionNotSetError:**
+- Raised when using `ground_reference=True` or `rtl()` without setting takeoff position
+- Solution: Call `arm_takeoff()` or `set_takeoff_position()` first
+
+**SensorNotAvailableError:**
+- Raised when accessing sensors unavailable in current mode
+- Examples: GPS/heading in indoor mode
+
+**InvalidModeError:**
+- Raised when operation requires different flight mode
+- Example: GPS navigation in indoor mode
+
+### Usage Example
+
+```python
+try:
+    drone.offboard_position(x=1.0, y=0.0, ground_reference=True)
+except TakeoffPositionNotSetError as e:
+    print(f"Error: {e}")
+    drone.arm_takeoff(2.0)  # Set takeoff position
+    drone.offboard_position(x=1.0, y=0.0, ground_reference=True)
 ```
 
 ---

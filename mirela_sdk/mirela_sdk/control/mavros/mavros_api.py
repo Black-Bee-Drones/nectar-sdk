@@ -35,6 +35,11 @@ from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
 from mirela_sdk.control.mavros.position_controller import PositionController
+from mirela_sdk.control.mavros.exceptions import (
+    TakeoffPositionNotSetError,
+    SensorNotAvailableError,
+    InvalidModeError,
+)
 from mirela_sdk.utils.process import ProcessUtils
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 from mirela_sdk.utils.position_utils import PositionUtils
@@ -74,7 +79,7 @@ class MavDrone(Drone):
         self._rng_alt = None
         self._vision_pos = None
         self._imu_data = Imu()
-        self._takeoff_position = PositionTarget()
+        self._takeoff_position = None
         self._takeoff_height = None
         self._pose_controller = PositionController(self)
 
@@ -83,7 +88,6 @@ class MavDrone(Drone):
             self._heading = None
             self._gps = None
             self._rel_alt = Float64()
-            self._takeoff_position = GeoPoseStamped()
 
             self.gps_controller = GPSController(self)
 
@@ -318,13 +322,13 @@ class MavDrone(Drone):
             http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
         Raises
         ------
-        AttributeError
+        SensorNotAvailableError
             If called in indoor mode.
         """
         if self.indoor == False:
             return self._gps
         else:
-            raise AttributeError("GPS data not available in indoor mode.")
+            raise SensorNotAvailableError("GPS", "indoor")
 
     @property
     def get_rel_alt(self) -> Float64:
@@ -338,13 +342,13 @@ class MavDrone(Drone):
             http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
         Raises
         ------
-        AttributeError
+        SensorNotAvailableError
             If called in indoor mode.
         """
         if self.indoor == False:
             return self._rel_alt
         else:
-            raise AttributeError("Relative altitude data not available in indoor mode.")
+            raise SensorNotAvailableError("Relative altitude", "indoor")
 
     @property
     def get_heading(self) -> Float64:
@@ -358,13 +362,13 @@ class MavDrone(Drone):
             http://docs.ros.org/en/api/std_msgs/html/msg/Float64.html
         Raises
         ------
-        AttributeError
+        SensorNotAvailableError
             If called in indoor mode.
         """
         if self.indoor == False:
             return self._heading
         else:
-            raise AttributeError("Heading data not available in indoor mode.")
+            raise SensorNotAvailableError("Heading", "indoor")
 
     def __startup(self):
         """
@@ -725,9 +729,11 @@ class MavDrone(Drone):
                     f"Unknown rtl_strategy: {rtl_strategy}, using default."
                 )
 
+            if self._takeoff_position is None:
+                raise TakeoffPositionNotSetError("RTL")
+
             if self.lidar_on:
                 lidar_alt = self.get_rng_alt.range
-
             else:
                 lidar_alt = None
 
@@ -822,9 +828,7 @@ class MavDrone(Drone):
             - "PID": Use closed-loop PID control to reach the target position.
         """
         if self.indoor == True:
-            raise RuntimeError(
-                "offboard_position with GPS coordinates cannot be used in indoor mode."
-            )
+            raise InvalidModeError("GPS coordinate navigation", "indoor", "outdoor")
 
         if heading is None:
             heading = self.get_heading.data
@@ -892,6 +896,7 @@ class MavDrone(Drone):
 
         ground_reference : bool
             If True, x, y and z are relative to the takeoff_position (ground reference).
+            Requires set_takeoff_position() or arm_takeoff() to be called first.
 
         precision_radius : float
             Acceptable radius in meters for reaching the target position.
@@ -933,6 +938,8 @@ class MavDrone(Drone):
                 )
 
             else:
+                if self._takeoff_position is None:
+                    raise TakeoffPositionNotSetError("ground_reference=True")
                 heading = np.degrees(
                     PositionUtils.get_yaw_from_pose(
                         self._takeoff_position.pose.orientation
@@ -974,6 +981,8 @@ class MavDrone(Drone):
                 current_position = self.get_vision_pos.pose.pose.position
                 current_yaw_rad = PositionUtils.get_yaw_from_pose(self.get_vision_pos)
             else:
+                if self._takeoff_position is None:
+                    raise TakeoffPositionNotSetError("ground_reference=True")
                 current_position = self._takeoff_position.position
                 current_yaw_rad = self._takeoff_position.yaw
             dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
@@ -1267,7 +1276,7 @@ class MavDrone(Drone):
                     "In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified"
                 )
 
-    def set_pid_config(self, config: Union[str, dict, "PositionPIDConfig"]):
+    def set_pid_config(self, config: str | dict | "PositionPIDConfig"):
         """
         Set PID configuration for position control.
 

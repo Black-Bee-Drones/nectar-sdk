@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from mirela_sdk.control.mavros.mavros_api import MavDrone
 
@@ -17,6 +18,7 @@ from mirela_sdk.utils.gps_calculate import GPSCalculate
 from mirela_sdk.utils.position_utils import PositionUtils
 from mirela_sdk.control.pid import PIDController, PIDConfig, PositionPIDConfig
 from mirela_sdk.control.mavros.obstacle_detector import LidarObstacleDetector
+from mirela_sdk.control.mavros.exceptions import InvalidModeError
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
 
@@ -207,7 +209,7 @@ class PositionController:
             Maximum time to reach target (seconds).
         """
         if self.drone.indoor:
-            raise RuntimeError("GPS navigation cannot be used in indoor mode")
+            raise InvalidModeError("GPS navigation", "indoor", "outdoor")
 
         target_position = gps_setpoint.pose.position
         target_heading = PositionUtils.get_yaw_from_pose(gps_setpoint)
