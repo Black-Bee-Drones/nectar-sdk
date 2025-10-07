@@ -942,7 +942,7 @@ class MavDrone(Drone):
                     raise TakeoffPositionNotSetError("ground_reference=True")
                 heading = np.degrees(
                     PositionUtils.get_yaw_from_pose(
-                        self._takeoff_position.pose.orientation
+                        self._takeoff_position
                     )
                 )
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
@@ -1276,7 +1276,7 @@ class MavDrone(Drone):
                     "In outdoor mode, pose parameter must be of type GeoPoseStamped or NavSatFix with heading specified"
                 )
 
-    def set_pid_config(self, config: str | dict | "PositionPIDConfig"):
+    def set_pid_config(self, config: Union[str, dict, "PositionPIDConfig"]):
         """
         Set PID configuration for position control.
 
