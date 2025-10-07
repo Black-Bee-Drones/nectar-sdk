@@ -246,7 +246,7 @@ class MavDrone(Drone):
         if self.lidar_on == True:
             return self.get_rng_alt.range
         elif self.indoor == True:
-            return self.get_vision_pos.pose.position.z
+            return self.get_vision_pos.pose.pose.position.z
         else:
             return self.get_rel_alt.data
 
