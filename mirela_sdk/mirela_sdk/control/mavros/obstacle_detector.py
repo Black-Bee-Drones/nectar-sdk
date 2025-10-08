@@ -1,5 +1,6 @@
 from collections import deque
 from typing import Optional
+import numpy as np
 
 
 class LidarObstacleDetector:
@@ -59,42 +60,37 @@ class LidarObstacleDetector:
         if len(self._buffer) < self.buffer_size:
             return False
 
-        # baseline from buffer mean
-        if self._baseline is None:
-            self._baseline = sum(self._buffer) / len(self._buffer)
-
+        # Calculate baseline from current buffer
+        self._baseline = np.mean(self._buffer)
         deviation = lidar_altitude - self._baseline
 
-        # obstacle detection
+        # Detect new obstacle
         if not self._obstacle_detected and abs(deviation) > self.height_threshold:
             self._obstacle_detected = True
             self._obstacle_start_time = current_time
             return True
 
-        # obstacle state should be cleared
+        # Check if obstacle state should be cleared
         if self._obstacle_detected:
             elapsed = current_time - self._obstacle_start_time
 
             if elapsed > self.timeout:
-                self._clear_obstacle_state(lidar_altitude)
+                self._clear_obstacle_state()
                 return False
 
-            # obstacle cleared - altitude returned close to baseline
+            # Obstacle cleared - altitude returned close to baseline
             if abs(deviation) < 0.1:
-                self._clear_obstacle_state(lidar_altitude)
+                self._clear_obstacle_state()
                 return False
 
             return True
 
         return False
 
-    def _clear_obstacle_state(self, current_altitude: float):
-        """Clear obstacle detection state and update baseline."""
+    def _clear_obstacle_state(self):
+        """Clear obstacle detection state."""
         self._obstacle_detected = False
         self._obstacle_start_time = None
-        self._baseline = current_altitude
-        self._buffer.clear()
-        self._buffer.append(current_altitude)
 
     def reset(self):
         """Reset detector to initial state."""
