@@ -329,7 +329,7 @@ class PositionController:
 
             vx = pid_controllers["x"].update(-dx)  # Negative for body frame
             vy = pid_controllers["y"].update(-dy)
-            vz = pid_controllers["z"].update(dz)
+            vz = pid_controllers["z"].update(-dz)
 
             # Stop vertical control if obstacle detected (let ArduPilot handle it)
             if obstacle_detected:

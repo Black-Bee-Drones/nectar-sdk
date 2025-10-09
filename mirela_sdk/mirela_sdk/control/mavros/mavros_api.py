@@ -278,6 +278,8 @@ class MavDrone(Drone):
             - Outdoor: returns get_gps as GeoPoseStamped
         """
         if self.indoor == True:
+            if self.lidar_on:
+                return PositionUtils.convert_position_to_target(self.get_vision_pos, lidar=self.get_rng_alt.range)
             return PositionUtils.convert_position_to_target(self.get_vision_pos)
         else:
             return PositionUtils.convert_position_to_target(
@@ -606,7 +608,7 @@ class MavDrone(Drone):
         """
         req = CommandTOL.Request()
         req.altitude = 0.0
-        self._call_service(self._land_srv, req, "-- Landed", "-- Land failed")
+        self._call_service(self._land_srv, req, "-- Landed", "-- Land failed", sync=True)
 
     def set_home(
         self, current_gps: bool, yaw=0.0, latitude=0.0, longitude=0.0, altitude=0.0
@@ -961,7 +963,11 @@ class MavDrone(Drone):
 
             if strategy == "PID" and self.lidar_on == True:
                 print(f"lidar para setar: {self.get_rng_alt.range}")
-                lidar_target_alt = self.get_rng_alt.range + z
+                if ground_reference == False:
+                    lidar_target_alt = self.get_rng_alt.range + z
+                else:
+                    self.node.get_logger().warn("Essa bomba ainda não teve teste, chequem ai bixos - mavros_api line 969\nForte abraço, lipedras")
+                    lidar_target_alt = self._takeoff_position.position.z + z
             else:
                 lidar_target_alt = None
 
@@ -980,6 +986,7 @@ class MavDrone(Drone):
             if ground_reference == False:
                 current_position = self.get_vision_pos.pose.pose.position
                 current_yaw_rad = PositionUtils.get_yaw_from_pose(self.get_vision_pos)
+                
             else:
                 if self._takeoff_position is None:
                     raise TakeoffPositionNotSetError("ground_reference=True")
@@ -1011,7 +1018,10 @@ class MavDrone(Drone):
             pose_msg.yaw = current_yaw_rad
 
             if self.lidar_on == True:
-                lidar_target_alt = self.get_rng_alt.range + z
+                if ground_reference == False:
+                    lidar_target_alt = self.get_rng_alt.range + z
+                else:
+                    lidar_target_alt = self._takeoff_position.position.z + z
             else:
                 lidar_target_alt = None
 

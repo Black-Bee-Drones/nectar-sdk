@@ -116,7 +116,7 @@ class PositionUtils:
         return yaw
 
     @staticmethod
-    def convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix, heading: float = None) -> PositionTarget|GeoPoseStamped:
+    def convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix, heading: float = None, lidar: float = None) -> PositionTarget|GeoPoseStamped:
         """
         Convert position messages to their corresponding target message types.
 
@@ -133,6 +133,9 @@ class PositionUtils:
             Current heading in degrees (0 = North, positive clockwise).
             Required when converting NavSatFix to GeoPoseStamped to set orientation.
             Ignored when converting PoseWithCovarianceStamped to PositionTarget.
+        lidar : float, optional
+            Optional altitude value from lidar sensor to override z position in PositionTarget.
+            If provided, it replaces the z value from PoseWithCovarianceStamped.
 
         Returns
         -------
@@ -150,7 +153,7 @@ class PositionUtils:
             msg = PositionTarget()
             msg.position.x = pose.pose.pose.position.x
             msg.position.y = pose.pose.pose.position.y
-            msg.position.z = pose.pose.pose.position.z
+            msg.position.z = pose.pose.pose.position.z if lidar is None else lidar
             # Convert orientation from quaternion to yaw and set it
             yaw = PositionUtils.get_yaw_from_pose(pose)
             msg.yaw = yaw
