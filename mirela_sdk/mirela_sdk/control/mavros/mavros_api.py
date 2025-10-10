@@ -552,6 +552,7 @@ class MavDrone(Drone):
         """
         # self.__startup()
         self.set_mode("GUIDED")
+        self.delay(0.5)
         req = CommandBool.Request()
         req.value = True
         self._call_service(self._arm_srv, req, "-- Armed", "-- Arm failed")
@@ -581,7 +582,10 @@ class MavDrone(Drone):
         Send command to arm, take off, and hold.
 
         After calling arm service, waits for 3 seconds, and stores takeoff_position.
-        Then, after calling takeoff service, sleeps for `takeoff_alt` seconds.
+        Then, after calling takeoff service, sleeps for `takeoff_alt` * 1.5 seconds.
+        
+        After calling takeoff and sleeping, checks if the drone has moved up.
+        If the drone heigh is still the same, arm_takeoff will be executed ONCE again.
 
         Parameters
         ----------
@@ -592,23 +596,39 @@ class MavDrone(Drone):
         self.arm()
 
         # Update variables
-        sleep_duration = Duration(seconds=3.0)
-        sleep_start_t = self.node.get_clock().now()
-        while self.node.get_clock().now() - sleep_start_t < sleep_duration:
-            rclpy.spin_once(self.node, timeout_sec=0.1)
-
+        self.delay(3.0)
+        
         self.set_takeoff_position()
+        takeoff_height = self.get_height
 
         self.takeoff(takeoff_alt)
-        sleep(takeoff_alt)
+        self.delay(takeoff_alt * 1.5)
 
-    def land(self):
+        if abs(self.get_height - takeoff_height) < 0.1:
+            self.node.get_logger().warn("Takeoff Failed, trying again in 1 second...")
+            self.delay(seconds=1.0)
+
+            self.arm()
+            self.delay(3.0)
+            self.set_takeoff_position()
+            self.takeoff(takeoff_alt)
+            self.delay(takeoff_alt * 1.5)
+            
+
+    def land(self, timeout_sec: float = 10.0):
         """
         Send command to land the drone.
         """
         req = CommandTOL.Request()
         req.altitude = 0.0
-        self._call_service(self._land_srv, req, "-- Landed", "-- Land failed", sync=True)
+        self._call_service(self._land_srv, req, "-- Landed", "-- Land failed", sync=False)
+        duration = Duration(seconds=timeout_sec)
+        timer_begin = self.node.get_clock().now()
+        while self.node.get_clock().now() - timer_begin < duration:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            if self.get_state.armed == False:
+                break
+        self.delay(0.1)
 
     def set_home(
         self, current_gps: bool, yaw=0.0, latitude=0.0, longitude=0.0, altitude=0.0
