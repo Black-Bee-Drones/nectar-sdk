@@ -1,7 +1,7 @@
 import depthai as dai
 import cv2
 
-from typing import Optional
+from typing import Optional, Tuple
 from enum import Enum
 
 import json
@@ -20,6 +20,9 @@ class OakdCameraResolution(Enum):
     THE_540_P  = "THE_540_P"
     THE_1080_P = dai.ColorCameraProperties.SensorResolution.THE_1080_P
     THE_4K     = dai.ColorCameraProperties.SensorResolution.THE_4_K
+
+
+class PipelineOrderingError(Exception):...
 
 
 class OakdCam(DepthCam):
@@ -69,7 +72,10 @@ class OakdCam(DepthCam):
                          3: (OakdCam.RIGHT, dai.CameraBoardSocket.CAM_C)}
         self.device = None
         self.camera_resolution = OakdCameraResolution.THE_540_P
-        
+        self.spatial_calc_config = None
+        self.spatial_calc_config_inqueue = None
+
+
         # For DepthCam-style usage
         self.__cam_num: int = 1
         self.__link_out: bool = True
@@ -82,6 +88,7 @@ class OakdCam(DepthCam):
     def start(self,
               cam_num: int = 1,
               *,
+              usb2mode = False,
               enable_depth: bool = False,
               camera_resolution: OakdCameraResolution = OakdCameraResolution.THE_540_P,
               set_control: bool = True) -> None:
@@ -95,18 +102,17 @@ class OakdCam(DepthCam):
                           set_control=set_control)
 
         if enable_depth:
-            stereo = self.get_stereo_depth()
-            self.post_processing_stereo_depth(stereo)
-            self.configure_stereo_node_output(["depth"])  # expose depth stream
+            self.depth_config()
             self.__have_depth = True
         else:
             self.__have_depth = False
 
-        self.init_cam()
+        self.init_cam(usb2mode)
         # Get queues explicitly by stream name to avoid relying on cam_type
         self.__rgb_queue = self.getQueue(OakdCam.RGB, maxSize=1, blocking=False)
         if self.__have_depth:
-            self.__depth_queue = self.getQueue("depth", maxSize=1, blocking=False)
+            self.__depth_queue = self.getQueue("depth", maxSize=4, blocking=False)
+
         self._is_running = True
 
 
@@ -116,7 +122,7 @@ class OakdCam(DepthCam):
         if self.__rgb_queue is None:
             return None
         try:
-            msg = self.__rgb_queue.tryGet()
+            msg = self.__rgb_queue.get()
             if msg is None:
                 return None
             return msg.getCvFrame()
@@ -129,15 +135,10 @@ class OakdCam(DepthCam):
 
         if not self.__have_depth or self.__depth_queue is None:
             return None
-        try:
-            msg = self.__depth_queue.tryGet()
-            if msg is None:
-                return None
-            depth_mm = msg.getCvFrame()
-        except Exception:
-            return None
-        if depth_mm is None:
-            return None
+        try: depth_mm = self.getFrame(self.__depth_queue)
+        except Exception: return None
+        if depth_mm is None: return None
+
         # Convert millimeters to meters (float32)
         if depth_mm.dtype != np.float32:
             depth_m = depth_mm.astype(np.float32) / 1000.0
@@ -353,6 +354,8 @@ class OakdCam(DepthCam):
         mono_right = self.pipeline.createMonoCamera()
         mono_right.setBoardSocket(dai.CameraBoardSocket.CAM_C)
         mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        
+        stereo.setOutputSize(mono_left.getResolutionWidth(), mono_left.getResolutionHeight())
 
         mono_left.out.link(stereo.left)
         mono_right.out.link(stereo.right)
@@ -389,6 +392,9 @@ class OakdCam(DepthCam):
         :param stream_names list[str]: stream names to configure
         ("disparity", "depth", "rectifiedLeft", "rectifiedRight", "syncedLeft", "syncedRight")
         """
+
+        if not isinstance(stream_names, list): 
+            raise TypeError("Invalid type for stream name. It must be a list of strings")
         
         for stream_name in stream_names:
         
@@ -755,6 +761,175 @@ class OakdCam(DepthCam):
             raise ValueError("Key 'input_size' must be 'WxH', e.g. '640x640'")
 
         self.width, self.height = [int(value) for value in self.input_size.split("x")]
+
+
+    def depth_config(self, 
+                     spatial_calculator: bool = False,
+                     calculation_algorithm: dai.SpatialLocationCalculatorAlgorithm = 
+                                        dai.SpatialLocationCalculatorAlgorithm.MEDIAN) -> None:
+        
+        """
+        Configure depth settings for distance measurement applications. It defines the 
+        stereo, spatial location calculator (optional) and links the pipeline path.
+
+        :param spatial_calculator (bool): set spatial location calculator as input to
+         stereo depth link. SpatialLocationCalculator can calculate spatials coordinates
+         within a defined Region of Interest (ROI), and forwards the depth map through the 
+         passthroughDepth output for visualization or processing.
+        :param calculation_algorithm (dai.SpatialLocationCalculatorAlgorithm): the
+         algorithm that will be used to calculate spatial coordinates. Default is MEDIAN
+         
+        """
+
+        stereo = self.get_stereo_depth()
+        xout_depth = self.pipeline.create(dai.node.XLinkOut)
+        xout_depth.setStreamName("depth")
+
+        # Overwrite properties:
+        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_ACCURACY)
+        stereo.setSubpixel(True)
+
+        if spatial_calculator:
+            spatial_location_calculator, \
+            xoutSpatialData, \
+            xin_spatial_calc_config = self.spatial_calculator_config(calculation_algorithm)
+
+            spatial_location_calculator.passthroughDepth.link(xout_depth.input)
+            stereo.depth.link(spatial_location_calculator.inputDepth)
+
+            spatial_location_calculator.out.link(xoutSpatialData.input)
+            xin_spatial_calc_config.out.link(spatial_location_calculator.inputConfig)
+
+        else: stereo.depth.link(xout_depth.input)
+
+
+    def spatial_calculator_config(self, 
+                                  calc_algorithm: dai.SpatialLocationCalculatorAlgorithm = 
+                                                 dai.SpatialLocationCalculatorAlgorithm.MEDIAN
+                                  ) -> Tuple[dai.node.SpatialLocationCalculator, 
+                                             dai.node.XLinkOut,
+                                             dai.node.XLinkIn]:
+        
+        """
+        Define settings for Spatial Location Calculator for applications that 
+        requires a ROI definition.
+
+        :param calculation_algorithm (dai.SpatialLocationCalculatorAlgorithm): the
+         algorithm that will be used to calculate spatial coordinates. Default is MEDIAN
+         
+        """
+        
+        xoutSpatialData = self.pipeline.create(dai.node.XLinkOut)
+        xin_spatial_calc_config = self.pipeline.create(dai.node.XLinkIn)
+        spatial_location_calculator = self.pipeline.create(dai.node.SpatialLocationCalculator)
+        
+        xoutSpatialData.setStreamName("spatialData")
+        xin_spatial_calc_config.setStreamName("spatialCalcConfig")
+        self.spatial_calc_config = dai.SpatialLocationCalculatorConfigData()
+        self.spatial_calc_config.depthThresholds.lowerThreshold = 100
+        self.spatial_calc_config.depthThresholds.upperThreshold = 10000
+        self.spatial_calc_config.calculationAlgorithm = calc_algorithm
+        spatial_location_calculator.inputConfig.setWaitForMessage(False)
+        spatial_location_calculator.initialConfig.addROI(self.spatial_calc_config)
+
+        return spatial_location_calculator, xoutSpatialData, xin_spatial_calc_config
+
+
+    def update_spatial_calc_ROI(self, 
+                                top_left: tuple[float, float],
+                                bottom_right: tuple[float, float]) -> None:
+        """
+        Update the region of interest (ROI) in spatial calculator configs. It creates a 
+        dai.Rect to delimit the region using top left corner and bottom right corner
+        past normalized.
+
+        :param top_left (tuple[float, float]): a tuple with the normalized top left points.
+         [0.0 ... 1.0].
+        :param bottom_right (tuple[float, float]): a tuple with the normalized bottom right
+         points. [0.0 ... 1.0].
+
+        """
+
+        if self.spatial_calc_config_inqueue is None and self.device is not None:
+            self.spatial_calc_config_inqueue = self.device.getInputQueue("spatialCalcConfig")
+
+        if self.spatial_calc_config is None:
+            raise PipelineOrderingError("Configure depth settings before call update ROI function")
+
+
+        top_left = dai.Point2f(top_left[0], top_left[1])
+        bottom_right = dai.Point2f(bottom_right[0], bottom_right[1])
+
+        self.spatial_calc_config.roi = dai.Rect(top_left, bottom_right)
+
+        cfg = dai.SpatialLocationCalculatorConfig()
+        cfg.addROI(self.spatial_calc_config)
+        self.spatial_calc_config_inqueue.send(cfg)
+
+
+    def create_spatial_detection_network(self, 
+                                         mn_model_path: Path | str,
+                                         labels: list,
+                                         confidence: float = 0.5,
+                                         sync_nn: bool = True) -> None:
+        """
+        Function to create a Mobile Net Spatial Detection Network using stereo node
+        aligned with color camera. It defines stereo, spatial detection network, rgb 
+        camera and configure its settings.
+
+        :param mn_mnodel (Path | str): The path for the blob model
+        :param labels (list): the list with the model labels
+        :param confidence (float): the confidence for valid detections. Default is 0.5
+        :param sync_nn (bool): True for a synchronous neural network, which keeps 
+         frame capture synchronous with the inference process
+
+        """
+        
+        if not Path(mn_model_path).exists():
+            raise FileNotFoundError(f'Mobile net model not found, please check your path')
+        if not isinstance(labels, list):
+            raise TypeError("Passed labels parameter is not a list.")
+        
+        spatial_network = self.pipeline.create(dai.node.MobileNetSpatialDetectionNetwork)
+        cam_rgb = self.pipeline.create(dai.node.ColorCamera)
+        stereo = self.get_stereo_depth()
+
+        stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)   
+
+        # Overwrite sub_pixel:     
+        stereo.setSubpixel(True)
+
+        xout_rgb   = self.pipeline.create(dai.node.XLinkOut)
+        xout_nn    = self.pipeline.create(dai.node.XLinkOut) 
+        xout_depth = self.pipeline.create(dai.node.XLinkOut)
+
+        xout_rgb.  setStreamName("rgb")
+        xout_nn.   setStreamName("detections")
+        xout_depth.setStreamName("depth")
+
+        cam_rgb.setPreviewSize(300, 300)
+        cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        cam_rgb.setInterleaved(False)
+        cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+
+        spatial_network.setBlobPath(mn_model_path)
+        spatial_network.setConfidenceThreshold(confidence)
+        spatial_network.input.setBlocking(False)
+        spatial_network.setBoundingBoxScaleFactor(0.5)
+        spatial_network.setDepthLowerThreshold(100)
+        spatial_network.setDepthUpperThreshold(5000)
+        
+        cam_rgb.preview.link(spatial_network.input)
+
+        if sync_nn:
+            spatial_network.passthrough.link(xout_rgb.input)
+        else:
+            cam_rgb.preview.link(xout_rgb.input)
+            
+        spatial_network.out.link(xout_nn.input)
+
+        stereo.depth.link(spatial_network.inputDepth)
+        spatial_network.passthroughDepth.link(xout_depth.input)
 
 
     @staticmethod
