@@ -33,7 +33,7 @@ class IMX219Cam(AbstractCam):
             f"video/x-raw, width=(int){self._config.width}, height=(int){self._config.height}, format=(string)BGRx ! "
             f"videoconvert ! "
             f"video/x-raw, format=(string)BGR ! "
-            f"appsink"
+            f"appsink max-buffer=1 drop=true sync=false"
         )
     
     def start(self) -> None:
