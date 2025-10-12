@@ -7,15 +7,20 @@ class LidarObstacleDetector:
     """
     Detects obstacles using lidar altitude variation over time.
 
-    When the drone passes under an object, the lidar altitude changes rapidly.
-    This detector uses a buffer to track changes and detect when ArduPilot's
-    rangefinder-based altitude control should take over.
+    When the drone passes over an object (like a table or platform), the lidar
+    altitude reading changes rapidly. This detector identifies such changes and
+    temporarily disables PID altitude control, allowing the Pixhawk's internal
+    rangefinder-based altitude control to handle the situation.
+
+    The detector uses a timeout-based approach: once an obstacle is detected,
+    altitude control remains disabled for a specified duration to prevent
+    oscillations while the drone passes over the obstacle.
     """
 
     def __init__(
         self,
         buffer_size: int = 10,
-        height_threshold: float = 0.35,
+        height_threshold: float = 0.25,
         timeout: float = 8.0,
     ):
         """
@@ -24,11 +29,14 @@ class LidarObstacleDetector:
         Parameters
         ----------
         buffer_size : int
-            Number of samples to keep for variation calculation.
+            Number of lidar samples to keep for baseline calculation.
+            Used to determine the average altitude before obstacle detection.
         height_threshold : float
             Minimum height change (meters) to trigger obstacle detection.
+            Lower values detect smaller obstacles but may cause false positives.
         timeout : float
-            Maximum time (seconds) to maintain obstacle state.
+            Duration (seconds) to maintain obstacle state after detection.
+            This prevents oscillations while the drone passes over the obstacle.
         """
         self.buffer_size = buffer_size
         self.height_threshold = height_threshold
@@ -53,44 +61,41 @@ class LidarObstacleDetector:
         Returns
         -------
         bool
-            True if obstacle is detected, False otherwise.
+            True if obstacle is detected (altitude control should be disabled),
+            False otherwise.
         """
         self._buffer.append(lidar_altitude)
 
         if len(self._buffer) < self.buffer_size:
             return False
 
-        # Calculate baseline from current buffer
         self._baseline = np.mean(self._buffer)
         deviation = lidar_altitude - self._baseline
 
-        # Detect new obstacle
+        # Detect new obstacle based on deviation threshold
         if not self._obstacle_detected and abs(deviation) > self.height_threshold:
             self._obstacle_detected = True
             self._obstacle_start_time = current_time
             return True
 
-        # Check if obstacle state should be cleared
         if self._obstacle_detected:
             elapsed = current_time - self._obstacle_start_time
 
             if elapsed > self.timeout:
+                # Timeout expired - re-enable altitude control
                 self._clear_obstacle_state()
                 return False
 
-            # Obstacle cleared - altitude returned close to baseline
-            if abs(deviation) < 0.1:
-                self._clear_obstacle_state()
-                return False
-
+            # Continue disabling altitude control during timeout
             return True
 
         return False
 
     def _clear_obstacle_state(self):
-        """Clear obstacle detection state."""
+        """Clear obstacle detection state and reset timer."""
         self._obstacle_detected = False
         self._obstacle_start_time = None
+        self._buffer.clear()  # Clear buffer for fresh baseline after obstacle
 
     def reset(self):
         """Reset detector to initial state."""
