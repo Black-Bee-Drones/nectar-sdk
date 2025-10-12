@@ -263,6 +263,7 @@ class PositionController:
         lidar_target_alt: float | None = None,
         precision_radius: float = 0.2,
         timeout_sec: float | None = 60.0,
+        disable_altitude_control: bool = False,
     ):
         """
         Navigate to position using PID velocity control.
@@ -277,6 +278,7 @@ class PositionController:
         lidar_target_alt : float, optional
             Target altitude above ground using lidar (meters). Limited to 15m.
             When provided, enables obstacle detection.
+
         precision_radius : float
             Acceptable distance in meters to consider the target reached.
             Controller stops when 3D distance to target is within this radius.
@@ -284,6 +286,11 @@ class PositionController:
         timeout_sec : float, optional
             Maximum time in seconds to reach the target position.
             If None, no timeout is applied.
+
+        disable_altitude_control : bool
+            If True, disables altitude control (vz=0) throughout the navigation.
+            This allows the Pixhawk's internal rangefinder control to handle altitude.
+            Useful when passing over obstacles or uneven terrain.
 
         Notes
         -----
@@ -329,24 +336,32 @@ class PositionController:
 
             vx = pid_controllers["x"].update(-dx)  # Negative for body frame
             vy = pid_controllers["y"].update(-dy)
-            vz = pid_controllers["z"].update(-dz)
 
-            # Stop vertical control if obstacle detected (let ArduPilot handle it)
-            if obstacle_detected:
+            # Handle altitude control
+            if disable_altitude_control:
+                # Explicitly disabled - let Pixhawk handle altitude
                 vz = 0.0
+            elif obstacle_detected:
+                # Obstacle detected - defer to ArduPilot altitude control
+                vz = 0.0
+            else:
+                # Normal PID altitude control
+                vz = pid_controllers["z"].update(-dz)
 
+            # Apply dead zone to prevent oscillations
             dead_zone = precision_radius / 2
             if abs(dx) < dead_zone:
                 vx = 0.0
             if abs(dy) < dead_zone:
                 vy = 0.0
-            if abs(dz) < dead_zone:
+            if abs(dz) < dead_zone and not disable_altitude_control:
                 vz = 0.0
 
             # Log state
             distance = np.sqrt(dx**2 + dy**2 + dz**2)
+            alt_status = "(disabled)" if disable_altitude_control else f"(dz={dz:.2f})"
             self.drone.node.get_logger().info(
-                f"Distance: {distance:.2f}m | Error: dx={dx:.2f}, dy={dy:.2f}, dz={dz:.2f} | "
+                f"Distance: {distance:.2f}m | Error: dx={dx:.2f}, dy={dy:.2f} {alt_status} | "
                 f"Vel: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}",
                 throttle_duration_sec=0.5,
             )
