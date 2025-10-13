@@ -602,7 +602,7 @@ class MavDrone(Drone):
         takeoff_height = self.get_height
 
         self.takeoff(takeoff_alt)
-        self.delay(takeoff_alt * 1.5)
+        self.delay(takeoff_alt * 3)
 
         if abs(self.get_height - takeoff_height) < 0.1:
             self.node.get_logger().warn("Takeoff Failed, trying again in 1 second...")
