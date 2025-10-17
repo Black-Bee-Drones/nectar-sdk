@@ -71,7 +71,7 @@ class PositionController:
             return PositionPIDConfig(
                 x=PIDConfig(kp=0.5, output_min=-0.42, output_max=0.42),
                 y=PIDConfig(kp=0.5, output_min=-0.42, output_max=0.42),
-                z=PIDConfig(kp=0.5, output_min=-0.2, output_max=0.2),
+                z=PIDConfig(kp=0.22, output_min=-0.15, output_max=0.1),
             )
         else:
             return PositionPIDConfig(
@@ -340,10 +340,13 @@ class PositionController:
             # Handle altitude control
             if disable_altitude_control:
                 # Explicitly disabled - let Pixhawk handle altitude
+                dz = 0.0
                 vz = 0.0
             elif obstacle_detected:
                 # Obstacle detected - defer to ArduPilot altitude control
-                vz = 0.0
+                # [Note]: Not tested yet, can be generating false positives
+                # vz = 0.0
+                vz = pid_controllers["z"].update(-dz)
             else:
                 # Normal PID altitude control
                 vz = pid_controllers["z"].update(-dz)
