@@ -114,7 +114,7 @@ class ImageHandler:
         if self.camera is None or not self.camera.is_running:
             raise RuntimeError("Camera must be opened before calling take_photo(). Call open() first.")
 
-        self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
+        # self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
         start_time = time.time()
         frame = None
         while time.time() - start_time < timeout_sec:
