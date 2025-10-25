@@ -3,6 +3,8 @@ from mirela_sdk.image_processing.camera import (
     DepthCam,
     RealsenseCam,
     OakdCam,
+    RealSenseConfig,
+    OakDConfig,
 )
 import rclpy
 from rclpy.node import Node
@@ -16,8 +18,8 @@ class DepthDemoNode(Node):
     def __init__(self, camera_type: str) -> None:
         super().__init__("depth_example")
 
-        self.window: str = f"{camera_type.capitalize()} Color"
-        self.depth_window: str = f"{camera_type.capitalize()} Depth"
+        self.window: str = f"{camera_type.replace('_', ' ').title()} Color"
+        self.depth_window: str = f"{camera_type.replace('_', ' ').title()} Depth"
         self.point_uv: Optional[Tuple[int, int]] = None  # (u, v)
 
         cv2.namedWindow(self.window)
@@ -25,10 +27,32 @@ class DepthDemoNode(Node):
 
         # Select and start camera using the DepthCam interface
         if camera_type == "oakd":
-            cam = OakdCam()
-            cam.start(cam_num=1, enable_depth=True, usb_full_speed=False)
-        else:
-            cam = RealsenseCam(fps=30)
+            config = OakDConfig(cam_num=1, enable_depth=True)
+            cam = OakdCam(config)
+            cam.start()
+        elif camera_type == "realsense_ros":
+            # RealSense via ROS topics
+            config = RealSenseConfig(
+                use_ros_topics=True,
+                color_topic="/camera/color/image_raw",
+                depth_topic="/camera/depth/image_rect_raw",
+                color_compressed=True,  # Use compressed color
+                depth_compressed=False,  # Depth usually not compressed
+            )
+            cam = RealsenseCam(config, node=self)
+            cam.start()
+            self.get_logger().info(
+                f"Using RealSense via ROS topics: {config.color_topic}, {config.depth_topic}"
+            )
+        else:  # Default realsense with pyrealsense2
+            config = RealSenseConfig(
+                color_res=(1280, 720),
+                depth_res=(1280, 720),
+                fps=30,
+                align_to_color=True,
+                use_ros_topics=False,
+            )
+            cam = RealsenseCam(config)
             cam.start()
 
         self.cam = cam
@@ -102,9 +126,14 @@ class DepthDemoNode(Node):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unified depth example for RealSense or Oak-D"
+        description="Unified depth example for RealSense (direct or ROS) or Oak-D"
     )
-    parser.add_argument("--camera", choices=["realsense", "oakd"], default="realsense")
+    parser.add_argument(
+        "--camera",
+        choices=["realsense", "realsense_ros", "oakd"],
+        default="realsense",
+        help="Camera type: 'realsense' (pyrealsense2), 'realsense_ros' (ROS topics), or 'oakd'",
+    )
     args, _ = parser.parse_known_args()
 
     rclpy.init()

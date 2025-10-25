@@ -46,6 +46,14 @@ class CameraExampleNode(Node):
             return IMX219Config(sensor_id=1, width=1280, height=720, flip=2)
         if camera_type == "realsense":
             return RealSenseConfig(color_res=(1280, 720), depth_res=(1280, 720), fps=30)
+        if camera_type == "realsense_ros":
+            return RealSenseConfig(
+                use_ros_topics=True,
+                color_topic="/camera/color/image_raw",
+                depth_topic="/camera/depth/image_rect_raw",
+                color_compressed=True,
+                depth_compressed=False,
+            )
         if camera_type == "c920":
             return C920Config(profile=1)  # 1280x720
         if camera_type == "oakd":

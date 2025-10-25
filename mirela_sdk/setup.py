@@ -38,6 +38,7 @@ setup(
             "test_velocity = mirela_sdk.examples.test_velocity:main",
             "test_gps = mirela_sdk.examples.test_gps:main",
             "camera_example = mirela_sdk.examples.camera_example:main",
+            "depth_example = mirela_sdk.examples.depth_example:main",
             "yolo_example = mirela_sdk.examples.yolo_example:main",
             "color_calibration_node = mirela_sdk.image_processing.color.color_calibration_node:main",
             "click_color_calibration_node = mirela_sdk.image_processing.color.click_color_calibration_node:main",
