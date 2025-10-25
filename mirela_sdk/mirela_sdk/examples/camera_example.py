@@ -49,7 +49,7 @@ class CameraExampleNode(Node):
         if camera_type == "c920":
             return C920Config(profile=1)  # 1280x720
         if camera_type == "oakd":
-            return OakDConfig(cam_num=1, enable_depth=False)
+            return OakDConfig()
         if camera_type == "ros":
             return ROSConfig(
                 topic="/camera/color/image_raw/compressed", compressed=True

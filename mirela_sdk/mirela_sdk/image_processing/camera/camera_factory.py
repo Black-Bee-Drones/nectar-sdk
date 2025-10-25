@@ -75,9 +75,7 @@ class CameraFactory:
         if builder is OakdCam:
             if not isinstance(config, OakDConfig):
                 raise ValueError("OakdCam requires an OakDConfig.")
-            cam = OakdCam(config)
-            cam.start()  # OakdCam's start is different
-            return cam
+            return builder(config)
 
         return builder(config)
 
