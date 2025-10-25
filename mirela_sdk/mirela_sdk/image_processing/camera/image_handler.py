@@ -47,7 +47,6 @@ class ImageHandler:
         self.poll_interval = poll_interval
         self.cam_timer = None
 
-
     def _build_camera_from_source(self) -> AbstractCam:
         if self.camera is not None:
             return self.camera
@@ -87,9 +86,19 @@ class ImageHandler:
         if self.image_processing_callback is not None:
             self.image_processing_callback(self.img)
         if self.show_result is not None and self.img is not None:
-            cv2.imshow(self.show_result, self.img)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                self.cleanup()
+            try:
+                cv2.imshow(self.show_result, self.img)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    self.cleanup()
+            except cv2.error as e:
+                if "The function is not implemented" in str(e):
+                    self.node.get_logger().warn(
+                        "OpenCV GUI not available. Run with show_result:=false or install opencv-python with GUI support",
+                        throttle_duration_sec=10.0,
+                    )
+                    self.show_result = None  # Disable display
+                else:
+                    raise
 
     def run(self):
         self.node.get_logger().info(f"Running image handler [{self.image_source}]")
@@ -112,7 +121,9 @@ class ImageHandler:
                  frame if no callback is provided. Returns None on timeout.
         """
         if self.camera is None or not self.camera.is_running:
-            raise RuntimeError("Camera must be opened before calling take_photo(). Call open() first.")
+            raise RuntimeError(
+                "Camera must be opened before calling take_photo(). Call open() first."
+            )
 
         # self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
         start_time = time.time()
