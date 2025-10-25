@@ -11,3 +11,7 @@ numpy==1.26.4
 depthai==2.29.0.0
 pyrealsense2==2.56.5.9235
 scikit-learn==1.7.2
+ultralytics==8.3.152
+huggingface-hub==0.32.2
+roboflow==1.1.66
+supervision==0.26.1
