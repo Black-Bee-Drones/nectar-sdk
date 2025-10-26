@@ -54,11 +54,12 @@ class RealSenseConfig(CameraConfig):
     fps: int = 30
     align_to_color: bool = True
     name: str = "realsense_cam"
+    enable_depth: bool = True
     # ROS topic mode (when camera is already used by another node like Isaac ROS VSLAM)
     use_ros_topics: bool = False
     color_topic: str = "/camera/color/image_raw"
     depth_topic: str = "/camera/depth/image_rect_raw"
-    color_compressed: bool = False
+    color_compressed: bool = True
     depth_compressed: bool = False
 
 
