@@ -95,7 +95,6 @@ class OakdCam(DepthCam):
     def start(self,
               cam_num: int = None,
               *,
-              enable_depth: bool = None,
               usb2mode = False,
               enable_depth: bool = False,
               camera_resolution: OakdCameraResolution = OakdCameraResolution.THE_540_P,
