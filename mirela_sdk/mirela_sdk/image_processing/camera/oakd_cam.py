@@ -58,12 +58,15 @@ class OakdCam(DepthCam):
     WHITE_BALANCE     =     "white_balance"
 
     
-    def __init__(self)-> None:
+    def __init__(self, config=None)-> None:
         """
         OakdCam constructor: initializes the pipeline and configures cameras with their 
         board sockets
+        
+        :param config: OakDConfig instance with camera configuration
         """
-
+        from .camera_config import OakDConfig
+        
         super().__init__("oakd")
 
         self.pipeline = dai.Pipeline()
@@ -72,28 +75,38 @@ class OakdCam(DepthCam):
                          3: (OakdCam.RIGHT, dai.CameraBoardSocket.CAM_C)}
         self.device = None
         self.camera_resolution = OakdCameraResolution.THE_540_P
+        
+        # Store config
+        self._config = config if config is not None else OakDConfig()
+        
         self.spatial_calc_config = None
         self.spatial_calc_config_inqueue = None
 
 
         # For DepthCam-style usage
-        self.__cam_num: int = 1
+        self.__cam_num: int = self._config.cam_num
         self.__link_out: bool = True
-        self.__have_depth: bool = False
+        self.__have_depth: bool = self._config.enable_depth
         self.__rgb_queue = None
         self.__depth_queue = None
 
 
     # DepthCam-style API
     def start(self,
-              cam_num: int = 1,
+              cam_num: int = None,
               *,
+              enable_depth: bool = None,
               usb2mode = False,
               enable_depth: bool = False,
               camera_resolution: OakdCameraResolution = OakdCameraResolution.THE_540_P,
               set_control: bool = True) -> None:
         
 
+        # Use config values if parameters not provided
+        if cam_num is None:
+            cam_num = self.__cam_num
+        if enable_depth is None:
+            enable_depth = self.__have_depth
 
         # Configure the color camera (keeps internal cam_type as RGB)
         self.camera_resolution = camera_resolution

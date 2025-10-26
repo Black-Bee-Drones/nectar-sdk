@@ -75,9 +75,16 @@ class CameraFactory:
         if builder is OakdCam:
             if not isinstance(config, OakDConfig):
                 raise ValueError("OakdCam requires an OakDConfig.")
-            cam = OakdCam(config)
-            cam.start()  # OakdCam's start is different
-            return cam
+            return builder(config)
+
+        if builder is RealsenseCam:
+            if isinstance(config, RealSenseConfig) and config.use_ros_topics:
+                if node is None:
+                    raise ValueError(
+                        "RealsenseCam with use_ros_topics=True requires a ROS node."
+                    )
+                return builder(config, node)
+            return builder(config)
 
         return builder(config)
 
@@ -90,4 +97,3 @@ CameraFactory.register("imx219", IMX219Cam)
 CameraFactory.register("oakd", OakdCam)
 CameraFactory.register("ros", ROSCam)
 CameraFactory.register("file", FileImageCam)
-
