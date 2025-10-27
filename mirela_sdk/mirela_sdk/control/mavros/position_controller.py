@@ -164,11 +164,11 @@ class PositionController:
                 integral_limits=self._pid_config.z.get_integral_limits(),
             ),
             "yaw": PIDController(
-                kp=1.0,
-                ki=0.0,
+                kp=0.5,
+                ki=0.1,
                 kd=0.0,
-                output_limits=(0.3, 0.3),
-                integral_limits=(0.0, 0.0),
+                output_limits=(-0.2, 0.2),
+                integral_limits=(-0.05, 0.05),
             ),
         }
 
@@ -392,11 +392,9 @@ class PositionController:
                 dyaw = PositionUtils.get_yaw_from_pose(target_position) - current_yaw
                 # Normalize yaw error to [-pi, pi]
                 dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
-
                 if abs(dyaw) < np.radians(3):
                     # Yaw is close enough - consider it reached
                     dyaw = 0.0
-
                 vyaw = pid_controllers["yaw"].update(-dyaw)
             else:
                 dyaw = 0.0
@@ -465,7 +463,7 @@ class PositionController:
             if nav_config.control_z:
                 control_status.append(f"dz={dz:.2f}")
             if nav_config.control_yaw:
-                control_status.append(f"dyaw={dyaw:.2f}")
+                control_status.append(f"dyaw={np.degrees(dyaw):.2f}")
 
             error_str = ", ".join(control_status)
 
