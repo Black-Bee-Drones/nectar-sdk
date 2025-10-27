@@ -4,6 +4,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image as RosImage
 from sensor_msgs.msg import CompressedImage as RosCompressedImage
 from cv_bridge import CvBridge
+import rclpy
 
 from .abstract_cam import DepthCam
 from .camera_config import RealSenseConfig
@@ -174,6 +175,7 @@ class RealsenseCam(DepthCam):
 
     def get_frame(self) -> Optional[np.ndarray]:
         if self._use_ros_topics:
+            rclpy.spin_once(self._node, timeout_sec=1.0)
             return self._rgb
         else:
             frames = self._wait_for_frames()
