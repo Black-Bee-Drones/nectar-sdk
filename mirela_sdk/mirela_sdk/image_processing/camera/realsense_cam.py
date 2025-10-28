@@ -4,7 +4,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image as RosImage
 from sensor_msgs.msg import CompressedImage as RosCompressedImage
 from cv_bridge import CvBridge
-import rclpy
+from threading import Event
 
 from .abstract_cam import DepthCam
 from .camera_config import RealSenseConfig
@@ -36,6 +36,10 @@ class RealsenseCam(DepthCam):
             self._pipeline = None
             self._align = None
             self._depth_scale = None
+            # Event-based frame tracking
+            self._new_color_frame_event = Event()
+            self._new_depth_frame_event = Event()
+            self._last_color_timestamp = None
         else:
             # Direct pyrealsense2 mode
             self._pipeline = None
@@ -56,6 +60,9 @@ class RealsenseCam(DepthCam):
                 )
             else:
                 self._rgb = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+
+            self._last_color_timestamp = msg.header.stamp
+            self._new_color_frame_event.set()
         except Exception as e:
             if self._node:
                 self._node.get_logger().error(
@@ -79,6 +86,8 @@ class RealsenseCam(DepthCam):
                 self._depth = depth_raw.astype(np.float32) / 1000.0  # mm to meters
             else:
                 self._depth = depth_raw.astype(np.float32)
+
+            self._new_depth_frame_event.set()
         except Exception as e:
             if self._node:
                 self._node.get_logger().error(
@@ -173,10 +182,32 @@ class RealsenseCam(DepthCam):
             frames = self._align.process(frames)
         return frames
 
-    def get_frame(self) -> Optional[np.ndarray]:
+    def get_frame(
+        self, wait_for_new: bool = True, timeout: float = 0.1
+    ) -> Optional[np.ndarray]:
+        """Get color frame with optional wait for new frame.
+
+        Args:
+            wait_for_new: If True, wait for a new frame to arrive (only for ROS topics)
+            timeout: Maximum time to wait for new frame in seconds
+
+        Returns:
+            Color frame as numpy array or None if timeout
+        """
         if self._use_ros_topics:
-            rclpy.spin_once(self._node, timeout_sec=1.0)
-            return self._rgb
+            if wait_for_new:
+                if self._new_color_frame_event.wait(timeout):
+                    self._new_color_frame_event.clear()
+                    return self._rgb
+                else:
+                    if self._node:
+                        self._node.get_logger().debug(
+                            f"Timeout waiting for new color frame ({timeout}s)",
+                            throttle_duration_sec=1.0,
+                        )
+                    return None
+            else:
+                return self._rgb
         else:
             frames = self._wait_for_frames()
             if frames is None:
@@ -187,11 +218,34 @@ class RealsenseCam(DepthCam):
             self._rgb = np.asanyarray(color_frame.get_data())
             return self._rgb
 
-    def get_depth_frame(self) -> Optional[np.ndarray]:
+    def get_depth_frame(
+        self, wait_for_new: bool = True, timeout: float = 0.1
+    ) -> Optional[np.ndarray]:
+        """Get depth frame with optional wait for new frame.
+
+        Args:
+            wait_for_new: If True, wait for a new frame to arrive (only for ROS topics)
+            timeout: Maximum time to wait for new frame in seconds
+
+        Returns:
+            Depth frame as numpy array or None if not available/timeout
+        """
         if not self._enable_depth:
             return None
         if self._use_ros_topics:
-            return self._depth
+            if wait_for_new:
+                if self._new_depth_frame_event.wait(timeout):
+                    self._new_depth_frame_event.clear()
+                    return self._depth
+                else:
+                    if self._node:
+                        self._node.get_logger().debug(
+                            f"Timeout waiting for new depth frame ({timeout}s)",
+                            throttle_duration_sec=1.0,
+                        )
+                    return None
+            else:
+                return self._depth
         else:
             frames = self._wait_for_frames()
             if frames is None:

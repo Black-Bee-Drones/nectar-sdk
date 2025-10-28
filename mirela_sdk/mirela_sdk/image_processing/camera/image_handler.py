@@ -1,4 +1,3 @@
-import os
 from rclpy.node import Node
 import cv2
 import time
@@ -19,7 +18,7 @@ class ImageHandler:
         *,
         config: Optional[CameraConfig] = None,
         camera: Optional[AbstractCam] = None,
-        poll_interval: float = 0.0001,
+        poll_interval: float = 0.01,
     ):
         """
         Class to handle image processing from various sources.
@@ -74,7 +73,13 @@ class ImageHandler:
 
     def _camera_callback(self):
         try:
-            frame = self.camera.get_frame() if self.camera else None
+            if hasattr(self.camera, "_use_ros_topics") and self.camera._use_ros_topics:
+                frame = self.camera.get_frame(
+                    wait_for_new=True, timeout=self.poll_interval * 0.9
+                )
+            else:
+                frame = self.camera.get_frame() if self.camera else None
+
             if frame is None:
                 return
             self.img = frame
@@ -110,13 +115,16 @@ class ImageHandler:
             self.poll_interval, self._camera_callback
         )
 
-    def take_photo(self, timeout_sec: float = 5.0) -> Optional[Any]:
+    def take_photo(
+        self, timeout_sec: float = 1.0, wait_for_new: bool = True
+    ) -> Optional[Any]:
         """
         Captures a single frame, processes it, and returns the result.
 
         Requires the camera to be opened first using open().
 
         :param timeout_sec: Maximum time to wait for a frame.
+        :param wait_for_new: If True, wait for a new frame (only affects ROS topics).
         :return: The result from the image_processing_callback, or the raw
                  frame if no callback is provided. Returns None on timeout.
         """
@@ -128,11 +136,18 @@ class ImageHandler:
         # self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
         start_time = time.time()
         frame = None
-        while time.time() - start_time < timeout_sec:
-            frame = self.camera.get_frame()
-            if frame is not None:
-                break
-            time.sleep(0.1)
+
+        if hasattr(self.camera, "_use_ros_topics") and self.camera._use_ros_topics:
+            frame = self.camera.get_frame(
+                wait_for_new=wait_for_new, timeout=timeout_sec
+            )
+        else:
+
+            while time.time() - start_time < timeout_sec:
+                frame = self.camera.get_frame()
+                if frame is not None:
+                    break
+                time.sleep(0.05)
 
         if frame is None:
             self.node.get_logger().error("Failed to capture frame within timeout.")
