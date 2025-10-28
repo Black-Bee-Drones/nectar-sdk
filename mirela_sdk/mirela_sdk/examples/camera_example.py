@@ -29,6 +29,9 @@ class CameraExampleNode(Node):
         config = self._get_camera_config(camera_type)
         window_name = "Camera Viewer" if show_result else None
 
+        if camera_type == "realsense_ros":
+            camera_type = "realsense"
+
         self.image_handler = ImageHandler(
             node=self,
             image_source=camera_type,
