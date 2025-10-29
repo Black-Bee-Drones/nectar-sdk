@@ -171,19 +171,33 @@ class RealsenseObstacleDetector:
         self.drone.node.get_logger().info("RealsenseDepthTest initialized")
 
     def control_func(self, x: float) -> float:
-        x -= 31
-        flag = 1 if x < 0 else -1
-        return flag #flag * min(1.1, max(0.5, abs(x)))
+        # kept for backward compatibility but not used in new logic
+        return x
+
+    def _map_px_to_movement(self, px: float, img_center: float, min_m: float = 0.5, max_m: float = 1.1) -> float:
+        """Map a pixel x-coordinate to a lateral movement in meters.
+
+        The magnitude is in [min_m, max_m] and increases as the cluster is
+        closer to the image center. The sign is positive when px is to the
+        right of center (meaning we should move left) and negative when px is
+        to the left of center (meaning we should move right). Caller should
+        flip sign based on chosen avoidance side.
+        """
+        # distance from center (0..img_center)
+        dist = abs(px - img_center)
+        # normalized proximity to center: 1.0 when px==center, 0.0 at image edge
+        norm = max(0.0, 1.0 - (dist / float(img_center)))
+        mag = min_m + norm * (max_m - min_m)
+        return float(mag)
 
     def detect_obstacle(self) -> Tuple[bool, float]:
-        depth = self.cam.get_depth_frame(wait_for_new=True, timeout=1.0)
-        
+        # Get latest depth via camera helper (keeps previous behavior)
+        depth = self.cam.get_depth_frame(wait_for_new=True, timeout=0.5)
+
         if depth is None:
-            self.drone.delay(0.5)
-            depth = self.cam.get_depth_frame(wait_for_new=True, timeout=1.0)
-            if depth is None:
-                raise RuntimeError("aqui deu merda")
-        
+            self.drone.node.get_logger().warn("No depth frame received")
+            return (False, None)
+
         depth_mm = depth * 1000.0
         depth_small = cv2.resize(depth_mm, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_NEAREST)
 
@@ -191,12 +205,12 @@ class RealsenseObstacleDetector:
         depth_small[~mask] = 0
 
         ys, xs = np.where(depth_small > 0)
-        
+
         if len(xs) < 50:
             return (False, None)
-        
+
         depths = depth_small[ys, xs]
-        
+
         pts = np.column_stack((xs, ys, depths * 0.5))
 
         clustering = DBSCAN(eps=20, min_samples=20).fit(pts)
@@ -209,43 +223,61 @@ class RealsenseObstacleDetector:
 
         img_center = depth_small.shape[1] / 2
 
-        centroids_x = []
-        centroids_y = []
+        cluster_min_x = []
+        cluster_max_x = []
 
         for lb in unique_labels:
             idx = labels == lb
             xs_l = xs[idx]
             ys_l = ys[idx]
             depths_l = depths[idx]
-            depth_mean = np.mean(depths_l)
 
+            depth_mean = np.mean(depths_l)
             if depth_mean > 1300:
                 continue
 
-            cx = np.mean(xs_l)
-            cy = np.mean(ys_l)
-            centroids_x.append(cx)
-            centroids_y.append(cy)
+            # use cluster min/max instead of centroid
+            min_x = float(np.min(xs_l))
+            max_x = float(np.max(xs_l))
+            cluster_min_x.append(min_x)
+            cluster_max_x.append(max_x)
 
+            # log cluster details (use extremes)
             self.obstacle_event.set()
-
             self.drone.node.get_logger().info(
-                f"[Cluster {lb}] Depth={int(depth_mean)}mm | "
-                f"X={cx:.1f} Y={cy:.1f} | Pixels={len(xs_l)}"
+                f"[Cluster {lb}] Depth={int(depth_mean)}mm | min_x={min_x:.1f} max_x={max_x:.1f} | Pixels={len(xs_l)}"
             )
-        
-        if len(centroids_x) == 0:
+
+        if len(cluster_min_x) == 0:
             return (False, None)
 
-        # <<< NOVO >>>
-        all_left = all(cx < img_center for cx in centroids_x)
+        # Determine avoidance side and pick the cluster extreme closest to center
+        # If all clusters are left of center -> avoid right (negative)
+        all_left = all(mx < img_center for mx in cluster_max_x)
+        all_right = all(mn > img_center for mn in cluster_min_x)
 
         if all_left:
-            # todos obstáculos na esquerda → desviar para a direita
-            return (True, max(centroids_x))
+            # choose the cluster max_x closest to center (largest max_x)
+            chosen_px = max(cluster_max_x)
+            mag = self._map_px_to_movement(chosen_px, img_center)
+            return (True, -mag)  # negative => move right
+        elif all_right:
+            # choose the cluster min_x closest to center (smallest min_x)
+            chosen_px = min(cluster_min_x)
+            mag = self._map_px_to_movement(chosen_px, img_center)
+            return (True, mag)  # positive => move left
         else:
-            # tem obstáculo na direita ou misturados → desviar para a esquerda
-            return (True, min(centroids_x))
+            # mixed clusters: choose the closest extreme to center and move away
+            # compute distance of each extreme to center and pick the minimum
+            all_extremes = cluster_min_x + cluster_max_x
+            distances = [abs(px - img_center) for px in all_extremes]
+            best_px = all_extremes[int(np.argmin(distances))]
+            # decide side by checking if best_px is left or right of center
+            mag = self._map_px_to_movement(best_px, img_center)
+            if best_px < img_center:
+                return (True, -mag)
+            else:
+                return (True, mag)
 
     def process_depth(self):
         detect, decision = self.detect_obstacle()
@@ -270,27 +302,6 @@ class RealsenseObstacleDetector:
             strategy="default",
             obstacle_avoidance=False
         )
-
-        for _ in range(2):
-            detect, decision = self.detect_obstacle()
-
-            if not detect:
-                break
-            
-            out = self.control_func(decision)
-
-            self.drone.node.get_logger().info(
-                f"[Avoid] direction={out}"
-            )
-
-            self.drone.offboard_position(
-                x=0.0, y=out, z=0.0, yaw=0.0,
-                ground_reference=False,
-                precision_radius=0.2,
-                timeout_sec=10.0,
-                strategy="default",
-                obstacle_avoidance=False
-            )
 
         self.drone.offboard_position(
             x=2.5, y=0.0, z=0.0, yaw=0.0,
