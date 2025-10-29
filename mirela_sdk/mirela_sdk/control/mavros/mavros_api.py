@@ -34,7 +34,7 @@ from rcl_interfaces.srv import SetParameters
 from mirela_sdk.control.mavros.gps_controller import GPSController
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 from mirela_sdk.control.drone import Drone
-from mirela_sdk.control.mavros.position_controller import PositionController
+from mirela_sdk.control.mavros.position_controller import PositionController, NavigationConfig
 from mirela_sdk.control.mavros.exceptions import (
     TakeoffPositionNotSetError,
     SensorNotAvailableError,
@@ -754,18 +754,20 @@ class MavDrone(Drone):
             if self._takeoff_position is None:
                 raise TakeoffPositionNotSetError("RTL")
 
+            self.node.get_logger().info(f"Navigating towards takeoff position...")
+
+            # Create navigation config for RTL
+            nav_config = NavigationConfig()
             if self.lidar_on:
                 lidar_alt = self.get_rng_alt.range
-            else:
-                lidar_alt = None
-
-            self.node.get_logger().info(f"Navigating towards takeoff position...")
+                nav_config.use_lidar = True
+                nav_config.lidar_target_alt = lidar_alt
 
             self._pose_controller.navigate_PID(
                 target_position=self._takeoff_position,
-                lidar_target_alt=lidar_alt,
                 precision_radius=precision_radius,
                 timeout_sec=None,
+                nav_config=nav_config,
             )
 
         if land == True:
@@ -800,12 +802,11 @@ class MavDrone(Drone):
         latitude: float = 0.0,
         longitude: float = 0.0,
         altitude: float | None = None,
-        lidar_altitude: float | None = None,
         heading: float | None = None,
         precision_radius: float = 0.5,
         timeout_sec: float | None = 60.0,
         strategy: str = "default",
-        disable_altitude_control: bool = False,
+        nav_config: Optional[NavigationConfig] = None,
     ):
         """
         Move the drone to a specified GPS coordinate using closed-loop control.
@@ -822,13 +823,6 @@ class MavDrone(Drone):
             Target altitude in meters (absolute, not relative to takeoff).
 
             If None, uses the current altitude.
-
-        lidar_altitude : float or None
-            Desired altitude above ground level (meters), limited to 15m.
-
-            If provided, the drone will use lidar data (ONLY USED IN PID STRATEGY).
-
-            This overrides the altitude parameter unless the requested height exceeds 15m.
 
         heading : float or None
             Desired heading in degrees (0 = North, clockwise positive).
@@ -850,8 +844,8 @@ class MavDrone(Drone):
 
             - "PID": Use closed-loop PID control to reach the target position.
 
-        disable_altitude_control : bool
-            If True, disables altitude control (vz=0), letting the Pixhawk handle altitude.
+        nav_config : NavigationConfig or None
+            Internal navigation configuration. If None, all axes are controlled.
         """
         if self.indoor == True:
             raise InvalidModeError("GPS coordinate navigation", "indoor", "outdoor")
@@ -886,22 +880,21 @@ class MavDrone(Drone):
                 )
             self._pose_controller.navigate_PID(
                 target_position=gps_setpoint,
-                lidar_target_alt=lidar_altitude,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec,
-                disable_altitude_control=disable_altitude_control,
+                nav_config=nav_config,
             )
 
     def offboard_position(
         self,
-        x: float = 0.0,
-        y: float = 0.0,
-        z: float = 0.0,
+        x: Optional[float] = 0.0,
+        y: Optional[float] = 0.0,
+        z: Optional[float] = 0.0,
+        yaw: Optional[float] = None,
         ground_reference: bool = False,
         precision_radius: float = 0.5,
         timeout_sec: float | None = 60.0,
         strategy: str = "default",
-        disable_altitude_control: bool = False,
     ):
         """
         Move the drone to a position relative to its current location and heading.
@@ -913,15 +906,27 @@ class MavDrone(Drone):
 
         Parameters
         ----------
-        x : float
+        x : Optional[float]
             Distance to move forward (+) or backward (-) in meters.
+            
+            If None, disables movement in x direction.
 
-        y : float
+        y : Optional[float]
             Distance to move right (+) or left (-) in meters.
+            
+            If None, disables movement in y direction.
 
-        z : float | None
+        z : Optional[float]
             Distance to move up (+) or down (-) in meters.
-            If None or when disable_altitude_control=True, altitude control is disabled.
+            
+            If None altitude control is disabled.
+
+        yaw : Optional[float]
+            Desired yaw angle in degrees.
+            
+            If None, maintains current yaw.
+
+            Equals to heading in outdoor mode.
 
         ground_reference : bool
             Movement reference frame:
@@ -944,10 +949,6 @@ class MavDrone(Drone):
             - "PID": Use closed-loop PID control to reach the target position
             - "mavros": Use MAVROS position setpoint messages
 
-        disable_altitude_control : bool
-            If True, disables altitude control (vz=0), letting the Pixhawk handle altitude.
-            Useful when flying over obstacles where Pixhawk's rangefinder control should take over.
-
         Raises
         ------
         TakeoffPositionNotSetError
@@ -958,35 +959,34 @@ class MavDrone(Drone):
         start_t = self.node.get_clock().now()
         sleep_duration = Duration(seconds=0.05)
         while self.node.get_clock().now() - start_t < sleep_duration:
-            rclpy.spin_once(
-                self.node, timeout_sec=0.05
-            )  # Process callbacks to get latest position
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+
+        # Get current lidar data if available
+        current_lidar_alt = self.get_rng_alt.range if self.lidar_on else None
 
         if self.indoor == False:
+            # OUTDOOR MODE
             if ground_reference == False:
                 heading = self.get_heading.data
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                    x=x,
-                    y=-y,
-                    z=z,
+                    x=x if x is not None else 0.0,
+                    y=-(y if y is not None else 0.0),
+                    z=z if z is not None else 0.0,
                     latitude=self.get_gps.latitude,
                     longitude=self.get_gps.longitude,
                     altitude=self.get_gps.altitude,
                     heading=heading,
                 )
-
             else:
                 if self._takeoff_position is None:
                     raise TakeoffPositionNotSetError("ground_reference=True")
                 heading = np.degrees(
-                    PositionUtils.get_yaw_from_pose(
-                        self._takeoff_position
-                    )
+                    PositionUtils.get_yaw_from_pose(self._takeoff_position)
                 )
                 lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                    x=x,
-                    y=-y,
-                    z=z,
+                    x=x if x is not None else 0.0,
+                    y=-(y if y is not None else 0.0),
+                    z=z if z is not None else 0.0,
                     latitude=self._takeoff_position.pose.position.latitude,
                     longitude=self._takeoff_position.pose.position.longitude,
                     altitude=self._takeoff_position.pose.position.altitude,
@@ -997,53 +997,47 @@ class MavDrone(Drone):
                 f"Moving to GPS position: {lat}, {lon}, {alt}, {heading}"
             )
 
-            # Handle altitude control settings
-            if disable_altitude_control or z is None:
-                lidar_target_alt = None
-                use_altitude_disable = True
-            elif strategy == "PID" and self.lidar_on == True:
-                if ground_reference == False:
-                    lidar_target_alt = self.get_rng_alt.range + z
-                else:
-                    # For ground reference, z is absolute from takeoff position
-                    lidar_target_alt = z  # Direct absolute altitude
-                use_altitude_disable = False
-            else:
-                lidar_target_alt = None
-                use_altitude_disable = False
+            # Create navigation configuration
+            nav_config = NavigationConfig.from_offboard_params(
+                x=x, y=y, z=z, yaw=yaw,
+                lidar_available=self.lidar_on,
+                current_lidar_alt=current_lidar_alt,
+                ground_reference=ground_reference,
+            )
 
             self.offboard_position_gps_coords(
                 latitude=lat,
                 longitude=lon,
-                altitude=alt if not disable_altitude_control else None,
-                lidar_altitude=lidar_target_alt,
-                heading=heading,
+                altitude=alt if z is not None else None,
+                heading=heading if yaw is not None else None,
                 precision_radius=precision_radius,
                 timeout_sec=timeout_sec,
                 strategy=strategy,
-                disable_altitude_control=use_altitude_disable,
+                nav_config=nav_config,
             )
 
         else:
+            # INDOOR MODE
             if ground_reference == False:
                 current_position = self.get_vision_pos.pose.pose.position
                 current_yaw_rad = PositionUtils.get_yaw_from_pose(self.get_vision_pos)
-                
             else:
                 if self._takeoff_position is None:
                     raise TakeoffPositionNotSetError("ground_reference=True")
                 current_position = self._takeoff_position.position
                 current_yaw_rad = self._takeoff_position.yaw
-            dx_world = x * math.cos(current_yaw_rad) - y * math.sin(current_yaw_rad)
-            dy_world = x * math.sin(current_yaw_rad) + y * math.cos(current_yaw_rad)
-            dz_world = z
 
-            # Prepares pose message (keeping current orientation)
+            # Calculate world frame offsets (only if control is enabled)
+            dx_world = (x if x is not None else 0.0) * math.cos(current_yaw_rad) - (y if y is not None else 0.0) * math.sin(current_yaw_rad)
+            dy_world = (x if x is not None else 0.0) * math.sin(current_yaw_rad) + (y if y is not None else 0.0) * math.cos(current_yaw_rad)
+            dz_world = z if z is not None else 0.0
+
+            # Prepare pose message
             pose_msg = PositionTarget()
             pose_msg.header.frame_id = "map"
             pose_msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
 
-            # Mask: ignores acceleration and yaw rate values
+            # Base mask (ignore accelerations and yaw rate)
             pose_msg.type_mask = (
                 PositionTarget.IGNORE_AFX
                 | PositionTarget.IGNORE_AFY
@@ -1057,21 +1051,15 @@ class MavDrone(Drone):
             pose_msg.position.x = current_position.x + dx_world
             pose_msg.position.y = current_position.y + dy_world
             pose_msg.position.z = current_position.z + dz_world
-            pose_msg.yaw = current_yaw_rad
+            pose_msg.yaw = current_yaw_rad + np.radians(yaw) if yaw is not None else current_yaw_rad
 
-            # Handle altitude control settings for indoor mode
-            if disable_altitude_control or z is None:
-                lidar_target_alt = None
-                use_altitude_disable = True
-            elif self.lidar_on == True:
-                if ground_reference == False:
-                    lidar_target_alt = self.get_rng_alt.range + z
-                else:
-                    lidar_target_alt = z  # Direct absolute altitude from takeoff
-                use_altitude_disable = False
-            else:
-                lidar_target_alt = None
-                use_altitude_disable = False
+            # Create navigation configuration
+            nav_config = NavigationConfig.from_offboard_params(
+                x=x, y=y, z=z, yaw=yaw,
+                lidar_available=self.lidar_on,
+                current_lidar_alt=current_lidar_alt,
+                ground_reference=ground_reference,
+            )
 
             if strategy == "mavros":
                 self._pose_controller.navigate_local_msg(
@@ -1079,7 +1067,6 @@ class MavDrone(Drone):
                     precision_radius=precision_radius,
                     timeout_sec=timeout_sec,
                 )
-
             else:
                 if strategy != "default" and strategy != "PID":
                     self.node.get_logger().warn(
@@ -1087,10 +1074,9 @@ class MavDrone(Drone):
                     )
                 self._pose_controller.navigate_PID(
                     target_position=pose_msg,
-                    lidar_target_alt=lidar_target_alt,
                     precision_radius=precision_radius,
                     timeout_sec=timeout_sec,
-                    disable_altitude_control=use_altitude_disable,
+                    nav_config=nav_config,
                 )
 
     def offboard_gps_position(

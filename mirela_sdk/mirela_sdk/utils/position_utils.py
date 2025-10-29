@@ -91,13 +91,13 @@ class PositionUtils:
             raise ValueError("Invalid combination of target and current position types.")
 
     @staticmethod
-    def get_yaw_from_pose(pose: PoseWithCovarianceStamped|GeoPoseStamped) -> float:
+    def get_yaw_from_pose(pose: PoseWithCovarianceStamped|GeoPoseStamped|PositionTarget) -> float:
         """
         Extract yaw angle (rotation around z-axis) from a pose message.
 
         Parameters
         ----------
-        pose : PoseWithCovarianceStamped | GeoPoseStamped
+        pose : PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget
             Pose message containing orientation quaternion.
 
         Returns
@@ -109,8 +109,10 @@ class PositionUtils:
             orientation_q = pose.pose.pose.orientation
         elif isinstance(pose, GeoPoseStamped):
             orientation_q = pose.pose.orientation
+        elif isinstance(pose, PositionTarget):
+            return pose.yaw
         else:
-            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped or GeoPoseStamped")
+            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget")
         orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         (_, _, yaw) = euler_from_quaternion(orientation_list)
         return yaw

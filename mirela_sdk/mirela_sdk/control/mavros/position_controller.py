@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from mirela_sdk.control.mavros.mavros_api import MavDrone
@@ -22,6 +23,64 @@ from mirela_sdk.control.mavros.exceptions import InvalidModeError
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
 
+@dataclass
+class NavigationConfig:
+    """Internal configuration for navigation control."""
+    control_x: bool = True
+    control_y: bool = True
+    control_z: bool = True
+    control_yaw: bool = True
+    use_lidar: bool = False
+    lidar_target_alt: Optional[float] = None
+    
+    @classmethod
+    def from_offboard_params(
+        cls,
+        x: Optional[float],
+        y: Optional[float],
+        z: Optional[float],
+        yaw: Optional[float],
+        lidar_available: bool = False,
+        current_lidar_alt: Optional[float] = None,
+        ground_reference: bool = False,
+    ) -> 'NavigationConfig':
+        """
+        Create NavigationConfig from offboard_position parameters.
+        
+        Parameters
+        ----------
+        x, y, z, yaw : Optional[float]
+            Movement parameters. None means disable control for that axis.
+        lidar_available : bool
+            Whether lidar sensor is available.
+        current_lidar_alt : Optional[float]
+            Current lidar altitude reading.
+        ground_reference : bool
+            Whether movement is ground-referenced.
+        
+        Returns
+        -------
+        NavigationConfig
+            Configuration object for navigate_PID.
+        """
+        config = cls(
+            control_x=(x is not None),
+            control_y=(y is not None),
+            control_z=(z is not None),
+            control_yaw=(yaw is not None),
+        )
+        
+        # Determine lidar usage for altitude control
+        if config.control_z and lidar_available and current_lidar_alt is not None:
+            config.use_lidar = True
+            if ground_reference:
+                # For ground reference, z is absolute altitude from takeoff
+                config.lidar_target_alt = z
+            else:
+                # For relative movement, add z offset to current altitude
+                config.lidar_target_alt = current_lidar_alt + z
+        
+        return config
 
 class PositionController:
     """
@@ -103,6 +162,13 @@ class PositionController:
                 kd=self._pid_config.z.kd,
                 output_limits=self._pid_config.z.get_output_limits(),
                 integral_limits=self._pid_config.z.get_integral_limits(),
+            ),
+            "yaw": PIDController(
+                kp=0.5,
+                ki=0.1,
+                kd=0.0,
+                output_limits=(-0.2, 0.2),
+                integral_limits=(-0.05, 0.05),
             ),
         }
 
@@ -260,10 +326,9 @@ class PositionController:
     def navigate_PID(
         self,
         target_position: PositionTarget | GeoPoseStamped = None,
-        lidar_target_alt: float | None = None,
         precision_radius: float = 0.2,
         timeout_sec: float | None = 60.0,
-        disable_altitude_control: bool = False,
+        nav_config: Optional[NavigationConfig] = None,
     ):
         """
         Navigate to position using PID velocity control.
@@ -275,10 +340,6 @@ class PositionController:
             - PositionTarget: for indoor/vision coordinates (NED frame)
             - GeoPoseStamped: for outdoor/GPS coordinates
 
-        lidar_target_alt : float, optional
-            Target altitude above ground using lidar (meters). Limited to 15m.
-            When provided, enables obstacle detection.
-
         precision_radius : float
             Acceptable distance in meters to consider the target reached.
             Controller stops when 3D distance to target is within this radius.
@@ -287,21 +348,26 @@ class PositionController:
             Maximum time in seconds to reach the target position.
             If None, no timeout is applied.
 
-        disable_altitude_control : bool
-            If True, disables altitude control (vz=0) throughout the navigation.
-            This allows the Pixhawk's internal rangefinder control to handle altitude.
-            Useful when passing over obstacles or uneven terrain.
+        nav_config : NavigationConfig, optional
+            Navigation configuration specifying control behavior:
+            - control_x, control_y, control_z, control_yaw: Enable/disable axis control
+            - use_lidar: Whether to use lidar for altitude control
+            - lidar_target_alt: Target altitude for lidar (if use_lidar=True)
+            
+            If None, defaults to controlling all axes without lidar.
 
         Notes
         -----
         - Uses velocity control commands to reach the target position
-        - Obstacle detection activates when lidar_target_alt is provided
+        - Obstacle detection activates when nav_config.use_lidar is True
         - PID gains are automatically selected based on indoor/outdoor mode
         - Resets PID controllers and stops movement when target is reached
         """
+        if nav_config is None:
+            nav_config = NavigationConfig()  # Default: control all axes
 
         pid_controllers = self._create_pid_controllers()
-        use_lidar = self._should_use_lidar(lidar_target_alt)
+        use_lidar = self._should_use_lidar(nav_config.lidar_target_alt if nav_config.use_lidar else None)
         self._obstacle_detector.reset()
 
         start_time = self.drone.node.get_clock().now()
@@ -317,11 +383,28 @@ class PositionController:
                 target_position, current_pose, heading
             )
 
+            if nav_config.control_yaw:
+                if self.drone.indoor:
+                    current_yaw = PositionUtils.get_yaw_from_pose(current_pose)
+                else:
+                    current_yaw = heading
+
+                dyaw = PositionUtils.get_yaw_from_pose(target_position) - current_yaw
+                # Normalize yaw error to [-pi, pi]
+                dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
+                if abs(dyaw) < np.radians(3):
+                    # Yaw is close enough - consider it reached
+                    dyaw = 0.0
+                vyaw = pid_controllers["yaw"].update(-dyaw)
+            else:
+                dyaw = 0.0
+                vyaw = 0.0
+
             # Handle lidar-based altitude control and obstacle detection
             obstacle_detected = False
             if use_lidar:
                 lidar_alt = self.drone.get_rng_alt.range
-                dz = lidar_target_alt - lidar_alt
+                dz = nav_config.lidar_target_alt - lidar_alt
                 obstacle_detected = self._obstacle_detector.update(
                     lidar_alt, current_time
                 )
@@ -334,18 +417,18 @@ class PositionController:
                         throttle_duration_sec=1.0,
                     )
 
-            vx = pid_controllers["x"].update(-dx)  # Negative for body frame
-            vy = pid_controllers["y"].update(-dy)
+            # Calculate velocities based on control flags
+            vx = pid_controllers["x"].update(-dx) if nav_config.control_x else 0.0
+            vy = pid_controllers["y"].update(-dy) if nav_config.control_y else 0.0
 
             # Handle altitude control
-            if disable_altitude_control:
-                # Explicitly disabled - let Pixhawk handle altitude
+            if not nav_config.control_z:
+                # Altitude control disabled - let Pixhawk handle altitude
                 dz = 0.0
                 vz = 0.0
             elif obstacle_detected:
                 # Obstacle detected - defer to ArduPilot altitude control
                 # [Note]: Not tested yet, can be generating false positives
-                # vz = 0.0
                 vz = pid_controllers["z"].update(-dz)
             else:
                 # Normal PID altitude control
@@ -357,15 +440,36 @@ class PositionController:
                 vx = 0.0
             if abs(dy) < dead_zone:
                 vy = 0.0
-            if abs(dz) < dead_zone and not disable_altitude_control:
+            if abs(dz) < dead_zone:
                 vz = 0.0
 
-            # Log state
-            distance = np.sqrt(dx**2 + dy**2 + dz**2)
-            alt_status = "(disabled)" if disable_altitude_control else f"(dz={dz:.2f})"
+            # Calculate distance considering only controlled axes
+            distance_components = []
+            if nav_config.control_x:
+                distance_components.append(dx**2)
+            if nav_config.control_y:
+                distance_components.append(dy**2)
+            if nav_config.control_z:
+                distance_components.append(dz**2)
+            
+            distance = np.sqrt(sum(distance_components)) if distance_components else 0.0
+
+            # Build status string
+            control_status = []
+            if nav_config.control_x:
+                control_status.append(f"dx={dx:.2f}")
+            if nav_config.control_y:
+                control_status.append(f"dy={dy:.2f}")
+            if nav_config.control_z:
+                control_status.append(f"dz={dz:.2f}")
+            if nav_config.control_yaw:
+                control_status.append(f"dyaw={np.degrees(dyaw):.2f}")
+
+            error_str = ", ".join(control_status)
+
             self.drone.node.get_logger().info(
-                f"Distance: {distance:.2f}m | Error: dx={dx:.2f}, dy={dy:.2f} {alt_status} | "
-                f"Vel: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}",
+                f"Distance: {distance:.2f}m | Error: {error_str} | "
+                f"Vel: vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}, vyaw={vyaw:.2f}",
                 throttle_duration_sec=0.5,
             )
 
@@ -373,17 +477,9 @@ class PositionController:
                 linear_x=vx,
                 linear_y=vy,
                 linear_z=vz,
-                angular_z=0.0,
+                angular_z=vyaw,
                 ground_reference=False,
             )
-
-            # Check arrival
-            if distance <= precision_radius:
-                self._stop_and_reset(pid_controllers)
-                self.drone.node.get_logger().info(
-                    f"\033[32;1mTarget reached! Final distance: {distance:.2f}m\033[0m"
-                )
-                return
 
             # Check timeout
             if (
@@ -392,6 +488,17 @@ class PositionController:
             ):
                 self._stop_and_reset(pid_controllers)
                 self.drone.node.get_logger().warn("\033[33;1mTimeout reached\033[0m")
+                return
+
+            # Check arrival (only for controlled axes)
+            if distance <= precision_radius:
+                if nav_config.control_yaw:
+                    if abs(dyaw) > np.radians(3):
+                        continue  # Still need to adjust yaw
+                self._stop_and_reset(pid_controllers)
+                self.drone.node.get_logger().info(
+                    f"\033[32;1mTarget reached! Final distance: {distance:.2f}m\033[0m"
+                )
                 return
 
     def _should_use_lidar(self, lidar_target_alt: float | None) -> bool:
