@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING, Tuple
+if TYPE_CHECKING:
+    from mirela_sdk.control.mavros.mavros_api import MavDrone
+
 from collections import deque
 from typing import Optional
 import numpy as np
@@ -136,9 +140,9 @@ class LidarObstacleDetector:
 
 
 class RealsenseObstacleDetector:
-    def __init__(self, node: Node):
+    def __init__(self, drone: "MavDrone"):
 
-        self.node = node
+        self.drone = drone
         self.cam = RealsenseCam(
             config=RealSenseConfig(
                 use_ros_topics=True,
@@ -147,77 +151,152 @@ class RealsenseObstacleDetector:
                 color_compressed=True,
                 enable_depth=True,
             ),
-            node=self.node
+            node=self.drone.node
         )
         self.cam.start()
+
         self.image_handler: ImageHandler = ImageHandler(
-            node=self.node,
+            node=self.drone.node,
             image_source="realsense_ros",
             camera=self.cam,
-            poll_interval=0.1,
+            poll_interval=0.15,
             image_processing_callback=None
         )
         self.image_handler.run()
 
         self.obstacle_event = Event()
-        self.fps_time = self.node.get_clock().now()
 
-        self.node.create_timer(0.01, self.processing_cb)
+        self.drone.node.create_timer(0.15, self.process_depth)
+        
+        self.drone.node.get_logger().info("RealsenseDepthTest initialized")
 
-    def processing_cb(self) -> None:
-        # Get depth frame - returns numpy array directly when using ROS topics
-        depth = self.cam.get_depth_frame(wait_for_new=True, timeout=0.1)
+    def control_func(self, x: float) -> float:
+        x -= 31
+        flag = 1 if x < 0 else -1
+        return flag #flag * min(1.1, max(0.5, abs(x)))
+
+    def detect_obstacle(self) -> Tuple[bool, float]:
+        depth = self.cam.get_depth_frame(wait_for_new=True, timeout=1.0)
         
         if depth is None:
-            return
+            self.drone.delay(0.5)
+            depth = self.cam.get_depth_frame(wait_for_new=True, timeout=1.0)
+            if depth is None:
+                raise RuntimeError("aqui deu merda")
         
-        # Convert from meters to millimeters for processing
-        depth_mm = (depth * 1000.0).astype(np.float32)
+        depth_mm = depth * 1000.0
+        depth_small = cv2.resize(depth_mm, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_NEAREST)
 
-        # Resize antes de filtrar
-        depth_small = cv2.resize(depth_mm, None, fx=0.125, fy=0.125, interpolation=cv2.INTER_NEAREST)
-
-        # Filtra pixels entre 0 e 1500mm
         mask = (depth_small > 0) & (depth_small < 1500)
         depth_small[~mask] = 0
 
-        # Pega pixels válidos
         ys, xs = np.where(depth_small > 0)
-        depths = depth_small[ys, xs]
-
+        
         if len(xs) < 50:
-            return
+            return (False, None)
+        
+        depths = depth_small[ys, xs]
+        
+        pts = np.column_stack((xs, ys, depths * 0.5))
 
-        # Prepara pontos para DBSCAN: (x₂d, y₂d, depth_mm)
-        pts = np.vstack((xs, ys, depths * 0.5)).T  # depth reduzido no peso
-
-        # DBSCAN
         clustering = DBSCAN(eps=20, min_samples=20).fit(pts)
         labels = clustering.labels_
         unique_labels = set(labels)
-        unique_labels.discard(-1)  # remove ruído
+        unique_labels.discard(-1)
+
+        if len(unique_labels) == 0:
+            return (False, None)
+
+        img_center = depth_small.shape[1] / 2
+
+        centroids_x = []
+        centroids_y = []
 
         for lb in unique_labels:
             idx = labels == lb
             xs_l = xs[idx]
             ys_l = ys[idx]
             depths_l = depths[idx]
-
             depth_mean = np.mean(depths_l)
-            if depth_mean > 1000:  # obstáculo muito longe
+
+            if depth_mean > 1300:
                 continue
 
-            self.node.get_logger().info(f"[Cluster {lb}] Depth={int(depth_mean)}mm | X={xs_l} Y={ys_l}")
+            cx = np.mean(xs_l)
+            cy = np.mean(ys_l)
+            centroids_x.append(cx)
+            centroids_y.append(cy)
+
             self.obstacle_event.set()
 
-        now = self.node.get_clock().now()
-        elapsed_ns = (now - self.fps_time).nanoseconds
-        self.node.get_logger().info(f"Obstacle delay: {elapsed_ns / 1e6:.2f}ms")
-        self.fps_time = now
+            self.drone.node.get_logger().info(
+                f"[Cluster {lb}] Depth={int(depth_mean)}mm | "
+                f"X={cx:.1f} Y={cy:.1f} | Pixels={len(xs_l)}"
+            )
+        
+        if len(centroids_x) == 0:
+            return (False, None)
 
+        # <<< NOVO >>>
+        all_left = all(cx < img_center for cx in centroids_x)
 
+        if all_left:
+            # todos obstáculos na esquerda → desviar para a direita
+            return (True, max(centroids_x))
+        else:
+            # tem obstáculo na direita ou misturados → desviar para a esquerda
+            return (True, min(centroids_x))
 
-    
+    def process_depth(self):
+        detect, decision = self.detect_obstacle()
 
+        if not detect:
+            self.obstacle_event.clear()
+            return
+        
+        self.obstacle_event.set()
 
+        out = self.control_func(decision)
 
+        self.drone.node.get_logger().info(
+            f"[Avoid] direction={out}"
+        )
+
+        self.drone.offboard_position(
+            x=0.0, y=out, z=0.0, yaw=0.0,
+            ground_reference=False,
+            precision_radius=0.2,
+            timeout_sec=10.0,
+            strategy="default",
+            obstacle_avoidance=False
+        )
+
+        for _ in range(2):
+            detect, decision = self.detect_obstacle()
+
+            if not detect:
+                break
+            
+            out = self.control_func(decision)
+
+            self.drone.node.get_logger().info(
+                f"[Avoid] direction={out}"
+            )
+
+            self.drone.offboard_position(
+                x=0.0, y=out, z=0.0, yaw=0.0,
+                ground_reference=False,
+                precision_radius=0.2,
+                timeout_sec=10.0,
+                strategy="default",
+                obstacle_avoidance=False
+            )
+
+        self.drone.offboard_position(
+            x=2.5, y=0.0, z=0.0, yaw=0.0,
+            ground_reference=False,
+            precision_radius=0.2,
+            timeout_sec=10.0,
+            strategy="default",
+            obstacle_avoidance=False
+        )

@@ -18,7 +18,7 @@ from sensor_msgs.msg import NavSatFix
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 from mirela_sdk.utils.position_utils import PositionUtils
 from mirela_sdk.control.pid import PIDController, PIDConfig, PositionPIDConfig
-from mirela_sdk.control.mavros.obstacle_detector import LidarObstacleDetector
+from mirela_sdk.control.mavros.obstacle_detector import LidarObstacleDetector, RealsenseObstacleDetector
 from mirela_sdk.control.mavros.exceptions import InvalidModeError
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
@@ -31,6 +31,7 @@ class NavigationConfig:
     control_z: bool = True
     control_yaw: bool = True
     use_lidar: bool = False
+    obstacle_avoidance: bool = False
     lidar_target_alt: Optional[float] = None
     
     @classmethod
@@ -43,6 +44,7 @@ class NavigationConfig:
         lidar_available: bool = False,
         current_lidar_alt: Optional[float] = None,
         ground_reference: bool = False,
+        obstacle_avoidance: bool = False
     ) -> 'NavigationConfig':
         """
         Create NavigationConfig from offboard_position parameters.
@@ -57,6 +59,8 @@ class NavigationConfig:
             Current lidar altitude reading.
         ground_reference : bool
             Whether movement is ground-referenced.
+        obstacle_avoidance: bool
+            Whether to avoid obstacles using Realsense.
         
         Returns
         -------
@@ -68,6 +72,7 @@ class NavigationConfig:
             control_y=(y is not None),
             control_z=(z is not None),
             control_yaw=(yaw is not None),
+            obstacle_avoidance=obstacle_avoidance
         )
         
         # Determine lidar usage for altitude control
@@ -370,12 +375,23 @@ class PositionController:
         use_lidar = self._should_use_lidar(nav_config.lidar_target_alt if nav_config.use_lidar else None)
         self._obstacle_detector.reset()
 
+        if nav_config.obstacle_avoidance:
+            rs_obstacle_detector = RealsenseObstacleDetector(drone=self.drone)
+
         start_time = self.drone.node.get_clock().now()
         timeout_duration = Duration(seconds=timeout_sec) if timeout_sec else None
 
         while True:
             current_pose = self.get_current_position(timeout=0.01)
             current_time = self.drone.node.get_clock().now().nanoseconds / 1e9
+
+            if nav_config.obstacle_avoidance and rs_obstacle_detector.obstacle_event.is_set():
+                self.drone.node.get_logger().info(
+                    "Obstacle detected by Realsense - hovering in place",
+                    throttle_duration_sec=1.0,
+                )
+                self.drone.offboard_velocity(0.0, 0.0, 0.0, 0.0, ground_reference=False)
+                continue
 
             # Calculate position errors in body frame
             heading = None if self.drone.indoor else self.drone.get_heading.data

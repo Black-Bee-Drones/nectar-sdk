@@ -895,6 +895,7 @@ class MavDrone(Drone):
         precision_radius: float = 0.5,
         timeout_sec: float | None = 60.0,
         strategy: str = "default",
+        obstacle_avoidance: bool = False
     ):
         """
         Move the drone to a position relative to its current location and heading.
@@ -912,7 +913,7 @@ class MavDrone(Drone):
             If None, disables movement in x direction.
 
         y : Optional[float]
-            Distance to move right (+) or left (-) in meters.
+            Distance to move left (+) or right (-) in meters.
             
             If None, disables movement in y direction.
 
@@ -1059,6 +1060,7 @@ class MavDrone(Drone):
                 lidar_available=self.lidar_on,
                 current_lidar_alt=current_lidar_alt,
                 ground_reference=ground_reference,
+                obstacle_avoidance=obstacle_avoidance
             )
 
             if strategy == "mavros":
