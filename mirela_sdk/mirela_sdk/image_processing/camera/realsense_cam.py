@@ -200,11 +200,9 @@ class RealsenseCam(DepthCam):
                     self._new_color_frame_event.clear()
                     return self._rgb
                 else:
-                    if self._node:
-                        self._node.get_logger().debug(
-                            f"Timeout waiting for new color frame ({timeout}s)",
-                            throttle_duration_sec=1.0,
-                        )
+                    self._node.get_logger().info(
+                        f"Timeout waiting for new color frame ({timeout}s)"
+                    )
                     return None
             else:
                 return self._rgb

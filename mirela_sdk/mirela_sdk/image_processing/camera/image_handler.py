@@ -142,7 +142,6 @@ class ImageHandler:
                 wait_for_new=wait_for_new, timeout=timeout_sec
             )
         else:
-
             while time.time() - start_time < timeout_sec:
                 frame = self.camera.get_frame()
                 if frame is not None:

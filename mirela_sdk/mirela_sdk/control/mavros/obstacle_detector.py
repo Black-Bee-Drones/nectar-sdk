@@ -1,6 +1,13 @@
 from collections import deque
 from typing import Optional
 import numpy as np
+import cv2
+from sklearn.cluster import DBSCAN
+from mirela_sdk.image_processing.camera.image_handler import ImageHandler
+from mirela_sdk.image_processing.camera.realsense_cam import RealSenseConfig, RealsenseCam
+from rclpy.node import Node
+from threading import Event
+from rclpy.duration import Duration
 
 
 class LidarObstacleDetector:
@@ -126,3 +133,91 @@ class LidarObstacleDetector:
         if self._obstacle_detected and self._obstacle_start_time is not None:
             return current_time - self._obstacle_start_time
         return 0.0
+
+
+class RealsenseObstacleDetector:
+    def __init__(self, node: Node):
+
+        self.node = node
+        self.cam = RealsenseCam(
+            config=RealSenseConfig(
+                use_ros_topics=True,
+                color_topic="/camera/color/image_raw",
+                depth_topic="/camera/depth/image_rect_raw",
+                color_compressed=True,
+                enable_depth=True,
+            ),
+            node=self.node
+        )
+        self.cam.start()
+        self.image_handler: ImageHandler = ImageHandler(
+            node=self.node,
+            image_source="realsense_ros",
+            camera=self.cam,
+            poll_interval=0.1,
+            image_processing_callback=None
+        )
+        self.image_handler.run()
+
+        self.obstacle_event = Event()
+        self.fps_time = self.node.get_clock().now()
+
+        self.node.create_timer(0.01, self.processing_cb)
+
+    def processing_cb(self) -> None:
+        # Get depth frame - returns numpy array directly when using ROS topics
+        depth = self.cam.get_depth_frame(wait_for_new=True, timeout=0.1)
+        
+        if depth is None:
+            return
+        
+        # Convert from meters to millimeters for processing
+        depth_mm = (depth * 1000.0).astype(np.float32)
+
+        # Resize antes de filtrar
+        depth_small = cv2.resize(depth_mm, None, fx=0.125, fy=0.125, interpolation=cv2.INTER_NEAREST)
+
+        # Filtra pixels entre 0 e 1500mm
+        mask = (depth_small > 0) & (depth_small < 1500)
+        depth_small[~mask] = 0
+
+        # Pega pixels válidos
+        ys, xs = np.where(depth_small > 0)
+        depths = depth_small[ys, xs]
+
+        if len(xs) < 50:
+            return
+
+        # Prepara pontos para DBSCAN: (x₂d, y₂d, depth_mm)
+        pts = np.vstack((xs, ys, depths * 0.5)).T  # depth reduzido no peso
+
+        # DBSCAN
+        clustering = DBSCAN(eps=20, min_samples=20).fit(pts)
+        labels = clustering.labels_
+        unique_labels = set(labels)
+        unique_labels.discard(-1)  # remove ruído
+
+        for lb in unique_labels:
+            idx = labels == lb
+            xs_l = xs[idx]
+            ys_l = ys[idx]
+            depths_l = depths[idx]
+
+            depth_mean = np.mean(depths_l)
+            if depth_mean > 1000:  # obstáculo muito longe
+                continue
+
+            self.node.get_logger().info(f"[Cluster {lb}] Depth={int(depth_mean)}mm | X={xs_l} Y={ys_l}")
+            self.obstacle_event.set()
+
+        now = self.node.get_clock().now()
+        elapsed_ns = (now - self.fps_time).nanoseconds
+        self.node.get_logger().info(f"Obstacle delay: {elapsed_ns / 1e6:.2f}ms")
+        self.fps_time = now
+
+
+
+    
+
+
+

@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+import cv2
 
 from mirela_sdk.image_processing.camera import (
     ImageHandler,
@@ -28,6 +29,7 @@ class CameraExampleNode(Node):
 
         config = self._get_camera_config(camera_type)
         window_name = "Camera Viewer" if show_result else None
+        self.count = 0
 
         if camera_type == "realsense_ros":
             camera_type = "realsense"
@@ -38,6 +40,7 @@ class CameraExampleNode(Node):
             config=config,
             show_result=window_name,
             image_processing_callback=self.process_frame,
+            poll_interval=0.0003,
         )
         self.image_handler.run()
         self.get_logger().info(f"Started {camera_type} camera.")
@@ -46,7 +49,7 @@ class CameraExampleNode(Node):
         if camera_type == "webcam":
             return OpenCVConfig(device_index=0, width=1280, height=720, fps=30)
         if camera_type == "imx219":
-            return IMX219Config(sensor_id=1, width=1280, height=720, flip=2)
+            return IMX219Config(sensor_id=0, width=1280, height=720, flip=2)
         if camera_type == "realsense":
             return RealSenseConfig(color_res=(1280, 720), depth_res=(1280, 720), fps=30)
         if camera_type == "realsense_ros":
@@ -70,7 +73,9 @@ class CameraExampleNode(Node):
 
     def process_frame(self, frame):
         if frame is not None:
+            self.count += 1
             self.get_logger().info(f"Received frame with shape: {frame.shape}")
+            cv2.imwrite(f"frame_{self.count}.png", frame)
 
     def destroy_node(self):
         self.image_handler.cleanup()
