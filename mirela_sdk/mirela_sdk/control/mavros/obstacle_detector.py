@@ -166,7 +166,7 @@ class RealsenseObstacleDetector:
 
         self.obstacle_event = Event()
 
-        self.drone.node.create_timer(0.15, self.process_depth)
+        self.cb_timer = self.drone.node.create_timer(0.15, self.process_depth)
         
         self.drone.node.get_logger().info("RealsenseDepthTest initialized")
 
@@ -311,3 +311,11 @@ class RealsenseObstacleDetector:
             strategy="default",
             obstacle_avoidance=False
         )
+
+    
+    def close(self):
+        self.cb_timer.destroy()
+        self.image_handler.close()
+        self.image_handler.cleanup()
+        self.obstacle_event.clear()
+        self.drone.node.get_logger().info("RealsenseObstacleDetector closed")

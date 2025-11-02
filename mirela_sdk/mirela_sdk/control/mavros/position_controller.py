@@ -504,6 +504,8 @@ class PositionController:
             ):
                 self._stop_and_reset(pid_controllers)
                 self.drone.node.get_logger().warn("\033[33;1mTimeout reached\033[0m")
+                if nav_config.obstacle_avoidance:
+                    rs_obstacle_detector.close()
                 return
 
             # Check arrival (only for controlled axes)
@@ -512,6 +514,8 @@ class PositionController:
                     if abs(dyaw) > np.radians(3):
                         continue  # Still need to adjust yaw
                 self._stop_and_reset(pid_controllers)
+                if nav_config.obstacle_avoidance:
+                    rs_obstacle_detector.close()
                 self.drone.node.get_logger().info(
                     f"\033[32;1mTarget reached! Final distance: {distance:.2f}m\033[0m"
                 )
