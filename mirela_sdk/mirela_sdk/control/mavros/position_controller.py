@@ -374,6 +374,7 @@ class PositionController:
         pid_controllers = self._create_pid_controllers()
         use_lidar = self._should_use_lidar(nav_config.lidar_target_alt if nav_config.use_lidar else None)
         self._obstacle_detector.reset()
+        visual_obstacle_detected = False
 
         if nav_config.obstacle_avoidance:
             rs_obstacle_detector = RealsenseObstacleDetector(drone=self.drone)
@@ -382,22 +383,27 @@ class PositionController:
         timeout_duration = Duration(seconds=timeout_sec) if timeout_sec else None
 
         while True:
-            current_pose = self.get_current_position(timeout=0.01)
-            current_time = self.drone.node.get_clock().now().nanoseconds / 1e9
-
             if nav_config.obstacle_avoidance and rs_obstacle_detector.obstacle_event.is_set():
                 self.drone.node.get_logger().info(
                     "Obstacle detected by Realsense - hovering in place",
                     throttle_duration_sec=1.0,
                 )
-                self.drone.offboard_velocity(0.0, 0.0, 0.0, 0.0, ground_reference=False)
+                visual_obstacle_detected = True
                 continue
+
+            current_pose = self.get_current_position(timeout=0.01)
+            current_time = self.drone.node.get_clock().now().nanoseconds / 1e9
 
             # Calculate position errors in body frame
             heading = None if self.drone.indoor else self.drone.get_heading.data
             dx, dy, dz = PositionUtils.get_body_distance(
                 target_position, current_pose, heading
             )
+
+            if visual_obstacle_detected:
+                if dx < 0.0:
+                    dx = 0.0  # Prevent moving backwards, avoiding blind collision
+                    self.drone.node.get_logger().info("Override backward movement due to obstacle", throttle_duration_sec=1.0)
 
             if nav_config.control_yaw:
                 if self.drone.indoor:

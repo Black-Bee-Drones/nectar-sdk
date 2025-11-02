@@ -170,11 +170,8 @@ class RealsenseObstacleDetector:
         
         self.drone.node.get_logger().info("RealsenseDepthTest initialized")
 
-    def control_func(self, x: float) -> float:
-        # kept for backward compatibility but not used in new logic
-        return x
 
-    def _map_px_to_movement(self, px: float, img_center: float, min_m: float = 0.5, max_m: float = 1.1) -> float:
+    def _map_px_to_movement(self, px: float, img_center: float, min_m: float = 0.5, max_m: float = 1.3) -> float:
         """Map a pixel x-coordinate to a lateral movement in meters.
 
         The magnitude is in [min_m, max_m] and increases as the cluster is
@@ -189,6 +186,7 @@ class RealsenseObstacleDetector:
         norm = max(0.0, 1.0 - (dist / float(img_center)))
         mag = min_m + norm * (max_m - min_m)
         return float(mag)
+
 
     def detect_obstacle(self) -> Tuple[bool, float]:
         # Get latest depth via camera helper (keeps previous behavior)
@@ -257,30 +255,28 @@ class RealsenseObstacleDetector:
         all_right = all(mn > img_center for mn in cluster_min_x)
 
         if all_left:
+            self.drone.node.get_logger().info("All clusters left of center - avoiding right")
+            
             # choose the cluster max_x closest to center (largest max_x)
             chosen_px = max(cluster_max_x)
             mag = self._map_px_to_movement(chosen_px, img_center)
             return (True, -mag)  # negative => move right
+       
         elif all_right:
+            self.drone.node.get_logger().info("All clusters right of center - avoiding left")
+       
             # choose the cluster min_x closest to center (smallest min_x)
             chosen_px = min(cluster_min_x)
             mag = self._map_px_to_movement(chosen_px, img_center)
             return (True, mag)  # positive => move left
+       
         else:
-            # mixed clusters: choose the closest extreme to center and move away
-            # compute distance of each extreme to center and pick the minimum
-            all_extremes = cluster_min_x + cluster_max_x
-            distances = [abs(px - img_center) for px in all_extremes]
-            best_px = all_extremes[int(np.argmin(distances))]
-            # decide side by checking if best_px is left or right of center
-            mag = self._map_px_to_movement(best_px, img_center)
-            if best_px < img_center:
-                return (True, -mag)
-            else:
-                return (True, mag)
+            self.drone.node.get_logger().info("Clusters on both sides of center - avoiding left")
+            
+            return (True, 1.3)  # mixed => move left
 
     def process_depth(self):
-        detect, decision = self.detect_obstacle()
+        detect, obstacle_avoidance_vector = self.detect_obstacle()
 
         if not detect:
             self.obstacle_event.clear()
@@ -288,14 +284,14 @@ class RealsenseObstacleDetector:
         
         self.obstacle_event.set()
 
-        out = self.control_func(decision)
+        obstacle_avoidance_vector
 
         self.drone.node.get_logger().info(
-            f"[Avoid] direction={out}"
+            f"[Avoid] direction={obstacle_avoidance_vector}"
         )
 
         self.drone.offboard_position(
-            x=0.0, y=out, z=0.0, yaw=0.0,
+            x=0.0, y=obstacle_avoidance_vector, z=0.0, yaw=0.0,
             ground_reference=False,
             precision_radius=0.2,
             timeout_sec=10.0,
@@ -305,6 +301,15 @@ class RealsenseObstacleDetector:
 
         self.drone.offboard_position(
             x=2.5, y=0.0, z=0.0, yaw=0.0,
+            ground_reference=False,
+            precision_radius=0.2,
+            timeout_sec=10.0,
+            strategy="default",
+            obstacle_avoidance=False
+        )
+
+        self.drone.offboard_position(
+            x=0.0, y=-obstacle_avoidance_vector, z=0.0, yaw=0.0,
             ground_reference=False,
             precision_radius=0.2,
             timeout_sec=10.0,
