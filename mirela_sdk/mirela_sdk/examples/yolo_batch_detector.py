@@ -1,23 +1,70 @@
 #!/usr/bin/env python3
 """
 Usage:
-    # Basic usage with default model
-    python3 yolo_batch_detector.py --image-dir /path/to/images --output-dir /path/to/output
+    # Basic usage with image directory
+    python3 yolo_batch_detector.py --input /path/to/images --output-dir /path/to/output
 
-    # With custom model path
-    python3 yolo_batch_detector.py --image-dir /path/to/images --model-path /path/to/model.pt --output-dir /path/to/output
+    # With video file
+    python3 yolo_batch_detector.py --input /path/to/video.mp4 --model-path /path/to/model.pt --output-dir /path/to/output
 
     # With HuggingFace model
-    python3 yolo_batch_detector.py --image-dir /path/to/images --model-source user/repo:model.pt --output-dir /path/to/output
+    python3 yolo_batch_detector.py --input /path/to/images --model-source user/repo:model.pt --output-dir /path/to/output
 """
 
 import argparse
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
+import tempfile
 
 from mirela_sdk.ai import YOLODetector
+
+
+def extract_video_frames(
+    video_path: str, output_dir: str = None
+) -> Tuple[List[str], float]:
+    """Extract frames from video file and save to directory.
+
+    Returns:
+        Tuple of (frame_files, original_fps)
+    """
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp(prefix="video_frames_")
+    else:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError(f"Failed to open video: {video_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    print("Extracting frames from video...")
+    print(f"Video FPS: {fps:.2f}, Total frames: {total_frames}")
+
+    frame_files = []
+    frame_idx = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame_path = Path(output_dir) / f"frame_{frame_idx:06d}.jpg"
+        cv2.imwrite(str(frame_path), frame)
+        frame_files.append(str(frame_path))
+
+        if (frame_idx + 1) % 100 == 0:
+            print(f"  Extracted {frame_idx + 1}/{total_frames} frames...")
+
+        frame_idx += 1
+
+    cap.release()
+    print(f"Extracted {len(frame_files)} frames to {output_dir}")
+
+    return frame_files, fps
 
 
 def get_image_files(directory: str) -> List[str]:
@@ -39,7 +86,7 @@ def process_images(
     annotator_type: str = "box",
     show_labels: bool = True,
     show_confidence: bool = True,
-    fps: int = 30,
+    fps: float = 30,
 ) -> None:
     """Process images with YOLO detection and save results."""
 
@@ -55,7 +102,7 @@ def process_images(
 
     print(f"Processing {len(image_files)} images...")
     print(f"Output directory: {output_dir}")
-    print(f"Video dimensions: {width}x{height} @ {fps} fps")
+    print(f"Video dimensions: {width}x{height} @ {fps:.2f} fps")
     print("-" * 60)
 
     total_detections = 0
@@ -103,7 +150,7 @@ def process_images(
     video_writer.release()
 
     print("-" * 60)
-    print(f"Processing complete!")
+    print("Processing complete!")
     print(f"Total frames: {len(image_files)}")
     print(f"Total detections: {total_detections}")
     print(f"Average detections per frame: {total_detections/len(image_files):.2f}")
@@ -158,13 +205,19 @@ def add_frame_info(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Batch YOLO detection on image sequences"
+        description="Batch YOLO detection on image sequences or video files"
+    )
+    parser.add_argument(
+        "--input",
+        type=str,
+        required=False,
+        help="Input path (directory with images or video file)",
     )
     parser.add_argument(
         "--image-dir",
         type=str,
-        required=True,
-        help="Directory containing images to process",
+        required=False,
+        help="[Deprecated] Use --input instead",
     )
     parser.add_argument(
         "--output-dir",
@@ -222,6 +275,13 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle deprecated --image-dir argument
+    input_path = args.input or args.image_dir
+    if not input_path:
+        print("Error: Either --input or --image-dir must be provided")
+        parser.print_help()
+        return
+
     if args.model_path:
         model_source = args.model_path
         print(f"Using model from path: {model_source}")
@@ -235,14 +295,35 @@ def main():
     show_labels = not args.hide_labels
     show_confidence = not args.hide_confidence
 
-    image_files = get_image_files(args.image_dir)
-    if not image_files:
-        print(f"No image files found in {args.image_dir}")
+    # Determine if input is video or directory
+    input_path_obj = Path(input_path)
+    video_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    video_fps = None  # Store original video FPS
+
+    if input_path_obj.is_file() and input_path_obj.suffix.lower() in video_extensions:
+        print(f"Processing video file: {input_path}")
+        frames_dir = Path(args.output_dir) / "extracted_frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        image_files, video_fps = extract_video_frames(input_path, str(frames_dir))
+        # Use original video FPS instead of default
+        output_fps = video_fps
+        print(f"Using original video FPS: {output_fps:.2f}")
+    elif input_path_obj.is_dir():
+        # Input is a directory
+        image_files = get_image_files(input_path)
+        if not image_files:
+            print(f"No image files found in {input_path}")
+            return
+        print(f"Found {len(image_files)} images in {input_path}")
+        # Use user-specified FPS for image sequences
+        output_fps = args.fps
+    else:
+        print(
+            f"Error: Input path '{input_path}' is neither a valid video file nor a directory"
+        )
         return
 
-    print(f"Found {len(image_files)} images in {args.image_dir}")
-
-    print(f"Loading YOLO model...")
+    print("Loading YOLO model...")
     print(f"Device preference: {args.device}")
 
     detector = YOLODetector(
@@ -268,7 +349,7 @@ def main():
         annotator_type=args.annotator_type,
         show_labels=show_labels,
         show_confidence=show_confidence,
-        fps=args.fps,
+        fps=output_fps,  # Use the determined FPS (original video FPS or user-specified)
     )
 
 
