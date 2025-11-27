@@ -93,7 +93,10 @@ class MavDrone(Drone):
 
         # Subscribers:
         self._state_sub = self._create_subscriber(
-            State, "/mavros/state", lambda data: self.__setattr__("_state", data), 10
+            State,
+            "/mavros/state",
+            lambda data: self.__setattr__("_state", data),
+            10,
         )
         self._rng_alt_sub = self._create_subscriber(
             Range,
