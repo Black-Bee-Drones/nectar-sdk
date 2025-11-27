@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from time import sleep, time
+import threading
 
 from rclpy.qos import QoSProfile
 from rclpy.node import Node
@@ -20,6 +21,9 @@ class Drone(ABC):
     def __init__(self, node: Node) -> None:
         self.node = node
 
+        # Lock to protect shared data when using multithreaded callbacks
+        self._lock = threading.Lock()
+
         # ROS2 objects (to be populated by subclasses)
         self._subscribers = []
         self._clients = []
@@ -38,35 +42,40 @@ class Drone(ABC):
         """
         Get the list of subscribers initialized by class
         """
-        return self._subscribers
+        with self._lock:
+            return self._subscribers
 
     @property
     def clients(self) -> list[Client]:
         """
         Get the list of clients initialized by class
         """
-        return self._clients
+        with self._lock:
+            return self._clients
 
     @property
     def publishers(self) -> list[Publisher]:
         """
         Get the list of publishers initialized by class
         """
-        return self._publishers
+        with self._lock:
+            return self._publishers
 
     @property
     def is_flying(self) -> bool:
         """
         Get the flying state of the drone.
         """
-        return self._is_flying
+        with self._lock:
+            return self._is_flying
 
     @property
     def driver_initialized(self) -> bool:
         """
         Get the driver initialization state of the drone.
         """
-        return self._driver_initialized
+        with self._lock:
+            return self._driver_initialized
 
     def check_driver_node(self, timeout: float = 0.0) -> bool:
         """
@@ -168,7 +177,7 @@ class Drone(ABC):
         self.node.get_logger().info(f"-- End delay {time}")
 
     def _create_subscriber(
-        self, msg_type: type, topic: str, callback: callable, qos: QoSProfile
+        self, msg_type: type, topic: str, callback: callable, qos: QoSProfile, safe: bool = True
     ) -> Subscription:
         """
         Helper function to create a ROS2 subscriber with common configuration.
@@ -177,9 +186,19 @@ class Drone(ABC):
         :param topic (str): ROS2 topic name.
         :param callback (callable): Callback function for incoming messages.
         :param qos (QoSProfile): ROS2 Quality of Service profile.
+        :param safe: If True, runs the callback inside a lock; if False, runs it normally.
         """
+
+        if safe:
+            def safe_callback(msg):
+                with self._lock:
+                    callback(msg)
+            cb = safe_callback
+        else:
+            cb = callback
+
         subscriber = self.node.create_subscription(
-            msg_type, topic, callback, qos, callback_group=self._reentrant_cb_group
+            msg_type, topic, cb, qos, callback_group=self._reentrant_cb_group
         )
         self._subscribers.append(subscriber)
         return subscriber
