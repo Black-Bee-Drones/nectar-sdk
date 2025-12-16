@@ -562,17 +562,28 @@ We love your input! Please see our [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) gui
 
 <!-- readme: contributors -start -->
 <table>
-	<tbody>
-		<tr>
-            <td align="center">
-                <a href="https://github.com/Black-Bee-Drones">
-                    <img src="https://avatars.githubusercontent.com/u/Black-Bee-Drones?v=4" width="80;" alt="Black-Bee-Drones"/>
-                    <br />
-                    <sub><b>Black Bee Drones</b></sub>
-                </a>
-            </td>
-		</tr>
-	</tbody>
+<tr>
+    <td align="center">
+        <a href="https://github.com/samuellimabraz">
+            <img src="https://avatars.githubusercontent.com/u/115582014?v=4" width="80;" alt="samuellimabraz"/>
+            <br />
+            <sub><b>Samuel Lima Braz</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/Eduard0Castro">
+            <img src="https://avatars.githubusercontent.com/u/90725507?v=4" width="80;" alt="Eduard0Castro"/>
+            <br />
+            <sub><b>Eduardo Castro</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/lipe-pedras">
+            <img src="https://avatars.githubusercontent.com/u/133624454?v=4" width="80;" alt="lipe-pedras"/>
+            <br />
+            <sub><b>Luis Filipe Laurino Junqueira Pedras</b></sub>
+        </a>
+    </td></tr>
 </table>
 <!-- readme: contributors -end -->
 
