@@ -30,7 +30,7 @@ Welcome to the Mirela SDK, a software development kit designed to simplify drone
 - [Modules](#modules)
 - [Class Diagram](#class-diagram)
 - [Directory Structure](#directory-structure)
-- [Contributing](#contributing)
+- [Contribution](#contribution)
 - [License](#license)
 
 <a name="features"></a>
@@ -556,10 +556,30 @@ mirela_sdk
 
 ```
 
-## Contributing
+## Contribution
 
-Contributions are welcome!  Please see `CONTRIBUTING.md` for guidelines. **TODO: Add CONTRIBUTING.md file**
+We love your input! Please see our [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) guide to get started. Thank you 🙏 to all our contributors!
+
+<!-- readme: contributors -start -->
+<table>
+	<tbody>
+		<tr>
+            <td align="center">
+                <a href="https://github.com/Black-Bee-Drones">
+                    <img src="https://avatars.githubusercontent.com/u/Black-Bee-Drones?v=4" width="80;" alt="Black-Bee-Drones"/>
+                    <br />
+                    <sub><b>Black Bee Drones</b></sub>
+                </a>
+            </td>
+		</tr>
+	</tbody>
+</table>
+<!-- readme: contributors -end -->
+
+<a href="https://github.com/Black-Bee-Drones/mirela-sdk/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Black-Bee-Drones/mirela-sdk" alt="Contributors" />
+</a>
 
 ## License 
 
-This project is licensed under the Apache-2.0 License - see the `LICENSE` file for details.
+This project is licensed under the Apache-2.0 License - see the [`LICENSE`](LICENSE) file for details.
