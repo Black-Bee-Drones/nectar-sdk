@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/Black-Bee-Drones/mirela-sdk/discussions
+    about: Please ask and answer questions here.
+
+  - name: 📚 Documentation
+    url: https://github.com/Black-Bee-Drones/mirela-sdk#readme
+    about: Check the README for installation and usage guides.

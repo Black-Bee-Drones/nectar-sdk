@@ -1,0 +1,129 @@
+name: 🐛 Bug Report
+description: Problems with Mirela SDK
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for submitting a bug report for Mirela SDK! We appreciate your help in making the project better.
+
+  - type: checkboxes
+    attributes:
+      label: Search before asking
+      description: >
+        Please search the repository issues to see if a similar bug report already exists.
+      options:
+        - label: |
+            I have searched the repository issues and found no similar bug report.
+          required: true
+
+  - type: textarea
+    attributes:
+      label: "Mirela SDK Version"
+      description: "Please specify the commit or tag version you're using."
+      placeholder: |
+        Example: version 1.0.0 or commit hash
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: "Component"
+      description: "Please select the component where the bug occurred."
+      options:
+        - "Drone Control - Bebop"
+        - "Drone Control - MAVROS"
+        - "Drone Control - PID Controller"
+        - "Image Processing - ArUco Detection"
+        - "Image Processing - Color Detection"
+        - "Image Processing - Camera Calibration"
+        - "Image Processing - OAK-D Camera"
+        - "Image Processing - GPS/Image Calculus"
+        - "GUI Interface"
+        - "ROS2 Integration"
+        - "Docker"
+        - "Other"
+        - "I don't know"
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: "Current Behavior"
+      description: "Describe how the bug manifests."
+      placeholder: |
+        Example: When calling bebop.takeoff(), the drone does not respond and no error is shown.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Expected Behavior"
+      description: "Describe what you expect the behavior to be without the bug."
+      placeholder: |
+        Example: The drone should take off and hover at the default altitude.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Steps to Reproduce"
+      description: "Explain the steps required to duplicate the issue."
+      placeholder: |
+        1. Initialize the Bebop drone with `Bebop(node=self, driver=True)`
+        2. Call `bebop.takeoff()`
+        3. Observe no response from the drone
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: "Related Code"
+      description: "Provide code snippets or examples that could help understand the issue."
+      placeholder: |
+        ```python
+        from mirela_sdk.control.bebop import Bebop
+        
+        bebop = Bebop(node=self, driver=True)
+        bebop.takeoff()  # Bug occurs here
+        ```
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: "Error Messages"
+      description: "Include error messages or stack traces."
+      placeholder: |
+        ```
+        # Example error message here
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Environment"
+      description: "Describe the environment in which the bug occurs."
+      placeholder: |
+        - Operating System: [e.g., Ubuntu 22.04, Windows 11]
+        - ROS2 Version: [e.g., Humble, Iron]
+        - Python Version: [e.g., 3.10.12]
+        - Drone Platform: [e.g., Parrot Bebop 2, PX4 with MAVROS]
+        - Camera: [e.g., Webcam, OAK-D, ROS2 topic]
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: "Additional Information"
+      description: "Provide any other relevant information."
+      placeholder: |
+        Example: Related issues, suggestions for fixing, or links to discussions.
+
+  - type: checkboxes
+    attributes:
+      label: "If this bug is confirmed, would you be willing to submit a PR?"
+      description: "(Optional) We encourage contributions to help improve the project."
+      options:
+        - label: "Yes, I'd like to help by submitting a PR!"

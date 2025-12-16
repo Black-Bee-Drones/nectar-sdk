@@ -1,0 +1,96 @@
+name: 🪡 Codebase Improvement
+description: Provide your feedback for the existing codebase. Suggest a better solution for algorithms, development tools, etc.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a code improvement for Mirela SDK! Your feedback is valuable for enhancing the project. Please provide as much detail as possible to help us understand your proposal and implement it effectively.
+
+  - type: checkboxes
+    attributes:
+      label: Confirm
+      description: |
+        Please ensure you have reviewed the project's documentation and existing issues before submitting your proposal.
+      options:
+        - label: I have checked the documentation and issues for similar improvements.
+          required: true
+
+  - type: textarea
+    attributes:
+      label: "Mirela SDK Version"
+      description: "Please specify the commit or tag version you're using."
+      placeholder: |
+        Example: version 1.0.0 or commit hash
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: "Component"
+      description: "Please select the component related to your improvement."
+      options:
+        - "Drone Control - Bebop"
+        - "Drone Control - MAVROS"
+        - "Drone Control - PID Controller"
+        - "Image Processing - ArUco Detection"
+        - "Image Processing - Color Detection"
+        - "Image Processing - Camera"
+        - "Image Processing - OAK-D Camera"
+        - "GUI Interface"
+        - "ROS2 Integration"
+        - "Utilities"
+        - "Other"
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: "Current Implementation"
+      description: "Describe the current implementation and what you find suboptimal."
+      placeholder: |
+        Example: The ArUco detection loop blocks the main thread, causing delayed drone responses.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Proposed Improvement"
+      description: "Describe your proposed solution or improvement. Be as specific as possible."
+      placeholder: |
+        Example: Implement asynchronous ArUco detection using a separate thread or ROS2 executor.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Benefits"
+      description: "Explain the benefits of your proposed improvement."
+      placeholder: |
+        Example: Reduces control latency, improves real-time performance, enables smoother drone operation.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Related Code"
+      description: "Provide examples of the current code or the code you propose to implement."
+      placeholder: |
+        ```python
+        # Current code:
+        def detect_aruco(self, img):
+            # synchronous implementation...
+
+        # Proposed code:
+        async def detect_aruco(self, img):
+            # asynchronous implementation...
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Additional Information"
+      description: "Include any other relevant information, such as related issues, Stack Overflow links, or forum discussions."
+      placeholder: |
+        Example: Related issue #123, ROS2 documentation link, performance benchmarks...

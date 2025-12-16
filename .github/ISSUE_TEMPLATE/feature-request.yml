@@ -1,0 +1,88 @@
+name: 🚀 Feature Request
+description: Suggest an idea for Mirela SDK
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Feature Request
+        
+        Thank you for submitting a feature request for Mirela SDK! Provide a clear and concise description of your request and any additional context that would help us understand your request better.
+
+  - type: checkboxes
+    attributes:
+      label: Search before asking
+      description: >
+        Please search the repository issues to see if a similar feature request already exists.
+      options:
+        - label: |
+            I have searched the repository issues and found no similar feature request.
+          required: true
+
+  - type: dropdown
+    attributes:
+      label: "Component"
+      description: "Please select the component related to your feature request."
+      options:
+        - "Drone Control - Bebop"
+        - "Drone Control - MAVROS"
+        - "Drone Control - PID Controller"
+        - "Image Processing - ArUco Detection"
+        - "Image Processing - Color Detection"
+        - "Image Processing - Camera"
+        - "Image Processing - OAK-D Camera"
+        - "GUI Interface"
+        - "ROS2 Integration"
+        - "Documentation"
+        - "New Drone Platform"
+        - "Other"
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: "Describe the Feature Request"
+      description: "A clear and concise description of what the feature request is. Please include if your feature request is related to a problem."
+      placeholder: |
+        Example: I would like to add support for DJI drones to expand the SDK's compatibility.
+
+  - type: textarea
+    attributes:
+      label: "Describe Preferred Solution"
+      description: "A clear and concise description of what you want to happen."
+      placeholder: "How would you like this feature to be implemented? Provide any specific details or requirements."
+
+  - type: textarea
+    attributes:
+      label: "Describe Alternatives"
+      description: "A clear and concise description of any alternative solutions or features you've considered."
+      placeholder: "Are there other ways to achieve this? What other solutions or features have you thought about?"
+
+  - type: textarea
+    attributes:
+      label: "Related Code"
+      description: "If you are able to illustrate the feature request with an example, please provide it here."
+      placeholder: |
+        ```python
+        # Example implementation idea
+        from mirela_sdk.control.dji import DJI
+        
+        dji = DJI(node=self)
+        dji.takeoff()
+        ```
+
+  - type: textarea
+    attributes:
+      label: "Additional Context"
+      description: "List any other information that is relevant to your issue. Stack traces, related issues, suggestions on how to add, use case, Stack Overflow links, forum links, screenshots, OS if applicable, etc."
+      placeholder: "Add any additional context or information that might be helpful for us to consider."
+
+  - type: checkboxes
+    attributes:
+      label: "If the feature request is approved, would you be willing to submit a PR?"
+      description: "(Optional) We encourage you to submit a Pull Request (PR) to help improve the project, especially if you have a good understanding of how to implement the feature."
+      options:
+        - label: "Yes I'd like to help by submitting a PR!"
+          required: false
+        - label: "No, I prefer to just submit the feature request."
+          required: false
