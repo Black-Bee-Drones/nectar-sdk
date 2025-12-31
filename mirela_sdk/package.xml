@@ -3,8 +3,8 @@
 <package format="3">
   <name>mirela_sdk</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="samuellimabraz@gmail.com">samuel</maintainer>
+  <description>Drone control and computer vision SDK for ROS2</description>
+  <maintainer email="samuellimabraz@gmail.com">Black Bee Drones</maintainer>
   <license>Apache-2.0</license>
 
   <depend>geometry_msgs</depend>

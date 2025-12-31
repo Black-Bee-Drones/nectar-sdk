@@ -1,6 +1,6 @@
-from setuptools import find_packages, setup
 import os
 from glob import glob
+from setuptools import find_packages, setup
 
 
 package_name = "mirela_sdk"
@@ -27,9 +27,9 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="samuel",
+    maintainer="Black Bee Drones",
     maintainer_email="samuellimabraz@gmail.com",
-    description="TODO: Package description",
+    description="Drone control and computer vision SDK for ROS2",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
