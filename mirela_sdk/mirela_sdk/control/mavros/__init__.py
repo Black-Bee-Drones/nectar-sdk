@@ -1,23 +1,7 @@
-"""Mavros control module for ArduPilot drones."""
-
-from mirela_sdk.control.mavros.mavros_api import MavDrone
-from mirela_sdk.control.mavros.exceptions import (
-    MavrosControlError,
-    TakeoffPositionNotSetError,
-    SensorNotAvailableError,
-    InvalidModeError,
-    InvalidStrategyError,
-    NavigationError,
-    GPSError,
-)
+from mirela_sdk.control.mavros.drone import MavrosDrone
+from mirela_sdk.control.mavros.gps_utils import GPSUtils
 
 __all__ = [
-    "MavDrone",
-    "MavrosControlError",
-    "TakeoffPositionNotSetError",
-    "SensorNotAvailableError",
-    "InvalidModeError",
-    "InvalidStrategyError",
-    "NavigationError",
-    "GPSError",
+    "MavrosDrone",
+    "GPSUtils",
 ]
