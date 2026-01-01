@@ -349,7 +349,7 @@ class MavrosDrone(BaseDrone):
         if config.pid_config_file:
             path = Path(config.pid_config_file)
         else:
-            config_dir = Path(__file__).parent.parent.parent / "config" / "mavros"
+            config_dir = Path(__file__).parent.parent / "config" / "mavros"
             if self.is_indoor:
                 path = config_dir / "position_indoor.yaml"
             else:
