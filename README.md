@@ -571,6 +571,13 @@ We love your input! Please see our [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) gui
         </a>
     </td>
     <td align="center">
+        <a href="https://github.com/lipe-pedras">
+            <img src="https://avatars.githubusercontent.com/u/133624454?v=4" width="80;" alt="lipe-pedras"/>
+            <br />
+            <sub><b>Luis Filipe Laurino Junqueira Pedras</b></sub>
+        </a>
+    </td>
+    <td align="center">
         <a href="https://github.com/Eduard0Castro">
             <img src="https://avatars.githubusercontent.com/u/90725507?v=4" width="80;" alt="Eduard0Castro"/>
             <br />
@@ -578,10 +585,38 @@ We love your input! Please see our [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) gui
         </a>
     </td>
     <td align="center">
-        <a href="https://github.com/lipe-pedras">
-            <img src="https://avatars.githubusercontent.com/u/133624454?v=4" width="80;" alt="lipe-pedras"/>
+        <a href="https://github.com/LucasRonchi">
+            <img src="https://avatars.githubusercontent.com/u/85639404?v=4" width="80;" alt="LucasRonchi"/>
             <br />
-            <sub><b>Luis Filipe Laurino Junqueira Pedras</b></sub>
+            <sub><b>LucasRonchi</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/softwareBlackBeeDrones">
+            <img src="https://avatars.githubusercontent.com/u/20743829?v=4" width="80;" alt="softwareBlackBeeDrones"/>
+            <br />
+            <sub><b>Software Black Bee</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/giovannafb">
+            <img src="https://avatars.githubusercontent.com/u/134218314?v=4" width="80;" alt="giovannafb"/>
+            <br />
+            <sub><b>Giovanna De Figueiredo Brito</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/Soullis">
+            <img src="https://avatars.githubusercontent.com/u/87676378?v=4" width="80;" alt="Soullis"/>
+            <br />
+            <sub><b>Soullis</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/mexuz">
+            <img src="https://avatars.githubusercontent.com/u/77783293?v=4" width="80;" alt="mexuz"/>
+            <br />
+            <sub><b>Ryan Rocha</b></sub>
         </a>
     </td></tr>
 </table>
