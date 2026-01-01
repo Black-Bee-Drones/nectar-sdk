@@ -127,7 +127,7 @@ def plot_results(results: list[SimulationResult], save_path: str = None):
     values = [r.value for r in results]
     outputs = [r.output for r in results]
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    _, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
 
     ax1.plot(times, setpoints, "r--", label="Setpoint", linewidth=2)
     ax1.plot(times, values, "b-", label="Value", linewidth=2)
