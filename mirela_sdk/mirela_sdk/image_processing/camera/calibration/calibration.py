@@ -6,15 +6,16 @@ import rclpy
 from rclpy.node import Node
 from mirela_sdk.image_processing.camera.image_handler import ImageHandler
 
+
 class Calibration(Node):
 
     """
     Class to calibrate a camera with OpenCV and a chessboard
     """
 
-    path = os.path.dirname(__file__)
+    PATH = os.path.dirname(__file__)
 
-    def __init__(self, chessboard_size: tuple = (9,7)):
+    def __init__(self, chessboard_size: tuple = (9,7)) -> None:
 
         """
         Calibration class constructor
@@ -38,34 +39,44 @@ class Calibration(Node):
         self.object_points = []
         self.image_points = []
 
-    def __photo(self, img):
+    def __photo(self, img) -> None:
 
-        if self.cont == 10:
+        #TODO: add time duration logic to this
+        if self.cont == 30:
 
             self.photos += 1
-            cv2.imwrite(f"{Calibration.path}/dataset/chessboard{self.photos}.jpg", img)
+            cv2.imwrite(f"{Calibration.PATH}/dataset/chessboard{self.photos}.jpg", img)
             self.get_logger().info(f"Saving photo number {self.photos}")
             self.cont = 0
 
-        if self.photos == 100:
+        if self.photos == self.num_photos:
             self.get_logger().info("Photos completed")
             self.image_handler.cleanup()
-            self.calibrate(show_corners=False)
+            self.calibrate(show_corners=True)
             self.overwrite_matrices()
 
         self.cont += 1
 
-    def run_photos(self):
+    def run_photos(self, num_photos: int) -> None:
+
+        """
+        Function to initialize photos capture to store on dataset folder
+
+        :param num_photos (int): Number of photos to take
+
+        """
         self.get_logger().info("Taking photos to dataset")
+        self.num_photos = num_photos
         self.cont = 1
         self.photos = 0
         self.image_handler = ImageHandler(self, "webcam", self.__photo, None, 0)
         self.image_handler.run()
 
-    def __find_corners(self, show_result: bool):
+    def __find_corners(self, show_result: bool) -> None:
 
-        list_of_image_files = glob.glob(f'{Calibration.path}/dataset/*.jpg')
+        list_of_image_files = glob.glob(f'{Calibration.PATH}/dataset/*.jpg')
         imgs_detected = 0
+
         # Load and process each image
         for image_file in list_of_image_files:
             image = cv2.imread(image_file)
@@ -90,7 +101,7 @@ class Calibration(Node):
 
         cv2.destroyAllWindows()
 
-    def calibrate(self, show_corners: bool = False):
+    def calibrate(self, show_corners: bool = False) -> None:
         """
         Function to initialize the calibration with the search for the chessboard
         corners in the images from dataset and obtaining calibration and distortion 
@@ -109,13 +120,13 @@ class Calibration(Node):
         print("Calibration matrix:\n", self.calibration_matrix)
         print("Distortion:\n", self.distortion_list)
 
-    def overwrite_matrices(self):
+    def overwrite_matrices(self) -> None:
 
         """
         Functions to write or overwrite the calibration and distortion matrices files
         """
 
-        with open(f"{Calibration.path}/camera_matrix.txt", "w") as matrix:
+        with open(f"{Calibration.PATH}/camera_matrix.txt", "w") as matrix:
 
             for i in range (len(self.calibration_matrix)):
                 for j in range(len(self.calibration_matrix[i])):
@@ -126,7 +137,7 @@ class Calibration(Node):
                 if i != len(self.calibration_matrix) - 1:
                     matrix.write("\n")
 
-        with open(f"{Calibration.path}/camera_distortion.txt", "w") as distortion:
+        with open(f"{Calibration.PATH}/camera_distortion.txt", "w") as distortion:
             for i in range (len(self.distortion_list)):
                 distortion.write(str(self.distortion_list[i]))
                 if i != len(self.distortion_list) - 1:
@@ -141,18 +152,23 @@ class Calibration(Node):
         Use this function only if you are sure that calibration is complete and the files exist.
         """
 
-        camera_matrix_list = np.loadtxt(f"{cls.path}/camera_matrix.txt", delimiter=",")
-        camera_distortion_list = np.loadtxt(f"{cls.path}/camera_distortion.txt", delimiter=",")
+        camera_matrix_list = np.loadtxt(f"{cls.PATH}/camera_matrix.txt", delimiter=",")
+        camera_distortion_list = np.loadtxt(f"{cls.PATH}/camera_distortion.txt", delimiter=",")
 
         return (camera_matrix_list, camera_distortion_list)    
     
 
 def main():
+
     rclpy.init()
-    calibration = Calibration(chessboard_size=(8,6))
-    calibration.run_photos()
-    rclpy.spin(calibration)
-    rclpy.shutdown()
+    try:
+        calibration = Calibration(chessboard_size = (9, 7))
+        calibration.run_photos(num_photos = 50)
+        rclpy.spin(calibration)
+
+    except KeyboardInterrupt: ...
+    except Exception as ex: print("Exception: ", ex)
+    finally: calibration.destroy_node()
 
 if __name__ == "__main__":
     main()

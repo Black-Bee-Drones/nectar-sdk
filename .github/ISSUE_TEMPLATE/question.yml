@@ -1,0 +1,74 @@
+name: ❓ Question
+description: Ask a question about Mirela SDK - Drone Control and Computer Vision
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Welcome to Mirela SDK! Thank you for asking your question. This template will help you provide the necessary details. We appreciate your contribution to our community.
+
+  - type: checkboxes
+    attributes:
+      label: Confirm
+      description: |
+        Before submitting your question, please ensure you have checked the provided resources to see if your question has already been answered.
+      options:
+        - label: |
+            I have searched the project's documentation, issues, and discussions and found no similar questions.
+          required: true
+
+  - type: dropdown
+    attributes:
+      label: Select Component
+      description: |
+        Please select the component related to your question.
+      options:
+        - "Drone Control - Bebop"
+        - "Drone Control - MAVROS"
+        - "Drone Control - PID Controller"
+        - "Image Processing - ArUco Detection"
+        - "Image Processing - Color Detection"
+        - "Image Processing - Camera Calibration"
+        - "Image Processing - OAK-D Camera"
+        - "GUI Interface"
+        - "ROS2 Integration"
+        - "Installation / Setup"
+        - "Docker"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Question"
+      description: |
+        Provide a clear and concise question regarding your drone control or computer vision implementation with Mirela SDK. Include context, such as steps taken, attempts, and any relevant code snippets or logs.
+      placeholder: |
+        📝 Provide your question and context here.
+        Example:
+        "How can I detect multiple ArUco markers and get their poses simultaneously?"
+        "How do I configure the PID controller for precise altitude hold with MAVROS?"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Additional Information"
+      description: |
+        Optional: Share any additional details that may help us understand your question better.
+      placeholder: |
+        - Relevant code snippets
+        - Logs or error messages
+        - Steps taken so far
+        - Drone platform being used
+        - Camera setup
+        - Any other relevant information
+
+  - type: checkboxes
+    attributes:
+      label: Contribution
+      description: |
+        Would you like to contribute to the project by submitting a Pull Request?
+      options:
+        - label: "Yes, I'd like to help!"
+        - label: "No, I just need answers."

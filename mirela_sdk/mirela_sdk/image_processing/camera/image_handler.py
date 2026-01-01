@@ -1,196 +1,174 @@
-import os
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CompressedImage
-
-from cv_bridge import CvBridge
 import cv2
+import time
+from typing import Optional, Callable, Any
 
-from typing import Optional
-from mirela_sdk.image_processing.camera.oakd_cam import OakdCam
+from .abstract_cam import AbstractCam
+from .camera_factory import CameraFactory
+from .camera_config import CameraConfig
 
 
 class ImageHandler:
-    RASPICAM_LAUNCH = "camerav2_410x308_30fps.launch"
-    RASPICAM_TOPIC = "/image_raw"
-    RASPICAM_COMPRESS_TOPIC = "/image_raw/compressed"
-
-    BEBOP_TOPIC = "/bebop/camera/image_raw"
-
     def __init__(
         self,
         node: Node,
         image_source: str,
-        image_processing_callback: Optional[callable] = None,
-        show_result: str = None,
-        cap: Optional[int] = 0,
-        oakd_num: Optional[int] = 1,
+        image_processing_callback: Optional[Callable] = None,
+        show_result: Optional[str] = None,
+        *,
+        config: Optional[CameraConfig] = None,
+        camera: Optional[AbstractCam] = None,
+        poll_interval: float = 0.01,
     ):
         """
-        Class to handle image processing from a ROS topic or webcam.
+        Class to handle image processing from various sources.
 
-        :param node (rclpy.node.Node): the ROS node to handle the image processing
-        :param image_source (str): the source of the image (ROS topic or webcam or oakd)
-        :param image_processing_callback (callable): the callback function to process the image
-        :param cap (int): the webcam index.
-            Use this parameter only if the image source is "webcam"
-        :param oakd_num (int): index number for oakd cam - 1 for rgb, 2 for left monochrome cam, 3 for
-         right monochrome cam
-            Use this parameter only if the image source is "oakd"
+        :param node: The ROS2 node.
+        :param image_source: The type of camera source (e.g., "webcam", "imx219", "realsense",
+                             "oakd", a ROS topic path, or a file path).
+        :param image_processing_callback: Callback function to process each frame.
+        :param show_result: Name of the OpenCV window to display results. If None, no window is shown.
+        :param config: Optional configuration dataclass for the camera. If not provided,
+                       default settings for the specified `image_source` will be used.
+        :param camera: Optional pre-built camera instance. If provided, it overrides
+                       `image_source` and `config`.
+        :param poll_interval: Interval in seconds for polling the camera for new frames.
         """
-
         self.node = node
         self.image_processing_callback = image_processing_callback
-
-        # Initialize the camera source (ROS topic or webcam)
         self.image_source = image_source
         self.img = None
         self.show_result = show_result
-        self.cap_num = cap
-        self.oakd_num = oakd_num
+        self.config = config
         self.cleaned = False
-        self.bridge = CvBridge()
 
-    def _configure_ros_topic(self):
-        """
-        Configure the ROS topic to subscribe to the image source
-            Could be a compressed image or a raw image
-        """
+        self.camera: Optional[AbstractCam] = camera
+        self.poll_interval = poll_interval
+        self.cam_timer = None
 
-        if self.image_source.endswith("compressed"):
-            self.convert_bridge = self.bridge.compressed_imgmsg_to_cv2
-            self.image_sub = self.node.create_subscription(
-                CompressedImage, self.image_source, self.ros_topic_callback, 10
-            )
-        else:
-            self.convert_bridge = self.bridge.imgmsg_to_cv2
-            self.image_sub = self.node.create_subscription(
-                Image, self.image_source, self.ros_topic_callback, 10
-            )
+    def _build_camera_from_source(self) -> AbstractCam:
+        if self.camera is not None:
+            return self.camera
+        return CameraFactory.from_source(
+            self.image_source, config=self.config, node=self.node
+        )
+
+    def open(self):
+        """
+        Explicitly open the camera.
+        """
+        if self.camera is None:
+            self.camera = self._build_camera_from_source()
+        if not self.camera.is_running:
+            self.camera.start()
+        self.node.get_logger().info(f"Camera [{self.image_source}] opened.")
+
+    def close(self):
+        """
+        Explicitly close the camera.
+        """
+        if self.camera is not None and self.camera.is_running:
+            self.camera.close()
+            self.node.get_logger().info(f"Camera [{self.image_source}] closed.")
+
+    def _camera_callback(self):
+        try:
+            if hasattr(self.camera, "_use_ros_topics") and self.camera._use_ros_topics:
+                frame = self.camera.get_frame(
+                    wait_for_new=True, timeout=self.poll_interval * 0.9
+                )
+            else:
+                frame = self.camera.get_frame() if self.camera else None
+
+            if frame is None:
+                return
+            self.img = frame
+            self.process()
+        except Exception as e:
+            self.node.get_logger().error(f"Camera polling error: {e}")
 
     def process(self):
-        """
-        Process the image using the callback function
-
-        Show the result if the show_result is not None
-        """
         if self.image_processing_callback is not None:
             self.image_processing_callback(self.img)
-
-        if self.show_result is not None:
-            cv2.imshow(self.show_result, self.img)
-
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                self.cleanup()
-
-    def ros_topic_callback(self, data):
-        """
-        Callback function for ROS topic
-
-        :param data: the ROS message
-        """
-        try:
-            self.img = self.convert_bridge(data, "bgr8")
-
-            self.process()
-
-        except Exception as e:
-            self.node.get_logger().error(
-                f"Failed to convert ROS image message: {str(e)}"
-            )
-
-    def webcam_callback(self):
-        """
-        Callback function for webcam
-        """
-        try:
-            ret, self.img = self.cap.read()
-
-            if not ret:
-                self.node.get_logger().error("Webcam is not functioning correctly.")
-                return
-
-            self.process()
-
-        except Exception as e:
-            self.node.get_logger().error(f"Failed to read from webcam: {str(e)}")
-
-    def oakd_callback(self):
-        """
-        Callback function for oakd
-        """
-
-        # getFrame function converts the frame from camera pattern to cv2.Mat
-        self.img = self.oakd.getFrame(self.queue)
-        self.process()
+        if self.show_result is not None and self.img is not None:
+            try:
+                cv2.imshow(self.show_result, self.img)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    self.cleanup()
+            except cv2.error as e:
+                if "The function is not implemented" in str(e):
+                    self.node.get_logger().warn(
+                        "OpenCV GUI not available. Run with show_result:=false or install opencv-python with GUI support",
+                        throttle_duration_sec=10.0,
+                    )
+                    self.show_result = None  # Disable display
+                else:
+                    raise
 
     def run(self):
+        self.node.get_logger().info(f"Running image handler [{self.image_source}]")
+        if self.camera is None:
+            self.camera = self._build_camera_from_source()
+        if not self.camera.is_running:
+            self.camera.start()
+        self.cam_timer = self.node.create_timer(
+            self.poll_interval, self._camera_callback
+        )
+
+    def take_photo(
+        self, timeout_sec: float = 1.0, wait_for_new: bool = True
+    ) -> Optional[Any]:
         """
-        Run the image handler
+        Captures a single frame, processes it, and returns the result.
+
+        Requires the camera to be opened first using open().
+
+        :param timeout_sec: Maximum time to wait for a frame.
+        :param wait_for_new: If True, wait for a new frame (only affects ROS topics).
+        :return: The result from the image_processing_callback, or the raw
+                 frame if no callback is provided. Returns None on timeout.
         """
-        self.node.get_logger().info("Running image handler [" + self.image_source + "]")
+        if self.camera is None or not self.camera.is_running:
+            raise RuntimeError(
+                "Camera must be opened before calling take_photo(). Call open() first."
+            )
 
-        if self.image_source == "webcam":
-            # For webcam, the image is read by VideoCapture
-            # and detection is maintained by the Timer together with the callback function
-            self.cap = cv2.VideoCapture(self.cap_num)
+        # self.node.get_logger().info(f"Taking a photo from [{self.image_source}]")
+        start_time = time.time()
+        frame = None
 
-            self.webcam_timer = self.node.create_timer(0.0001, self.webcam_callback)
-
-        elif self.image_source == "oakd":
-            # For oakd, OakdCam class initializes the pipeline, configures the camera according
-            # to the address, returns the queue with frames in the camera pattern
-
-            self.oakd = OakdCam()
-            self.oakd.setup_camera(self.oakd_num)
-            self.oakd.init_cam()
-            self.queue = self.oakd.getQueue_CamType()
-            self.oakd_timer = self.node.create_timer(0.0001, self.oakd_callback)
-
-        elif os.path.isfile(self.image_source):
-            # For image file, the image is read by cv2.imread
-            try:
-                self.img = cv2.imread(self.image_source)
-                self.image_timer = self.node.create_timer(0.0001, self.process)
-            except Exception as e:
-                self.node.get_logger().error(f"Failed to read image file: {str(e)}")
-
+        if hasattr(self.camera, "_use_ros_topics") and self.camera._use_ros_topics:
+            frame = self.camera.get_frame(
+                wait_for_new=wait_for_new, timeout=timeout_sec
+            )
         else:
-            # For ROS topic, the image is read by the callback function
-            self._configure_ros_topic()
+            while time.time() - start_time < timeout_sec:
+                frame = self.camera.get_frame()
+                if frame is not None:
+                    break
+                time.sleep(0.05)
+
+        if frame is None:
+            self.node.get_logger().error("Failed to capture frame within timeout.")
+            return None
+
+        self.img = frame
+        if self.image_processing_callback:
+            return self.image_processing_callback(self.img)
+        return self.img
 
     def cleanup(self):
-        """
-        Clean up the image handler
-        """
-
         if not self.cleaned:
             self.node.get_logger().info("Image Handler Shutting Down")
             self.cleaned = True
-            if self.image_source == "webcam":
-                self.cap.release()
-                self.node.destroy_timer(self.webcam_timer)
-
-            elif self.image_source == "oakd":
-
-                try:
-                    self.oakd.clean()
-
-                except AttributeError as ex:
-                    self.node.get_logger().error(f"{ex}")
-                    
-                else: 
-                    self.node.destroy_timer(self.oakd_timer)
-
-            elif os.path.isfile(self.image_source):
-                self.node.destroy_timer(self.image_timer)
-            else:
-                self.node.destroy_subscription(self.image_sub)
-
+            self.close()
+            if self.cam_timer is not None:
+                self.node.destroy_timer(self.cam_timer)
             if self.show_result is not None:
                 try:
                     cv2.destroyWindow(self.show_result)
-                except Exception as e:
-                    self.node.get_logger().warning(str(e))
+                except Exception:
+                    cv2.destroyAllWindows()
         else:
             print("Image Handler already cleaned up")
 

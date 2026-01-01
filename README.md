@@ -30,7 +30,7 @@ Welcome to the Mirela SDK, a software development kit designed to simplify drone
 - [Modules](#modules)
 - [Class Diagram](#class-diagram)
 - [Directory Structure](#directory-structure)
-- [Contributing](#contributing)
+- [Contribution](#contribution)
 - [License](#license)
 
 <a name="features"></a>
@@ -55,7 +55,18 @@ Welcome to the Mirela SDK, a software development kit designed to simplify drone
 <a name="installation"></a>
 ## Installation 🦥
 
-- 🐳 **Docker (Recommended):**  For a consistent environment, use the provided [Dockerfile](docker/Dockerfile) and scripts:
+- 🚀 **Automated Installation (Recommended for Ubuntu/Debian):**  Download and run the automated installation script:
+    ```bash
+    # Download the installation script
+    wget https://raw.githubusercontent.com/Black-Bee-Drones/mirela-sdk/main/install_env.sh
+    chmod +x install_env.sh
+    
+    # Run the installation
+    ./install_env.sh
+    ```
+    This script automatically installs Git, ROS2 Humble, clones the repository, installs all dependencies, configures the workspace, and builds the project. See [`README_INSTALLATION.md`](README_INSTALLATION.md) for detailed information.
+
+- 🐳 **Docker:**  For a consistent environment, use the provided [Dockerfile](docker/Dockerfile) and scripts:
     * **Linux:** [`./run_docker_linux.sh`](docker/run_docker_linux.sh)
     * **Windows:** 
         - CMD: [`.\run_docker_win.cmd`](docker/run_docker_win.cmd)
@@ -545,10 +556,41 @@ mirela_sdk
 
 ```
 
-## Contributing
+## Contribution
 
-Contributions are welcome!  Please see `CONTRIBUTING.md` for guidelines. **TODO: Add CONTRIBUTING.md file**
+We love your input! Please see our [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) guide to get started. Thank you 🙏 to all our contributors!
+
+<!-- readme: contributors -start -->
+<table>
+<tr>
+    <td align="center">
+        <a href="https://github.com/samuellimabraz">
+            <img src="https://avatars.githubusercontent.com/u/115582014?v=4" width="80;" alt="samuellimabraz"/>
+            <br />
+            <sub><b>Samuel Lima Braz</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/Eduard0Castro">
+            <img src="https://avatars.githubusercontent.com/u/90725507?v=4" width="80;" alt="Eduard0Castro"/>
+            <br />
+            <sub><b>Eduardo Castro</b></sub>
+        </a>
+    </td>
+    <td align="center">
+        <a href="https://github.com/lipe-pedras">
+            <img src="https://avatars.githubusercontent.com/u/133624454?v=4" width="80;" alt="lipe-pedras"/>
+            <br />
+            <sub><b>Luis Filipe Laurino Junqueira Pedras</b></sub>
+        </a>
+    </td></tr>
+</table>
+<!-- readme: contributors -end -->
+
+<a href="https://github.com/Black-Bee-Drones/mirela-sdk/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Black-Bee-Drones/mirela-sdk" alt="Contributors" />
+</a>
 
 ## License 
 
-This project is licensed under the Apache-2.0 License - see the `LICENSE` file for details.
+This project is licensed under the Apache-2.0 License - see the [`LICENSE`](LICENSE) file for details.
