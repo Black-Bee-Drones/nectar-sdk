@@ -171,44 +171,7 @@ class ObstacleDetector(Protocol):
 
 ## Detectors
 
-### Detection Zones (Drone Perspective)
-
-```mermaid
-graph TB
-    subgraph "Top View - Detection Zones"
-        direction LR
-        
-        subgraph LEFT["🟦 LEFT Zone"]
-            L1[x_max < center]
-        end
-        
-        subgraph CENTER["🟥 FRONT Zone"]
-            C1[Clusters on<br/>both sides]
-        end
-        
-        subgraph RIGHT["🟨 RIGHT Zone"]
-            R1[x_min > center]
-        end
-        
-        DRONE[🚁 Drone<br/>Forward ↑]
-        
-        LEFT -.-> DRONE
-        CENTER -.-> DRONE
-        RIGHT -.-> DRONE
-    end
-    
-    subgraph "Side View - Distance Ranges"
-        direction LR
-        
-        D[🚁 Drone] --> D1["0.1m<br/>(min)"]
-        D1 --> D2["0.5m<br/>(avoid min)"]
-        D2 --> D3["🔴 1.3m<br/>(threshold)"]
-        D3 --> D4["1.5m<br/>(max range)"]
-        
-        style D2 fill:#ffe6e6
-        style D3 fill:#ff9999
-    end
-```
+### Detection Zones
 
 **Detection Zones**:
 - `LEFT`: All clusters `x_max < image_center`
@@ -464,7 +427,7 @@ handler = ObstacleHandler(
     node=node,
     config=ObstacleHandlerConfig(
         enabled=True,
-        update_rate=0.1  # 10 Hz update timer
+        update_rate=0.1 
     )
 )
 ```
