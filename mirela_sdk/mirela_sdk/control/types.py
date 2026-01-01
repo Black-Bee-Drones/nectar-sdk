@@ -10,7 +10,6 @@ class MoveReference(Enum):
 class PoseSource(Enum):
     GPS = auto()
     VISION = auto()
-    MOCAP = auto()
 
 
 class NavigationStrategy(Enum):
