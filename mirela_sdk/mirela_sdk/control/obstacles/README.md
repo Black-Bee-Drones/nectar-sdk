@@ -86,6 +86,53 @@ classDiagram
     ObstacleManager o-- ObstacleHandler
 ```
 
+## Real-Time Detection Flow
+
+```mermaid
+sequenceDiagram
+    participant Nav as Navigation Loop<br/>(Main Thread)
+    participant Mgr as ObstacleManager
+    participant H as ObstacleHandler
+    participant T as ROS2 Timer<br/>(Background)
+    participant D as DepthDetector
+    participant Cam as RealSense Camera
+    participant S as Strategy
+    
+    Note over T,Cam: Background Detection (10Hz)
+    loop Every 0.1s (Timer)
+        T->>H: _update_callback()
+        H->>D: update()
+        D->>Cam: get_depth_frame()
+        Cam-->>D: depth image
+        D->>D: DBSCAN clustering
+        D->>D: filter & classify
+        D-->>H: ObstacleInfo
+        H->>H: Lock & store
+    end
+    
+    Note over Nav,S: Navigation Loop (100Hz)
+    loop Every 0.01s
+        Nav->>Mgr: should_continue_navigation(drone)
+        Mgr->>H: should_continue(drone)
+        H->>H: Lock & read last_info
+        H->>S: execute(drone, info)
+        
+        alt Obstacle Detected
+            S->>S: PauseStrategy
+            S->>Nav: move_velocity(0,0,0,0)
+            S-->>H: False (pause)
+            H-->>Mgr: False
+            Mgr-->>Nav: False (skip iteration)
+        else Path Clear
+            S-->>H: True (continue)
+            H-->>Mgr: True
+            Mgr-->>Nav: True
+            Nav->>Nav: Compute PID
+            Nav->>Nav: move_velocity(vx,vy,vz,vyaw)
+        end
+    end
+```
+
 ## Core Concepts
 
 ### Separation of Concerns
@@ -124,6 +171,55 @@ class ObstacleDetector(Protocol):
 
 ## Detectors
 
+### Detection Zones (Drone Perspective)
+
+```mermaid
+graph TB
+    subgraph "Top View - Detection Zones"
+        direction LR
+        
+        subgraph LEFT["🟦 LEFT Zone"]
+            L1[x_max < center]
+        end
+        
+        subgraph CENTER["🟥 FRONT Zone"]
+            C1[Clusters on<br/>both sides]
+        end
+        
+        subgraph RIGHT["🟨 RIGHT Zone"]
+            R1[x_min > center]
+        end
+        
+        DRONE[🚁 Drone<br/>Forward ↑]
+        
+        LEFT -.-> DRONE
+        CENTER -.-> DRONE
+        RIGHT -.-> DRONE
+    end
+    
+    subgraph "Side View - Distance Ranges"
+        direction LR
+        
+        D[🚁 Drone] --> D1["0.1m<br/>(min)"]
+        D1 --> D2["0.5m<br/>(avoid min)"]
+        D2 --> D3["🔴 1.3m<br/>(threshold)"]
+        D3 --> D4["1.5m<br/>(max range)"]
+        
+        style D2 fill:#ffe6e6
+        style D3 fill:#ff9999
+    end
+```
+
+**Detection Zones**:
+- `LEFT`: All clusters `x_max < image_center`
+- `RIGHT`: All clusters `x_min > image_center`
+- `FRONT`: Clusters span across center
+
+**Distance Thresholds**:
+- Min: 0.1m (too close to camera)
+- Max: 1.5m (detection limit)
+- Threshold: 1.3m (cluster filter)
+
 ### DepthObstacleDetector
 
 RealSense D435i depth camera-based detection using DBSCAN clustering.
@@ -159,6 +255,49 @@ detector = DepthObstacleDetector(
 - All clusters right of center → `ObstacleDirection.RIGHT`
 - Clusters on both sides → `ObstacleDirection.FRONT`
 
+#### Depth Camera Processing Flow
+
+```mermaid
+flowchart TD
+    Start([Depth Frame<br/>640x480 @ 30fps]) --> Convert[Convert to mm<br/>depth_mm = depth * 1000]
+    Convert --> Downsample[Downsample 10%<br/>64x48 for performance]
+    Downsample --> Filter{Filter Valid Depth}
+    Filter -->|100mm < depth < 1500mm| ValidMask[Create Valid Mask]
+    Filter -->|Outside range| Discard[Set to 0]
+    
+    ValidMask --> Count{Count Valid Pixels}
+    Count -->|< 50 pixels| NoObstacle[Return: No Obstacle]
+    Count -->|≥ 50 pixels| ExtractPoints[Extract Point Cloud<br/>xs, ys, depths]
+    
+    ExtractPoints --> DBSCAN[DBSCAN Clustering<br/>eps=20, min_samples=20]
+    DBSCAN --> Clusters{Found Clusters?}
+    Clusters -->|No clusters| NoObstacle
+    Clusters -->|Yes| FilterClusters
+    
+    FilterClusters[Filter by Threshold<br/>mean_depth < 1300mm] --> ValidClusters{Valid Clusters?}
+    ValidClusters -->|None| NoObstacle
+    ValidClusters -->|Yes| AnalyzePosition
+    
+    AnalyzePosition[Analyze Cluster Position<br/>vs Image Center] --> Direction{Determine Direction}
+    
+    Direction -->|All clusters<br/>x_max < center| DirLeft[LEFT]
+    Direction -->|All clusters<br/>x_min > center| DirRight[RIGHT]
+    Direction -->|Clusters both sides| DirFront[FRONT]
+    
+    DirLeft --> CalcDist[Calculate Distance<br/>avg depth of clusters]
+    DirRight --> CalcDist
+    DirFront --> CalcDist
+    
+    CalcDist --> Return([Return ObstacleInfo<br/>detected=True, direction, distance])
+    NoObstacle --> ReturnFalse([Return ObstacleInfo<br/>detected=False])
+    
+    style Start fill:#e1f5ff
+    style Return fill:#d4edda
+    style ReturnFalse fill:#f8d7da
+    style DBSCAN fill:#fff3cd
+    style Direction fill:#cce5ff
+```
+
 ### BaseObstacleDetector
 
 Abstract base class providing thread-safe state management.
@@ -177,6 +316,51 @@ class CustomDetector(BaseObstacleDetector):
 ```
 
 ## Strategies
+
+### Strategy Decision Flow
+
+```mermaid
+flowchart TD
+    Start([drone.move_to<br/>x=10, y=0, z=0]) --> Nav{Navigation Loop}
+    
+    Nav --> CheckObs{ObstacleManager:<br/>Check all detectors}
+    
+    CheckObs -->|No obstacles| ComputePID[Compute PID<br/>vx, vy, vz, vyaw]
+    ComputePID --> SendVel[drone.move_velocity<br/>vx, vy, vz, vyaw]
+    SendVel --> CheckDist{Distance to<br/>target < precision?}
+    
+    CheckObs -->|Obstacle detected| StrategyType{Which Strategy?}
+    
+    StrategyType -->|PAUSE| Pause[Stop drone<br/>move_velocity<br/>0, 0, 0, 0]
+    Pause --> WaitClear{Path cleared?}
+    WaitClear -->|No| Pause
+    WaitClear -->|Yes| Nav
+    
+    StrategyType -->|DISABLE_AXIS| DisableZ[Disable Z axis<br/>Continue XY only]
+    DisableZ --> ComputePID2[Compute PID<br/>vx, vy ONLY<br/>vz=0]
+    ComputePID2 --> SendVel
+    
+    StrategyType -->|SEQUENCE| ExecuteSeq[Execute Sequence:<br/>Lateral → Forward → Return]
+    ExecuteSeq --> SeqComplete{Sequence<br/>complete?}
+    SeqComplete -->|No| ExecuteSeq
+    SeqComplete -->|Yes| Nav
+    
+    CheckDist -->|No| Nav
+    CheckDist -->|Yes| Done([Target Reached])
+    
+    style Pause fill:#ffe6e6
+    style DisableZ fill:#fff4e6
+    style ExecuteSeq fill:#e6f3ff
+    style Done fill:#d4edda
+```
+
+### Strategies Summary
+
+| Strategy | Behavior | Returns | Use Case |
+|----------|----------|---------|----------|
+| **PauseStrategy** | `move_velocity(0,0,0,0)` until clear | `False` while detected | Dynamic obstacles (people, drones) |
+| **DisableAxisStrategy** | Disables specified axis control | `True` (continue) | Terrain following (lidar) |
+| **SequenceStrategy** | Executes evasion maneuver | `False` during execution | Static obstacles (walls, trees) |
 
 ### AvoidanceStrategy Interface
 
@@ -256,35 +440,14 @@ strategy = strategies.SequenceStrategy(
 
 **Built-in Sequences**:
 
-**lateral_pass_return_sequence**:
-```python
-def lateral_pass_return_sequence(drone, info, lateral_distance=1.0, forward_distance=2.5):
-    lateral = _compute_lateral(info.direction, lateral_distance)
-    
-    drone.move_to(y=lateral, ...)      # Move laterally
-    drone.move_to(x=forward_distance, ...)  # Move forward
-    drone.move_to(y=-lateral, ...)     # Return to path
-```
+| Sequence | Steps | Result |
+|----------|-------|--------|
+| `lateral_pass_return_sequence` | ① `y=lateral` → ② `x=forward` → ③ `y=-lateral` | Returns to original path |
+| `lateral_pass_sequence` | ① `y=lateral` → ② `x=forward` | Stays offset |
+| `simple_lateral_sequence` | ① `y=lateral` | Single sidestep |
+| `climb_over_sequence` | ① `z=+height` → ② `x=forward` → ③ `z=-height` | Vertical bypass |
 
-**lateral_pass_sequence**:
-```python
-drone.move_to(y=lateral, ...)
-drone.move_to(x=forward, ...)
-# Don't return to original path
-```
-
-**simple_lateral_sequence**:
-```python
-drone.move_to(y=lateral, ...)
-# Single lateral move
-```
-
-**climb_over_sequence**:
-```python
-drone.move_to(z=climb_height, ...)
-drone.move_to(x=forward, ...)
-drone.move_to(z=-climb_height, ...)
-```
+**Direction logic**: `LEFT` → move right (`-y`), `RIGHT`/`FRONT` → move left (`+y`)
 
 ## Integration
 
