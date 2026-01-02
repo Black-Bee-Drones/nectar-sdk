@@ -10,52 +10,132 @@ classDiagram
         -_mavros_state State
         -_gps NavSatFix
         -_heading Float64
+        -_rel_alt Float64
         -_vision_pos PoseWithCovarianceStamped
         -_rng_alt Range
         -_imu Imu
         -_pid_config PositionPIDConfig
-        -_takeoff_position Union
+        -_takeoff_position Union~PoseWithCovarianceStamped,NavSatFix~
+        -_initial_altitude float
+        -_initial_heading float
+        -_lidar_available bool
         -_pose_source PoseSource
+        +config MavrosConfig
+        +node Node
+        +is_ready bool
         +is_indoor bool
         +mavros_state State
         +gps NavSatFix
         +heading float
+        +rel_alt float
         +vision_pos PoseWithCovarianceStamped
+        +lidar_alt Optional~float~
         +height float
-        +position Union
+        +position Union~PoseWithCovarianceStamped,NavSatFix~
+        +obstacle_manager ObstacleManager
+        +from_config(config, node)$ MavrosDrone
         +connect() bool
+        +disconnect()
         +arm() bool
+        +disarm() bool
         +takeoff(altitude, max_retries) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
         +move_to(x, y, z, yaw, reference, timeout, precision, strategy) bool
         +move_to_gps(lat, lon, alt, heading, timeout, precision, strategy) bool
+        +emergency_stop()
+        +set_home() bool
+        +set_takeoff_position(position)
+        +set_pid_config(config)
+        +set_mode(mode) bool
+        +set_param(param_id, value) bool
+        +do_servo(aux_out, pwm_value) bool
         +rtl(altitude, precision, strategy, land) bool
-        +set_mode(mode)
-        +set_param(param_id, value)
-        +do_servo(aux_out, pwm_value)
-        -_navigate_pid()
-        -_navigate_setpoint()
-        -_navigate_gps_pid()
-        -_navigate_gps_setpoint()
-        -_compute_target()
-        -_compute_errors()
-        -_create_pid(axis)
+        +cleanup()
+        -_setup_subscribers()
+        -_setup_publishers()
+        -_setup_services()
+        -_load_pid_config()
+        -_startup_sensors()
+        -_navigate_pid(x, y, z, yaw, reference, timeout, precision) bool
+        -_navigate_setpoint(x, y, z, yaw, reference, timeout, precision) bool
+        -_navigate_gps_pid(lat, lon, alt, heading, timeout, precision) bool
+        -_navigate_gps_setpoint(lat, lon, alt, heading, timeout, precision) bool
+        -_compute_target(x, y, z, yaw, reference) tuple
+        -_compute_errors(target_x, target_y, target_z, target_yaw) tuple
+        -_create_pid(axis) PIDController
+        -_get_driver_name() str
+        -_start_driver() bool
     }
     
     class GPSUtils {
         <<static>>
-        +create_gps_setpoint(lat, lon, alt, heading, init_alt) GeoPoseStamped
-        +check_reached(lat, lon, alt, target_lat, target_lon, target_alt, precision) tuple
+        -_egm96 GeoidPGM
+        -_get_egm96()$ GeoidPGM
+        +geoid_height(lat, lon)$ float
+        +create_gps_setpoint(lat, lon, alt_rel, heading, init_alt)$ GeoPoseStamped
+        +check_reached(cur_lat, cur_lon, cur_alt, tgt_lat, tgt_lon, tgt_alt, precision, alt_threshold)$ tuple~bool,float,float~
     }
     
     class PIDController {
-        +update(error) float
+        +kp float
+        +ki float
+        +kd float
+        +setpoint float
+        +output_limits tuple~float,float~
+        +integral_limits tuple~float,float~
+        +output float
+        -_integral float
+        -_last_error float
+        -_last_time float
+        -_proportional float
+        -_derivative float
+        +update(current_value) float
         +reset()
+        +set_setpoint(setpoint)
+        +tune(kp, ki, kd)
+        +get_components() dict
     }
     
-    MavrosDrone o-- PIDController
+    class PositionPIDConfig {
+        <<dataclass>>
+        +x PIDConfig
+        +y PIDConfig
+        +z PIDConfig
+        +yaw PIDConfig
+        +from_yaml(file_path)$ PositionPIDConfig
+        +to_dict() dict
+    }
+    
+    class PIDConfig {
+        <<dataclass>>
+        +kp float
+        +ki float
+        +kd float
+        +setpoint float
+        +output_min float
+        +output_max float
+        +integral_min float
+        +integral_max float
+        +from_yaml(file_path)$ PIDConfig
+        +from_dict(config_dict)$ PIDConfig
+        +to_dict() dict
+        +get_output_limits() tuple~float,float~
+        +get_integral_limits() tuple~float,float~
+    }
+    
+    class BaseDrone {
+        <<abstract>>
+        +add_obstacle_detector()
+        +enable_obstacle_detector()
+        +cleanup()
+    }
+    
+    BaseDrone <|-- MavrosDrone
+    MavrosDrone o-- PIDController : uses 4 instances
+    MavrosDrone o-- PositionPIDConfig
     MavrosDrone ..> GPSUtils : uses
+    PositionPIDConfig *-- PIDConfig
 ```
 
 ## MavrosDrone

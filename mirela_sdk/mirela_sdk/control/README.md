@@ -7,6 +7,7 @@ Protocol-based drone control framework for ROS2 with factory pattern instantiati
 - **README.md**: This file - Architecture overview and quick start
 - **API.md**: Complete API reference for all classes and methods
 - **mavros/README.md**: MAVROS-specific implementation details
+- **bebop/README.md**: Parrot Bebop 2 implementation details
 - **obstacles/README.md**: Obstacle detection system documentation
 - **pid/README.md**: PID controller implementation and tuning
 
@@ -16,22 +17,27 @@ Protocol-based drone control framework for ROS2 with factory pattern instantiati
 classDiagram
     class DroneFactory {
         <<singleton>>
-        +create(type, config, node) BaseDrone
+        -_builders Dict~str,BuilderFunc~
+        +create(type, config, node) Drone
         +register(type, factory_func)
+        +available_types() list~str~
+        +is_registered(type) bool
     }
     
     class Drone {
         <<protocol>>
-        +state DroneState
         +is_ready bool
         +connect() bool
+        +disconnect()
         +arm() bool
+        +disarm() bool
         +takeoff(altitude) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
         +move_to(x, y, z, yaw, reference, timeout, precision, strategy) bool
         +move_to_gps(lat, lon, alt, heading, timeout, precision, strategy) bool
         +emergency_stop()
+        +set_home() bool
         +rtl(altitude, precision, strategy, land) bool
     }
     
@@ -39,31 +45,83 @@ classDiagram
         <<abstract>>
         -_config DroneConfig
         -_node Node
-        -_state DroneState
+        -_connected bool
+        -_driver_running bool
         -_obstacle_manager ObstacleManager
+        -_subscribers List~Subscription~
+        -_publishers List~Publisher~
+        -_clients List~Client~
+        -_callback_group ReentrantCallbackGroup
+        +config DroneConfig
+        +node Node
+        +is_ready bool
+        +obstacle_manager ObstacleManager
         +add_obstacle_detector(name, detector, strategy, config)
+        +remove_obstacle_detector(name)
         +enable_obstacle_detector(name)
+        +disable_obstacle_detector(name)
+        +enable_all_obstacle_detectors()
+        +disable_all_obstacle_detectors()
+        +delay(seconds)
+        +cleanup()
         #_init_driver()
-        #_create_subscriber()
-        #_create_publisher()
+        #_check_driver_running(timeout) bool
+        #_wait_for_driver(timeout) bool
+        #_create_subscriber(msg_type, topic, callback, qos) Subscription
+        #_create_publisher(msg_type, topic, qos) Publisher
+        #_create_client(srv_type, service_name) Client
+        #_get_driver_name()* str
+        #_start_driver()* bool
     }
     
     class MavrosDrone {
         -_mavros_state State
         -_gps NavSatFix
+        -_heading Float64
+        -_rel_alt Float64
         -_vision_pos PoseWithCovarianceStamped
+        -_rng_alt Range
+        -_imu Imu
         -_pid_config PositionPIDConfig
+        -_takeoff_position Union
+        -_pose_source PoseSource
         +is_indoor bool
+        +mavros_state State
+        +gps NavSatFix
+        +heading float
+        +rel_alt float
+        +vision_pos PoseWithCovarianceStamped
+        +lidar_alt Optional~float~
         +height float
-        +position Union
+        +position Union~PoseWithCovarianceStamped,NavSatFix~
+        +from_config(config, node)$ MavrosDrone
+        +set_mode(mode)
+        +set_param(param_id, value)
+        +do_servo(aux_out, pwm_value)
+        +set_home() bool
+        +set_takeoff_position(position)
+        +set_pid_config(config)
+        -_setup_subscribers()
+        -_setup_publishers()
+        -_setup_services()
+        -_load_pid_config()
+        -_startup_sensors()
         -_navigate_pid()
         -_navigate_setpoint()
+        -_navigate_gps_pid()
+        -_navigate_gps_setpoint()
+        -_compute_target()
+        -_compute_errors()
+        -_create_pid(axis) PIDController
     }
     
     class BebopDrone {
+        +from_config(config, node)$ BebopDrone
         +flip(direction)
         +camera_control(tilt, pan)
         +snapshot()
+        +navigate_home()
+        -_setup_publishers()
     }
     
     class DroneConfig {
@@ -74,18 +132,44 @@ classDiagram
     
     class MavrosConfig {
         <<dataclass>>
+        +name str
+        +start_driver bool
         +pose_source PoseSource
-        +navigation NavigationStrategy
+        +default_nav_strategy NavigationStrategy
+        +use_lidar bool
         +connection_string str
         +pid_config_file Optional~str~
+        +state_topic str
+        +gps_topic str
+        +vision_topic str
+        +heading_topic str
+        +rel_alt_topic str
+        +lidar_topic str
+        +imu_topic str
+    }
+    
+    class BebopConfig {
+        <<dataclass>>
+        +name str
+        +start_driver bool
+        +ip str
+        +namespace str
     }
     
     class ObstacleManager {
-        -_handlers dict
+        -_handlers dict~str,ObstacleHandler~
+        +handlers dict~str,ObstacleHandler~
         +add(name, handler)
+        +remove(name) ObstacleHandler
+        +get(name) ObstacleHandler
         +enable(name)
+        +disable(name)
+        +enable_all()
+        +disable_all()
         +should_continue_navigation(drone) bool
-        +get_axis_control() tuple
+        +get_axis_control() tuple~bool,bool,bool~
+        +reset_all()
+        +cleanup()
     }
     
     DroneFactory --> BaseDrone : creates
@@ -95,7 +179,9 @@ classDiagram
     BaseDrone *-- ObstacleManager
     BaseDrone o-- DroneConfig
     MavrosDrone o-- MavrosConfig
+    BebopDrone o-- BebopConfig
     DroneConfig <|-- MavrosConfig
+    DroneConfig <|-- BebopConfig
 ```
 
 ## Core Components
@@ -469,8 +555,8 @@ drone.land()
 
 ## Implementation Modules
 
-- **mavros/**: MAVROS-specific implementation (MavrosDrone, GPS utilities)
-- **bebop/**: Parrot Bebop implementation (BebopDrone)
+- **mavros/**: MAVROS-specific implementation (MavrosDrone, GPS utilities, PID navigation)
+- **bebop/**: Parrot Bebop 2 implementation (BebopDrone, velocity control, acrobatic maneuvers)
 - **obstacles/**: Obstacle detection system (detectors, strategies, handlers)
 - **pid/**: PID controller implementation and configuration
 

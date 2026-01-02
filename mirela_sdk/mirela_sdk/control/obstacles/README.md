@@ -15,10 +15,27 @@ classDiagram
         +reset()
     }
     
+    class ObstacleInfo {
+        <<dataclass>>
+        +detected bool
+        +direction Optional~ObstacleDirection~
+        +distance Optional~float~
+    }
+    
+    class ObstacleDirection {
+        <<enum>>
+        FRONT
+        BACK
+        LEFT
+        RIGHT
+        UP
+        DOWN
+    }
+    
     class AvoidanceStrategy {
         <<abstract>>
         +execute(drone, info) bool
-        +reset()
+        +reset()*
     }
     
     class ObstacleHandler {
@@ -26,42 +43,87 @@ classDiagram
         -_strategy AvoidanceStrategy
         -_node Node
         -_config ObstacleHandlerConfig
-        -_timer Timer
+        -_timer Optional~Timer~
         -_last_info ObstacleInfo
+        -_lock Lock
+        +detector ObstacleDetector
+        +strategy AvoidanceStrategy
         +is_enabled bool
         +last_info ObstacleInfo
         +enable()
         +disable()
         +update() ObstacleInfo
         +should_continue(drone) bool
-        +get_axis_modifiers() tuple
+        +get_axis_modifiers() tuple~bool,bool,bool~
         +reset()
+        +cleanup()
         -_update_callback()
     }
     
+    class ObstacleHandlerConfig {
+        <<dataclass>>
+        +enabled bool
+        +strategy Optional~AvoidanceStrategy~
+        +update_rate float
+    }
+    
     class ObstacleManager {
-        -_handlers dict
+        -_handlers dict~str,ObstacleHandler~
+        +handlers dict~str,ObstacleHandler~
         +add(name, handler)
-        +remove(name)
-        +get(name)
+        +remove(name) Optional~ObstacleHandler~
+        +get(name) Optional~ObstacleHandler~
         +enable(name)
         +disable(name)
+        +enable_all()
+        +disable_all()
         +should_continue_navigation(drone) bool
-        +get_axis_control() tuple
+        +get_axis_control() tuple~bool,bool,bool~
         +reset_all()
         +cleanup()
     }
     
+    class BaseObstacleDetector {
+        <<abstract>>
+        -_enabled bool
+        -_lock Lock
+        -_last_info ObstacleInfo
+        +is_enabled bool
+        +enable()
+        +disable()
+        +update() ObstacleInfo
+        +get_last_info() ObstacleInfo
+        +reset()
+        #_detect()* ObstacleInfo
+        #_on_enable()
+        #_on_disable()
+        #_on_reset()
+    }
+    
     class DepthObstacleDetector {
-        -_cam RealsenseCam
-        -_image_handler ImageHandler
+        -_node Node
+        -_camera Optional~RealsenseCam~
+        -_image_handler Optional~ImageHandler~
+        -_detection_event Event
+        -_color_topic str
+        -_depth_topic str
+        -_min_distance_mm float
+        -_max_distance_mm float
+        -_cluster_eps float
+        -_cluster_min_samples int
+        -_min_cluster_pixels int
+        -_depth_threshold_mm float
         +update() ObstacleInfo
         -_detect() ObstacleInfo
+        -_on_enable()
+        -_on_disable()
+        -_on_reset()
     }
     
     class PauseStrategy {
         -_paused bool
         +execute(drone, info) bool
+        +reset()
     }
     
     class DisableAxisStrategy {
@@ -69,21 +131,29 @@ classDiagram
         +disable_y bool
         +disable_z bool
         +execute(drone, info) bool
+        +reset()
     }
     
     class SequenceStrategy {
         -_sequence_func Callable
         -_executed bool
+        -_execution_event Event
         +execute(drone, info) bool
+        +reset()
     }
     
-    ObstacleDetector <|.. DepthObstacleDetector
+    ObstacleDetector <|.. BaseObstacleDetector : implements
+    BaseObstacleDetector <|-- DepthObstacleDetector
     AvoidanceStrategy <|-- PauseStrategy
     AvoidanceStrategy <|-- DisableAxisStrategy
     AvoidanceStrategy <|-- SequenceStrategy
     ObstacleHandler *-- ObstacleDetector
     ObstacleHandler *-- AvoidanceStrategy
+    ObstacleHandler o-- ObstacleHandlerConfig
+    ObstacleHandler ..> ObstacleInfo : uses
     ObstacleManager o-- ObstacleHandler
+    ObstacleDetector ..> ObstacleInfo : returns
+    ObstacleInfo o-- ObstacleDirection
 ```
 
 ## Real-Time Detection Flow
