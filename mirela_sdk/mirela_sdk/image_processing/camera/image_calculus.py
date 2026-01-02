@@ -6,7 +6,8 @@ from geopy.point import Point
 
 
 class ImageCalculus:
-    """Utility class for image-based geometric calculations related to drones.
+    """
+    Utility class for image-based geometric calculations related to drones.
 
     This class provides methods to convert pixel coordinates from an image
     into metric vectors in the drone reference frame, assuming a flat ground
@@ -18,11 +19,12 @@ class ImageCalculus:
         - Z (up): positive upwards
         - Ground plane is located at Z = 0
 
-    Notes:
-        - All angles are expressed in degrees.
-        - The calculations assume small pitch and roll angles
-          (typically <= 5 degrees).
-        - Camera offsets are defined in the drone body frame.
+    Notes
+    -----
+    - All angles are expressed in degrees.
+    - The calculations assume small pitch and roll angles
+      (typically <= 5 degrees).
+    - Camera offsets are defined in the drone body frame.
     """
 
     def __init__(
@@ -31,27 +33,28 @@ class ImageCalculus:
         camera_resolution: Dict[str, int] = None,
         pixels_per_degree: Dict[str, int] = None,
     ):
-        """Initializes the ImageCalculus object.
-
-        Args:
-            camera_offset (Dict[str, float], optional):
-                Camera position relative to the drone center, in meters.
-                Expected keys are:
-                    - 'forward': offset along the forward axis
-                    - 'right': offset along the right axis
-                    - 'up': offset along the up axis
-            camera_resolution (Dict[str, int], optional):
-                Camera image resolution in pixels.
-                Expected keys are:
-                    - 'width'
-                    - 'height'
-            pixels_per_degree (Dict[str, int], optional):
-                Conversion factor from pixels to degrees.
-                Expected keys are:
-                    - 'horizontal'
-                    - 'vertical'
         """
+        Initialize ImageCalculus object.
 
+        Parameters
+        ----------
+        camera_offset : Dict[str, float], optional
+            Camera position relative to the drone center, in meters.
+            Expected keys are:
+                - 'forward': offset along the forward axis
+                - 'right': offset along the right axis
+                - 'up': offset along the up axis
+        camera_resolution : Dict[str, int], optional
+            Camera image resolution in pixels.
+            Expected keys are:
+                - 'width'
+                - 'height'
+        pixels_per_degree : Dict[str, int], optional
+            Conversion factor from pixels to degrees.
+            Expected keys are:
+                - 'horizontal'
+                - 'vertical'
+        """
         self._camera_offset = {"forward": 0.0, "right": 0.0, "up": 0.0}
         self._camera_resolution = {"width": 1920, "height": 1080}
         self._pixels_per_degree = {"horizontal": 20, "vertical": 20}
@@ -71,11 +74,18 @@ class ImageCalculus:
     @camera_offset.setter
     def camera_offset(self, value):
         if not isinstance(value, dict):
-            return
+            raise TypeError(f"camera_offset must be a dict, got {type(value).__name__}")
 
         for k, v in value.items():
-            if (k in self._camera_offset) and isinstance(v, (int, float)):
-                self._camera_offset[k] = v
+            if k not in self._camera_offset:
+                raise ValueError(
+                    f"Invalid key '{k}'. Expected keys: {list(self._camera_offset.keys())}"
+                )
+            if not isinstance(v, (int, float)):
+                raise TypeError(
+                    f"Value for '{k}' must be int or float, got {type(v).__name__}"
+                )
+            self._camera_offset[k] = v
 
     @property
     def camera_resolution(self):
@@ -85,11 +95,20 @@ class ImageCalculus:
     @camera_resolution.setter
     def camera_resolution(self, value):
         if not isinstance(value, dict):
-            return
+            raise TypeError(
+                f"camera_resolution must be a dict, got {type(value).__name__}"
+            )
 
         for k, v in value.items():
-            if (k in self._camera_resolution) and isinstance(v, int):
-                self._camera_resolution[k] = v
+            if k not in self._camera_resolution:
+                raise ValueError(
+                    f"Invalid key '{k}'. Expected keys: {list(self._camera_resolution.keys())}"
+                )
+            if not isinstance(v, int):
+                raise TypeError(f"Value for '{k}' must be int, got {type(v).__name__}")
+            if v <= 0:
+                raise ValueError(f"Value for '{k}' must be positive, got {v}")
+            self._camera_resolution[k] = v
 
     @property
     def pixels_per_degree(self):
@@ -99,11 +118,22 @@ class ImageCalculus:
     @pixels_per_degree.setter
     def pixels_per_degree(self, value):
         if not isinstance(value, dict):
-            return
+            raise TypeError(
+                f"pixels_per_degree must be a dict, got {type(value).__name__}"
+            )
 
         for k, v in value.items():
-            if (k in self._pixels_per_degree) and isinstance(v, (int, float)):
-                self._pixels_per_degree[k] = v
+            if k not in self._pixels_per_degree:
+                raise ValueError(
+                    f"Invalid key '{k}'. Expected keys: {list(self._pixels_per_degree.keys())}"
+                )
+            if not isinstance(v, (int, float)):
+                raise TypeError(
+                    f"Value for '{k}' must be int or float, got {type(v).__name__}"
+                )
+            if v <= 0:
+                raise ValueError(f"Value for '{k}' must be positive, got {v}")
+            self._pixels_per_degree[k] = v
 
     def calculate_vector_from_drone_to_ground(
         self,
@@ -111,38 +141,46 @@ class ImageCalculus:
         height: float,
         pitch: float,
         roll: float,
-    ) -> tuple[float, float, float]:
-        """Calculates the vector from the drone to the ground intersection point.
+    ) -> tuple[float, float, float] | None:
+        """
+        Calculate the vector from the drone to the ground intersection point.
 
         This method projects a pixel from the image onto the ground plane (Z = 0),
         taking into account the drone height, camera offset, and small pitch and
         roll angles. The calculation uses small-angle approximations and is not
         intended for large attitude angles.
 
-        Args:
-            target_pixel (tuple[float, float]):
-                Target pixel coordinates (x, y) in the image frame.
-            height (float):
-                Drone height relative to the ground, in meters.
-                Positive values indicate the drone is above the ground.
-            pitch (float):
-                Drone pitch angle in degrees.
-                Positive values indicate nose-up rotation.
-            roll (float):
-                Drone roll angle in degrees.
-                Positive values indicate right-wing-down rotation.
+        Parameters
+        ----------
+        target_pixel : tuple[float, float]
+            Target pixel coordinates (x, y) in the image frame.
+        height : float
+            Drone height relative to the ground, in meters.
+            Must be positive (drone above ground).
+        pitch : float
+            Drone pitch angle in degrees.
+            Positive values indicate nose-up rotation.
+        roll : float
+            Drone roll angle in degrees.
+            Positive values indicate right-wing-down rotation.
 
-        Returns:
-            tuple[float, float, float]:
-                A 3D vector (forward, right, down) from the drone to the
-                intersection point on the ground, expressed in meters.
-                The Z component is negative (downwards).
+        Returns
+        -------
+        tuple[float, float, float] | None
+            A 3D vector (forward, right, down) from the drone to the
+            intersection point on the ground, expressed in meters.
+            The Z component is negative (downwards).
+            Returns None if projection is invalid (height <= 0 or
+            camera pointing above horizon).
 
-        Limitations:
-            - Valid only for small pitch and roll angles.
-            - Assumes flat ground at Z = 0.
-            - Does not account for yaw rotation.
+        Notes
+        -----
+        - Valid only for small pitch and roll angles (typically <= 5°).
+        - Assumes flat ground at Z = 0.
+        - Does not account for yaw rotation.
         """
+        if height <= 0:
+            return None
 
         pixel_center_x = self.camera_resolution["width"] / 2
         pixel_center_y = self.camera_resolution["height"] / 2
@@ -156,24 +194,32 @@ class ImageCalculus:
         sum_pitch = pitch + pixel_angle_vertical
         sum_roll = roll + pixel_angle_horizontal
 
+        # Check if camera is pointing above horizon
+        if sum_pitch >= 90 or sum_pitch <= -90:
+            return None
+
         forward_unit = math.tan(math.radians(sum_pitch))
         right_unit = math.tan(math.radians(sum_roll))
 
-        height += self.camera_offset["up"] * (
+        effective_height = height + self.camera_offset["up"] * (
             math.cos(math.radians(pitch)) + math.cos(math.radians(roll)) - 1
         )
+
+        if effective_height <= 0:
+            return None
+
         forward = (
-            forward_unit * height
+            forward_unit * effective_height
             + self.camera_offset["forward"] * math.cos(math.radians(pitch))
             + self.camera_offset["up"] * math.sin(math.radians(pitch))
         )
         right = (
-            right_unit * height
+            right_unit * effective_height
             + self.camera_offset["right"] * math.cos(math.radians(roll))
             - self.camera_offset["up"] * math.sin(math.radians(roll))
         )
 
-        return (forward, right, -height)
+        return (forward, right, -effective_height)
 
     @staticmethod
     def estimate_pixel_gps(
@@ -187,10 +233,12 @@ class ImageCalculus:
         image_bearing: float,
     ):
         """
-        Estimates the GPS coordinates of a target pixel in an image based on a known GPS coordinate
-        of a reference pixel (origin), the Ground Sampling Distance (GSD), and the image orientation (bearing).
+        Estimate the GPS coordinates of a target pixel in an image.
 
-        Parameters:
+        Based on a known GPS coordinate of a reference pixel (origin), the Ground
+        Sampling Distance (GSD), and the image orientation (bearing).
+
+        Parameters
         ----------
         origin_lat : float
             Latitude of the origin pixel in decimal degrees.
@@ -209,13 +257,12 @@ class ImageCalculus:
         image_bearing : float
             Orientation of the image in degrees (0° is North, increases clockwise).
 
-        Returns:
+        Returns
         -------
-        (float, float)
+        tuple[float, float]
             A tuple containing the estimated latitude and longitude (in decimal degrees)
             of the target pixel.
         """
-
         # Euclidean distance in pixel space between origin and target
         pixel_distance = math.hypot(target_row - origin_row, target_col - origin_col)
 
@@ -247,26 +294,36 @@ class ImageCalculus:
         image_pixels: int,
     ) -> float:
         """
-        Calculates the offset in pixels corresponding to a physical offset (in meters) from the camera to a reference point (e.g., the center of the drone),
-        given the camera's height above the ground, the field of view (FOV) in degrees (horizontal or vertical), and the image resolution in pixels (width or height).
+        Calculate the offset in pixels corresponding to a physical offset in meters.
 
-        1. Convert FOV to radians:
-            fov_radians = fov_degrees * π / 180
+        Converts a physical offset from the camera to a reference point (e.g., the
+        center of the drone), given the camera's height above the ground, the field
+        of view (FOV), and the image resolution.
 
-        2. Calculate the width of the field of view on the ground (ground_span), in meters:
-            ground_span = 2 * height_meters * tan(fov_radians / 2)
+        Parameters
+        ----------
+        offset_meters : float
+            Physical offset from the camera to the reference point (meters).
+        height_meters : float
+            Height of the camera above the ground (meters).
+        fov_degrees : float
+            Field of view of the camera (horizontal or vertical) in degrees.
+        image_pixels : int
+            Number of pixels in the corresponding image dimension (width or height).
 
-        3. Convert to meters per pixel (meters_per_pixel):
-            ground_span / image_pixels
+        Returns
+        -------
+        float
+            Offset in pixels.
 
-        4. Convert physical offset (offset_meters) to offset in pixels (offset_pixels):
-            offset_pixels = offset_meters / meters_per_pixel
+        Notes
+        -----
+        The calculation follows these steps:
 
-        :param offset_meters: Physical offset from the camera to the reference point (meters).
-        :param height_meters: Height of the camera above the ground (meters).
-        :param fov_degrees: Field of view of the camera (horizontal or vertical) in degrees.
-        :param image_pixels: Number of pixels in the corresponding image dimension (width or height).
-        :return: Offset in pixels (float).
+        1. Convert FOV to radians: fov_radians = fov_degrees * π / 180
+        2. Calculate ground span in meters: ground_span = 2 * height_meters * tan(fov_radians / 2)
+        3. Calculate meters per pixel: ground_span / image_pixels
+        4. Convert physical offset (offset_meters) to offset in pixels (offset_pixels)t: offset_pixels = offset_meters / meters_per_pixel
         """
         ground_span = 2 * height_meters * math.tan(math.radians(fov_degrees) / 2)
         offset_pixels = offset_meters / (ground_span / image_pixels)
