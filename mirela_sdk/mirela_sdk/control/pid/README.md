@@ -1,152 +1,413 @@
-# PID Control Module
+# PID Controller Module
 
-A PID controller implementation for mirela_sdk, supporting both programmatic usage and standalone ROS2 node operation.
+Configurable PID controller implementation with YAML-based tuning and multi-axis support for position control.
 
-## Features
+## Architecture
 
-- **YAML Configuration**: configuration via YAML files
-- **Obstacle Detection**: Lidar-based obstacle detection for altitude control
-- **ROS2 Node**: Standalone node with dynamic parameter reconfiguration
-- **Reusable**: Use programmatically or as a ROS2 node
+```mermaid
+classDiagram
+    class PIDController {
+        -_kp float
+        -_ki float
+        -_kd float
+        -_setpoint float
+        -_integral float
+        -_prev_error float
+        -_prev_time float
+        -_output_limits tuple
+        -_integral_limits tuple
+        +update(current_value) float
+        +reset()
+        +set_setpoint(value)
+        +tune(kp, ki, kd)
+        +get_components() dict
+    }
+    
+    class PIDConfig {
+        <<dataclass>>
+        +kp float
+        +ki float
+        +kd float
+        +output_min float
+        +output_max float
+        +integral_min float
+        +integral_max float
+        +from_yaml(path) PIDConfig
+        +from_dict(data) PIDConfig
+        +get_output_limits() tuple
+        +get_integral_limits() tuple
+    }
+    
+    class PositionPIDConfig {
+        <<dataclass>>
+        +x PIDConfig
+        +y PIDConfig
+        +z PIDConfig
+        +yaw PIDConfig
+        +from_yaml(path) PositionPIDConfig
+        +to_dict() dict
+    }
+    
+    PIDController ..> PIDConfig : configured by
+    PositionPIDConfig *-- PIDConfig
+```
 
-## Usage
+## PIDController
 
-### 1. Programmatic Usage (Python)
+Standard PID implementation with anti-windup and output clamping.
+
+### API
 
 ```python
 from mirela_sdk.control.pid import PIDController
 
-# Create PID controller
 pid = PIDController(
+    kp: float = 1.0,                      # Proportional gain
+    ki: float = 0.0,                      # Integral gain
+    kd: float = 0.0,                      # Derivative gain
+    setpoint: float = 0.0,                # Target value
+    output_limits: tuple = (-1.0, 1.0),   # Output clamp
+    integral_limits: tuple = (-1.0, 1.0)  # Anti-windup
+)
+```
+
+### Control Loop
+
+```python
+control_output = pid.update(current_value: float) -> float
+```
+
+**Algorithm**:
+```
+1. Calculate error: e(t) = setpoint - current_value
+2. Proportional term: P = kp × e(t)
+3. Integral term: I = ki × ∫e(t)dt (clamped to integral_limits)
+4. Derivative term: D = kd × de/dt
+5. Output = P + I + D (clamped to output_limits)
+```
+
+**Delta Time**: Automatically computed from `time.time()` between updates.
+
+### Methods
+
+```python
+pid.update(current_value)              # Returns control output
+pid.reset()                            # Clear integral, previous error
+pid.set_setpoint(value)                # Change target
+pid.tune(kp, ki, kd)                   # Update gains
+pid.get_components()                   # Returns {'p': ..., 'i': ..., 'd': ...}
+```
+
+## PIDConfig
+
+Configuration dataclass for single-axis PID.
+
+```python
+from mirela_sdk.control.pid import PIDConfig
+
+config = PIDConfig(
     kp=0.5,
     ki=0.0,
     kd=0.0,
-    setpoint=100.0,
-    output_limits=(-1.0, 1.0),
-    integral_limits=(-0.5, 0.5)
+    output_min=-0.42,
+    output_max=0.42,
+    integral_min=-0.5,
+    integral_max=0.5
 )
-
-# Update with current value
-control_effort = pid.update(current_value=95.0)
-
-# Tune gains dynamically
-pid.tune(kp=0.8, ki=0.1, kd=0.05)
-
-# Reset controller
-pid.reset()
 ```
 
-### 2. YAML Configuration
-
-Create a YAML file (e.g., `my_pid_config.yaml`):
+### Loading from YAML
 
 ```yaml
+# pid_config.yaml
+kp: 0.5
+ki: 0.0
+kd: 0.0
+output_min: -0.42
+output_max: 0.42
+integral_min: -0.5
+integral_max: 0.5
+```
+
+```python
+config = PIDConfig.from_yaml("pid_config.yaml")
+```
+
+### Loading from Dictionary
+
+```python
+config = PIDConfig.from_dict({
+    "kp": 0.5,
+    "output_min": -0.42,
+    "output_max": 0.42
+})
+```
+
+**Default Values**: Unspecified fields use defaults (ki=0.0, kd=0.0, etc.).
+
+## PositionPIDConfig
+
+Multi-axis configuration for position control (X, Y, Z, yaw).
+
+```python
+from mirela_sdk.control.pid import PositionPIDConfig, PIDConfig
+
+config = PositionPIDConfig(
+    x=PIDConfig(kp=0.5, output_min=-0.42, output_max=0.42),
+    y=PIDConfig(kp=0.5, output_min=-0.42, output_max=0.42),
+    z=PIDConfig(kp=0.22, output_min=-0.15, output_max=0.1),
+    yaw=PIDConfig(kp=0.5, ki=0.1, output_min=-0.2, output_max=0.2)
+)
+```
+
+### YAML Format
+
+```yaml
+# position_config.yaml
 x:
   kp: 0.5
   ki: 0.0
   kd: 0.0
-  output_min: -1.0
-  output_max: 1.0
+  output_min: -0.42
+  output_max: 0.42
   integral_min: -0.5
   integral_max: 0.5
-```
 
-Load configuration:
+y:
+  kp: 0.5
+  output_min: -0.42
+  output_max: 0.42
+
+z:
+  kp: 0.22
+  output_min: -0.15
+  output_max: 0.1
+
+yaw:
+  kp: 0.5
+  ki: 0.1
+  output_min: -0.2
+  output_max: 0.2
+  integral_min: -0.05
+  integral_max: 0.05
+```
 
 ```python
-from mirela_sdk.control.pid import PIDConfig, PositionPIDConfig
-
-# Single axis PID
-config = PIDConfig.from_yaml("my_pid_config.yaml")
-
-# Multi-axis position control
-pos_config = PositionPIDConfig.from_yaml("position_config.yaml")
+config = PositionPIDConfig.from_yaml("position_config.yaml")
 ```
 
-### 3. Standalone ROS2 Node
+## Usage in Drone Control
 
-Run as a standalone node for dynamic tuning:
+### MavrosDrone Integration
 
-```bash
-ros2 run mirela_sdk pid_controller_node \
-  --ros-args \
-  -p p_gain:=0.5 \
-  -p i_gain:=0.0 \
-  -p d_gain:=0.0 \
-  -p output_min:=-1.0 \
-  -p output_max:=1.0 \
-  -p state_topic:=/my/state \
-  -p setpoint_topic:=/my/setpoint \
-  -p control_effort_topic:=/my/control
-```
-
-### 4. Position Control with Custom Config
+PID controllers created per-axis from configuration:
 
 ```python
-from mirela_sdk.control.mavros.mavros_api import MavDrone
+# In MavrosDrone._navigate_pid()
+pid_x = self._create_pid("x")      # Creates from self._pid_config.x
+pid_y = self._create_pid("y")
+pid_z = self._create_pid("z")
+pid_yaw = self._create_pid("yaw")
 
-# Initialize drone
-drone = MavDrone(node=node, indoor=True)
-
-# Set custom PID configuration
-drone.set_pid_config("path/to/my_config.yaml")
-
-# Use position control with PID
-drone.offboard_position(x=1.0, y=0.5, z=0.0, strategy="PID")
+# Control loop
+while True:
+    dx, dy, dz, dyaw = self._compute_errors(target, yaw)
+    
+    vx = pid_x.update(-dx)
+    vy = pid_y.update(-dy)
+    vz = pid_z.update(-dz)
+    vyaw = pid_yaw.update(-dyaw)
+    
+    drone.move_velocity(vx, vy, vz, vyaw)
 ```
 
-### 5. Centering Control
+### Configuration Loading
+
+**Automatic** (based on pose source):
+```python
+# Indoor mode loads: config/mavros/position_indoor.yaml
+# Outdoor mode loads: config/mavros/position_outdoor.yaml
+config = MavrosConfig(pose_source=PoseSource.VISION)
+drone = DroneFactory.create("mavros", config, node)
+```
+
+**Explicit**:
+```python
+config = MavrosConfig(
+    pose_source=PoseSource.VISION,
+    pid_config_file="/path/to/custom.yaml"
+)
+```
+
+**Runtime**:
+```python
+drone.set_pid_config("/path/to/config.yaml")
+drone.set_pid_config(config_dict)
+drone.set_pid_config(PositionPIDConfig(...))
+```
+
+## Tuning Guidelines
+
+### Proportional Gain (kp)
+
+Controls response magnitude.
+
+- **Higher kp**: Faster response, potential overshoot
+- **Lower kp**: Slower response, more stable
+
+**Indoor**: 0.3-0.6 (vision pose is accurate)  
+**Outdoor**: 0.6-1.0 (GPS noise requires higher gain)
+
+### Integral Gain (ki)
+
+Eliminates steady-state error.
+
+- **Higher ki**: Faster error elimination, potential instability
+- **Lower ki**: Slower convergence, more stable
+
+**Typical**: 0.0-0.1 (often not needed for position control)  
+**Yaw**: 0.05-0.15 (helps with compass drift)
+
+### Derivative Gain (kd)
+
+Dampens oscillations and overshoot.
+
+- **Higher kd**: More damping, sensitive to noise
+- **Lower kd**: Less damping, smoother response
+
+**Position Control**: Usually 0.0 (velocity commands already provide damping)
+
+### Output Limits
+
+Velocity command limits (m/s for position, rad/s for yaw).
+
+**Indoor**: ±0.4-0.6 m/s (safe in constrained space)  
+**Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)  
+**Vertical**: ±0.15-0.8 m/s (asymmetric: slower ascent)
+
+### Integral Limits
+
+Anti-windup protection.
+
+**Typical**: 10-20% of output limits  
+**Purpose**: Prevent integral term from accumulating during saturation
+
+## Default Configurations
+
+### Indoor (Vision-based)
+
+```yaml
+x:
+  kp: 0.5
+  output_min: -0.42
+  output_max: 0.42
+
+y:
+  kp: 0.5
+  output_min: -0.42
+  output_max: 0.42
+
+z:
+  kp: 0.22
+  output_min: -0.15
+  output_max: 0.1
+
+yaw:
+  kp: 0.5
+  ki: 0.1
+  output_min: -0.2
+  output_max: 0.2
+```
+
+**Rationale**:
+- Lower velocities for safety indoors
+- Asymmetric Z limits (slower ascent to avoid ceiling collisions)
+- Yaw integral term compensates for vision pose drift
+
+### Outdoor (GPS-based)
+
+```yaml
+x:
+  kp: 0.8
+  output_min: -1.0
+  output_max: 1.0
+
+y:
+  kp: 0.8
+  output_min: -1.0
+  output_max: 1.0
+
+z:
+  kp: 0.5
+  output_min: -0.8
+  output_max: 0.8
+
+yaw:
+  kp: 0.5
+  ki: 0.1
+  output_min: -0.3
+  output_max: 0.3
+```
+
+**Rationale**:
+- Higher gains compensate for GPS latency and noise
+- Larger velocity limits for faster waypoint transitions
+- Symmetric Z limits (open outdoor environment)
+
+## Examples
+
+### Basic PID Control
 
 ```python
 from mirela_sdk.control.pid import PIDController
 
-# Simple P controller for centering
-centering_pid_x = PIDController(kp=0.001, output_limits=(-0.3, 0.3))
-centering_pid_y = PIDController(kp=0.001, output_limits=(-0.3, 0.3))
+altitude_pid = PIDController(
+    kp=0.5,
+    ki=0.1,
+    kd=0.0,
+    setpoint=10.0,
+    output_limits=(-0.5, 0.5)
+)
 
-# Update with error from image center
-vel_x = centering_pid_y.update(-error_y)  
-vel_y = centering_pid_x.update(-error_x)
-
-drone.offboard_velocity(vel_x, vel_y, 0.0, 0.0)
+while True:
+    current_altitude = get_altitude()
+    vz = altitude_pid.update(current_altitude)
+    set_velocity_z(vz)
 ```
 
-## Mavros-Specific Features
+### Position Control with Configuration
 
-For Mavros position control configurations and obstacle detection, see:
-- Position control configs: `config/mavros/position_indoor.yaml` and `position_outdoor.yaml`
-- Mavros documentation: `mirela_sdk/control/mavros/README.md`
+```python
+from mirela_sdk.control.pid import PositionPIDConfig
 
-## Dynamic Reconfiguration (ROS2 Node)
+config = PositionPIDConfig.from_yaml("config/mavros/position_outdoor.yaml")
 
-Change PID parameters in real-time:
-
-```bash
-ros2 param set /pid_controller p_gain 0.8
-ros2 param set /pid_controller i_gain 0.1
-ros2 param set /pid_controller d_gain 0.05
+pid_x = PIDController(
+    kp=config.x.kp,
+    ki=config.x.ki,
+    kd=config.x.kd,
+    output_limits=config.x.get_output_limits(),
+    integral_limits=config.x.get_integral_limits()
+)
 ```
 
-Enable/disable controller:
+### Tuning During Flight
 
-```bash
-ros2 topic pub /pid_enable std_msgs/Bool "data: true"
+```python
+# Start with conservative gains
+drone.set_pid_config({
+    "x": {"kp": 0.3, "output_min": -0.3, "output_max": 0.3},
+    "y": {"kp": 0.3, "output_min": -0.3, "output_max": 0.3},
+    "z": {"kp": 0.2, "output_min": -0.2, "output_max": 0.2}
+})
+
+drone.move_to(x=2.0, y=0.0, z=0.0)
+
+# Increase gains if response too slow
+drone.set_pid_config({
+    "x": {"kp": 0.6, "output_min": -0.5, "output_max": 0.5},
+    "y": {"kp": 0.6, "output_min": -0.5, "output_max": 0.5}
+})
+
+drone.move_to(x=-2.0, y=0.0, z=0.0)
 ```
-
-## API Reference
-
-### PIDController
-
-- `update(current_value: float) -> float`: Compute control output
-- `reset()`: Reset internal state
-- `set_setpoint(setpoint: float)`: Update target value
-- `tune(kp, ki, kd)`: Update gains
-- `get_components() -> dict`: Get P, I, D components for debugging
-
-### PIDConfig
-
-- `from_yaml(file_path)`: Load from YAML file
-- `from_dict(config_dict)`: Load from dictionary
-- `get_output_limits()`: Get output limits tuple
-- `get_integral_limits()`: Get integral limits tuple
-

@@ -26,3 +26,11 @@ z:
   integral_min: -1.0
   integral_max: 1.0
 
+yaw:
+  kp: 0.5
+  ki: 0.1
+  kd: 0.0
+  output_min: -0.3
+  output_max: 0.3
+  integral_min: -0.5
+  integral_max: 0.5

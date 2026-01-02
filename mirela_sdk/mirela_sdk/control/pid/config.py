@@ -95,11 +95,12 @@ class PIDConfig:
 
 @dataclass
 class PositionPIDConfig:
-    """Configuration for position controller PIDs (X, Y, Z axes)."""
+    """Configuration for position controller PIDs (X, Y, Z, Yaw axes)."""
 
     x: PIDConfig = field(default_factory=PIDConfig)
     y: PIDConfig = field(default_factory=PIDConfig)
     z: PIDConfig = field(default_factory=PIDConfig)
+    yaw: PIDConfig = field(default_factory=PIDConfig)
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "PositionPIDConfig":
@@ -116,6 +117,7 @@ class PositionPIDConfig:
         PositionPIDConfig
             Position PID configuration object.
         """
+
         with open(file_path, "r", encoding="utf-8") as f:
             config_dict = yaml.safe_load(f)
 
@@ -123,8 +125,14 @@ class PositionPIDConfig:
             x=PIDConfig.from_dict(config_dict.get("x", {})),
             y=PIDConfig.from_dict(config_dict.get("y", {})),
             z=PIDConfig.from_dict(config_dict.get("z", {})),
+            yaw=PIDConfig.from_dict(config_dict.get("yaw", {})),
         )
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
-        return {"x": self.x.to_dict(), "y": self.y.to_dict(), "z": self.z.to_dict()}
+        return {
+            "x": self.x.to_dict(),
+            "y": self.y.to_dict(),
+            "z": self.z.to_dict(),
+            "yaw": self.yaw.to_dict(),
+        }
