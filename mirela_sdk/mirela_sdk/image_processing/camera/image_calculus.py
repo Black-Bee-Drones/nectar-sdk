@@ -1,6 +1,8 @@
 import math
-import numpy as np
 from typing import Dict
+
+from geopy.distance import distance
+from geopy.point import Point
 
 
 class ImageCalculus:
@@ -50,9 +52,9 @@ class ImageCalculus:
                     - 'vertical'
         """
 
-        self._camera_offset = {'forward': 0.0, 'right': 0.0, 'up': 0.0}
-        self._camera_resolution = {'width': 1920, 'height': 1080}
-        self._pixels_per_degree = {'horizontal': 20, 'vertical': 20}
+        self._camera_offset = {"forward": 0.0, "right": 0.0, "up": 0.0}
+        self._camera_resolution = {"width": 1920, "height": 1080}
+        self._pixels_per_degree = {"horizontal": 20, "vertical": 20}
 
         if camera_offset:
             self.camera_offset = camera_offset
@@ -70,9 +72,9 @@ class ImageCalculus:
     def camera_offset(self, value):
         if not isinstance(value, dict):
             return
-        
-        for k, v in value.keys():
-            if (k in self._camera_offset.keys()) and isinstance(v, (int, float)):
+
+        for k, v in value.items():
+            if (k in self._camera_offset) and isinstance(v, (int, float)):
                 self._camera_offset[k] = v
 
     @property
@@ -85,8 +87,8 @@ class ImageCalculus:
         if not isinstance(value, dict):
             return
 
-        for k, v in value.keys():
-            if (k in self._camera_resolution.keys()) and isinstance(v, int):
+        for k, v in value.items():
+            if (k in self._camera_resolution) and isinstance(v, int):
                 self._camera_resolution[k] = v
 
     @property
@@ -98,18 +100,18 @@ class ImageCalculus:
     def pixels_per_degree(self, value):
         if not isinstance(value, dict):
             return
-        
-        for k, v in value.keys():
-            if (k in self._pixels_per_degree.keys()) and isinstance(v, (int, float)):
+
+        for k, v in value.items():
+            if (k in self._pixels_per_degree) and isinstance(v, (int, float)):
                 self._pixels_per_degree[k] = v
 
     def calculate_vector_from_drone_to_ground(
         self,
         target_pixel: tuple[float, float],
         height: float,
-        pitch = float,
-        roll = float,
-    ) -> np.ndarray | None:
+        pitch: float,
+        roll: float,
+    ) -> tuple[float, float, float]:
         """Calculates the vector from the drone to the ground intersection point.
 
         This method projects a pixel from the image onto the ground plane (Z = 0),
@@ -131,11 +133,10 @@ class ImageCalculus:
                 Positive values indicate right-wing-down rotation.
 
         Returns:
-            np.ndarray | None:
+            tuple[float, float, float]:
                 A 3D vector (forward, right, down) from the drone to the
                 intersection point on the ground, expressed in meters.
                 The Z component is negative (downwards).
-                Returns None if the projection is invalid.
 
         Limitations:
             - Valid only for small pitch and roll angles.
@@ -143,27 +144,36 @@ class ImageCalculus:
             - Does not account for yaw rotation.
         """
 
-        pixel_center_x = self.camera_resolution['width'] / 2
-        pixel_center_y = self.camera_resolution['height'] / 2
+        pixel_center_x = self.camera_resolution["width"] / 2
+        pixel_center_y = self.camera_resolution["height"] / 2
 
         pixel_distance_x = target_pixel[0] - pixel_center_x
         pixel_distance_y = pixel_center_y - target_pixel[1]
 
-        pixel_angle_horizontal = pixel_distance_x / self.pixels_per_degree['horizontal']
-        pixel_angle_vertical   = pixel_distance_y / self.pixels_per_degree['vertical']
+        pixel_angle_horizontal = pixel_distance_x / self.pixels_per_degree["horizontal"]
+        pixel_angle_vertical = pixel_distance_y / self.pixels_per_degree["vertical"]
 
         sum_pitch = pitch + pixel_angle_vertical
-        sum_roll  = roll  + pixel_angle_horizontal
+        sum_roll = roll + pixel_angle_horizontal
 
         forward_unit = math.tan(math.radians(sum_pitch))
         right_unit = math.tan(math.radians(sum_roll))
 
-        height += self.camera_offset['up'] * (math.cos(math.radians(pitch)) + math.cos(math.radians(roll)) - 1)
-        forward = forward_unit * height + self.camera_offset['forward'] * math.cos(math.radians(pitch)) + self.camera_offset['up'] * math.sin(math.radians(pitch))
-        right = right_unit * height + self.camera_offset['right'] * math.cos(math.radians(roll)) - self.camera_offset['up'] * math.sin(math.radians(roll))
+        height += self.camera_offset["up"] * (
+            math.cos(math.radians(pitch)) + math.cos(math.radians(roll)) - 1
+        )
+        forward = (
+            forward_unit * height
+            + self.camera_offset["forward"] * math.cos(math.radians(pitch))
+            + self.camera_offset["up"] * math.sin(math.radians(pitch))
+        )
+        right = (
+            right_unit * height
+            + self.camera_offset["right"] * math.cos(math.radians(roll))
+            - self.camera_offset["up"] * math.sin(math.radians(roll))
+        )
 
         return (forward, right, -height)
-
 
     @staticmethod
     def estimate_pixel_gps(
@@ -177,7 +187,7 @@ class ImageCalculus:
         image_bearing: float,
     ):
         """
-        Estimates the GPS coordinates of a target pixel in an image based on a known GPS coordinate 
+        Estimates the GPS coordinates of a target pixel in an image based on a known GPS coordinate
         of a reference pixel (origin), the Ground Sampling Distance (GSD), and the image orientation (bearing).
 
         Parameters:
