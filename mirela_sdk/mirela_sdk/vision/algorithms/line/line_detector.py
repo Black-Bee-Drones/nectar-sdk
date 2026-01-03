@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
+from abc import ABC, abstractmethod
+from typing import Tuple
+import math
 
 import cv2
 import numpy as np
-import math
-from abc import ABC, abstractmethod
-from typing import Tuple
 
-from mirela_sdk.vision.algorithms.color.color_detector import ColorDetector
+from mirela_sdk.vision.algorithms.color.color_detector import ColorDetector, ColorSpace
 
 
-## --- Approximation Methods --- ##
 class ILineEstimationMethod(ABC):
+    """
+    Abstract interface for line estimation strategies.
+
+    All estimation methods must implement the estimate() method
+    to detect lines from binary masks.
+    """
+
     @staticmethod
     @abstractmethod
     def estimate(
@@ -23,24 +29,27 @@ class ILineEstimationMethod(ABC):
         """
         Estimate a line in the image.
 
-        Args:
-            img_detect: Binary image to detect the line in
-            img_out: Output image to draw on
-            offset: Offset values for drawing
-            draw: Whether to draw visualization
-            draw_color: Color to use for drawing
+        Parameters
+        ----------
+        img_detect : np.ndarray
+            Binary image to detect the line in.
+        img_out : np.ndarray
+            Output image to draw on.
+        offset : tuple
+            Offset values (x, y) for drawing.
+        draw : bool, default=True
+            Whether to draw visualization.
+        draw_color : tuple, optional
+            BGR color tuple for drawing.
 
-        Returns:
-            Tuple containing:
-            - center_x: X-coordinate of the line center
-            - center_y: Y-coordinate of the line center
-            - angle: Angle of the line in degrees
-            - width: Average width of the line in pixels
-            - height: Average height of the line in pixels
-            - x: X-coordinate of the bounding box
-            - y: Y-coordinate of the bounding box
-            - w: Width of the bounding box
-            - h: Height of the bounding box
+        Returns
+        -------
+        tuple
+            (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
+            - center_x, center_y: Line center coordinates
+            - angle: Line angle in degrees
+            - width, height: Average line dimensions in pixels
+            - x, y, w, h: Bounding box coordinates
             - rotated_box: Points of the rotated bounding box
         """
         pass
@@ -49,9 +58,25 @@ class ILineEstimationMethod(ABC):
 def calc_width_height(
     mask: np.ndarray,
 ) -> Tuple[float, float, int, int, int, int, np.ndarray]:
+    """
+    Calculate average width and height of detected region.
+
+    Parameters
+    ----------
+    mask : np.ndarray
+        Binary mask image.
+
+    Returns
+    -------
+    tuple
+        (width, height, x, y, w, h, box)
+        - width, height: Average dimensions of white pixels
+        - x, y, w, h: Bounding rectangle coordinates
+        - box: Rotated bounding box points
+    """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return 0.0, 0.0, 0, 0, 0, 0, None  # Nenhuma linha detectada
+        return 0.0, 0.0, 0, 0, 0, 0, None
 
     largest_contour = max(contours, key=cv2.contourArea)
 
@@ -63,7 +88,6 @@ def calc_width_height(
 
     x, y, w, h = cv2.boundingRect(box)
 
-    # Ensure x, y, w, h are within image bounds
     y = max(0, y)
     x = max(0, x)
     h = min(h, mask.shape[0] - y)
@@ -95,7 +119,6 @@ def calc_width_height(
             else:
                 width = height = 0.0
     else:
-        # Invalid ROI dimensions
         print(f"Invalid ROI dimensions: x={x}, y={y}, w={w}, h={h}")
         width = height = 0.0
 
@@ -111,6 +134,13 @@ def calc_width_height(
 
 
 class HoughLinesP(ILineEstimationMethod):
+    """
+    Probabilistic Hough transform line detection.
+
+    Uses cv2.HoughLinesP combined with cv2.fitLine for robust
+    line estimation from multiple detected segments.
+    """
+
     @staticmethod
     def estimate(
         img_detect: np.ndarray,
@@ -120,19 +150,25 @@ class HoughLinesP(ILineEstimationMethod):
         draw_color=None,
     ) -> Tuple[float, float, float, float, float, int, int, int, int, np.ndarray]:
         """
-        Hough lines P detection method.
-        Approximating a line from the probabilistic Hough transform
-        together with line fitting
+        Detect line using probabilistic Hough transform.
 
-        Args:
-            img_detect (numpy.ndarray): Image to detect lines in.
-            img_out (numpy.ndarray): Image to draw detected lines on.
-            offset (tuple): Offset values for drawing.
-            draw (bool): Whether to draw the detected line.
-            draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None.
+        Parameters
+        ----------
+        img_detect : np.ndarray
+            Binary image to detect lines in.
+        img_out : np.ndarray
+            Output image to draw detected lines on.
+        offset : tuple
+            Offset values for drawing.
+        draw : bool, default=True
+            Whether to draw the detected line.
+        draw_color : tuple, optional
+            BGR color tuple for drawing.
 
-        Returns:
-            tuple: Tuple containing the center_x, center_y, angle, width, height, x, y, w, h, and rotated box points.
+        Returns
+        -------
+        tuple
+            (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
         lines = cv2.HoughLinesP(
             img_detect,
@@ -169,21 +205,17 @@ class HoughLinesP(ILineEstimationMethod):
                 angle -= 90.0
 
             if draw:
-                # Use the provided color or default to green for the line
                 line_color = draw_color if draw_color is not None else (0, 255, 0)
 
-                # Use a darker shade of the same color for the center point
                 if draw_color is not None:
-                    # Make a darker version of the color
                     center_color = (
                         max(0, draw_color[0] // 2),
                         max(0, draw_color[1] // 2),
                         max(0, draw_color[2] // 2),
                     )
                 else:
-                    center_color = (255, 0, 0)  # Default to blue
+                    center_color = (255, 0, 0)
 
-                # Draw the approximated line on the image
                 m = 50
                 cv2.line(
                     img_out,
@@ -200,6 +232,13 @@ class HoughLinesP(ILineEstimationMethod):
 
 
 class RotatedRect(ILineEstimationMethod):
+    """
+    Minimum area rotated rectangle detection.
+
+    Fits a rotated rectangle to the largest contour for
+    line orientation estimation.
+    """
+
     @staticmethod
     def estimate(
         img_detect: np.ndarray,
@@ -209,18 +248,25 @@ class RotatedRect(ILineEstimationMethod):
         draw_color=None,
     ) -> Tuple[float, float, float, float, float, int, int, int, int, np.ndarray]:
         """
-        Rotated rectangle detection method.
-        Approximates a rectangle of minimum area on the found contour
+        Detect line using minimum area rotated rectangle.
 
-        Args:
-            img_detect (numpy.ndarray): Image to detect rotated rectangle in.
-            img_out (numpy.ndarray): Image to draw detected rotated rectangle on.
-            offset (tuple): Offset values for drawing.
-            draw (bool): Whether to draw the detected rotated rectangle.
-            draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None.
+        Parameters
+        ----------
+        img_detect : np.ndarray
+            Binary image to detect rotated rectangle in.
+        img_out : np.ndarray
+            Output image to draw on.
+        offset : tuple
+            Offset values for drawing.
+        draw : bool, default=True
+            Whether to draw the detected rectangle.
+        draw_color : tuple, optional
+            BGR color tuple for drawing.
 
-        Returns:
-            tuple: Tuple containing the center_x, center_y, angle, width, height, x, y, w, h, and rotated box points.
+        Returns
+        -------
+        tuple
+            (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
 
         contours, _ = cv2.findContours(
@@ -261,21 +307,17 @@ class RotatedRect(ILineEstimationMethod):
             center_y = center[1]
 
             if draw:
-                # Use the provided color or default to blue for the line
                 line_color = draw_color if draw_color is not None else (255, 0, 0)
 
-                # Use a variation of the same color for the center point
                 if draw_color is not None:
-                    # Make a brighter version of the color
                     center_color = (
                         min(255, draw_color[0] + 50),
                         min(255, draw_color[1] + 50),
                         min(255, draw_color[2] + 50),
                     )
                 else:
-                    center_color = (0, 255, 0)  # Default to green
+                    center_color = (0, 255, 0)
 
-                # Draw the line and center point
                 cv2.line(img_out, (x1, y1), (x2, y2), line_color, 3)
                 cv2.circle(img_out, center, 2, center_color, 3)
 
@@ -285,6 +327,13 @@ class RotatedRect(ILineEstimationMethod):
 
 
 class FitEllipse(ILineEstimationMethod):
+    """
+    Ellipse fitting line detection.
+
+    Fits an ellipse to the detected contour for curved
+    line estimation.
+    """
+
     @staticmethod
     def estimate(
         img_detect: np.ndarray,
@@ -294,17 +343,25 @@ class FitEllipse(ILineEstimationMethod):
         draw_color=None,
     ) -> Tuple[float, float, float, float, float, int, int, int, int, np.ndarray]:
         """
-        Ellipse fitting detection method.
-        Fits an ellipse to the detected contour
+        Detect line by fitting ellipse to contour.
 
-        Args:
-            img_detect (numpy.ndarray): Image to detect ellipse in.
-            img_out (numpy.ndarray): Image to draw detected ellipse on.
-            offset (tuple): Offset values for drawing.
-            draw (bool): Whether to draw the detected ellipse.
+        Parameters
+        ----------
+        img_detect : np.ndarray
+            Binary image to detect ellipse in.
+        img_out : np.ndarray
+            Output image to draw on.
+        offset : tuple
+            Offset values for drawing.
+        draw : bool, default=True
+            Whether to draw the detected ellipse.
+        draw_color : tuple, optional
+            BGR color tuple for drawing.
 
-        Returns:
-            tuple: Tuple containing the center_x, center_y, angle, width, height, x, y, w, h, and rotated box points.
+        Returns
+        -------
+        tuple
+            (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
 
         _, img_detect = cv2.threshold(img_detect, 1, 255, cv2.THRESH_BINARY)
@@ -335,7 +392,6 @@ class FitEllipse(ILineEstimationMethod):
                     curvature = np.abs(d1 - d2) / max(d1, d2)
 
                 if draw:
-                    # Draw the ellipse on the image
                     cv2.ellipse(img_out, ((xc, yc), (d1, d2), angle), (0, 255, 0), 2)
 
         width, height, x, y, w, h, rotated_box = calc_width_height(img_detect)
@@ -344,6 +400,13 @@ class FitEllipse(ILineEstimationMethod):
 
 
 class AdaptiveHoughLinesP(ILineEstimationMethod):
+    """
+    Adaptive Hough transform with dynamic parameter tuning.
+
+    Automatically adjusts threshold and line length parameters
+    based on image characteristics.
+    """
+
     @staticmethod
     def estimate(
         img_detect: np.ndarray,
@@ -353,24 +416,29 @@ class AdaptiveHoughLinesP(ILineEstimationMethod):
         draw_color=None,
     ) -> Tuple[float, float, float, float, float, int, int, int, int, np.ndarray]:
         """
-        Adaptive Hough lines detection with parameter tuning based on image characteristics.
+        Detect line using adaptive Hough transform.
 
-        This method dynamically adjusts Hough transform parameters based on the image content,
-        which can improve line detection in varying conditions.
+        Parameters
+        ----------
+        img_detect : np.ndarray
+            Binary image to detect lines in.
+        img_out : np.ndarray
+            Output image to draw on.
+        offset : tuple
+            Offset values for drawing.
+        draw : bool, default=True
+            Whether to draw the detected line.
+        draw_color : tuple, optional
+            BGR color tuple for drawing.
 
-        Args:
-            img_detect (numpy.ndarray): Image to detect lines in.
-            img_out (numpy.ndarray): Image to draw detected lines on.
-            offset (tuple): Offset values for drawing.
-            draw (bool): Whether to draw the detected line.
-
-        Returns:
-            tuple: Tuple containing the center_x, center_y, angle, width, height, x, y, w, h, and rotated box points.
+        Returns
+        -------
+        tuple
+            (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
         mean_val = np.mean(img_detect)
         std_val = np.std(img_detect)
 
-        # Adjust parameters based on image statistics
         threshold = max(30, min(100, int(mean_val + std_val)))
         min_line_length = max(15, min(50, int(img_detect.shape[1] * 0.05)))
         max_line_gap = max(5, min(20, int(min_line_length * 0.4)))
@@ -410,7 +478,6 @@ class AdaptiveHoughLinesP(ILineEstimationMethod):
                 angle -= 90.0
 
             if draw:
-                # Draw the approximated line on the image
                 m = 50
                 cv2.line(
                     img_out,
@@ -421,7 +488,6 @@ class AdaptiveHoughLinesP(ILineEstimationMethod):
                 )
                 cv2.circle(img_out, (int(x[0]), int(y[0])), 2, (255, 0, 0), 3)
 
-                # Display the adaptive parameters used
                 cv2.putText(
                     img_out,
                     f"Threshold: {threshold}",
@@ -447,6 +513,13 @@ class AdaptiveHoughLinesP(ILineEstimationMethod):
 
 
 class RansacLine(ILineEstimationMethod):
+    """
+    RANSAC-based robust line fitting.
+
+    Uses contour points with line fitting for outlier-resistant
+    line detection.
+    """
+
     @staticmethod
     def estimate(
         img_detect: np.ndarray,
@@ -456,19 +529,26 @@ class RansacLine(ILineEstimationMethod):
         draw_color=None,
     ) -> Tuple[float, float, float, float, float, int, int, int, int, np.ndarray]:
         """
-        RANSAC-based line detection method.
-        Uses RANSAC to robustly fit a line to detected points, ignoring outliers.
+        Detect line using RANSAC-based fitting.
 
-        Args:
-            img_detect (numpy.ndarray): Image to detect lines in.
-            img_out (numpy.ndarray): Image to draw detected lines on.
-            offset (tuple): Offset values for drawing.
-            draw (bool): Whether to draw the detected line.
+        Parameters
+        ----------
+        img_detect : np.ndarray
+            Binary image to detect lines in.
+        img_out : np.ndarray
+            Output image to draw on.
+        offset : tuple
+            Offset values for drawing.
+        draw : bool, default=True
+            Whether to draw the detected line.
+        draw_color : tuple, optional
+            BGR color tuple for drawing.
 
-        Returns:
-            tuple: Tuple containing the center_x, center_y, angle, width, height, x, y, w, h, and rotated box points.
+        Returns
+        -------
+        tuple
+            (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
-        # Find points (could use edge detection or other methods)
         contours, _ = cv2.findContours(
             img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
@@ -476,15 +556,10 @@ class RansacLine(ILineEstimationMethod):
         angle = center_x = center_y = float("nan")
 
         if len(contours) > 0 and cv2.contourArea(contours[0]) > 1500:
-            # Extract points from contour
             points = np.vstack(contours[0]).squeeze()
 
-            if len(points) >= 5:  # Need minimum points for RANSAC
-                # Apply RANSAC to fit line (using findHomography with RANSAC)
-                # Could also use cv2.estimateAffine2D or other RANSAC-based functions
-                vx, vy, x, y = cv2.fitLine(
-                    points, cv2.DIST_L2, 0, 0.01, 0.01
-                )  # RANSAC could be used here
+            if len(points) >= 5:
+                vx, vy, x, y = cv2.fitLine(points, cv2.DIST_L2, 0, 0.01, 0.01)
 
                 center_x = x[0] + offset[0]
                 center_y = y[0] + offset[1]
@@ -496,7 +571,6 @@ class RansacLine(ILineEstimationMethod):
                     angle -= 90.0
 
                 if draw:
-                    # Draw line on image
                     m = 100
                     cv2.line(
                         img_out,
@@ -525,23 +599,37 @@ class RansacLine(ILineEstimationMethod):
 
 
 class LineDetector:
+    """
+    High-level line detector with color filtering.
+
+    Combines color detection with line estimation methods
+    for detecting colored lines in images.
+
+    Parameters
+    ----------
+    color : str, default="blue"
+        Color name to detect (must exist in calibration file).
+    estimation_method : ILineEstimationMethod, default=HoughLinesP
+        Strategy class for line estimation.
+    color_space : ColorSpace, optional
+        Color space for detection (HSV or LAB).
+
+    Attributes
+    ----------
+    color_detector : ColorDetector
+        Instance for color filtering.
+    estimation_method : ILineEstimationMethod
+        Active estimation strategy.
+    prev_angle : float
+        Previous angle for exponential smoothing.
+    """
+
     def __init__(
         self,
         color="blue",
         estimation_method: ILineEstimationMethod = HoughLinesP,
         color_space=None,
     ):
-        """
-        Constructor for the LineDetector class.
-
-        Args:
-            color (str, optional): Color to detect. Defaults to "blue".
-            estimation_method: The method to use for line estimation. Defaults to HoughLinesP.
-            color_space: The color space to use (HSV or LAB). Defaults to None (which will use HSV).
-        """
-        # Import ColorSpace here to avoid circular imports
-        from mirela_sdk.vision.algorithms.color.color_detector import ColorSpace
-
         if color_space is None:
             color_space = ColorSpace.HSV
 
@@ -556,15 +644,17 @@ class LineDetector:
             "angle": (10, 30),
             "center_x": (10, 60),
         }
-        self.prev_angle = float("nan")  # For angle smoothing
+        self.prev_angle = float("nan")
 
     def set_text_positions(self, positions_dict):
         """
-        Set positions for the text labels.
+        Set positions for text labels on output image.
 
-        Args:
-            positions_dict (dict): Dictionary containing position tuples for each text element
-                                  Possible keys: 'angle', 'center_x', 'color'
+        Parameters
+        ----------
+        positions_dict : dict
+            Dictionary with keys 'angle', 'center_x', 'color'
+            and (x, y) tuple values.
         """
         if positions_dict and isinstance(positions_dict, dict):
             for key, value in positions_dict.items():
@@ -577,28 +667,33 @@ class LineDetector:
 
     def detect_line(self, img, region=(0, 0), draw=True, draw_color=None):
         """
-        Detects the line using the specified method.
+        Detect line in image using color filtering and estimation.
 
-        Args:
-            img (numpy.ndarray): Input image.
-            region (tuple, optional): Region of interest in the format (width, height). Defaults to (0, 0) for the whole image.
-            draw (bool, optional): Whether to draw the detected line on the output image. Defaults to True.
-            draw_color (tuple, optional): BGR color tuple to use for drawing. Defaults to None, which will use default colors.
+        Parameters
+        ----------
+        img : np.ndarray
+            Input BGR image.
+        region : tuple, default=(0, 0)
+            Region of interest size (width, height).
+            (0, 0) uses full image.
+        draw : bool, default=True
+            Whether to draw visualizations.
+        draw_color : tuple, optional
+            BGR color for drawing.
 
-        Returns:
-            tuple: Tuple containing:
-                - output image with drawings
-                - region image (mask)
-                - center_x: X-coordinate of the line center
-                - center_y: Y-coordinate of the line center
-                - angle: Angle of the line in degrees
-                - width: Average width of the line in pixels
-                - height: Average height of the line in pixels
+        Returns
+        -------
+        tuple
+            (output_img, mask, center_x, center_y, angle, width, height)
+            - output_img: Image with drawings
+            - mask: Binary region mask
+            - center_x, center_y: Line center coordinates
+            - angle: Line angle in degrees
+            - width, height: Line dimensions in pixels
         """
 
         self.color_detector.filterColor(img)
 
-        # Define the region of interest
         if region == (0, 0):
             region = (img.shape[1], img.shape[0])
 
@@ -612,13 +707,9 @@ class LineDetector:
             region_center[1] - region_size[1] // 2,
         )
 
-        # Debug output for mask properties
         unique_values = np.unique(self.color_detector.mask)
 
-        # Extract the subimage of the region of interest
         region = cv2.getRectSubPix(self.color_detector.mask, region_size, region_center)
-
-        # Ensure the mask has proper thresholding - normalize to 0 and 255
         _, region = cv2.threshold(region, 128, 255, cv2.THRESH_BINARY)
 
         center_x = center_y = angle = float("nan")
@@ -627,7 +718,6 @@ class LineDetector:
         rotated_box = None
 
         try:
-            # Use custom drawing colors if provided
             line_color = draw_color if draw_color is not None else (0, 255, 0)
             try:
                 center_x, center_y, angle, width, height, x, y, w, h, rotated_box = (
@@ -650,7 +740,6 @@ class LineDetector:
                         rotated_box,
                     ) = self.estimation_method.estimate(region, img, offset, draw)
                 except ValueError:
-                    # Fallback for older implementations that don't return rotated_box
                     center_x, center_y, angle, width, height, x, y, w, h = (
                         self.estimation_method.estimate(region, img, offset, draw)
                     )
@@ -665,9 +754,7 @@ class LineDetector:
             self.prev_angle = angle
 
         if draw:
-            text_color = (
-                draw_color if draw_color is not None else (0, 0, 255)
-            )  # Default to red
+            text_color = draw_color if draw_color is not None else (0, 0, 255)
             cv2.putText(
                 img,
                 f"Angle: {angle:.2f}",
@@ -699,10 +786,8 @@ class LineDetector:
                     1,
                 )
 
-            # Desenha a bounding box da linha detectada
             if w > 0 and h > 0:
                 if rotated_box is not None:
-                    # Desenha a bounding box rotacionada
                     cv2.drawContours(
                         img,
                         [rotated_box + np.array([offset[0], offset[1]])],
@@ -711,7 +796,6 @@ class LineDetector:
                         2,
                     )
                 else:
-                    # Fallback para bounding box axis-aligned
                     cv2.rectangle(
                         img,
                         (x + offset[0], y + offset[1]),
@@ -724,6 +808,7 @@ class LineDetector:
 
 
 def main():
+    """Demo function for line detection."""
     color = "teste"
     line_detector = LineDetector(color, HoughLinesP)
 
@@ -742,7 +827,7 @@ def main():
         print(f"Angle: {angle:.2f}, Width: {width:.2f}, Height: {height:.2f}")
 
         cv2.imshow("Line Detection", result)
-        cv2.imshow("Mask", region)  # Show the mask for debugging
+        cv2.imshow("Mask", region)
         if cv2.waitKey(1) == ord("q"):
             break
 

@@ -24,15 +24,42 @@ from mirela_sdk.vision.algorithms.line import (
 )
 from mirela_interfaces.msg import LineInfo
 
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
 
 class LineDetectionNode(Node):
+    """
+    ROS2 node for detecting lines using various estimation methods.
+
+    Processes images from a specified source, detects lines based on
+    configured colors and estimation method, and publishes results.
+
+    Parameters (ROS)
+    ----------------
+    line_colors : str
+        Comma-separated list of colors to detect.
+    method : str
+        Line detection method (HoughLinesP, RotatedRect, etc.).
+    image_source : str
+        Camera source identifier.
+    show_visualization : bool
+        Whether to show OpenCV window.
+    visualization_name : str
+        Name for visualization window.
+    spaces : str
+        Comma-separated color spaces (hsv, lab).
+    cap : int
+        Webcam index for OpenCV.
+
+    Attributes
+    ----------
+    estimation_methods : Dict[str, ILineEstimationMethod]
+        Available estimation method classes.
+    line_detectors : Dict[str, LineDetector]
+        Detector instances per color.
+    """
 
     LINE_STATE_TOPIC_BASE = "line_state"
     LINE_DETECTED_TOPIC_BASE = "line_detect"
 
-    # Constants for image processing
     IMG_SIZE = (640, 480)
     DETECTION_ZONE = (480, 280)
 
@@ -45,34 +72,16 @@ class LineDetectionNode(Node):
     }
 
     def __init__(self):
-        """
-        A ROS2 node for detecting lines in images using various estimation methods.
-
-        This node processes images from a specified source, detects lines based on the configured estimation method,
-        and publishes the line's state (e.g., center and angle) to ROS topics. It supports different line detection
-        methods, such as RotatedRect, HoughLinesP, FitEllipse, RansacLine, and AdaptiveHoughLinesP.
-
-        All configuration is handled through ROS parameters:
-        - line_colors: Comma-separated list of colors to detect
-        - method: The line detection method to use
-        - image_source: The source of the image stream
-        - show_visualization: Whether to show visualization window
-        - visualization_name: Name for the visualization window
-        - spaces: Comma-separated list of color spaces to use (hsv, lab)
-        - cap: Webcam index to use with OpenCV
-        """
         super().__init__("line_detection_node")
 
-        self.declare_parameter("line_colors", "teste")  # multiple colors
+        self.declare_parameter("line_colors", "teste")
         self.declare_parameter("method", "HoughLinesP")
         self.declare_parameter("image_source", "webcam")
         self.declare_parameter("show_visualization", True)
         self.declare_parameter("visualization_name", "Line Detection")
-        # Added new parameters
-        self.declare_parameter("spaces", "hsv")  # multiple spaces
+        self.declare_parameter("spaces", "hsv")
         self.declare_parameter("cap", 0)
 
-        # Get parameters
         colors_param = (
             self.get_parameter("line_colors").get_parameter_value().string_value
         )
@@ -95,7 +104,6 @@ class LineDetectionNode(Node):
 
         # If there are fewer color spaces than colors, use the first color space for additional colors
         if len(self.color_spaces) < len(self.line_colors):
-            # default to "hsv"
             default_space = self.color_spaces[0] if self.color_spaces else "hsv"
             additional_spaces = [default_space] * (
                 len(self.line_colors) - len(self.color_spaces)
@@ -117,7 +125,6 @@ class LineDetectionNode(Node):
             )
             self.estimation_class = HoughLinesP
 
-        # Initialize dictionaries to store detectors and publishers for each color
         self.line_detectors: Dict[str, LineDetector] = {}
         self.line_detected_pubs: Dict[str, Any] = {}
         self.state_pubs: Dict[str, Any] = {}
@@ -147,10 +154,14 @@ class LineDetectionNode(Node):
 
     def initialize_color_detector(self, color: str, color_space: str):
         """
-        Initialize line detector and publishers for a specific color.
+        Initialize line detector and publishers for a color.
 
-        Args:
-            color: The color to detect
+        Parameters
+        ----------
+        color : str
+            Color name to detect.
+        color_space : str
+            Color space ("hsv" or "lab").
         """
         try:
             try:
@@ -223,13 +234,17 @@ class LineDetectionNode(Node):
 
     def parameters_callback(self, params):
         """
-        Callback for parameter changes at runtime.
+        Handle runtime parameter changes.
 
-        Args:
-            params: The parameters that were changed.
+        Parameters
+        ----------
+        params : list
+            List of changed parameters.
 
-        Returns:
-            SetParametersResult indicating success or failure.
+        Returns
+        -------
+        SetParametersResult
+            Success/failure indication.
         """
         from rclpy.parameter_service import SetParametersResult
 
@@ -241,7 +256,6 @@ class LineDetectionNode(Node):
             if param.name == "line_colors":
                 new_colors = [color.strip() for color in param.value.split(",")]
 
-                # Remove detectors for colors that are no longer needed
                 for color in list(self.line_detectors.keys()):
                     if color not in new_colors:
                         if color in self.line_detected_pubs:
@@ -255,7 +269,6 @@ class LineDetectionNode(Node):
 
                         self.get_logger().info(f"Removed detector for color: {color}")
 
-                # Add new detectors for colors that weren't already present
                 for i, color in enumerate(new_colors):
                     if color not in self.line_detectors:
                         color_space_idx = (
@@ -306,7 +319,6 @@ class LineDetectionNode(Node):
                 new_color_spaces = [cs.strip() for cs in param.value.split(",")]
                 self.color_spaces = new_color_spaces
 
-                # Re-initialize all detectors with the appropriate color spaces
                 for i, color in enumerate(self.line_colors):
                     color_space = (
                         self.color_spaces[i]
@@ -343,10 +355,12 @@ class LineDetectionNode(Node):
 
     def process_image(self, img: np.ndarray) -> None:
         """
-        Processes a single image frame, detects lines for all colors, and publishes the detection results.
+        Process image frame and publish detection results.
 
-        Args:
-            img (np.ndarray): The input image frame to process.
+        Parameters
+        ----------
+        img : np.ndarray
+            Input BGR image frame.
         """
         try:
             cv2.resize(img, self.IMG_SIZE, img)
@@ -467,14 +481,19 @@ class LineDetectionNode(Node):
 
     def _get_color_values_to_bgr(self, color_values, color_space):
         """
-        Convert color values to BGR based on the provided color space.
+        Convert color range values to BGR for display.
 
-        Args:
-            color_values: Color values as [[min1, min2, min3], [max1, max2, max3]]
-            color_space: The color space (ColorSpace.HSV or ColorSpace.LAB)
+        Parameters
+        ----------
+        color_values : list
+            Color values as [[min], [max]].
+        color_space : ColorSpace
+            Source color space.
 
-        Returns:
-            tuple: BGR color tuple
+        Returns
+        -------
+        tuple
+            BGR color tuple.
         """
         try:
             if color_values is None or len(color_values) == 0:
@@ -485,7 +504,6 @@ class LineDetectionNode(Node):
                 and len(color_values[0]) == 3
                 and len(color_values[1]) == 3
             ):
-                # Use the average of min and max values for a representative color
                 min_vals = color_values[0]
                 max_vals = color_values[1]
 
@@ -493,7 +511,6 @@ class LineDetectionNode(Node):
                 val2 = (min_vals[1] + max_vals[1]) // 2
                 val3 = (min_vals[2] + max_vals[2]) // 2
 
-                # Ensure val3 (brightness) is high enough to be visible
                 if color_space == ColorSpace.HSV:
                     val3 = max(val3, 180)
                 elif color_space == ColorSpace.LAB:
@@ -502,7 +519,7 @@ class LineDetectionNode(Node):
                 if color_space == ColorSpace.HSV:
                     color_arr = np.uint8([[[val1, val2, val3]]])
                     bgr_color = cv2.cvtColor(color_arr, cv2.COLOR_HSV2BGR)[0][0]
-                else:  # LAB
+                else:
                     color_arr = np.uint8([[[val1, val2, val3]]])
                     bgr_color = cv2.cvtColor(color_arr, cv2.COLOR_LAB2BGR)[0][0]
 
@@ -511,21 +528,24 @@ class LineDetectionNode(Node):
                 self.get_logger().warning(
                     f"Unexpected color values format: {color_values}"
                 )
-                return (255, 255, 255)  # Default to white
+                return (255, 255, 255)
         except Exception as e:
             self.get_logger().warning(f"Error converting color values to BGR: {e}")
             return (255, 255, 255)
 
     def _get_color_bgr(self, color_name):
         """
-        Helper to convert color name to BGR values for display by extracting the actual color
-        from the corresponding line detector's ColorDetector.
+        Get BGR color for a named color.
 
-        Args:
-            color_name (str): The name of the color to get the BGR value for
+        Parameters
+        ----------
+        color_name : str
+            Color name.
 
-        Returns:
-            tuple: BGR color tuple for use with OpenCV
+        Returns
+        -------
+        tuple
+            BGR color tuple.
         """
         try:
             if color_name in self.line_detectors:
@@ -554,24 +574,11 @@ class LineDetectionNode(Node):
             return (255, 255, 255)
 
     def run(self):
-        """
-        Run the line detection node.
-
-        Uses the ROS parameters to determine if visualization should be shown.
-        """
-        qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-            durability=DurabilityPolicy.VOLATILE,
-        )
-
+        """Start the line detection processing loop."""
         self.image_handler = ImageHandler(
-            self,
-            self.image_source,
-            self.process_image,
-            show_result=None,
-            cap=self.cap,
+            node=self,
+            image_source=self.image_source,
+            image_processing_callback=self.process_image,
         )
 
         colors_str = ", ".join(self.line_colors)
@@ -595,11 +602,7 @@ class LineDetectionNode(Node):
         self.image_handler.run()
 
     def cleanup(self):
-        """
-        Cleans up resources and shuts down the node.
-
-        Stops the image handler and destroys the ROS node.
-        """
+        """Clean up resources and shutdown."""
         self.image_handler.cleanup()
 
         if self.show_visualization:
@@ -609,12 +612,7 @@ class LineDetectionNode(Node):
 
 
 def main(args=None):
-    """
-    Main entry point for the line detection node.
-
-    Args:
-        args: Command line arguments passed to rclpy.init
-    """
+    """Entry point for line detection node."""
     rclpy.init(args=args)
 
     detector = LineDetectionNode()
