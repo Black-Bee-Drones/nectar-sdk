@@ -11,10 +11,9 @@ from .line import (
 )
 from .distance import (
     DistanceEstimator,
-    EstimationMethod,
-    DistanceEstimationError,
-    DistanceCalibrator,
-    DistanceModelAnalyzer,
+    ModelType,
+    ModelCalibrator,
+    CalibrationResult,
 )
 
 __all__ = [
@@ -29,8 +28,7 @@ __all__ = [
     "RansacLine",
     "AdaptiveHoughLinesP",
     "DistanceEstimator",
-    "EstimationMethod",
-    "DistanceEstimationError",
-    "DistanceCalibrator",
-    "DistanceModelAnalyzer",
+    "ModelType",
+    "ModelCalibrator",
+    "CalibrationResult",
 ]
