@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 import numpy as np
 
+from mirela_sdk.vision.types import BoundingBox, Point2D
+
 try:
     import torch
 except ImportError:
@@ -16,22 +18,23 @@ except ImportError:
 
 @dataclass
 class Detection:
-    """Represents a single detection result."""
-
-    bbox: List[int]  # [x1, y1, x2, y2]
+    bbox: List[int]
     confidence: float
     class_id: int
     class_name: str = ""
 
     @property
-    def center(self) -> Tuple[int, int]:
-        """Get center point of bounding box."""
+    def center(self) -> Point2D:
         x1, y1, x2, y2 = self.bbox
-        return (int((x1 + x2) / 2), int((y1 + y2) / 2))
+        return Point2D(x=(x1 + x2) / 2, y=(y1 + y2) / 2)
+
+    @property
+    def bounding_box(self) -> BoundingBox:
+        x1, y1, x2, y2 = self.bbox
+        return BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
 
     @property
     def area(self) -> float:
-        """Get area of bounding box."""
         x1, y1, x2, y2 = self.bbox
         return (x2 - x1) * (y2 - y1)
 
