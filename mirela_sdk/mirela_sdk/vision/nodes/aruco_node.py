@@ -1,20 +1,38 @@
 #!/usr/bin/env python3
+import sys
 
 import rclpy
 from rclpy.node import Node
 
-import sys
-
 from mirela_sdk.vision.algorithms.markers import Aruco
-from mirela_interfaces.msg import ArucoTransforms
 from mirela_sdk.vision.camera import ImageHandler
+from mirela_interfaces.msg import ArucoTransforms
 
 
 class ArucoNode(Node):
+    """
+    ROS2 node for ArUco marker pose estimation.
+
+    Detects ArUco markers and publishes their pose (translation, yaw).
+
+    Parameters (ROS)
+    ----------------
+    image_source : str
+        Camera source identifier.
+    marker_dict : int
+        ArUco dictionary size (default: 5).
+    tag_size : float
+        Physical marker size in meters (default: 0.2).
+
+    Publishes
+    ---------
+    /aruco/pose_estimate : ArucoTransforms
+        Detected marker ID, translation vector, and yaw angle.
+    """
+
     POSE_TOPIC = "/aruco/pose_estimate"
 
     def __init__(self):
-
         super().__init__("aruco_node")
 
         self.declare_parameter("image_source", "webcam")
@@ -34,15 +52,22 @@ class ArucoNode(Node):
         self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
 
         self.img_handler = ImageHandler(
-            self, self.image_source, self.process_image, show_result="Aruco"
+            node=self,
+            image_source=self.image_source,
+            image_processing_callback=self.process_image,
+            show_result="Aruco",
         )
         self.img_handler.run()
 
-    def process_image(self, img):
+    def process_image(self, img) -> None:
         """
-        Process the image and perform aruco pose estimate
-        """
+        Process frame and publish marker pose.
 
+        Parameters
+        ----------
+        img : np.ndarray
+            Input BGR image.
+        """
         id, Tvect, yaw = self.aruco.pose_estimate(img, True)
 
         if id is not None:
@@ -56,13 +81,15 @@ class ArucoNode(Node):
 
             self.pose_estime_pub.publish(self.aruco_pose_estimate)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
+        """Clean up resources and shutdown."""
         self.img_handler.cleanup()
         print("Shutting down aruco node")
         self.destroy_publisher(self.pose_estime_pub)
 
 
 def main(args=None) -> None:
+    """Entry point for ArUco node."""
     rclpy.init(args=args)
 
     node = ArucoNode()
