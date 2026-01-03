@@ -1,18 +1,53 @@
+import os
+from enum import Enum, auto
+import json
 import cv2
 import numpy as np
-import os
-import json
-from enum import Enum, auto
 
 
 class ColorSpace(Enum):
-    """Color space enumeration"""
+    """
+    Supported color spaces for detection.
+
+    Attributes
+    ----------
+    HSV : auto
+        Hue-Saturation-Value color space.
+    LAB : auto
+        CIELAB color space (L*a*b*).
+    """
 
     HSV = auto()
     LAB = auto()
 
 
 class ColorDetector:
+    """
+    Detect and filter colors from images using configurable color spaces.
+
+    Supports two modes:
+    - "track": Interactive trackbar-based calibration
+    - "preset": Load pre-calibrated values from JSON file
+
+    Parameters
+    ----------
+    mode : str, default="track"
+        Operation mode ("track" or "preset").
+    color : str, optional
+        Color name to load from calibration file (required for "preset" mode).
+    color_space : ColorSpace, default=ColorSpace.HSV
+        Color space for detection.
+
+    Attributes
+    ----------
+    mask : np.ndarray
+        Binary mask of detected color regions.
+    result : np.ndarray
+        Original image with non-matching regions masked out.
+    color_values : list
+        Current color range as [[min], [max]].
+    """
+
     def __init__(
         self,
         mode: str = "track",
@@ -23,7 +58,6 @@ class ColorDetector:
         self.mask = self.result = None
         self.color_space = color_space
 
-        # Define color space specific ranges and conversion methods
         self.color_space_config = {
             ColorSpace.HSV: {
                 "convert_func": cv2.COLOR_BGR2HSV,
@@ -64,13 +98,26 @@ class ColorDetector:
 
     @property
     def color_values(self):
+        """Current color range values [[min1, min2, min3], [max1, max2, max3]]."""
         return self._color_values
 
     @color_values.setter
     def color_values(self, values: list):
+        """
+        Set color range values with validation.
+
+        Parameters
+        ----------
+        values : list
+            Color range as [[min1, min2, min3], [max1, max2, max3]].
+
+        Raises
+        ------
+        ValueError
+            If values format is invalid.
+        """
         try:
             config = self.color_space_config[self.color_space]
-            # Verify and adjust value limits based on the color space
             values = np.clip(values, config["ranges"][0], config["ranges"][1])
         except:
             raise ValueError(
@@ -80,10 +127,16 @@ class ColorDetector:
             self._color_values = values
 
     def empty(self, a):
+        """Trackbar callback placeholder."""
         pass
 
-    def initTrackbars(self):
-        """Create window and trackbars for color adjustment based on selected color space"""
+    def initTrackbars(self) -> None:
+        """
+        Create OpenCV window with trackbars for color adjustment.
+
+        Creates 6 trackbars for min/max values of each color channel
+        based on the selected color space.
+        """
         config = self.color_space_config[self.color_space]
         tb_names = config["trackbar_names"]
         tb_maxes = config["trackbar_maxes"]
@@ -105,8 +158,15 @@ class ColorDetector:
             tb_names[5], window_name, tb_maxes[5], tb_maxes[5], self.empty
         )
 
-    def getTrackValues(self):
-        """Get current trackbar values based on selected color space"""
+    def getTrackValues(self) -> list:
+        """
+        Read current trackbar positions.
+
+        Returns
+        -------
+        list
+            Color range as [[min1, min2, min3], [max1, max2, max3]].
+        """
         config = self.color_space_config[self.color_space]
         tb_names = config["trackbar_names"]
         window_name = f"{self.color_space.name}_TrackBars"
@@ -120,9 +180,22 @@ class ColorDetector:
 
         return [[min_val1, min_val2, min_val3], [max_val1, max_val2, max_val3]]
 
-    def filterColor(self, img):
-        """Filter color from image based on selected color space and ranges"""
-        # Convert image to the selected color space
+    def filterColor(self, img: np.ndarray) -> None:
+        """
+        Filter image to isolate pixels within color range.
+
+        Applies color space conversion, thresholding, and morphological
+        operations to create a clean binary mask.
+
+        Parameters
+        ----------
+        img : np.ndarray
+            Input BGR image.
+
+        Notes
+        -----
+        Updates self.mask and self.result attributes.
+        """
         converted_img = cv2.cvtColor(
             img, self.color_space_config[self.color_space]["convert_func"]
         )
@@ -130,31 +203,38 @@ class ColorDetector:
         if self.mode == "track":
             self.color_values = self.getTrackValues()
 
-        # Filter the desired color
         mask = cv2.inRange(
             converted_img,
             np.array(self.color_values[0]),
             np.array(self.color_values[1]),
         )
 
-        # Remove noise
         mask = cv2.dilate(mask, np.ones((11, 11), np.uint8), iterations=1)
         mask = cv2.erode(mask, np.ones((7, 7), np.uint8), iterations=1)
-
-        # Morphological operations for further noise removal and closing gaps
         mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, np.ones((8, 8), np.uint8))
-
-        # Ensure the mask is properly binarized to exactly 0 and 255
         _, mask = cv2.threshold(mask, 128, 255, cv2.THRESH_BINARY)
 
         self.result = cv2.bitwise_and(img, img, mask=mask)
         self.mask = mask
 
-    def get_color_values(self, color_name: str):
+    def get_color_values(self, color_name: str) -> list:
         """
-        Get color values from JSON file
-        :param color_name: Name of the color to retrieve
-        :return: List of color range values [[min1, min2, min3], [max1, max2, max3]]
+        Load color values from calibration JSON file.
+
+        Parameters
+        ----------
+        color_name : str
+            Name of the color to retrieve.
+
+        Returns
+        -------
+        list
+            Color range as [[min1, min2, min3], [max1, max2, max3]].
+
+        Raises
+        ------
+        ValueError
+            If file not found, color not defined, or invalid JSON.
         """
         if not os.path.exists(self.file_path):
             raise ValueError(f"Color calibration file not found: {self.file_path}")
@@ -180,8 +260,10 @@ class ColorDetector:
         except Exception as e:
             raise ValueError(f"Error retrieving color values: {str(e)}")
 
-    def saveColorValues(self):
-        """Save color values to JSON file"""
+    def saveColorValues(self) -> None:
+        """
+        Save current color values to calibration JSON file.
+        """
         color_name = input("Enter the color name: ")
 
         colors_data = {}
@@ -190,17 +272,13 @@ class ColorDetector:
                 with open(self.file_path, "r") as file:
                     colors_data = json.load(file)
             except json.JSONDecodeError:
-                # If the file exists but is not valid JSON, start fresh
                 pass
 
-        # Create or update the color entry
         if color_name not in colors_data:
             colors_data[color_name] = {}
 
-        # Update the color space values for this color
         colors_data[color_name][self.color_space.name] = self.color_values.tolist()
 
-        # Save back to file with pretty formatting
         with open(self.file_path, "w") as file:
             json.dump(colors_data, file, indent=4)
 

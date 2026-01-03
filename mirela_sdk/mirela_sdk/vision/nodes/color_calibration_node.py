@@ -4,15 +4,31 @@ import rclpy
 from rclpy.node import Node
 import cv2
 import cvzone
-import numpy as np
 
 from mirela_sdk.vision.camera import ImageHandler
 from mirela_sdk.vision.algorithms.color import ColorDetector, ColorSpace
 
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
-
 class ColorCalibrationNode(Node):
+    """
+    Interactive color calibration node with trackbar interface.
+
+    Parameters
+    ----------
+    image_source : str, optional
+        Camera source identifier. Default from ROS parameter.
+    color_space : str, optional
+        Initial color space ("hsv" or "lab").
+    cap : int, optional
+        Webcam index for OpenCV capture.
+
+    Notes
+    -----
+    Keyboard controls:
+    - 'q': Exit node
+    - 's': Save current calibration values
+    - 'c': Switch between HSV and LAB color spaces
+    """
+
     def __init__(
         self, image_source: str = None, color_space: str = "hsv", cap: int = 0
     ):
@@ -25,7 +41,6 @@ class ColorCalibrationNode(Node):
         self.declare_parameter("color_space", "hsv")
         color_space_param = self.get_parameter("color_space").value
 
-        # Declare cap parameter for webcam selection
         self.declare_parameter("cap", 0)
         cap_param = self.get_parameter("cap").value
 
@@ -44,13 +59,6 @@ class ColorCalibrationNode(Node):
 
         self.get_logger().info(f"Using webcam index: {self.cap}")
 
-        qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-            durability=DurabilityPolicy.VOLATILE,
-        )
-
         self.image_handler = ImageHandler(
             node=self,
             image_source=self.image_source,
@@ -59,7 +67,6 @@ class ColorCalibrationNode(Node):
         self.color_detector = ColorDetector("track", color_space=self.color_space)
         self.initialized = False
 
-        # Flag to track which mode we're in
         self.current_color_space = self.color_space
 
         self.get_logger().info(
@@ -73,9 +80,17 @@ class ColorCalibrationNode(Node):
 
     def process(self, img) -> None:
         """
-        Process the image to calibrate the color detection
+        Process frame for color calibration display.
 
-        :param img (np.array): the image to process
+        Parameters
+        ----------
+        img : np.ndarray
+            Input BGR image from camera.
+
+        Notes
+        -----
+        Displays stacked view of original, mask, and filtered images.
+        Handles keyboard input for save, exit, and color space switching.
         """
         try:
             if img is not None:
@@ -86,12 +101,10 @@ class ColorCalibrationNode(Node):
 
                 self.color_detector.filterColor(img)
 
-                # Stack the result images - original image, mask, and filtered result
                 hStack = cvzone.stackImages(
                     [img, self.color_detector.mask, self.color_detector.result], 3, 0.7
                 )
 
-                # Display window title with color space information
                 window_title = (
                     f"Color Calibration - {self.color_detector.color_space.name} Mode"
                 )
@@ -113,7 +126,6 @@ class ColorCalibrationNode(Node):
 
                 elif key == ord("c"):
                     cv2.destroyAllWindows()
-                    # Switch between HSV and LAB color spaces
                     if self.color_detector.color_space == ColorSpace.HSV:
                         new_color_space = ColorSpace.LAB
                     else:
@@ -123,7 +135,6 @@ class ColorCalibrationNode(Node):
                         f"Switching to {new_color_space.name} color space"
                     )
 
-                    # Create a new detector with the new color space
                     self.color_detector = ColorDetector(
                         "track", color_space=new_color_space
                     )
@@ -134,6 +145,18 @@ class ColorCalibrationNode(Node):
 
 
 def main(args=None):
+    """
+    Entry point for color calibration node.
+
+    CLI Arguments
+    -------------
+    --image-source : str
+        Image source (webcam, topic name, etc.).
+    --color-space : str
+        Color space to use (hsv or lab).
+    --cap : int
+        Webcam index for OpenCV.
+    """
     rclpy.init(args=args)
 
     import argparse
