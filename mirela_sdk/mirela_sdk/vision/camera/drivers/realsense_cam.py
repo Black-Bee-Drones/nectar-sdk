@@ -1,10 +1,11 @@
 from typing import Optional
+from threading import Event
+
 import numpy as np
 from rclpy.node import Node
 from sensor_msgs.msg import Image as RosImage
 from sensor_msgs.msg import CompressedImage as RosCompressedImage
 from cv_bridge import CvBridge
-from threading import Event
 
 from mirela_sdk.vision.camera.abstract import DepthCam
 from mirela_sdk.vision.camera.config import RealSenseConfig
@@ -16,6 +17,36 @@ except Exception as e:
 
 
 class RealsenseCam(DepthCam):
+    """
+    Camera driver for Intel RealSense depth cameras.
+
+    Parameters
+    ----------
+    config : RealSenseConfig
+        Configuration with resolution, FPS, depth settings, and topic names.
+    node : Node, optional
+        ROS2 node required for ROS topic mode.
+
+    Raises
+    ------
+    ValueError
+        If use_ros_topics=True but node is not provided.
+    RuntimeError
+        If pyrealsense2 not installed in direct SDK mode.
+
+    Notes
+    -----
+    Depth frames are returned in meters (float32). The align_to_color option
+    registers depth to color frame for pixel-accurate RGB-D correspondence.
+
+    Supports two operation modes:
+    - Direct SDK: Uses pyrealsense2 for direct hardware access
+    - ROS topics: Subscribes to RealSense ROS node topics
+
+    Use ROS topic mode when camera is shared with other nodes (e.g., Isaac
+    ROS VSLAM) or when running on a separate machine.
+    """
+
     def __init__(self, config: RealSenseConfig, node: Optional[Node] = None) -> None:
         super().__init__(name=config.name)
         self._config = config
@@ -48,7 +79,8 @@ class RealsenseCam(DepthCam):
             self._color_sub = None
             self._depth_sub = None
 
-    def _color_callback(self, msg):
+    def _color_callback(self, msg) -> None:
+        """ROS callback for color image messages."""
         try:
             if self._config.color_compressed:
                 self._rgb = self._bridge.compressed_imgmsg_to_cv2(
@@ -65,7 +97,8 @@ class RealsenseCam(DepthCam):
                     f"RealsenseCam: failed to convert color image: {e}"
                 )
 
-    def _depth_callback(self, msg):
+    def _depth_callback(self, msg) -> None:
+        """ROS callback for depth image messages. Converts to meters."""
         try:
             if self._config.depth_compressed:
                 depth_raw = self._bridge.compressed_imgmsg_to_cv2(
@@ -89,6 +122,17 @@ class RealsenseCam(DepthCam):
                 )
 
     def start(self) -> None:
+        """
+        Initialize camera or subscribe to ROS topics.
+
+        In ROS topic mode, creates subscriptions for color and depth topics.
+        In direct mode, configures and starts the pyrealsense2 pipeline.
+
+        Raises
+        ------
+        RuntimeError
+            If pyrealsense2 not installed in direct SDK mode.
+        """
         if self._use_ros_topics:
             if self._config.color_compressed:
                 self._color_sub = self._node.create_subscription(
@@ -165,6 +209,7 @@ class RealsenseCam(DepthCam):
             self._is_running = True
 
     def _wait_for_frames(self):
+        """Wait for and return aligned frameset from pipeline."""
         if not self._pipeline:
             return None
         frames = self._pipeline.wait_for_frames()
@@ -175,6 +220,22 @@ class RealsenseCam(DepthCam):
     def get_frame(
         self, wait_for_new: bool = True, timeout: float = 0.1
     ) -> Optional[np.ndarray]:
+        """
+        Capture color frame from camera.
+
+        Parameters
+        ----------
+        wait_for_new : bool, optional
+            If True, waits for a new frame (ROS topic mode only).
+            Default is True.
+        timeout : float, optional
+            Maximum wait time in seconds. Default is 0.1s.
+
+        Returns
+        -------
+        np.ndarray or None
+            BGR image, or None if capture failed or timeout.
+        """
         if self._use_ros_topics:
             if wait_for_new:
                 if self._new_color_frame_event.wait(timeout):
@@ -200,6 +261,23 @@ class RealsenseCam(DepthCam):
     def get_depth_frame(
         self, wait_for_new: bool = True, timeout: float = 0.1
     ) -> Optional[np.ndarray]:
+        """
+        Capture depth frame from camera.
+
+        Parameters
+        ----------
+        wait_for_new : bool, optional
+            If True, waits for a new frame (ROS topic mode only).
+            Default is True.
+        timeout : float, optional
+            Maximum wait time in seconds. Default is 0.1s.
+
+        Returns
+        -------
+        np.ndarray or None
+            Depth image in meters (float32), or None if depth disabled,
+            capture failed, or timeout.
+        """
         if not self._enable_depth:
             return None
         if self._use_ros_topics:
@@ -230,6 +308,22 @@ class RealsenseCam(DepthCam):
             return self._depth
 
     def get_distance(self, u: int, v: int) -> Optional[float]:
+        """
+        Get distance at pixel coordinates.
+
+        Parameters
+        ----------
+        u : int
+            Horizontal pixel coordinate (column).
+        v : int
+            Vertical pixel coordinate (row).
+
+        Returns
+        -------
+        float or None
+            Distance in meters, or None if depth disabled, coordinates
+            out of bounds, or no valid depth at that pixel.
+        """
         if not self._enable_depth:
             return None
         if self._use_ros_topics:
@@ -254,6 +348,9 @@ class RealsenseCam(DepthCam):
             return distance_m
 
     def close(self) -> None:
+        """
+        Release camera resources.
+        """
         if self._use_ros_topics:
             if self._color_sub is not None and self._node is not None:
                 self._node.destroy_subscription(self._color_sub)

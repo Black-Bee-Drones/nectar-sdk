@@ -52,7 +52,7 @@ from mirela_sdk.vision.nodes import (
     ArucoNode,
     ColorCalibrationNode,
     LineDetectionNode,
-    WebcamPublisher,
+    WebcamPublisherNode,
 )
 
 __all__ = [
@@ -99,5 +99,5 @@ __all__ = [
     "ArucoNode",
     "ColorCalibrationNode",
     "LineDetectionNode",
-    "WebcamPublisher",
+    "WebcamPublisherNode",
 ]

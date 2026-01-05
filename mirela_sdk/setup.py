@@ -17,12 +17,8 @@ setup(
             glob(os.path.join("launch", "*launch.[pxy][yma]*")),
         ),
         (
-            os.path.join("share", package_name, "config"),
-            glob(os.path.join("config", "*.yaml")),
-        ),
-        (
-            os.path.join("share", package_name, "config", "mavros"),
-            glob(os.path.join("config", "mavros", "*.yaml")),
+            os.path.join("share", package_name, "control", "config"),
+            glob(os.path.join("control", "config", "*.yaml")),
         ),
     ],
     install_requires=["setuptools"],
@@ -34,17 +30,17 @@ setup(
     entry_points={
         "console_scripts": [
             "gui = mirela_sdk.interface.gui:main",
-            "aruco_node = mirela_sdk.image_processing.aruco.aruco_node:main",
-            "test_velocity = mirela_sdk.examples.test_velocity:main",
-            "test_gps = mirela_sdk.examples.test_gps:main",
-            "camera_example = mirela_sdk.examples.camera_example:main",
-            "depth_example = mirela_sdk.examples.depth_example:main",
-            "yolo_example = mirela_sdk.examples.yolo_example:main",
-            "color_calibration_node = mirela_sdk.image_processing.color.color_calibration_node:main",
-            "click_color_calibration_node = mirela_sdk.image_processing.color.click_color_calibration_node:main",
-            "camera_calibration = mirela_sdk.image_processing.camera.calibration.calibration:main",
-            "line_detection_node = mirela_sdk.image_processing.line.line_detection_node:main",
-            "webcam_publisher = mirela_sdk.image_processing.camera.webcam_publisher_node:main",
+            # vision
+            "aruco_node = mirela_sdk.vision.nodes.aruco_node:main",
+            "color_calibration_node = mirela_sdk.vision.nodes.color_calibration_node:main",
+            "click_color_calibration_node = mirela_sdk.vision.nodes.click_color_calibration_node:main",
+            "camera_calibration = mirela_sdk.vision.camera.calibration.calibration:main",
+            "line_detection_node = mirela_sdk.vision.nodes.line_detection_node:main",
+            "webcam_publisher = mirela_sdk.vision.nodes.webcam_publisher_node:main",
+            "camera_example = mirela_sdk.examples.vision.camera_example:main",
+            "depth_example = mirela_sdk.examples.vision.depth_example:main",
+            "yolo_example = mirela_sdk.examples.vision.yolo_example:main",
+            # control
             "pid_controller_node = mirela_sdk.control.pid.pid_node:main",
         ],
     },

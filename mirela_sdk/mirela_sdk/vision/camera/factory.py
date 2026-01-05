@@ -28,10 +28,29 @@ from mirela_sdk.vision.camera.config import (
 
 
 class CameraFactory:
+    """
+    Factory for creating camera instances from source identifiers.
+
+    Attributes
+    ----------
+    _builders : dict
+        Registry mapping source keys to camera classes.
+    """
+
     _builders: Dict[str, Type[AbstractCam]] = {}
 
     @classmethod
     def register(cls, key: str, builder: Type[AbstractCam]) -> None:
+        """
+        Register a camera class with a source key.
+
+        Parameters
+        ----------
+        key : str
+            Source identifier (case-insensitive).
+        builder : Type[AbstractCam]
+            Camera class to instantiate for this key.
+        """
         cls._builders[key.lower()] = builder
 
     @classmethod
@@ -42,6 +61,34 @@ class CameraFactory:
         config: Optional[CameraConfig] = None,
         node: Optional[Node] = None,
     ) -> AbstractCam:
+        """
+        Create camera instance from source identifier.
+
+        Automatically detects source type:
+        - File path: creates FileImageCam
+        - ROS topic (starts with '/'): creates ROSCam
+        - Registered key: creates corresponding camera
+
+        Parameters
+        ----------
+        source : str
+            Source identifier. Can be file path, ROS topic, or
+            registered key ('webcam', 'realsense', 'c920', etc.).
+        config : CameraConfig, optional
+            Camera configuration. Auto-generated if not provided.
+        node : Node, optional
+            ROS2 node required for ROSCam and RealsenseCam with ROS topics.
+
+        Returns
+        -------
+        AbstractCam
+            Configured camera instance ready for start().
+
+        Raises
+        ------
+        ValueError
+            If source type is unknown or config type mismatches.
+        """
         if os.path.isfile(source):
             return FileImageCam(config or FileImageConfig(path=source))
 
