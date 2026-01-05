@@ -29,6 +29,8 @@ class OpenCVConfig(CameraConfig):
     fourcc: Optional[str] = "MJPG"
     autofocus: Optional[bool] = None
     focus: Optional[int] = None
+    buffer_size: Optional[int] = 2
+    threaded: bool = True
 
 
 @dataclass(frozen=True)

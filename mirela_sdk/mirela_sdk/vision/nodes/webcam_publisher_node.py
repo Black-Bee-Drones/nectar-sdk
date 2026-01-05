@@ -1,256 +1,223 @@
 #!/usr/bin/env python3
+import time
+import cv2
+from cv_bridge import CvBridge
+
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CompressedImage
-from cv_bridge import CvBridge
-import cv2
-import os
-import threading
-import queue
-import time
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+from sensor_msgs.msg import Image, CompressedImage
+
+from mirela_sdk.vision.camera.handler import ImageHandler
+from mirela_sdk.vision.camera.config import OpenCVConfig
+from mirela_sdk.vision.camera.drivers.opencv_cam import OpenCVCam
 
 
-class WebcamPublisher(Node):
+class WebcamPublisherNode(Node):
     """
-    High-performance webcam publisher with low-latency optimizations.
+    Webcam image publisher node using ImageHandler.
+
+    Captures frames from a webcam via ImageHandler and publishes them to ROS topics.
+
+    Parameters (ROS)
+    ----------------
+    camera_index : int
+        Webcam device index (default: 0).
+    fps : int
+        Target frames per second (default: 30).
+    width : int
+        Frame width in pixels (default: 640).
+    height : int
+        Frame height in pixels (default: 480).
+    use_compression : bool
+        Publish compressed JPEG images (default: True).
+    jpeg_quality : int
+        JPEG compression quality 0-100 (default: 80).
+    log_fps_interval : float
+        Interval in seconds to log FPS statistics (default: 5.0, 0 to disable).
+    buffer_size : int
+        Camera buffer size 1-10 (default: 2). Buffer=1 can cause frame drops
+        on some cameras. Buffer=2 provides good latency with stable FPS.
+    threaded : bool
+        Use background thread for capture (default: True).
+        Threaded mode provides more consistent FPS.
+
+    Publishes
+    ---------
+    image_raw/compressed : CompressedImage
+        Compressed JPEG image (if use_compression=True).
+    image_raw : Image
+        Raw BGR image (if use_compression=False).
+
+    Notes
+    -----
+    Use v4l2-ctl to check supported modes: `v4l2-ctl -d /dev/video0 --list-formats-ext`
     """
 
     def __init__(self):
         super().__init__("webcam_publisher")
 
+        self.declare_parameter("camera_index", 0)
         self.declare_parameter("fps", 30)
         self.declare_parameter("width", 640)
         self.declare_parameter("height", 480)
-        self.declare_parameter("buffer_size", 1)
         self.declare_parameter("use_compression", True)
         self.declare_parameter("jpeg_quality", 80)
-        self.declare_parameter("use_threading", True)
-        self.declare_parameter("camera_index", 0)
+        self.declare_parameter("log_fps_interval", 5.0)
+        self.declare_parameter("buffer_size", 2)
+        self.declare_parameter("threaded", True)
 
-        # Get parameters
-        self.fps = self.get_parameter("fps").get_parameter_value().integer_value
-        self.width = self.get_parameter("width").get_parameter_value().integer_value
-        self.height = self.get_parameter("height").get_parameter_value().integer_value
-        self.buffer_size = (
-            self.get_parameter("buffer_size").get_parameter_value().integer_value
-        )
-        self.use_compression = (
-            self.get_parameter("use_compression").get_parameter_value().bool_value
-        )
-        self.jpeg_quality = (
-            self.get_parameter("jpeg_quality").get_parameter_value().integer_value
-        )
-        self.use_threading = (
-            self.get_parameter("use_threading").get_parameter_value().bool_value
-        )
-        self.camera_index = (
-            self.get_parameter("camera_index").get_parameter_value().integer_value
-        )
+        self.camera_index = self.get_parameter("camera_index").value
+        self.fps = self.get_parameter("fps").value
+        self.width = self.get_parameter("width").value
+        self.height = self.get_parameter("height").value
+        self.use_compression = self.get_parameter("use_compression").value
+        self.jpeg_quality = self.get_parameter("jpeg_quality").value
+        self.log_fps_interval = self.get_parameter("log_fps_interval").value
+        self.buffer_size = min(max(self.get_parameter("buffer_size").value, 1), 10)
+        self.threaded = self.get_parameter("threaded").value
 
-        # Configure QoS for low latency
+        self._is_shutdown = False
+
         qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,  
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1,  
+            depth=1,
             durability=DurabilityPolicy.VOLATILE,
         )
 
-        # Create publishers
         if self.use_compression:
-            self.publisher_ = self.create_publisher(
+            self.publisher = self.create_publisher(
                 CompressedImage, "image_raw/compressed", qos_profile
             )
         else:
-            self.publisher_ = self.create_publisher(Image, "image_raw", qos_profile)
+            self.publisher = self.create_publisher(Image, "image_raw", qos_profile)
 
         self.bridge = CvBridge()
+        self.jpeg_params = (cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality)
 
-        self.cap = self._initialize_camera()
+        self._frame_count = 0
+        self._fps_start_time = time.time()
+        self._current_fps = 0.0
 
-        if self.cap is None:
-            self.get_logger().error("Failed to initialize camera")
-            rclpy.shutdown()
-            return
-
-        # Threading setup
-        if self.use_threading:
-            self.frame_queue = queue.Queue(maxsize=2)  # Small buffer to try reduce latency
-            self.capture_thread = threading.Thread(
-                target=self._capture_frames, daemon=True
-            )
-            self.capture_thread.start()
-
-            timer_period = 1.0 / self.fps
-            self.timer = self.create_timer(timer_period, self._publish_frame_threaded)
-        else:
-            # Single-threaded mode
-            timer_period = 1.0 / self.fps
-            self.timer = self.create_timer(timer_period, self._publish_frame_direct)
-
-        self.frame_count = 0
-        self.last_fps_time = time.time()
-        self.fps_counter = 0
-
-        self.jpeg_params = [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
-
-        self.get_logger().info(
-            f"Optimized Webcam Publisher started - FPS: {self.fps}, "
-            f"Resolution: {self.width}x{self.height}, "
-            f"Compression: {self.use_compression}, "
-            f"Threading: {self.use_threading}"
+        config = OpenCVConfig(
+            name="webcam",
+            device_index=self.camera_index,
+            width=self.width,
+            height=self.height,
+            fps=self.fps,
+            fourcc="MJPG",
+            buffer_size=self.buffer_size,
+            threaded=self.threaded,
         )
 
-    def _initialize_camera(self):
-        # Try different camera indices
-        camera_indices_to_try = [self.camera_index, 0, 1, 2]
-        cap = None
+        self.camera = OpenCVCam(config)
+        self.camera.start()
 
-        for index in camera_indices_to_try:
-            if os.path.exists(f"/dev/video{index}"):
-                cap = cv2.VideoCapture(
-                    index, cv2.CAP_V4L2
-                )  # Use V4L2 backend 
+        actual = self.camera.actual_settings
+        self.get_logger().info(
+            f"Camera: {actual['width']}x{actual['height']} @ {actual['fps']:.1f}fps, "
+            f"fourcc={actual['fourcc']}, buffer={actual['buffer_size']}, "
+            f"threaded={actual['threaded']}"
+        )
 
-                if cap.isOpened():
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                    cap.set(cv2.CAP_PROP_FPS, self.fps)
-                    cap.set(
-                        cv2.CAP_PROP_BUFFERSIZE, self.buffer_size
-                    )  # Minimize buffer
+        if actual["fps"] < self.fps:
+            self.get_logger().warn(
+                f"Camera FPS ({actual['fps']:.1f}) is lower than requested ({self.fps}). "
+                "This is a hardware/driver limitation."
+            )
 
-                    cap.set(
-                        cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
-                    )  # MJPEG for better performance
-                    cap.set(
-                        cv2.CAP_PROP_AUTO_EXPOSURE, 0.25
-                    )  # Disable auto exposure for consistent timing
+        poll_interval = 0.001 if self.threaded else 1.0 / max(actual["fps"], 1)
+        # Frame timeout: how long to wait for a new frame in threaded mode
+        frame_timeout = 2.0 / max(actual["fps"], 1)  # 2x frame interval
+        self.image_handler = ImageHandler(
+            node=self,
+            image_source="webcam",
+            image_processing_callback=self._publish_frame,
+            config=config,
+            camera=self.camera,
+            poll_interval=poll_interval,
+            frame_timeout=frame_timeout,
+        )
 
-                    actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-                    actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+        self.image_handler.run()
 
-                    self.get_logger().info(
-                        f"Camera {index} initialized - "
-                        f"Resolution: {actual_width}x{actual_height}, "
-                        f"FPS: {actual_fps}"
-                    )
-                    return cap
-                else:
-                    if cap:
-                        cap.release()
+        if self.log_fps_interval > 0:
+            self.fps_timer = self.create_timer(
+                self.log_fps_interval, self._log_fps_stats
+            )
 
-        return None
+        self.get_logger().info(
+            f"Webcam publisher started - camera: {self.camera_index}, "
+            f"target fps: {self.fps}, resolution: {self.width}x{self.height}, "
+            f"compression: {self.use_compression}"
+        )
 
-    def _capture_frames(self):
-        """Continuous frame capture in separate thread."""
-        while rclpy.ok() and self.cap and self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if ret:
-                # Clear old frames to maintain low latency
-                try:
-                    while not self.frame_queue.empty():
-                        self.frame_queue.get_nowait()
-                except queue.Empty:
-                    pass
+    def _publish_frame(self, frame) -> None:
+        """
+        Process and publish a single frame.
 
-                # Add new frame
-                try:
-                    self.frame_queue.put_nowait(frame)
-                except queue.Full:
-                    pass  # Drop frame if queue is full
-            else:
-                time.sleep(0.001)  # Small delay on capture failure
-
-    def _publish_frame_threaded(self):
-        """Publish frame from queue (threaded mode)."""
-        try:
-            frame = self.frame_queue.get_nowait()
-            self._process_and_publish_frame(frame)
-        except queue.Empty:
-            # No frame available, skip this cycle
-            pass
-
-    def _publish_frame_direct(self):
-        """Capture and publish frame directly (single-threaded mode)."""
-        if self.cap is None or not self.cap.isOpened():
+        Parameters
+        ----------
+        frame : np.ndarray
+            BGR image frame from camera.
+        """
+        if frame is None:
             return
 
-        ret, frame = self.cap.read()
-        if ret:
-            self._process_and_publish_frame(frame)
+        timestamp = self.get_clock().now().to_msg()
 
-    def _process_and_publish_frame(self, frame):
-        """Process and publish a frame with optimizations."""
-        try:
-            current_time = self.get_clock().now().to_msg()
+        if self.use_compression:
+            _, compressed = cv2.imencode(".jpg", frame, self.jpeg_params)
+            msg = CompressedImage()
+            msg.header.stamp = timestamp
+            msg.header.frame_id = "camera"
+            msg.format = "jpeg"
+            msg.data = compressed.tobytes()
+        else:
+            msg = self.bridge.cv2_to_imgmsg(frame, "bgr8")
+            msg.header.stamp = timestamp
+            msg.header.frame_id = "camera"
 
-            if self.use_compression:
-                # Compress image 
-                _, compressed_data = cv2.imencode(".jpg", frame, self.jpeg_params)
+        self.publisher.publish(msg)
+        self._frame_count += 1
 
-                # Create compressed image message
-                compressed_msg = CompressedImage()
-                compressed_msg.header.stamp = current_time
-                compressed_msg.header.frame_id = "camera_frame"
-                compressed_msg.format = "jpeg"
-                compressed_msg.data = compressed_data.tobytes()
+    def _log_fps_stats(self) -> None:
+        """Log FPS statistics periodically."""
+        elapsed = time.time() - self._fps_start_time
+        if elapsed > 0:
+            self._current_fps = self._frame_count / elapsed
+            self.get_logger().info(
+                f"FPS: {self._current_fps:.1f} "
+                f"(frames: {self._frame_count}, elapsed: {elapsed:.1f}s)"
+            )
+        self._frame_count = 0
+        self._fps_start_time = time.time()
 
-                self.publisher_.publish(compressed_msg)
-            else:
-                # Publish uncompressed image
-                ros_image = self.bridge.cv2_to_imgmsg(frame, "bgr8")
-                ros_image.header.stamp = current_time
-                ros_image.header.frame_id = "camera_frame"
-                self.publisher_.publish(ros_image)
-
-            # Performance monitoring
-            self._update_fps_counter()
-
-        except Exception as e:
-            self.get_logger().warn(f"Error processing frame: {e}")
-
-    def _update_fps_counter(self):
-        """Monitor actual FPS performance."""
-        self.fps_counter += 1
-        current_time = time.time()
-
-        if current_time - self.last_fps_time >= 5.0:  # Report every 5 seconds
-            actual_fps = self.fps_counter / (current_time - self.last_fps_time)
-            self.get_logger().info(f"Actual FPS: {actual_fps:.1f}")
-            self.fps_counter = 0
-            self.last_fps_time = current_time
-
-    def destroy_node(self):
-        """Cleanup resources."""
-        self.get_logger().info("Shutting down Optimized Webcam Publisher node.")
-
-        if hasattr(self, "capture_thread") and self.capture_thread.is_alive():
-            # Signal thread to stop and wait
-            self.capture_thread.join(timeout=1.0)
-
-        if self.cap is not None and self.cap.isOpened():
-            self.cap.release()
-            self.get_logger().info("Camera released.")
-
-        super().destroy_node()
+    def cleanup(self) -> None:
+        """Release camera resources."""
+        if self._is_shutdown:
+            return
+        self._is_shutdown = True
+        self.image_handler.cleanup()
+        self.get_logger().info("Webcam publisher stopped")
 
 
-def main(args=None):
+def main(args=None) -> None:
+    """Entry point for webcam publisher node."""
     rclpy.init(args=args)
 
+    node = WebcamPublisherNode()
+
     try:
-        webcam_publisher = WebcamPublisher()
-        rclpy.spin(webcam_publisher)
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        print(f"Unhandled exception: {e}")
     finally:
-        if "webcam_publisher" in locals():
-            webcam_publisher.destroy_node()
-        rclpy.shutdown()
+        node.cleanup()
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
