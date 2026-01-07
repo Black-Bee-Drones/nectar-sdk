@@ -2,403 +2,376 @@
 import os
 import json
 import sys
+from typing import Optional, List
 
 import cv2
-import cvzone
 import numpy as np
 
 import rclpy
 from rclpy.node import Node
 
 from mirela_sdk.vision.camera import ImageHandler
-from mirela_sdk.vision.algorithms.color import ColorDetector, ColorSpace
+from mirela_sdk.vision.algorithms.color import ColorSpace
 
 
 class ClickColorCalibrationNode(Node):
     """
-    Interactive color calibration node with click-based sampling.
+    Interactive color calibration with click-based sampling.
 
-    Combines click-to-sample color detection with trackbar-based fine-tuning.
-    Click on regions to sample colors, then adjust thresholds with trackbars.
+    Click on colored regions to sample pixels and automatically compute
+    HSV/LAB thresholds. Trackbars allow fine-tuning of calculated values.
 
     Parameters
     ----------
     image_source : str, optional
-        Camera source identifier. Default from ROS parameter.
+        Camera source identifier.
     color_space : str, optional
-        Color space to use ("hsv" or "lab"). Default is "hsv".
+        Color space ("hsv" or "lab").
 
     Notes
     -----
-    Keyboard controls:
-    - 'q': Exit node
-    - 'r': Reset all samples and thresholds
-    - 'z': Undo last click sample
-    - 's': Save current calibration to file
-    - 'p': Load calibration from file
-    - 'c': Switch between HSV and LAB color spaces
-
-    Mouse controls:
-    - Left click: Sample color region using flood fill
+    Mouse: Left-click to sample color region
+    Keys: q=quit, r=reset, z=undo, s=save, l=load, c=switch color space
     """
+
+    TRACKBAR_CONFIG = {
+        ColorSpace.HSV: {
+            "convert": cv2.COLOR_BGR2HSV,
+            "names": ["H min", "H max", "S min", "S max", "V min", "V max"],
+            "max": [179, 179, 255, 255, 255, 255],
+            "init": [0, 179, 0, 255, 0, 255],
+        },
+        ColorSpace.LAB: {
+            "convert": cv2.COLOR_BGR2LAB,
+            "names": ["L min", "L max", "A min", "A max", "B min", "B max"],
+            "max": [255, 255, 255, 255, 255, 255],
+            "init": [0, 255, 0, 255, 0, 255],
+        },
+    }
 
     def __init__(self, image_source: str = None, color_space: str = "hsv"):
         super().__init__("click_color_calibration")
 
-        # ROS parameters
         self.declare_parameter("image_source", "webcam")
         self.declare_parameter("color_space", "hsv")
-        self.declare_parameter("tolerance", 20)
-        self.declare_parameter("coverage", 90)
+        self.declare_parameter("flood_tolerance", 15)
 
         if image_source is None:
             image_source = self.get_parameter("image_source").value
-        color_space_param = self.get_parameter("color_space").value
-        if color_space_param:
-            color_space = color_space_param
+        cs_param = self.get_parameter("color_space").value
+        if cs_param:
+            color_space = cs_param
 
-        self.tolerance = self.get_parameter("tolerance").value
-        self.coverage = self.get_parameter("coverage").value
-
+        self.flood_tolerance = self.get_parameter("flood_tolerance").value
         self.color_space = (
             ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
         )
+        self.config = self.TRACKBAR_CONFIG[self.color_space]
 
-        self.seed_points = []
-        self.all_pixels = []
-        self.active_mask = False
-
-        self.color_detector = ColorDetector("track", color_space=self.color_space)
-        self.trackbars_initialized = False
+        self.sampled_pixels: List[np.ndarray] = []
+        self.pending_clicks: List[tuple] = []
+        self.lower = np.array(self.config["init"][::2])
+        self.upper = np.array(self.config["init"][1::2])
 
         self.file_path = os.path.join(
             os.path.dirname(os.path.realpath(__file__)), "color_calibration.json"
         )
+        self.window_initialized = False
 
         self.image_handler = ImageHandler(
             node=self,
             image_source=image_source,
-            image_processing_callback=self._process_frame,
+            image_processing_callback=self._process,
         )
 
+        self.get_logger().info(f"Click calibration: {self.color_space.name} mode")
         self.get_logger().info(
-            f"Click color calibration initialized with {self.color_space.name} color space"
+            "Click to sample | r=reset z=undo s=save l=load c=switch q=quit"
         )
-        self.get_logger().info(
-            "Controls: click=sample, r=reset, z=undo, s=save, p=load, c=switch color space, q=quit"
-        )
-
         self.image_handler.run()
 
-    def _mouse_callback(
-        self, event: int, x: int, y: int, flags: int, param  # noqa: ARG002
-    ) -> None:
-        """Handle mouse click events for color sampling."""
-        del flags, param  
-        if event == cv2.EVENT_LBUTTONDOWN: 
-            self.seed_points.append((x, y))
+    def _mouse_cb(self, event: int, x: int, y: int, flags: int, param) -> None:
+        del flags, param
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.pending_clicks.append((x, y))
 
-    def _init_windows(self) -> None:
-        """Initialize OpenCV windows with trackbars and mouse callback."""
-        cv2.namedWindow("Frame")
-        cv2.setMouseCallback("Frame", self._mouse_callback)
+    def _init_window(self) -> None:
+        cv2.namedWindow("Calibration")
+        cv2.setMouseCallback("Calibration", self._mouse_cb)
 
-        cv2.createTrackbar("Coverage %", "Frame", self.coverage, 100, lambda x: None)
-        cv2.createTrackbar("Tolerance", "Frame", self.tolerance, 50, lambda x: None)
+        cv2.createTrackbar(
+            "Tolerance", "Calibration", self.flood_tolerance, 50, lambda x: None
+        )
 
-        self.color_detector.initTrackbars()
-        self.trackbars_initialized = True
+        for i, name in enumerate(self.config["names"]):
+            init_val = self.config["init"][i]
+            cv2.createTrackbar(
+                name, "Calibration", init_val, self.config["max"][i], lambda x: None
+            )
 
-    def _update_threshold_from_samples(self) -> None:
-        """Calculate color thresholds from sampled pixels."""
-        if not self.all_pixels:
-            self.active_mask = False
-            self.get_logger().warn("No samples available. Mask disabled.")
-            return
+        self.window_initialized = True
 
-        combined = np.vstack(self.all_pixels)
-        coverage = cv2.getTrackbarPos("Coverage %", "Frame") / 100.0
+    def _get_trackbar_values(self) -> tuple:
+        names = self.config["names"]
+        lower = np.array(
+            [
+                cv2.getTrackbarPos(names[0], "Calibration"),
+                cv2.getTrackbarPos(names[2], "Calibration"),
+                cv2.getTrackbarPos(names[4], "Calibration"),
+            ],
+            dtype=np.uint8,
+        )
+        upper = np.array(
+            [
+                cv2.getTrackbarPos(names[1], "Calibration"),
+                cv2.getTrackbarPos(names[3], "Calibration"),
+                cv2.getTrackbarPos(names[5], "Calibration"),
+            ],
+            dtype=np.uint8,
+        )
+        return lower, upper
 
-        lower = []
-        upper = []
-        for i in range(3):
-            channel = np.sort(combined[:, i])
-            n = len(channel)
-            low_idx = int((1 - coverage) / 2 * n)
-            high_idx = int((1 + coverage) / 2 * n) - 1
-            lower.append(int(channel[low_idx]))
-            upper.append(int(channel[high_idx]))
-
-        # Update color detector with sampled values
-        self.color_detector.color_values = [lower, upper]
-        self._update_trackbars_from_values(lower, upper)
-        self.active_mask = True
-
-        self.get_logger().info(f"Updated thresholds: lower={lower}, upper={upper}")
-
-    def _update_trackbars_from_values(self, lower: list, upper: list) -> None:
-        """Sync trackbar positions with calculated values."""
-        config = self.color_detector.color_space_config[self.color_space]
-        tb_names = config["trackbar_names"]
-        window_name = f"{self.color_space.name}_TrackBars"
-
+    def _set_trackbar_values(self, lower: np.ndarray, upper: np.ndarray) -> None:
+        names = self.config["names"]
         try:
-            cv2.setTrackbarPos(tb_names[0], window_name, lower[0])
-            cv2.setTrackbarPos(tb_names[1], window_name, upper[0])
-            cv2.setTrackbarPos(tb_names[2], window_name, lower[1])
-            cv2.setTrackbarPos(tb_names[3], window_name, upper[1])
-            cv2.setTrackbarPos(tb_names[4], window_name, lower[2])
-            cv2.setTrackbarPos(tb_names[5], window_name, upper[2])
+            cv2.setTrackbarPos(names[0], "Calibration", int(lower[0]))
+            cv2.setTrackbarPos(names[1], "Calibration", int(upper[0]))
+            cv2.setTrackbarPos(names[2], "Calibration", int(lower[1]))
+            cv2.setTrackbarPos(names[3], "Calibration", int(upper[1]))
+            cv2.setTrackbarPos(names[4], "Calibration", int(lower[2]))
+            cv2.setTrackbarPos(names[5], "Calibration", int(upper[2]))
         except cv2.error:
             pass
 
-    def _process_seed_points(self, converted_img: np.ndarray) -> None:
-        """Process pending seed points using flood fill."""
-        tolerance = cv2.getTrackbarPos("Tolerance", "Frame")
+    def _sample_region(
+        self, img_converted: np.ndarray, point: tuple
+    ) -> Optional[np.ndarray]:
+        """Sample pixels around click point using flood fill."""
+        h, w = img_converted.shape[:2]
+        x, y = point
+        if not (0 <= x < w and 0 <= y < h):
+            return None
 
-        for point in self.seed_points:
-            mask = np.zeros(
-                (converted_img.shape[0] + 2, converted_img.shape[1] + 2), np.uint8
-            )
-            lo = (tolerance, tolerance, tolerance)
-            hi = (tolerance, tolerance, tolerance)
+        tol = cv2.getTrackbarPos("Tolerance", "Calibration")
+        mask = np.zeros((h + 2, w + 2), np.uint8)
 
-            img_copy = converted_img.copy()
-            cv2.floodFill(
-                img_copy,
-                mask,
-                point,
-                (0, 0, 0),
-                lo,
-                hi,
-                flags=cv2.FLOODFILL_FIXED_RANGE,
-            )
-            mask = mask[1:-1, 1:-1]
+        cv2.floodFill(
+            img_converted.copy(),
+            mask,
+            (x, y),
+            255,
+            (tol, tol, tol),
+            (tol, tol, tol),
+            cv2.FLOODFILL_MASK_ONLY | cv2.FLOODFILL_FIXED_RANGE,
+        )
 
-            pixels = converted_img[mask == 1]
-            if len(pixels) > 0:
-                self.all_pixels.append(pixels)
-                self.get_logger().debug(f"Sampled {len(pixels)} pixels at {point}")
+        region_mask = mask[1:-1, 1:-1]
+        pixels = img_converted[region_mask == 1]
 
-        self.seed_points.clear()
-        self._update_threshold_from_samples()
+        if len(pixels) == 0:
+            return None
 
-    def _process_frame(self, img: np.ndarray) -> None:
-        """
-        Process frame for color calibration.
+        return pixels
 
-        Parameters
-        ----------
-        img : np.ndarray
-            Input BGR image from camera.
-        """
+    def _compute_bounds(self) -> None:
+        """Compute lower/upper bounds from all sampled pixels."""
+        if not self.sampled_pixels:
+            return
+
+        all_pixels = np.vstack(self.sampled_pixels)
+
+        margins = [5, 15, 15] if self.color_space == ColorSpace.HSV else [10, 10, 10]
+        maxes = self.config["max"][1::2]
+
+        lower = []
+        upper = []
+        for ch in range(3):
+            ch_data = all_pixels[:, ch]
+            lo = max(0, int(np.percentile(ch_data, 2)) - margins[ch])
+            hi = min(maxes[ch], int(np.percentile(ch_data, 98)) + margins[ch])
+            lower.append(lo)
+            upper.append(hi)
+
+        self.lower = np.array(lower, dtype=np.uint8)
+        self.upper = np.array(upper, dtype=np.uint8)
+        self._set_trackbar_values(self.lower, self.upper)
+
+        self.get_logger().info(f"Bounds: {self.lower.tolist()} - {self.upper.tolist()}")
+
+    def _process(self, img: np.ndarray) -> None:
         if img is None:
             return
 
-        if not self.trackbars_initialized:
-            self._init_windows()
+        if not self.window_initialized:
+            self._init_window()
 
-        display = img.copy()
-        config = self.color_detector.color_space_config[self.color_space]
-        converted_img = cv2.cvtColor(img, config["convert_func"])
+        converted = cv2.cvtColor(img, self.config["convert"])
 
-        # Process any pending click samples
-        if self.seed_points:
-            self._process_seed_points(converted_img)
+        for click in self.pending_clicks:
+            pixels = self._sample_region(converted, click)
+            if pixels is not None and len(pixels) > 10:
+                self.sampled_pixels.append(pixels)
+                self._compute_bounds()
+                self.get_logger().debug(f"Sampled {len(pixels)} pixels at {click}")
+        self.pending_clicks.clear()
 
-        # Get current values from trackbars (allows manual adjustment)
-        self.color_detector.color_values = self.color_detector.getTrackValues()
+        self.lower, self.upper = self._get_trackbar_values()
 
-        # Apply color filter
-        if self.color_detector.color_values is not None:
-            self.color_detector.filterColor(img)
-            mask = self.color_detector.mask
-            result = self.color_detector.result
-        else:
-            mask = np.zeros(img.shape[:2], dtype=np.uint8)
-            result = img.copy()
+        mask = cv2.inRange(converted, self.lower, self.upper)
 
-        # Display stacked view
-        stacked = cvzone.stackImages([display, mask, result], 3, 0.7)
-        cv2.imshow("Frame", stacked)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-        self._handle_keyboard()
+        result = cv2.bitwise_and(img, img, mask=mask)
 
-    def _handle_keyboard(self) -> None:
-        """Handle keyboard input for controls."""
+        mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        display = np.hstack([img, mask_bgr, result])
+
+        info = f"{self.color_space.name} | Samples: {len(self.sampled_pixels)}"
+        cv2.putText(
+            display, info, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
+        )
+        cv2.putText(
+            display,
+            f"L: {self.lower.tolist()} U: {self.upper.tolist()}",
+            (10, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 255),
+            1,
+        )
+
+        cv2.imshow("Calibration", display)
+        self._handle_keys()
+
+    def _handle_keys(self) -> None:
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord("q"):
             self._cleanup()
-
         elif key == ord("r"):
             self._reset()
-
         elif key == ord("z"):
-            self._undo_last_sample()
-
+            self._undo()
         elif key == ord("s"):
-            self._save_calibration()
-
-        elif key == ord("p"):
-            self._load_calibration()
-
+            self._save()
+        elif key == ord("l"):
+            self._load()
         elif key == ord("c"):
             self._switch_color_space()
 
     def _reset(self) -> None:
-        """Reset all samples and thresholds."""
-        self.seed_points.clear()
-        self.all_pixels.clear()
-        self.active_mask = False
-        self.get_logger().info("Reset all samples and thresholds")
+        self.sampled_pixels.clear()
+        self.lower = np.array(self.config["init"][::2])
+        self.upper = np.array(self.config["init"][1::2])
+        self._set_trackbar_values(self.lower, self.upper)
+        self.get_logger().info("Reset")
 
-    def _undo_last_sample(self) -> None:
-        """Remove last sampled region."""
-        if self.all_pixels:
-            self.all_pixels.pop()
-            self._update_threshold_from_samples()
-            self.get_logger().info("Undid last sample")
-        else:
-            self.get_logger().warn("No samples to undo")
+    def _undo(self) -> None:
+        if self.sampled_pixels:
+            self.sampled_pixels.pop()
+            if self.sampled_pixels:
+                self._compute_bounds()
+            else:
+                self._reset()
+            self.get_logger().info(f"Undo - {len(self.sampled_pixels)} samples remain")
 
-    def _save_calibration(self) -> None:
-        """Save current calibration to JSON file."""
-        values = self.color_detector.color_values
-        if values is None:
-            self.get_logger().error("No calibration values to save")
-            return
-
-        color_name = input("Enter color name to save: ").strip()
+    def _save(self) -> None:
+        color_name = input("Color name: ").strip()
         if not color_name:
-            self.get_logger().error("Invalid color name")
             return
 
-        # Load existing data
         data = {}
         if os.path.exists(self.file_path):
             try:
                 with open(self.file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-            except json.JSONDecodeError:
-                self.get_logger().warn("Creating new calibration file")
+            except (json.JSONDecodeError, IOError):
+                pass
 
-        # Update with new values
         if color_name not in data:
             data[color_name] = {}
 
-        values_list = (
-            values.tolist()
-            if isinstance(values, np.ndarray)
-            else [list(v) for v in values]
-        )
-        data[color_name][self.color_space.name] = values_list
+        data[color_name][self.color_space.name] = [
+            self.lower.tolist(),
+            self.upper.tolist(),
+        ]
 
         with open(self.file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
-        self.get_logger().info(
-            f"Saved '{color_name}' {self.color_space.name} values to {self.file_path}"
-        )
+        self.get_logger().info(f"Saved '{color_name}' to {self.file_path}")
 
-    def _load_calibration(self) -> None:
-        """Load calibration from JSON file."""
+    def _load(self) -> None:
         if not os.path.exists(self.file_path):
-            self.get_logger().error(f"File not found: {self.file_path}")
+            self.get_logger().error("No calibration file")
             return
 
-        color_name = input("Enter color name to load: ").strip()
+        color_name = input("Color name: ").strip()
         if not color_name:
-            self.get_logger().error("Invalid color name")
             return
 
         try:
             with open(self.file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except json.JSONDecodeError:
-            self.get_logger().error("Invalid JSON file")
+        except (json.JSONDecodeError, IOError) as e:
+            self.get_logger().error(f"Load error: {e}")
             return
 
-        if color_name not in data:
-            self.get_logger().error(f"Color '{color_name}' not found")
-            return
-
-        color_data = data[color_name]
-        if self.color_space.name not in color_data:
+        if color_name not in data or self.color_space.name not in data[color_name]:
             self.get_logger().error(
-                f"No {self.color_space.name} values for '{color_name}'"
+                f"'{color_name}' not found for {self.color_space.name}"
             )
             return
 
-        values = color_data[self.color_space.name]
-        self.color_detector.color_values = values
-        self._update_trackbars_from_values(values[0], values[1])
-        self.all_pixels.clear()
-        self.active_mask = True
+        values = data[color_name][self.color_space.name]
+        self.lower = np.array(values[0], dtype=np.uint8)
+        self.upper = np.array(values[1], dtype=np.uint8)
+        self._set_trackbar_values(self.lower, self.upper)
+        self.sampled_pixels.clear()
 
         self.get_logger().info(
-            f"Loaded '{color_name}': lower={values[0]}, upper={values[1]}"
+            f"Loaded '{color_name}': {self.lower.tolist()} - {self.upper.tolist()}"
         )
 
     def _switch_color_space(self) -> None:
-        """Switch between HSV and LAB color spaces."""
         cv2.destroyAllWindows()
-        self.trackbars_initialized = False
+        self.window_initialized = False
+        self.sampled_pixels.clear()
 
-        if self.color_space == ColorSpace.HSV:
-            self.color_space = ColorSpace.LAB
-        else:
-            self.color_space = ColorSpace.HSV
+        self.color_space = (
+            ColorSpace.LAB if self.color_space == ColorSpace.HSV else ColorSpace.HSV
+        )
+        self.config = self.TRACKBAR_CONFIG[self.color_space]
+        self.lower = np.array(self.config["init"][::2])
+        self.upper = np.array(self.config["init"][1::2])
 
-        self.color_detector = ColorDetector("track", color_space=self.color_space)
-        self.all_pixels.clear()
-        self.active_mask = False
-
-        self.get_logger().info(f"Switched to {self.color_space.name} color space")
+        self.get_logger().info(f"Switched to {self.color_space.name}")
 
     def _cleanup(self) -> None:
-        """Clean up resources and exit."""
         self.image_handler.cleanup()
         cv2.destroyAllWindows()
-        self.get_logger().info("Exiting click color calibration node")
+        self.get_logger().info("Exiting")
         rclpy.shutdown()
         sys.exit(0)
 
 
 def main(args=None) -> None:
-    """
-    Entry point for click color calibration node.
-
-    CLI Arguments
-    -------------
-    --image-source : str
-        Image source (webcam, topic name, etc.).
-    --color-space : str
-        Color space to use (hsv or lab).
-    """
     rclpy.init(args=args)
 
     import argparse
 
-    parser = argparse.ArgumentParser(description="Click Color Calibration Node")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--image-source", type=str, default=None)
     parser.add_argument(
-        "--image-source",
-        type=str,
-        default=None,
-        help="Image source (webcam, topic name, etc.)",
+        "--color-space", type=str, default="hsv", choices=["hsv", "lab"]
     )
-    parser.add_argument(
-        "--color-space",
-        type=str,
-        default="hsv",
-        choices=["hsv", "lab"],
-        help="Color space to use",
-    )
-    parsed_args, _ = parser.parse_known_args(args=args)
+    parsed, _ = parser.parse_known_args(args=args)
 
     node = ClickColorCalibrationNode(
-        image_source=parsed_args.image_source,
-        color_space=parsed_args.color_space,
+        image_source=parsed.image_source,
+        color_space=parsed.color_space,
     )
 
     try:
