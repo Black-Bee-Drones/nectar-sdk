@@ -1,24 +1,284 @@
 # Vision Module
 
-Computer vision tools for camera management and image processing algorithms, built for the Mirela SDK.
+Camera abstraction layer and image processing algorithms for ROS2. Provides unified interface for multiple camera backends and computer vision pipelines.
 
-## Features
+## Documentation Index
 
-- **Multi-Camera Support**: Unified interface for webcams, RealSense, OAK-D, IMX219, and ROS topics
-- **Camera Calibration**: Chessboard-based calibration for accurate measurements
-- **ArUco Markers**: Detection and 6-DOF pose estimation
-- **Color Detection**: HSV/LAB color space filtering with calibration tools
-- **Line Detection**: Multiple estimation methods (Hough, RANSAC, ellipse fitting)
-- **Distance Estimation**: Pixel-to-distance conversion with multiple models
-- **ROS2 Integration**: Ready-to-use nodes for common vision tasks
+- **README.md**: This file - Architecture overview and quick start
+- **camera/**: Camera drivers and abstraction layer
+- **algorithms/**: Vision algorithms (markers, color, line, distance)
+- **nodes/**: ROS2 nodes for common vision tasks
+- **utils/**: Utility functions for image-based calculations
 
-## Quick Start
+## Architecture
 
-### Camera Usage
+```mermaid
+classDiagram
+    class CameraFactory {
+        <<singleton>>
+        -_builders Dict~str,Type~
+        +register(key, builder)$
+        +from_source(source, config, node)$ AbstractCam
+    }
+    
+    class AbstractCam {
+        <<abstract>>
+        -_name str
+        -_is_running bool
+        +name str
+        +is_running bool
+        +start()* 
+        +get_frame()* Optional~ndarray~
+        +close()*
+    }
+    
+    class DepthCam {
+        <<abstract>>
+        +get_depth_frame()* Optional~ndarray~
+        +get_distance(u, v)* Optional~float~
+    }
+    
+    class OpenCVCam {
+        -_cap VideoCapture
+        -_config OpenCVConfig
+        +actual_settings dict
+        +start()
+        +get_frame() Optional~ndarray~
+        +close()
+    }
+    
+    class RealsenseCam {
+        -_pipeline Pipeline
+        -_align Align
+        -_depth_scale float
+        -_use_ros_topics bool
+        +start()
+        +get_frame(wait_for_new, timeout) Optional~ndarray~
+        +get_depth_frame(wait_for_new, timeout) Optional~ndarray~
+        +get_distance(u, v) Optional~float~
+        +close()
+    }
+    
+    class OakdCam {
+        -_pipeline Pipeline
+        -_config OakDConfig
+        +start()
+        +get_frame() Optional~ndarray~
+        +get_depth_frame() Optional~ndarray~
+        +get_distance(u, v) Optional~float~
+        +close()
+    }
+    
+    class ROSCam {
+        -_node Node
+        -_subscriber Subscription
+        -_bridge CvBridge
+        +start()
+        +get_frame(wait_for_new, timeout) Optional~ndarray~
+        +close()
+    }
+    
+    class FileImageCam {
+        -_path str
+        -_image ndarray
+        +start()
+        +get_frame() Optional~ndarray~
+        +close()
+    }
+    
+    class C920Cam {
+        -_config C920Config
+        +start()
+        +get_frame() Optional~ndarray~
+        +close()
+    }
+    
+    class IMX219Cam {
+        -_config IMX219Config
+        +start()
+        +get_frame() Optional~ndarray~
+        +close()
+    }
+    
+    class ImageHandler {
+        -node Node
+        -image_source str
+        -img ndarray
+        -camera AbstractCam
+        -cam_timer Timer
+        -poll_interval float
+        +open()
+        +close()
+        +run()
+        +take_photo(timeout, wait_for_new) Any
+        +process()
+        +cleanup()
+    }
+    
+    AbstractCam <|-- DepthCam
+    AbstractCam <|-- OpenCVCam
+    AbstractCam <|-- ROSCam
+    AbstractCam <|-- FileImageCam
+    AbstractCam <|-- C920Cam
+    AbstractCam <|-- IMX219Cam
+    DepthCam <|-- RealsenseCam
+    DepthCam <|-- OakdCam
+    CameraFactory ..> AbstractCam : creates
+    ImageHandler o-- AbstractCam
+    ImageHandler o-- CameraFactory
+```
 
+### Configuration Classes
+
+```mermaid
+classDiagram
+    class CameraConfig {
+        <<dataclass>>
+        +name str
+    }
+    
+    class OpenCVConfig {
+        <<dataclass>>
+        +device_index int
+        +width Optional~int~
+        +height Optional~int~
+        +fps Optional~int~
+        +fourcc Optional~str~
+        +autofocus Optional~bool~
+        +focus Optional~int~
+        +buffer_size Optional~int~
+        +threaded bool
+    }
+    
+    class RealSenseConfig {
+        <<dataclass>>
+        +color_res Tuple~int,int~
+        +depth_res Tuple~int,int~
+        +fps int
+        +align_to_color bool
+        +enable_depth bool
+        +use_ros_topics bool
+        +color_topic str
+        +depth_topic str
+        +color_compressed bool
+        +depth_compressed bool
+    }
+    
+    class OakDConfig {
+        <<dataclass>>
+        +cam_num int
+        +enable_depth bool
+    }
+    
+    class ROSConfig {
+        <<dataclass>>
+        +topic str
+        +compressed bool
+    }
+    
+    class C920Config {
+        <<dataclass>>
+        +profile int
+        +fallback_device_index int
+    }
+    
+    class IMX219Config {
+        <<dataclass>>
+        +sensor_id int
+        +width int
+        +height int
+        +fps int
+        +flip int
+    }
+    
+    class FileImageConfig {
+        <<dataclass>>
+        +path str
+    }
+    
+    CameraConfig <|-- OpenCVConfig
+    CameraConfig <|-- RealSenseConfig
+    CameraConfig <|-- OakDConfig
+    CameraConfig <|-- ROSConfig
+    CameraConfig <|-- C920Config
+    CameraConfig <|-- IMX219Config
+    CameraConfig <|-- FileImageConfig
+```
+
+## Core Components
+
+### CameraFactory
+
+Creates camera instances from source identifiers. Auto-detects source type.
+
+**API**:
 ```python
-import rclpy
-from rclpy.node import Node
+CameraFactory.from_source(source: str, config: CameraConfig = None, node: Node = None) -> AbstractCam
+CameraFactory.register(key: str, builder: Type[AbstractCam])
+```
+
+**Registered Sources**:
+| Key | Camera Class | Description |
+|-----|--------------|-------------|
+| `webcam` | `OpenCVCam` | Generic USB webcams |
+| `opencv` | `OpenCVCam` | Alias for webcam |
+| `realsense` | `RealsenseCam` | Intel RealSense D4xx series |
+| `oakd` | `OakdCam` | Luxonis OAK-D cameras |
+| `c920` | `C920Cam` | Logitech C920/C920e |
+| `imx219` | `IMX219Cam` | Raspberry Pi Camera v2 (Jetson) |
+| `ros` | `ROSCam` | ROS2 image topics |
+| `file` | `FileImageCam` | Static image files |
+
+**Auto-detection**:
+- File paths → `FileImageCam`
+- Topics starting with `/` → `ROSCam`
+- Registered keys → Corresponding camera
+
+**Example**:
+```python
+from mirela_sdk.vision import CameraFactory, OpenCVConfig
+
+# Simple usage
+camera = CameraFactory.from_source("webcam")
+
+# With configuration
+config = OpenCVConfig(width=1280, height=720, fps=30)
+camera = CameraFactory.from_source("webcam", config=config)
+
+# From ROS topic
+camera = CameraFactory.from_source("/camera/image_raw", node=node)
+
+# From file
+camera = CameraFactory.from_source("/path/to/image.jpg")
+```
+
+### ImageHandler
+
+ROS2 timer-based camera interface. Creates `rclpy.Timer` for periodic frame polling and invokes callback on each frame. Handles OpenCV window display if `show_result` is set.
+
+**API**:
+```python
+ImageHandler(
+    node: Node,
+    image_source: str,
+    image_processing_callback: Callable = None,
+    show_result: str = None,             # OpenCV window name
+    config: CameraConfig = None,
+    camera: AbstractCam = None,          # Pre-configured camera
+    poll_interval: float = 0.01,         # Timer period (seconds)
+    frame_timeout: float = 0.1           # Frame wait timeout (async)
+)
+```
+
+**Methods**:
+- `run()`: Start continuous frame capture with timer
+- `open()`: Manual camera initialization
+- `close()`: Stop camera
+- `take_photo(timeout, wait_for_new)`: Single-shot capture
+- `cleanup()`: Release all resources
+
+**Example**:
+```python
 from mirela_sdk.vision import ImageHandler, OpenCVConfig
 
 class CameraNode(Node):
@@ -29,129 +289,457 @@ class CameraNode(Node):
             node=self,
             image_source="webcam",
             config=OpenCVConfig(width=1280, height=720),
+            image_processing_callback=self.process_frame,
             show_result="Camera View"
         )
         self.handler.run()
-
-rclpy.init()
-node = CameraNode()
-rclpy.spin(node)
+    
+    def process_frame(self, frame):
+        # Process each frame
+        detections = self.detector.detect(frame)
+        return detections
 ```
 
-### ArUco Detection
+### AbstractCam
 
+Base class for all camera drivers. Defines the camera interface contract.
+
+**Interface**:
 ```python
-from mirela_sdk.vision import Aruco, ImageHandler
-
-class ArucoDetector(Node):
-    def __init__(self):
-        super().__init__('aruco_detector')
-        
-        self.aruco = Aruco(marker_dict=5, tag_size=0.05)
-        
-        self.handler = ImageHandler(
-            node=self,
-            image_source="webcam",
-            image_processing_callback=self.process_frame
-        )
-        self.handler.run()
+class AbstractCam(ABC):
+    name: str                           # Camera identifier
+    is_running: bool                    # Capture status
     
-    def process_frame(self, image):
-        marker_id, translation, yaw = self.aruco.pose_estimate(image, draw=True)
-        if marker_id is not None:
-            self.get_logger().info(f"Detected marker {marker_id} at {translation}")
+    def start() -> None                 # Initialize camera
+    def get_frame() -> Optional[ndarray]  # Capture BGR frame
+    def close() -> None                 # Release resources
+```
+
+### DepthCam
+
+Extension for RGB-D cameras. Adds depth capture and distance measurement.
+
+**Additional Interface**:
+```python
+class DepthCam(AbstractCam):
+    def get_depth_frame() -> Optional[ndarray]  # Depth in meters (float32)
+    def get_distance(u: int, v: int) -> Optional[float]  # Distance at pixel
+```
+
+## Algorithms
+
+### Algorithm Architecture
+
+```mermaid
+classDiagram
+    class Aruco {
+        -camera_matrix ndarray
+        -camera_distortion ndarray
+        -aruco_detect Dictionary
+        -aruco_param DetectorParameters
+        +marker_dict int
+        +tag_size float
+        +detect(img, draw) tuple
+        +pose_estimate(img, draw) tuple
+        +calculateYawFromCorners(bbox) float
+        +aruco_config(marker_dict, tag_size)
+    }
+    
+    class ColorDetector {
+        -mode str
+        -color_space ColorSpace
+        -color_values list
+        +mask ndarray
+        +result ndarray
+        +initTrackbars()
+        +getTrackValues() list
+        +filterColor(img)
+        +get_color_values(color_name) list
+        +saveColorValues()
+    }
+    
+    class ColorSpace {
+        <<enumeration>>
+        HSV
+        LAB
+    }
+    
+    class ILineEstimationMethod {
+        <<abstract>>
+        +estimate(img_detect, img_out, offset, draw, draw_color)* tuple
+    }
+    
+    class HoughLinesP {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class RotatedRect {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class FitEllipse {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class RansacLine {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class AdaptiveHoughLinesP {
+        +estimate(img_detect, img_out, offset, draw, draw_color) tuple
+    }
+    
+    class LineDetector {
+        -color_detector ColorDetector
+        -estimation_method ILineEstimationMethod
+        -prev_angle float
+        +detect_line(img, region, draw, draw_color) tuple
+        +set_text_positions(positions_dict)
+    }
+    
+    ColorDetector --> ColorSpace
+    ILineEstimationMethod <|.. HoughLinesP
+    ILineEstimationMethod <|.. RotatedRect
+    ILineEstimationMethod <|.. FitEllipse
+    ILineEstimationMethod <|.. RansacLine
+    ILineEstimationMethod <|.. AdaptiveHoughLinesP
+    LineDetector o-- ColorDetector
+    LineDetector o-- ILineEstimationMethod
+```
+
+### ArUco Markers
+
+Detects ArUco markers using `cv2.aruco.ArucoDetector` and estimates 6-DOF pose via `cv2.aruco.estimatePoseSingleMarkers`. Requires camera intrinsic matrix from calibration.
+
+**API**:
+```python
+Aruco(marker_dict: int, tag_size: float)
+
+# Detection only
+bbox, marker_id = aruco.detect(img, draw=True)
+
+# Pose estimation (requires calibration)
+marker_id, translation, yaw = aruco.pose_estimate(img, draw=True)
+```
+
+**Parameters**:
+- `marker_dict`: Dictionary size (4, 5, 6, 7 for 4x4, 5x5, etc.)
+- `tag_size`: Physical marker size in meters
+
+**Returns** (pose_estimate):
+- `marker_id`: Detected marker ID or None
+- `translation`: [x, y, z] in meters (camera frame)
+- `yaw`: Marker rotation in degrees (0-360)
+
+**Example**:
+```python
+from mirela_sdk.vision import Aruco
+
+aruco = Aruco(marker_dict=5, tag_size=0.05)  # 5x5, 5cm
+
+while True:
+    frame = camera.get_frame()
+    marker_id, translation, yaw = aruco.pose_estimate(frame, draw=True)
+    
+    if marker_id is not None:
+        x, y, z = translation
+        print(f"Marker {marker_id}: x={x:.2f}m, y={y:.2f}m, z={z:.2f}m, yaw={yaw:.1f}°")
+```
+
+### Color Detection
+
+Color space filtering using `cv2.inRange()` with morphological operations (dilate, erode). Supports HSV (hue 0-179, saturation/value 0-255) and LAB (L 0-255, a/b 0-255) color spaces.
+
+**Modes**:
+- `track`: Interactive trackbar calibration
+- `preset`: Load pre-calibrated values from JSON
+
+**API**:
+```python
+ColorDetector(mode: str = "track", color: str = None, color_space: ColorSpace = ColorSpace.HSV)
+
+detector.filterColor(img)  # Updates detector.mask and detector.result
+detector.initTrackbars()   # Create calibration window (track mode)
+detector.saveColorValues() # Save calibration to JSON
+```
+
+**Example**:
+```python
+from mirela_sdk.vision import ColorDetector, ColorSpace
+
+# Calibration mode
+detector = ColorDetector(mode="track", color_space=ColorSpace.HSV)
+detector.initTrackbars()
+
+while True:
+    frame = camera.get_frame()
+    detector.filterColor(frame)
+    cv2.imshow("Mask", detector.mask)
+    
+    if cv2.waitKey(1) == ord('s'):
+        detector.saveColorValues()  # Prompts for color name
+
+# Preset mode
+detector = ColorDetector(mode="preset", color="red", color_space=ColorSpace.HSV)
+detector.filterColor(frame)
+mask = detector.mask
+```
+
+**Calibration File** (`color_calibration.json`):
+```json
+{
+    "red": {
+        "HSV": [[0, 100, 100], [10, 255, 255]],
+        "LAB": [[20, 150, 128], [255, 200, 200]]
+    },
+    "blue": {
+        "HSV": [[100, 100, 100], [130, 255, 255]]
+    }
+}
 ```
 
 ### Line Detection
 
-```python
-from mirela_sdk.vision import LineDetector, HoughLinesP, ColorSpace
+Color-based line detection using binary mask from `ColorDetector` + geometric estimation.
 
+**Estimation Methods**:
+| Method | Algorithm | When to Use |
+|--------|-----------|-------------|
+| `HoughLinesP` | `cv2.HoughLinesP` → `cv2.fitLine` on endpoints | Thin lines, multiple segments to merge |
+| `RotatedRect` | `cv2.minAreaRect` on largest contour | Thick continuous lines, single blob |
+| `FitEllipse` | `cv2.fitEllipse` on contour | Curved/arc-shaped lines |
+| `RansacLine` | `cv2.fitLine` with DIST_L2 on contour points | Noisy masks with outlier pixels |
+| `AdaptiveHoughLinesP` | HoughLinesP with threshold based on `mean + std` of mask | Varying illumination conditions |
+
+**API**:
+```python
+LineDetector(color: str, estimation_method: ILineEstimationMethod, color_space: ColorSpace = None)
+
+img, mask, cx, cy, angle, width, height = detector.detect_line(
+    img,
+    region=(400, 300),      # ROI size (0,0 for full image)
+    draw=True,
+    draw_color=(0, 255, 0)
+)
+```
+
+**Returns**:
+- `img`: Annotated image
+- `mask`: Binary region mask
+- `cx, cy`: Line center coordinates (pixels)
+- `angle`: Line angle in degrees (-90 to 90)
+- `width, height`: Average line dimensions (pixels)
+
+**Example**:
+```python
+from mirela_sdk.vision import LineDetector, HoughLinesP, RotatedRect, ColorSpace
+
+# Using Hough transform
 detector = LineDetector(
     color="blue",
     estimation_method=HoughLinesP,
     color_space=ColorSpace.HSV
 )
 
-result, mask, cx, cy, angle, width, height = detector.detect_line(image, draw=True)
+while True:
+    frame = camera.get_frame()
+    result, mask, cx, cy, angle, w, h = detector.detect_line(frame, draw=True)
+    
+    if not math.isnan(cx):
+        print(f"Line at ({cx:.0f}, {cy:.0f}), angle: {angle:.1f}°")
 ```
 
-## Module Structure
+### Distance Estimation
 
+Pixel measurement → real-world distance conversion using regression models. Requires calibration data: `(distance_cm, pixel_value)` pairs collected at known distances.
+
+**Distance Architecture**:
+
+```mermaid
+classDiagram
+    class DistanceEstimator {
+        -_params Dict
+        -_models Dict~ModelType,EstimationModel~
+        -_model_type ModelType
+        +model EstimationModel
+        +model_type ModelType
+        +estimate(value, model_type) float
+        +estimate_batch(values, model_type) ndarray
+        +compare_methods(value) Dict~str,float~
+        +get_model(model_type) EstimationModel
+        +set_model_params(model_type, params)
+        +available_methods()$ list
+    }
+    
+    class ModelCalibrator {
+        -pixels ndarray
+        -distances ndarray
+        -results Dict~ModelType,CalibrationResult~
+        +fit_model(model_type) CalibrationResult
+        +fit_all() Dict
+        +best_model(criterion) CalibrationResult
+        +save_params(path, default_method)
+        +print_results()
+        +plot(save_path)
+    }
+    
+    class CalibrationResult {
+        <<dataclass>>
+        +model_type ModelType
+        +params Dict
+        +rmse float
+        +r2 float
+        +mae float
+        +aic float
+        +predictions ndarray
+        +name str
+    }
+    
+    class ModelType {
+        <<enumeration>>
+        LINEAR
+        POLYNOMIAL
+        EXPONENTIAL
+        LOGARITHMIC
+        INVERSE_POWER
+        ROBUST_POLY2
+    }
+    
+    class EstimationModel {
+        <<abstract>>
+        +estimate(value)* float
+        +fit(x, y)* Dict
+    }
+    
+    class LinearModel {
+        +k float
+        +estimate(value) float
+        +fit(x, y) Dict
+    }
+    
+    class PolynomialModel {
+        +coeffs list
+        +degree int
+        +estimate(value) float
+        +fit(x, y) Dict
+    }
+    
+    class ExponentialModel {
+        +a float
+        +b float
+        +c float
+        +estimate(value) float
+        +fit(x, y) Dict
+    }
+    
+    DistanceEstimator o-- EstimationModel
+    ModelCalibrator --> CalibrationResult
+    EstimationModel <|.. LinearModel
+    EstimationModel <|.. PolynomialModel
+    EstimationModel <|.. ExponentialModel
 ```
-vision/
-├── camera/                 # Camera infrastructure
-│   ├── drivers/           # Camera implementations
-│   ├── calibration/       # Camera calibration
-│   ├── abstract.py        # Base camera interfaces
-│   ├── config.py          # Configuration dataclasses
-│   ├── factory.py         # Camera factory
-│   └── handler.py         # Image handler
-│
-├── algorithms/            # Vision algorithms
-│   ├── markers/          # ArUco, AprilTag, etc.
-│   ├── color/            # Color detection
-│   ├── line/             # Line detection
-│   └── distance/         # Distance estimation
-│
-├── utils/                # Utilities
-│   └── gps_calculus.py   # GPS coordinate calculations
-│
-└── nodes/                # ROS2 nodes
-    ├── aruco_node.py
-    ├── color_calibration_node.py
-    ├── line_detection_node.py
-    └── webcam_publisher_node.py
-```
 
-## Available Cameras
+**Model Types**:
+| Model | Formula | Fitting Method |
+|-------|---------|----------------|
+| `LINEAR` | d = k / pixels | Mean of `distance × pixels` |
+| `POLYNOMIAL` | d = Σ(aᵢ × pixelsⁱ) | `np.polyfit` (least squares) |
+| `EXPONENTIAL` | d = a × e^(-b×pixels) + c | `scipy.optimize.curve_fit` |
+| `LOGARITHMIC` | d = a × ln(pixels) + b | `scipy.optimize.curve_fit` |
+| `INVERSE_POWER` | d = k / pixels^p | `scipy.optimize.curve_fit` with bounds |
+| `ROBUST_POLY2` | d = a×pixels² + b×pixels + c | `sklearn.linear_model.HuberRegressor` (outlier-resistant) |
 
-| Camera | Class | Features |
-|--------|-------|----------|
-| Generic Webcam | `OpenCVCam` | Standard USB cameras |
-| Logitech C920 | `C920Cam` | Optimized for C920/C920e |
-| IMX219 | `IMX219Cam` | Raspberry Pi camera v2 |
-| RealSense | `RealsenseCam` | RGB-D, depth sensing |
-| OAK-D | `OakdCam` | Depth, stereo, AI |
-| ROS Topic | `ROSCam` | Subscribe to image topics |
-| File | `FileImageCam` | Static image files |
-
-### Camera Configuration Examples
-
+**Calibration Workflow**:
 ```python
-from mirela_sdk.vision.camera import (
-    OpenCVConfig,
-    RealSenseConfig,
-    OakDConfig,
-    ROSConfig,
-)
+from mirela_sdk.vision.algorithms.distance import ModelCalibrator
+from pathlib import Path
 
-webcam_config = OpenCVConfig(
-    device_index=0,
-    width=1280,
-    height=720,
-    fps=30
-)
+# Calibration data: (distance_cm, pixel_measurement)
+data = [
+    (50, 32.2),
+    (60, 28.5),
+    (70, 24.2),
+    (100, 21.6),
+    (150, 16.8),
+]
 
-realsense_config = RealSenseConfig(
-    color_res=(1280, 720),
-    depth_res=(1280, 720),
-    fps=30,
-    enable_depth=True
-)
+calibrator = ModelCalibrator(data)
+calibrator.fit_all()
+calibrator.print_results()
 
-oakd_config = OakDConfig(
-    cam_num=1,
-    enable_depth=True
-)
+# Save best parameters
+calibrator.save_params(Path("parameters.yaml"))
 
-ros_config = ROSConfig(
-    topic="/camera/image_raw",
-    compressed=True
-)
+# Generate comparison plot
+calibrator.plot(Path("model_comparison.png"))
+```
+
+**Usage**:
+```python
+from mirela_sdk.vision import DistanceEstimator, ModelType
+
+estimator = DistanceEstimator(model_type=ModelType.POLYNOMIAL)
+
+# Single estimate
+pixel_height = 21.6
+distance_cm = estimator.estimate(pixel_height)
+
+# Compare all methods
+results = estimator.compare_methods(pixel_height)
+for model, dist in results.items():
+    print(f"{model}: {dist:.1f} cm")
+
+# Batch estimation
+import numpy as np
+pixels = np.array([15, 20, 25, 30])
+distances = estimator.estimate_batch(pixels)
 ```
 
 ## ROS2 Nodes
+
+### Node Architecture
+
+```mermaid
+classDiagram
+    class ArucoNode {
+        -aruco Aruco
+        -img_handler ImageHandler
+        -pose_estime_pub Publisher
+        +process_image(img)
+        +cleanup()
+    }
+    
+    class LineDetectionNode {
+        -line_detectors Dict~str,LineDetector~
+        -estimation_methods Dict~str,ILineEstimationMethod~
+        -image_handler ImageHandler
+        +process_image(img)
+        +initialize_color_detector(color, color_space)
+        +run()
+        +cleanup()
+    }
+    
+    class ColorCalibrationNode {
+        -color_detector ColorDetector
+        -img_handler ImageHandler
+        +process_image(img)
+    }
+    
+    class WebcamPublisherNode {
+        -camera OpenCVCam
+        -image_handler ImageHandler
+        -publisher Publisher
+        +cleanup()
+    }
+    
+    ArucoNode o-- Aruco
+    ArucoNode o-- ImageHandler
+    LineDetectionNode o-- LineDetector
+    LineDetectionNode o-- ImageHandler
+    ColorCalibrationNode o-- ColorDetector
+    ColorCalibrationNode o-- ImageHandler
+    WebcamPublisherNode o-- ImageHandler
+```
 
 ### ArUco Detection Node
 
@@ -162,8 +750,42 @@ ros2 run mirela_sdk aruco_node --ros-args \
     -p tag_size:=0.05
 ```
 
-**Published Topics:**
-- `/aruco/pose_estimate` (`mirela_interfaces/ArucoTransforms`)
+**Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `image_source` | string | webcam | Camera source |
+| `marker_dict` | int | 5 | ArUco dictionary (4,5,6,7) |
+| `tag_size` | float | 0.2 | Marker size in meters |
+
+**Published Topics**:
+- `/aruco/pose_estimate` (`mirela_interfaces/ArucoTransforms`): Marker pose
+
+### Line Detection Node
+
+```bash
+ros2 run mirela_sdk line_detection_node --ros-args \
+    -p line_colors:="blue,red" \
+    -p method:=HoughLinesP \
+    -p spaces:="hsv,lab" \
+    -p image_source:=webcam \
+    -p show_visualization:=true
+```
+
+**Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `line_colors` | string | teste | Comma-separated colors |
+| `method` | string | HoughLinesP | Estimation method |
+| `spaces` | string | hsv | Comma-separated color spaces |
+| `image_source` | string | webcam | Camera source |
+| `show_visualization` | bool | true | Show OpenCV window |
+| `visualization_name` | string | Line Detection | Window title |
+
+**Available Methods**: `HoughLinesP`, `RotatedRect`, `FitEllipse`, `RansacLine`, `AdaptiveHoughLinesP`
+
+**Published Topics** (per color):
+- `/line_state/{color}` (`mirela_interfaces/LineInfo`): Line center, angle, dimensions
+- `/line_detect/{color}` (`std_msgs/Bool`): Detection flag
 
 ### Color Calibration Node
 
@@ -173,176 +795,183 @@ ros2 run mirela_sdk color_calibration_node --ros-args \
     -p color_space:=hsv
 ```
 
-Interactive trackbars for HSV/LAB calibration.
+Interactive trackbar window for HSV/LAB calibration.
 
-### Line Detection Node
-
-```bash
-ros2 run mirela_sdk line_detection_node --ros-args \
-    -p image_source:=webcam \
-    -p color:=blue \
-    -p estimation_method:=hough
-```
-
-**Published Topics:**
-- `/line/info` (`mirela_interfaces/LineInfo`)
-
-### Webcam Publisher
+### Webcam Publisher Node
 
 ```bash
 ros2 run mirela_sdk webcam_publisher --ros-args \
-    -p device:=0 \
+    -p camera_index:=0 \
     -p width:=1280 \
     -p height:=720 \
-    -p compressed:=true
+    -p fps:=30 \
+    -p use_compression:=true \
+    -p jpeg_quality:=80 \
+    -p threaded:=true
 ```
 
-**Published Topics:**
-- `/webcam/image_raw/compressed` (`sensor_msgs/CompressedImage`)
-- `/webcam/image_raw` (`sensor_msgs/Image`)
+**Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `camera_index` | int | 0 | Webcam device index |
+| `width` | int | 640 | Frame width |
+| `height` | int | 480 | Frame height |
+| `fps` | int | 30 | Target FPS |
+| `use_compression` | bool | true | JPEG compression |
+| `jpeg_quality` | int | 80 | JPEG quality (0-100) |
+| `buffer_size` | int | 2 | Camera buffer size |
+| `threaded` | bool | true | Background capture thread |
+
+**Published Topics**:
+- `image_raw/compressed` (`sensor_msgs/CompressedImage`): Compressed JPEG
+- `image_raw` (`sensor_msgs/Image`): Raw BGR (when compression disabled)
 
 ## Camera Calibration
 
-Calibrate your camera for accurate pose estimation:
+Chessboard-based intrinsic calibration using `cv2.calibrateCamera`. Computes 3×3 camera matrix (fx, fy, cx, cy) and distortion coefficients (k1, k2, p1, p2, k3).
 
+**Run Calibration**:
 ```bash
 ros2 run mirela_sdk camera_calibration --ros-args \
-    -p chessboard_size:=7x5
+    -p chessboard_size:="9,7"
 ```
 
-Follow the on-screen instructions to capture calibration images. Results are saved to:
-- `vision/camera/calibration/camera_matrix.txt`
-- `vision/camera/calibration/camera_distortion.txt`
+**Workflow**:
+1. Node captures 50 images automatically (every ~1 second)
+2. Detects chessboard corners in each image
+3. Computes camera matrix and distortion coefficients
+4. Saves results to `vision/camera/calibration/`
 
-## Algorithms
+**Output Files**:
+- `camera_matrix.txt`: 3x3 intrinsic matrix
+- `camera_distortion.txt`: Distortion coefficients
 
-### Markers
-
-**ArUco Detection**
+**Programmatic Access**:
 ```python
-from mirela_sdk.vision import Aruco
+from mirela_sdk.vision.camera import Calibration
 
-aruco = Aruco(marker_dict=5, tag_size=0.05)
-bbox, marker_id = aruco.detect(image, draw=True)
-marker_id, translation, yaw = aruco.pose_estimate(image, draw=True)
+# Run calibration
+node = Calibration(chessboard_size=(9, 7))
+node.run_photos(num_photos=50)
+
+# Load existing calibration
+matrix, distortion = Calibration.load_calibration()
 ```
 
-### Color Detection
+## Utilities
 
+### ImageCalculus
+
+Pixel-to-world coordinate transformations for downward-facing cameras. Uses pinhole camera model with small-angle approximations for pitch/roll compensation.
+
+**Methods**:
 ```python
-from mirela_sdk.vision import ColorDetector, ColorSpace
-
-detector = ColorDetector(mode="preset", color="red", color_space=ColorSpace.HSV)
-mask = detector.filterColor(image)
-```
-
-**Calibration Mode:**
-```python
-detector = ColorDetector(mode="track", color="custom")
-detector.initTrackbars()
-mask = detector.filterColor(image)
-detector.saveColorHSV()
-```
-
-### Line Detection
-
-**Available Methods:**
-- `HoughLinesP`: Probabilistic Hough transform
-- `RotatedRect`: Minimum area rectangle
-- `FitEllipse`: Ellipse fitting for curves
-- `RansacLine`: RANSAC-based robust fitting
-- `AdaptiveHoughLinesP`: Adaptive parameter tuning
-
-```python
-from mirela_sdk.vision import LineDetector, RotatedRect
-
-detector = LineDetector(color="blue", estimation_method=RotatedRect)
-img, mask, cx, cy, angle, width, height = detector.detect_line(image, draw=True)
-```
-
-### Distance Estimation
-
-```python
-from mirela_sdk.vision import DistanceEstimator, EstimationMethod
-
-estimator = DistanceEstimator(
-    default_method=EstimationMethod.POLYNOMIAL,
-    valid_range=(15.0, 35.0)
+ImageCalculus(
+    camera_offset: Dict[str, float] = None,    # {forward, right, up} in meters
+    camera_resolution: Dict[str, int] = None,  # {width, height} in pixels
+    pixels_per_degree: Dict[str, int] = None   # {horizontal, vertical}
 )
 
-distance_cm = estimator.estimate(pixel_measurement)
-```
+# Ground intersection from pixel
+vector = calc.calculate_vector_from_drone_to_ground(
+    target_pixel=(640, 360),
+    height=10.0,        # meters
+    pitch=5.0,          # degrees
+    roll=2.0            # degrees
+)  # Returns (forward, right, down) in meters
 
-**Calibration:**
-```python
-from mirela_sdk.vision import DistanceCalibrator
+# Pixel GPS estimation
+lat, lon = ImageCalculus.estimate_pixel_gps(
+    origin_lat=-27.1234,
+    origin_lon=-48.4567,
+    origin_row=540,
+    origin_col=960,
+    target_row=300,
+    target_col=800,
+    gsd=0.05,           # meters/pixel
+    image_bearing=45.0  # degrees
+)
 
-calibrator = DistanceCalibrator()
-calibrator.add_data_points([
-    (50, 32.2),
-    (60, 28.5),
-    (100, 21.6),
-])
-
-result = calibrator.calibrate_polynomial(degree=2)
-estimator = calibrator.create_estimator_from_calibration()
-```
-
-## Common Types
-
-```python
-from mirela_sdk.vision import Point2D, Point3D, BoundingBox, Pose
-
-point = Point2D(x=100.0, y=200.0)
-bbox = BoundingBox(x1=50, y1=50, x2=150, y2=150)
-
-center = bbox.center
-area = bbox.area
-```
-
-## Error Handling
-
-```python
-from mirela_sdk.vision import VisionError, CameraError, CalibrationError
-
-try:
-    camera = CameraFactory.from_source("invalid_source")
-except CameraError as e:
-    print(f"Camera error: {e}")
-except VisionError as e:
-    print(f"Vision error: {e}")
+# Offset pixels calculation
+offset_px = ImageCalculus.calculate_offset_pixels(
+    offset_meters=0.1,
+    height_meters=10.0,
+    fov_degrees=60.0,
+    image_pixels=1920
+)
 ```
 
 ## Examples
 
-See the `examples/` directory for complete working examples:
-- `camera_example.py` - Basic camera usage
-- `depth_example.py` - Depth camera visualization
-- `yolo_example.py` - YOLO detection with camera
+See `examples/vision/` for complete working examples:
 
-## Migration from `image_processing`
+| Example | Description |
+|---------|-------------|
+| `camera_example.py` | Basic camera capture and configuration |
+| `depth_example.py` | Depth camera visualization and distance |
 
-See `MIGRATION_GUIDE.md` for details on migrating from the old `image_processing` module.
+## Module Structure
 
-**Quick migration:**
-```python
-from mirela_sdk.image_processing.camera import ImageHandler
-from mirela_sdk.vision.camera import ImageHandler
 ```
-
-## Documentation
-
-- **Main README**: This file
-- **Camera**: `camera/README.md`
-- **Calibration**: `camera/calibration/README.md`
-- **Migration Guide**: `../MIGRATION_GUIDE.md`
+vision/
+├── __init__.py              # Public API exports
+├── README.md                # This file
+│
+├── camera/                  # Camera infrastructure
+│   ├── __init__.py
+│   ├── abstract.py          # AbstractCam, DepthCam base classes
+│   ├── config.py            # Configuration dataclasses
+│   ├── factory.py           # CameraFactory
+│   ├── handler.py           # ImageHandler
+│   ├── calibration/         # Camera calibration
+│   │   ├── calibration.py
+│   │   ├── camera_matrix.txt
+│   │   ├── camera_distortion.txt
+│   │   └── dataset/
+│   └── drivers/             # Camera implementations
+│       ├── opencv_cam.py
+│       ├── realsense_cam.py
+│       ├── oakd_cam.py
+│       ├── ros_cam.py
+│       ├── c920_cam.py
+│       ├── imx219_cam.py
+│       └── file_cam.py
+│
+├── algorithms/              # Vision algorithms
+│   ├── __init__.py
+│   ├── markers/             # ArUco, AprilTag
+│   │   └── aruco.py
+│   ├── color/               # Color detection
+│   │   ├── color_detector.py
+│   │   └── color_calibration.json
+│   ├── line/                # Line detection
+│   │   └── line_detector.py
+│   └── distance/            # Distance estimation
+│       ├── models.py
+│       ├── estimator.py
+│       ├── calibrator.py
+│       └── parameters.yaml
+│
+├── nodes/                   # ROS2 nodes
+│   ├── __init__.py
+│   ├── aruco_node.py
+│   ├── color_calibration_node.py
+│   ├── click_color_calibration_node.py
+│   ├── line_detection_node.py
+│   └── webcam_publisher_node.py
+│
+└── utils/                   # Utilities
+    └── image_calculus.py
+```
 
 ## Contributing
 
 When adding new features:
-1. Camera drivers go in `camera/drivers/`
-2. Algorithms go in `algorithms/<category>/`
-3. ROS2 nodes go in `nodes/`
-4. Add exports to `__init__.py`
-5. Update this README
 
+1. **Camera drivers**: Add to `camera/drivers/`, inherit from `AbstractCam` or `DepthCam`
+2. **Algorithms**: Add to `algorithms/<category>/`
+3. **ROS2 nodes**: Add to `nodes/`
+4. **Configuration**: Add dataclass to `camera/config.py`
+5. **Register camera**: Call `CameraFactory.register()` in `camera/factory.py`
+6. **Export symbols**: Add to `__init__.py`
+7. **Update docs**: Add to this README

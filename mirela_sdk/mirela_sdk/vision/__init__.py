@@ -1,11 +1,3 @@
-from mirela_sdk.vision.types import (
-    CoordinateFrame,
-    Point2D,
-    Point3D,
-    BoundingBox,
-    Pose,
-)
-
 from mirela_sdk.vision.camera import (
     AbstractCam,
     Calibration,
@@ -58,11 +50,6 @@ from mirela_sdk.vision.nodes import (
 )
 
 __all__ = [
-    "CoordinateFrame",
-    "Point2D",
-    "Point3D",
-    "BoundingBox",
-    "Pose",
     "AbstractCam",
     "Calibration",
     "DepthCam",

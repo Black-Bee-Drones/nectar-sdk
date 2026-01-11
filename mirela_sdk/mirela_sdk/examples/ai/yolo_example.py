@@ -1,35 +1,4 @@
 #!/usr/bin/env python3
-"""
-Usage:
-        # Default (webcam + cbr-25-base model)
-        ros2 run mirela_sdk yolo_example
-
-        # With HuggingFace private models:
-        # Set environment variable:
-        export HF_TOKEN="hf_your_token_here"
-        ros2 run mirela_sdk yolo_example
-
-        # Or pass token as parameter:
-        ros2 run mirela_sdk yolo_example --ros-args -p hf_token:="your_token_here"
-
-        # Custom model from HuggingFace
-        ros2 run mirela_sdk yolo_example --ros-args -p model_source:="user/repo:model.pt"
-
-        # Different annotator styles
-        ros2 run mirela_sdk yolo_example --ros-args -p annotator_type:="box"
-        ros2 run mirela_sdk yolo_example --ros-args -p annotator_type:="round_box"
-        ros2 run mirela_sdk yolo_example --ros-args -p annotator_type:="color"
-
-        # Hide labels/confidence
-        ros2 run mirela_sdk yolo_example --ros-args -p show_labels:=false
-        ros2 run mirela_sdk yolo_example --ros-args -p show_confidence:=false
-
-        # Device selection
-        ros2 run mirela_sdk yolo_example --ros-args -p device:="auto"
-        ros2 run mirela_sdk yolo_example --ros-args -p device:="cuda"
-        ros2 run mirela_sdk yolo_example --ros-args -p device:="cpu"
-        ros2 run mirela_sdk yolo_example --ros-args -p device:="0"  # Specific GPU
-"""
 import os
 
 import rclpy

@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""
-Usage:
-    # Basic usage with image directory
-    python3 yolo_batch_detector.py --input /path/to/images --output-dir /path/to/output
-
-    # With video file
-    python3 yolo_batch_detector.py --input /path/to/video.mp4 --model-path /path/to/model.pt --output-dir /path/to/output
-
-    # With HuggingFace model
-    python3 yolo_batch_detector.py --input /path/to/images --model-source user/repo:model.pt --output-dir /path/to/output
-"""
-
 import argparse
 from pathlib import Path
 from typing import List, Tuple

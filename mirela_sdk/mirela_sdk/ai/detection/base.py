@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
+import time
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 import numpy as np
-
-from mirela_sdk.vision.types import BoundingBox, Point2D
 
 try:
     import torch
@@ -18,25 +17,46 @@ except ImportError:
 
 @dataclass
 class Detection:
+    """
+    Single object detection result.
+
+    Attributes
+    ----------
+    bbox : List[int]
+        Bounding box as [x1, y1, x2, y2].
+    confidence : float
+        Detection confidence score.
+    class_id : int
+        Class identifier.
+    class_name : str
+        Human-readable class name.
+    """
+
     bbox: List[int]
     confidence: float
     class_id: int
     class_name: str = ""
 
     @property
-    def center(self) -> Point2D:
+    def center(self) -> Tuple[float, float]:
+        """Tuple[float, float]: Center point (x, y) of the bounding box."""
         x1, y1, x2, y2 = self.bbox
-        return Point2D(x=(x1 + x2) / 2, y=(y1 + y2) / 2)
+        return ((x1 + x2) / 2, (y1 + y2) / 2)
 
     @property
-    def bounding_box(self) -> BoundingBox:
-        x1, y1, x2, y2 = self.bbox
-        return BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    def width(self) -> int:
+        """int: Width of bounding box in pixels."""
+        return self.bbox[2] - self.bbox[0]
 
     @property
-    def area(self) -> float:
-        x1, y1, x2, y2 = self.bbox
-        return (x2 - x1) * (y2 - y1)
+    def height(self) -> int:
+        """int: Height of bounding box in pixels."""
+        return self.bbox[3] - self.bbox[1]
+
+    @property
+    def area(self) -> int:
+        """int: Area of bounding box in pixels."""
+        return self.width * self.height
 
 
 @dataclass
@@ -294,8 +314,6 @@ class UltralyticsDetectionModel(BaseDetectionModel):
         """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load() first.")
-
-        import time
 
         conf = conf or self.confidence_threshold
         imgsz = imgsz or self.image_size
