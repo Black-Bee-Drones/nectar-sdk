@@ -1,180 +1,269 @@
-import cv2
 import os
-import numpy as np
 import glob
+from typing import Optional, Tuple
+
+import cv2
+import numpy as np
+
 import rclpy
 from rclpy.node import Node
+
 from mirela_sdk.vision.camera.handler import ImageHandler
 
 
 class Calibration(Node):
     """
-    Class to calibrate a camera with OpenCV and a chessboard
+    Camera calibration using chessboard pattern.
+
+    Captures images of a chessboard pattern and computes camera intrinsic
+    matrix and distortion coefficients using OpenCV's calibration functions.
+
+    Parameters
+    ----------
+    chessboard_size : tuple of int, optional
+        Number of inner corners (width, height). Default is (9, 7).
+
+    Attributes
+    ----------
+    calibration_matrix : np.ndarray or None
+        3x3 camera intrinsic matrix after calibration.
+    dist_matrix : np.ndarray or None
+        Distortion coefficients after calibration.
+
+    Notes
+    -----
+    Calibration workflow:
+    1. Call run_photos() to capture chessboard images
+    2. Images are saved to dataset/ folder
+    3. calibrate() is called automatically after capture
+    4. Results are saved to camera_matrix.txt and camera_distortion.txt
     """
 
     PATH = os.path.dirname(__file__)
 
-    def __init__(self, chessboard_size: tuple = (9, 7)) -> None:
-        """
-        Calibration class constructor
-        ----------------------------
-
-        :param chessboard_size (tuple(int, int)): the chessboard size that is used in calibration
-            default: (9,7)
-
-        """
-
+    def __init__(self, chessboard_size: Tuple[int, int] = (9, 7)) -> None:
         super().__init__("camera_calibration_node")
 
-        # Chessboard parameters
-        self.chessboard_size = (
-            chessboard_size  # Number of inner corners on the board (width x height)
-        )
+        self.chessboard_size = chessboard_size
 
-        # Prepare 3D object points
         self.objp = np.zeros((np.prod(self.chessboard_size), 3), dtype=np.float32)
         self.objp[:, :2] = np.indices(self.chessboard_size).T.reshape(-1, 2)
 
-        # Lists to store 3D object points and 2D image points
-        self.object_points = []
-        self.image_points = []
+        self.object_points: list = []
+        self.image_points: list = []
 
-    def __photo(self, img) -> None:
+        self.calibration_matrix: Optional[np.ndarray] = None
+        self.dist_matrix: Optional[np.ndarray] = None
+        self.distortion_list: Optional[np.ndarray] = None
+        self.gray: Optional[np.ndarray] = None
 
-        # TODO: add time duration logic to this
-        if self.cont == 30:
+        self._num_photos: int = 0
+        self._frame_count: int = 0
+        self._photos_taken: int = 0
+        self._image_handler: Optional[ImageHandler] = None
 
-            self.photos += 1
-            cv2.imwrite(f"{Calibration.PATH}/dataset/chessboard{self.photos}.jpg", img)
-            self.get_logger().info(f"Saving photo number {self.photos}")
-            self.cont = 0
+    def _capture_callback(self, img: np.ndarray) -> None:
+        """Callback for capturing calibration images at intervals."""
+        if img is None:
+            return
 
-        if self.photos == self.num_photos:
-            self.get_logger().info("Photos completed")
-            self.image_handler.cleanup()
+        self._frame_count += 1
+
+        if self._frame_count >= 30:
+            self._photos_taken += 1
+            filepath = f"{Calibration.PATH}/dataset/chessboard{self._photos_taken}.jpg"
+            cv2.imwrite(filepath, img)
+            self.get_logger().info(
+                f"Captured photo {self._photos_taken}/{self._num_photos}"
+            )
+            self._frame_count = 0
+
+        if self._photos_taken >= self._num_photos:
+            self.get_logger().info("Photo capture complete")
+            if self._image_handler:
+                self._image_handler.cleanup()
             self.calibrate(show_corners=True)
-            self.overwrite_matrices()
+            self.save_matrices()
 
-        self.cont += 1
-
-    def run_photos(self, num_photos: int) -> None:
+    def run_photos(self, num_photos: int = 50) -> None:
         """
-        Function to initialize photos capture to store on dataset folder
+        Start capturing calibration images.
 
-        :param num_photos (int): Number of photos to take
+        Captures images at regular intervals and saves them to the dataset
+        folder for later calibration processing.
 
+        Parameters
+        ----------
+        num_photos : int, optional
+            Number of photos to capture. Default is 50.
         """
-        self.get_logger().info("Taking photos to dataset")
-        self.num_photos = num_photos
-        self.cont = 1
-        self.photos = 0
-        self.image_handler = ImageHandler(self, "webcam", self.__photo, None, 0)
-        self.image_handler.run()
+        self.get_logger().info(f"Starting capture of {num_photos} calibration images")
 
-    def __find_corners(self, show_result: bool) -> None:
+        self._num_photos = num_photos
+        self._frame_count = 0
+        self._photos_taken = 0
 
-        list_of_image_files = glob.glob(f"{Calibration.PATH}/dataset/*.jpg")
-        imgs_detected = 0
+        self._image_handler = ImageHandler(
+            node=self,
+            image_source="webcam",
+            image_processing_callback=self._capture_callback,
+        )
+        self._image_handler.run()
 
-        # Load and process each image
-        for image_file in list_of_image_files:
+    def _find_corners(self, show_result: bool = False) -> int:
+        """
+        Detect chessboard corners in dataset images.
+
+        Parameters
+        ----------
+        show_result : bool, optional
+            Display images with detected corners. Default is False.
+
+        Returns
+        -------
+        int
+            Number of images with successfully detected corners.
+        """
+        image_files = glob.glob(f"{Calibration.PATH}/dataset/*.jpg")
+        detected_count = 0
+
+        for image_file in image_files:
             image = cv2.imread(image_file)
+            if image is None:
+                continue
+
             self.gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            # Detect chessboard corners
             ret, corners = cv2.findChessboardCorners(
                 self.gray, self.chessboard_size, None
             )
 
-            # If corners are found, add object and image points
             if ret:
                 self.object_points.append(self.objp)
                 self.image_points.append(corners)
-                imgs_detected += 1
-                self.get_logger().info(f"Images with found corners: {imgs_detected}")
+                detected_count += 1
+                self.get_logger().info(
+                    f"Corners found: {detected_count}/{len(image_files)}"
+                )
 
                 if show_result:
-
-                    # Draw and display the corners
                     cv2.drawChessboardCorners(image, self.chessboard_size, corners, ret)
-                    cv2.imshow("img", image)
+                    cv2.imshow("Calibration", image)
                     cv2.waitKey(500)
 
         cv2.destroyAllWindows()
+        return detected_count
 
-    def calibrate(self, show_corners: bool = False) -> None:
+    def calibrate(self, show_corners: bool = False) -> bool:
         """
-        Function to initialize the calibration with the search for the chessboard
-        corners in the images from dataset and obtaining calibration and distortion
-        matrices
+        Run camera calibration on captured images.
 
-        :param show_corners (bool): True for show the images with corners drawn, False for not
+        Detects chessboard corners in dataset images and computes camera
+        intrinsic matrix and distortion coefficients.
+
+        Parameters
+        ----------
+        show_corners : bool, optional
+            Display detected corners during processing. Default is False.
+
+        Returns
+        -------
+        bool
+            True if calibration succeeded, False otherwise.
         """
+        detected = self._find_corners(show_corners)
 
-        self.__find_corners(show_corners)
-        # Calibrate the camera
-        ret, self.calibration_matrix, self.dist_matrix, rvecs, tvecs = (
-            cv2.calibrateCamera(
-                self.object_points, self.image_points, self.gray.shape[::-1], None, None
-            )
+        if detected == 0:
+            self.get_logger().error("No chessboard corners detected in any image")
+            return False
+
+        if self.gray is None:
+            self.get_logger().error("No valid images for calibration")
+            return False
+
+        _, self.calibration_matrix, self.dist_matrix, _, _ = cv2.calibrateCamera(
+            self.object_points,
+            self.image_points,
+            self.gray.shape[::-1],
+            None,
+            None,
         )
 
         self.distortion_list = self.dist_matrix.ravel()
-        print("Calibration matrix:\n", self.calibration_matrix)
-        print("Distortion:\n", self.distortion_list)
 
-    def overwrite_matrices(self) -> None:
+        self.get_logger().info(f"Calibration matrix:\n{self.calibration_matrix}")
+        self.get_logger().info(f"Distortion coefficients: {self.distortion_list}")
+
+        return True
+
+    def save_matrices(self) -> None:
         """
-        Functions to write or overwrite the calibration and distortion matrices files
+        Save calibration results to text files.
+
+        Writes camera_matrix.txt and camera_distortion.txt to the
+        calibration module directory.
         """
+        if self.calibration_matrix is None or self.distortion_list is None:
+            self.get_logger().error("No calibration data to save")
+            return
 
-        with open(f"{Calibration.PATH}/camera_matrix.txt", "w") as matrix:
+        matrix_path = f"{Calibration.PATH}/camera_matrix.txt"
+        with open(matrix_path, "w", encoding="utf-8") as f:
+            for i, row in enumerate(self.calibration_matrix):
+                f.write(",".join(str(v) for v in row))
+                if i < len(self.calibration_matrix) - 1:
+                    f.write("\n")
 
-            for i in range(len(self.calibration_matrix)):
-                for j in range(len(self.calibration_matrix[i])):
-                    matrix.write(str(self.calibration_matrix[i][j]))
-                    if j != len(self.calibration_matrix[i]) - 1:
-                        matrix.write(",")
+        distortion_path = f"{Calibration.PATH}/camera_distortion.txt"
+        with open(distortion_path, "w", encoding="utf-8") as f:
+            f.write(",".join(str(v) for v in self.distortion_list))
 
-                if i != len(self.calibration_matrix) - 1:
-                    matrix.write("\n")
-
-        with open(f"{Calibration.PATH}/camera_distortion.txt", "w") as distortion:
-            for i in range(len(self.distortion_list)):
-                distortion.write(str(self.distortion_list[i]))
-                if i != len(self.distortion_list) - 1:
-                    distortion.write(",")
+        self.get_logger().info(f"Saved calibration to {Calibration.PATH}")
 
     @classmethod
-    def get_camera_matrix_distortion(cls) -> tuple[list, list]:
+    def load_calibration(cls) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Class method to get the camera matrix and distortion coefficients from .txt files.
+        Load calibration data from files.
 
-        Use this function only if you are sure that calibration is complete and the files exist.
+        Returns
+        -------
+        tuple of np.ndarray
+            Camera matrix (3x3) and distortion coefficients.
+
+        Raises
+        ------
+        FileNotFoundError
+            If calibration files do not exist.
         """
+        matrix_path = f"{cls.PATH}/camera_matrix.txt"
+        distortion_path = f"{cls.PATH}/camera_distortion.txt"
 
-        camera_matrix_list = np.loadtxt(f"{cls.PATH}/camera_matrix.txt", delimiter=",")
-        camera_distortion_list = np.loadtxt(
-            f"{cls.PATH}/camera_distortion.txt", delimiter=","
-        )
+        if not os.path.exists(matrix_path) or not os.path.exists(distortion_path):
+            raise FileNotFoundError(
+                "Calibration files not found. Run calibration first."
+            )
 
-        return (camera_matrix_list, camera_distortion_list)
+        camera_matrix = np.loadtxt(matrix_path, delimiter=",")
+        distortion = np.loadtxt(distortion_path, delimiter=",")
+
+        return camera_matrix, distortion
 
 
-def main():
+def main(args=None) -> None:
+    """Entry point for camera calibration node."""
+    rclpy.init(args=args)
 
-    rclpy.init()
+    node = Calibration(chessboard_size=(9, 7))
+
     try:
-        calibration = Calibration(chessboard_size=(9, 7))
-        calibration.run_photos(num_photos=50)
-        rclpy.spin(calibration)
-
+        node.run_photos(num_photos=50)
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        ...
-    except Exception as ex:
-        print("Exception: ", ex)
+        pass
     finally:
-        calibration.destroy_node()
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

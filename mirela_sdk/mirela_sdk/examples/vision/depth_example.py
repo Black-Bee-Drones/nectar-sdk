@@ -1,3 +1,11 @@
+import argparse
+from typing import Optional, Tuple
+
+import rclpy
+from rclpy.node import Node
+import cv2
+import numpy as np
+
 from mirela_sdk.vision.camera import (
     ImageHandler,
     DepthCam,
@@ -6,12 +14,7 @@ from mirela_sdk.vision.camera import (
     RealSenseConfig,
     OakDConfig,
 )
-import rclpy
-from rclpy.node import Node
-import cv2
-import numpy as np
-from typing import Optional, Tuple
-import argparse
+
 
 
 class DepthDemoNode(Node):

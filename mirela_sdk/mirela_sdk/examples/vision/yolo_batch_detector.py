@@ -12,11 +12,12 @@ Usage:
 """
 
 import argparse
-import cv2
-import numpy as np
 from pathlib import Path
 from typing import List, Tuple
 import tempfile
+
+import cv2
+import numpy as np
 
 from mirela_sdk.ai import YOLODetector
 

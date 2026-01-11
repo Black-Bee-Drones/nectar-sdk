@@ -8,6 +8,7 @@ from mirela_sdk.vision.types import (
 
 from mirela_sdk.vision.camera import (
     AbstractCam,
+    Calibration,
     DepthCam,
     CameraConfig,
     ROSConfig,
@@ -50,6 +51,7 @@ from mirela_sdk.vision.utils import ImageCalculus
 
 from mirela_sdk.vision.nodes import (
     ArucoNode,
+    ClickColorCalibrationNode,
     ColorCalibrationNode,
     LineDetectionNode,
     WebcamPublisherNode,
@@ -62,6 +64,7 @@ __all__ = [
     "BoundingBox",
     "Pose",
     "AbstractCam",
+    "Calibration",
     "DepthCam",
     "CameraConfig",
     "ROSConfig",
@@ -97,6 +100,7 @@ __all__ = [
     "CalibrationResult",
     "ImageCalculus",
     "ArucoNode",
+    "ClickColorCalibrationNode",
     "ColorCalibrationNode",
     "LineDetectionNode",
     "WebcamPublisherNode",

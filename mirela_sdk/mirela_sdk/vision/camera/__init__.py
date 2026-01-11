@@ -1,4 +1,5 @@
 from mirela_sdk.vision.camera.abstract import AbstractCam, DepthCam
+from mirela_sdk.vision.camera.calibration import Calibration
 from mirela_sdk.vision.camera.config import (
     CameraConfig,
     ROSConfig,
@@ -24,6 +25,7 @@ from mirela_sdk.vision.camera.drivers import (
 
 __all__ = [
     "AbstractCam",
+    "Calibration",
     "DepthCam",
     "CameraConfig",
     "ROSConfig",

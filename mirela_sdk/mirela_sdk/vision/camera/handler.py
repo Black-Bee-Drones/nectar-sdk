@@ -1,7 +1,8 @@
-from rclpy.node import Node
-import cv2
 import time
 from typing import Optional, Callable, Any
+
+from rclpy.node import Node
+import cv2
 
 from mirela_sdk.vision.camera.abstract import AbstractCam
 from mirela_sdk.vision.camera.factory import CameraFactory

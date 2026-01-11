@@ -30,11 +30,11 @@ Usage:
         ros2 run mirela_sdk yolo_example --ros-args -p device:="cpu"
         ros2 run mirela_sdk yolo_example --ros-args -p device:="0"  # Specific GPU
 """
+import os
+
 import rclpy
 from rclpy.node import Node
 import cv2
-import numpy as np
-import os
 
 from mirela_sdk.ai import YOLODetector
 from mirela_sdk.vision.camera import ImageHandler, OpenCVConfig
