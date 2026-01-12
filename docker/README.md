@@ -1,6 +1,6 @@
-# [![dock](https://img.icons8.com/?size=30&id=GZxgGaKN8jxz&format=png&color=000000)](#) Docker Environment for MIRELA SDK
+# Docker Environment for Mirela SDK 🐳
 
-This repository provides a multi-stage Docker setup for the MIRELA SDK, supporting both outdoor GPS-based drone control and indoor VSLAM operations. The setup includes MAVROS, computer vision support, RealSense D435i integration, and vision_to_mavros for seamless indoor navigation.
+Multi-stage Docker setup for outdoor GPS-based drone control and indoor VSLAM operations. Includes MAVROS, computer vision support, and Intel RealSense D435i integration.
 
 ## 🐳 Multi-Stage Docker Environment
 
