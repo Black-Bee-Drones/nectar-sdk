@@ -6,11 +6,9 @@ from sklearn.cluster import DBSCAN
 
 from mirela_sdk.control.obstacles.base import BaseObstacleDetector
 from mirela_sdk.control.protocols import ObstacleInfo, ObstacleDirection
-from mirela_sdk.image_processing.camera.image_handler import ImageHandler
-from mirela_sdk.image_processing.camera.realsense_cam import (
-    RealSenseConfig,
-    RealsenseCam,
-)
+from mirela_sdk.vision.camera.handler import ImageHandler
+from mirela_sdk.vision.camera.drivers.realsense_cam import RealsenseCam
+from mirela_sdk.vision.camera.config import RealSenseConfig
 
 if TYPE_CHECKING:
     from rclpy.node import Node

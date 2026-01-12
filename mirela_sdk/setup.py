@@ -39,7 +39,7 @@ setup(
             "webcam_publisher = mirela_sdk.vision.nodes.webcam_publisher_node:main",
             "camera_example = mirela_sdk.examples.vision.camera_example:main",
             "depth_example = mirela_sdk.examples.vision.depth_example:main",
-            "yolo_example = mirela_sdk.examples.vision.yolo_example:main",
+            "detector_example = mirela_sdk.examples.ai.detector_example:main",
             # control
             "pid_controller_node = mirela_sdk.control.pid.pid_node:main",
         ],
