@@ -1,0 +1,32 @@
+# Example: YOLO training on YOLO format dataset
+# Usage: ./scripts/train_ultralytics.sh --config configs/yolo_example.yaml
+
+data:
+  dataset_path: /path/to/yolo/dataset/data.yaml
+  dataset_format: yolo
+
+train:
+  framework: ultralytics
+  model: yolov8n.pt
+  epochs: 100
+  batch_size: 16
+  learning_rate: 0.01
+  output_dir: outputs/yolov8n
+  device: auto
+  seed: 42
+  tensorboard: true
+  push_to_hub: false
+  hub_model_id: ""
+  multi_gpu: false
+  from_scratch: false
+  imgsz: 640
+  augment: true
+  mosaic: 1.0
+  mixup: 0.0
+  early_stopping_patience: 10
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
