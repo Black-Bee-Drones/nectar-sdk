@@ -1,33 +1,75 @@
 #!/usr/bin/env python3
+"""
+Real-time Object Detection Example.
+
+Demonstrates real-time object detection using the Detector class
+with webcam input and ROS2 integration. Supports multiple frameworks
+(Ultralytics YOLO, Transformers DETR, RF-DETR).
+
+Examples
+--------
+Run with local YOLO model:
+
+    ros2 run mirela_sdk detector_example --ros-args \
+        -p model_source:="yolov8n.pt" \
+        -p confidence:=0.5
+
+Run with HuggingFace YOLO model (user/repo:file format):
+
+    ros2 run mirela_sdk detector_example --ros-args \
+        -p model_source:="blackbeedrones/cbr-25-base:yolov11n.pt"
+
+    ros2 run mirela_sdk detector_example --ros-args \
+        -p model_source:="blackbeedrones/cbr-25-base:yolov11n.onnx"
+
+Run with Transformers DETR (model ID format):
+
+    ros2 run mirela_sdk detector_example --ros-args \
+        -p model_source:="facebook/detr-resnet-50" \
+        -p framework:="transformers"
+
+Run with RF-DETR:
+
+    ros2 run mirela_sdk detector_example --ros-args \
+        -p model_source:="rfdetr-base" \
+        -p framework:="rfdetr"
+"""
+
 import os
 
 import rclpy
 from rclpy.node import Node
 import cv2
 
-from mirela_sdk.ai import YOLODetector
+from mirela_sdk.ai.detection import Detector, Framework
 from mirela_sdk.vision.camera import ImageHandler, OpenCVConfig
 
 
-class YOLOStreamNode(Node):
-    def __init__(self):
-        super().__init__("yolo_stream_node")
+class DetectorStreamNode(Node):
+    """
+    ROS2 node for real-time object detection.
+    """
 
-        self.declare_parameter("model_source", "blackbeedrones/cbr-25-base:yolov11n.pt")
+    def __init__(self):
+        super().__init__("detector_stream_node")
+
+        # Declare parameters
+        self.declare_parameter("model_source", "yolov8n.pt")
+        self.declare_parameter("framework", "")  
         self.declare_parameter("confidence", 0.25)
         self.declare_parameter("camera_source", "webcam")
         self.declare_parameter("show_result", True)
-        self.declare_parameter("annotator_type", "color")  # "box", "round_box", "color"
+        self.declare_parameter("annotator_type", "color")
         self.declare_parameter("show_labels", True)
         self.declare_parameter("show_confidence", True)
         self.declare_parameter("show_class", True)
-        self.declare_parameter(
-            "device", "auto"
-        )  # "auto", "cpu", "cuda", "0", "1", etc.
-        self.declare_parameter("hf_token", "")  # Optional HuggingFace token
+        self.declare_parameter("device", "auto")
+        self.declare_parameter("hf_token", "")
 
+        # Get parameters
         model_source = self.get_parameter("model_source").value
-        confidence = self.get_parameter("confidence").value
+        framework_str = self.get_parameter("framework").value
+        self.confidence = self.get_parameter("confidence").value
         camera_source = self.get_parameter("camera_source").value
         show_result = self.get_parameter("show_result").value
         self.annotator_type = self.get_parameter("annotator_type").value
@@ -37,22 +79,41 @@ class YOLOStreamNode(Node):
         device = self.get_parameter("device").value
         hf_token = self.get_parameter("hf_token").value
 
-        self.get_logger().info(f"Loading YOLO model: {model_source}")
-        self.get_logger().info(f"Device preference: {device}")
+        # Set HF token if provided
         if hf_token:
+            os.environ["HF_TOKEN"] = hf_token
             self.get_logger().info("Using provided HuggingFace token")
         elif os.environ.get("HF_TOKEN"):
             self.get_logger().info("Using HF_TOKEN from environment")
 
-        self.detector = YOLODetector(
+        # Resolve framework
+        framework = None
+        if framework_str:
+            try:
+                framework = Framework(framework_str.lower())
+                self.get_logger().info(f"Using explicit framework: {framework.value}")
+            except ValueError:
+                self.get_logger().warning(
+                    f"Unknown framework '{framework_str}', using auto-detect"
+                )
+
+        self.get_logger().info(f"Loading model: {model_source}")
+        self.get_logger().info(f"Device preference: {device}")
+
+        # Initialize detector
+        self.detector = Detector(
             model_source=model_source,
-            confidence_threshold=confidence,
+            framework=framework,
             device=device,
-            token=hf_token if hf_token else None,
+            confidence_threshold=self.confidence,
+        )
+        self.detector.load()
+
+        self.get_logger().info(
+            f"Model loaded successfully! Framework: {self.detector.framework.value}"
         )
 
-        self.get_logger().info("✓ Model loaded successfully!")
-
+        # Log class names
         if self.detector.class_names:
             num_classes = len(self.detector.class_names)
             self.get_logger().info(f"Model has {num_classes} classes")
@@ -60,8 +121,9 @@ class YOLOStreamNode(Node):
                 for idx, name in self.detector.class_names.items():
                     self.get_logger().info(f"  Class {idx}: {name}")
 
+        # Setup camera
         camera_config = OpenCVConfig(device_index=0, width=1280, height=720)
-        window_name = "YOLO Detection Stream" if show_result else None
+        window_name = "Detection Stream" if show_result else None
 
         self.image_handler = ImageHandler(
             node=self,
@@ -74,9 +136,9 @@ class YOLOStreamNode(Node):
         self.image_handler.run()
 
         self.get_logger().info("=" * 60)
-        self.get_logger().info("YOLO detection stream started!")
+        self.get_logger().info("Detection stream started!")
+        self.get_logger().info(f"Framework: {self.detector.framework.value}")
         self.get_logger().info(f"Annotator: {self.annotator_type}")
-        self.get_logger().info(f"Show labels: {self.show_labels}")
         self.get_logger().info("Press 'q' in the window to quit")
         self.get_logger().info("=" * 60)
 
@@ -84,13 +146,14 @@ class YOLOStreamNode(Node):
         self.total_detections = 0
 
     def process_frame(self, frame):
-        """Process each frame with YOLO detection and visualization."""
+        """Process each frame with detection and visualization."""
         if frame is None:
             return
 
         self.frame_count += 1
 
-        result = self.detector.detect(frame)
+        # Run detection
+        result = self.detector.detect(frame, conf=self.confidence)
 
         num_detections = len(result)
         self.total_detections += num_detections
@@ -99,7 +162,7 @@ class YOLOStreamNode(Node):
             self.get_logger().info(
                 f"Frame {self.frame_count}: {num_detections} detections | "
                 f"Inference: {result.inference_time*1000:.1f}ms",
-                throttle_duration_sec=2.0,  # Log every 2 seconds max
+                throttle_duration_sec=2.0,
             )
 
             for det in result.detections[:3]:
@@ -108,6 +171,7 @@ class YOLOStreamNode(Node):
                     throttle_duration_sec=5.0,
                 )
 
+        # Draw detections
         if num_detections > 0 or self.frame_count == 1:
             annotated = self.detector.draw_detections(
                 image=frame,
@@ -119,7 +183,6 @@ class YOLOStreamNode(Node):
                 thickness=2,
                 text_scale=0.6,
             )
-
             frame[:] = annotated
 
         self._add_stats_overlay(frame, result)
@@ -129,6 +192,7 @@ class YOLOStreamNode(Node):
         fps = 1.0 / result.inference_time if result.inference_time > 0 else 0
 
         overlay_lines = [
+            f"Framework: {self.detector.framework.value}",
             f"FPS: {fps:.1f}",
             f"Detections: {len(result)}",
             f"Total: {self.total_detections}",
@@ -163,7 +227,7 @@ class YOLOStreamNode(Node):
 
     def destroy_node(self):
         """Cleanup on shutdown."""
-        self.get_logger().info(f"\nShutting down...")
+        self.get_logger().info("\nShutting down...")
         self.get_logger().info(f"Processed {self.frame_count} frames")
         self.get_logger().info(f"Total detections: {self.total_detections}")
 
@@ -178,11 +242,12 @@ class YOLOStreamNode(Node):
 
 
 def main(args=None):
+    """Main entry point."""
     rclpy.init(args=args)
 
     node = None
     try:
-        node = YOLOStreamNode()
+        node = DetectorStreamNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
