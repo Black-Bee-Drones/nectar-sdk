@@ -12,9 +12,6 @@
       <a href="https://www.python.org/"><img src="https://img.shields.io/badge/-Python-3776AB?style=for-the-badge&labelColor=black&logo=python&logoColor=3776AB" alt="Python Badge" /></a>
     </td>
     <td>
-      <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/-PyTorch-EE4C2C?style=for-the-badge&labelColor=black&logo=pytorch&logoColor=EE4C2C" alt="PyTorch Badge" /></a>
-    </td>
-    <td>
       <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?style=for-the-badge&labelColor=black&logo=docker&logoColor=2496ED" alt="Docker Badge" /></a>
     </td>
   </tr>
@@ -26,7 +23,7 @@ A modular software development kit for autonomous aerial systems built on [ROS2 
 
 Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competition team.
 
-## Table of Contents 📚
+## Table of Contents
 
 - [Features](#features-)
 - [Installation](#installation-)
@@ -41,7 +38,7 @@ Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competi
 
 ## Features 🐎
 
-### 🚁 Drone Control
+### Drone Control
 - **Protocol-based architecture** with factory pattern for multiple drone types
 - **MAVROS** integration for ArduPilot/PX4 flight controllers ([MAVROS docs](https://github.com/mavlink/mavros))
 - **Parrot Bebop 2** support via bebop_autonomy
@@ -49,20 +46,20 @@ Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competi
 - **GPS waypoint missions** with EGM96 geoid correction
 - **Obstacle detection** system with configurable avoidance strategies
 
-### 📷 Computer Vision
+### Computer Vision
 - **Camera abstraction layer** supporting USB, RealSense, OAK-D, ROS topics
 - **ArUco marker detection** with 6-DOF pose estimation ([OpenCV ArUco](https://docs.opencv.org/4.x/d5/dae/tutorial_aruco_detection.html))
 - **Color detection** with HSV/LAB calibration tools
 - **Line detection** with multiple estimation methods (Hough, RANSAC, rotated rect)
 - **Distance estimation** using regression models (linear, polynomial, exponential)
 
-### 🤖 AI / Deep Learning
+### AI / Deep Learning
 - **Multi-framework detection** API: Ultralytics YOLO, HuggingFace Transformers, RF-DETR
 - **Training pipelines** with TensorBoard and HuggingFace Hub integration
 - **Slicing inference** for high-resolution images
 - **Model evaluation** with mAP, precision, recall metrics
 
-### 🖥️ Interface
+### Interface
 - **Tkinter GUI** for manual drone control and testing
 - **Keyboard controls** with velocity sliders
 - **Camera streaming** with snapshot and recording
@@ -79,7 +76,7 @@ chmod +x install_env.sh
 
 Installs: Git, ROS2 Humble, MAVROS, GeographicLib, Python dependencies, and builds the workspace.
 
-See [`README_INSTALLATION.md`](README_INSTALLATION.md) for detailed instructions.
+See [`docs/INSTALL.md`](docs/INSTALL.md) for detailed manual installation instructions.
 
 ### 🐳 Docker
 
@@ -92,30 +89,6 @@ See [`README_INSTALLATION.md`](README_INSTALLATION.md) for detailed instructions
 ```
 
 See [`docker/README.md`](docker/README.md) for container details.
-
-### 👨🏻‍💻 Manual Installation
-
-**Requirements:** Ubuntu 22.04+, Python 3.10+, [ROS2 Humble](https://docs.ros.org/en/humble/Installation.html)
-
-```bash
-# 1. Clone into ROS2 workspace
-cd ~/ros2_ws/src
-git clone https://github.com/Black-Bee-Drones/mirela-sdk.git
-
-# 2. Install Python dependencies
-pip install -r mirela-sdk/requirements.txt
-
-# 3. (Optional) AI module dependencies
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-pip install -r mirela-sdk/requirements-ai.txt
-
-# 4. Build workspace
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-rosdep install -i --from-path src --rosdistro humble -r -y
-colcon build --symlink-install
-source install/local_setup.bash
-```
 
 ## Quick Start 🦓
 
@@ -195,25 +168,6 @@ annotated = detector.draw_detections(image, result)
 
 Protocol-based drone control with factory instantiation and configurable navigation.
 
-```mermaid
-flowchart LR
-    subgraph Control
-        Factory[DroneFactory]
-        Protocol[Drone Protocol]
-        Mavros[MavrosDrone]
-        Bebop[BebopDrone]
-        Obstacles[ObstacleManager]
-        PID[PIDController]
-    end
-    
-    Factory --> Mavros
-    Factory --> Bebop
-    Protocol -.->|implements| Mavros
-    Protocol -.->|implements| Bebop
-    Mavros --> Obstacles
-    Mavros --> PID
-```
-
 | Component | Description | Documentation |
 |-----------|-------------|---------------|
 | `DroneFactory` | Creates drone instances by type | [control/README.md](mirela_sdk/mirela_sdk/control/README.md) |
@@ -228,7 +182,7 @@ Camera abstraction and image processing algorithms.
 
 ```mermaid
 flowchart LR
-    subgraph Vision
+    subgraph Camera["Camera Layer"]
         CamFactory[CameraFactory]
         Handler[ImageHandler]
         OpenCV[OpenCVCam]
@@ -237,7 +191,7 @@ flowchart LR
         ROS[ROSCam]
     end
     
-    subgraph Algorithms
+    subgraph Algorithms["algorithms/"]
         Aruco[ArUco Detection]
         Color[Color Detector]
         Line[Line Detector]
@@ -249,18 +203,20 @@ flowchart LR
     CamFactory --> OAK
     CamFactory --> ROS
     Handler --> CamFactory
+    Algorithms --> Handler
 ```
 
-| Component | Description | External Docs |
+| Component | Description | Documentation |
 |-----------|-------------|---------------|
-| `CameraFactory` | Multi-backend camera creation | - |
-| `ImageHandler` | ROS2 timer-based capture | - |
-| `Aruco` | Marker detection and pose | [OpenCV ArUco](https://docs.opencv.org/4.x/d5/dae/tutorial_aruco_detection.html) |
-| `ColorDetector` | HSV/LAB color filtering | [OpenCV Color Spaces](https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html) |
-| `LineDetector` | Line estimation methods | [OpenCV Hough](https://docs.opencv.org/4.x/d9/db0/tutorial_hough_lines.html) |
-| `DistanceEstimator` | Pixel-to-distance models | - |
+| `CameraFactory` | Multi-backend camera creation | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#camerafactory) |
+| `ImageHandler` | ROS2 timer-based capture | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#imagehandler) |
+| `Aruco` | Marker detection and pose | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#aruco-markers) |
+| `ColorDetector` | HSV/LAB color filtering | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#color-detection) |
+| `LineDetector` | Line estimation methods | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#line-detection) |
+| `DistanceEstimator` | Pixel-to-distance models | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#distance-estimation) |
 
 **Supported Cameras:**
+
 | Type | SDK | Use Case |
 |------|-----|----------|
 | `webcam` | OpenCV | Generic USB cameras |
@@ -272,27 +228,6 @@ flowchart LR
 ### [AI Module](mirela_sdk/mirela_sdk/ai/README.md)
 
 Deep learning inference and training for object detection.
-
-```mermaid
-flowchart LR
-    subgraph AI
-        Det[Detector]
-        Ultra[UltralyticsModel]
-        Trans[TransformersModel]
-        RFDETR[RFDETRModel]
-        Eval[Evaluator]
-    end
-    
-    subgraph Frameworks
-        YOLO[Ultralytics YOLO]
-        HF[HuggingFace]
-        RF[RF-DETR]
-    end
-    
-    Det --> Ultra --> YOLO
-    Det --> Trans --> HF
-    Det --> RFDETR --> RF
-```
 
 | Component | Supported Models | External Docs |
 |-----------|------------------|---------------|
@@ -310,77 +245,15 @@ Tkinter-based GUI for drone testing and control.
 | `BebopComponent` | Bebop-specific controls |
 | `MavComponent` | MAVROS-specific controls |
 
-## Architecture 🏗️
+### [Mirela Interfaces](mirela_interfaces/README.md)
 
-### System Overview
+Custom ROS2 message definitions for inter-module communication.
 
-```mermaid
-flowchart TB
-    subgraph User["User Application"]
-        App[ROS2 Node]
-    end
-    
-    subgraph SDK["mirela_sdk"]
-        subgraph Control["🚁 control"]
-            DF[DroneFactory]
-            Drone[Drone Protocol]
-            Mavros[MavrosDrone]
-            Bebop[BebopDrone]
-            PID[PIDController]
-            Obs[ObstacleManager]
-        end
-        
-        subgraph Vision["📷 vision"]
-            CF[CameraFactory]
-            Handler[ImageHandler]
-            Cam[AbstractCam]
-            Algo[Algorithms]
-        end
-        
-        subgraph AI["🤖 ai"]
-            Det[Detector]
-            Models[Detection Models]
-            Train[Training Pipeline]
-        end
-    end
-    
-    subgraph Hardware["Hardware"]
-        FC[Flight Controller]
-        Cameras[Cameras]
-        GPU[GPU]
-    end
-    
-    subgraph External["External Dependencies"]
-        ROS2[ROS2 Humble]
-        MAVROS
-        OpenCV
-        PyTorch
-    end
-    
-    App --> DF
-    App --> CF
-    App --> Det
-    
-    DF --> Drone
-    Drone -.->|implements| Mavros
-    Drone -.->|implements| Bebop
-    Mavros --> PID
-    Mavros --> Obs
-    
-    CF --> Cam
-    Handler --> Cam
-    Handler --> Algo
-    
-    Det --> Models
-    Det --> Train
-    
-    Mavros --> MAVROS --> FC
-    Cam --> OpenCV --> Cameras
-    Models --> PyTorch --> GPU
-    
-    Control --> ROS2
-    Vision --> ROS2
-```
+| Message | Description | Used By |
+|---------|-------------|---------|
+| `ArucoTransforms` | Marker ID, translation, yaw | `ArucoNode` |
+| `LineInfo` | Line center, angle, dimensions | `LineDetectionNode` |
+| `PhotoInfo` | Photo coordinates and metadata | Vision nodes |
 
 ### Design Patterns
 
@@ -577,16 +450,20 @@ mirela-sdk/
 │   ├── run_docker_linux.sh
 │   └── run_docker_win.ps1
 ├── docs/                       # Project documentation
+│   ├── INSTALL.md              # Installation guide
 │   ├── CONTRIBUTING.md
 │   ├── CODE_OF_CONDUCT.md
 │   └── SECURITY.md
 ├── mirela_interfaces/          # ROS2 message definitions
+│   ├── README.md               # Interface documentation
 │   └── msg/
 │       ├── ArucoTransforms.msg
-│       └── LineInfo.msg
+│       ├── LineInfo.msg
+│       └── PhotoInfo.msg
 ├── mirela_sdk/                 # Main ROS2 package
 │   └── mirela_sdk/
 │       ├── control/            # Drone control module
+│       │   ├── README.md
 │       │   ├── base.py         # BaseDrone abstract class
 │       │   ├── factory.py      # DroneFactory
 │       │   ├── mavros/         # MAVROS implementation
@@ -594,17 +471,19 @@ mirela-sdk/
 │       │   ├── obstacles/      # Obstacle detection
 │       │   └── pid/            # PID controller
 │       ├── vision/             # Computer vision module
+│       │   ├── README.md       # Vision documentation
 │       │   ├── camera/         # Camera drivers
 │       │   │   ├── factory.py
 │       │   │   ├── handler.py
 │       │   │   └── drivers/
 │       │   ├── algorithms/     # Vision algorithms
-│       │   │   ├── markers/
-│       │   │   ├── color/
-│       │   │   ├── line/
-│       │   │   └── distance/
+│       │   │   ├── markers/    # ArUco detection
+│       │   │   ├── color/      # Color detection
+│       │   │   ├── line/       # Line detection
+│       │   │   └── distance/   # Distance estimation
 │       │   └── nodes/          # ROS2 nodes
 │       ├── ai/                 # AI/Detection module
+│       │   ├── README.md
 │       │   ├── detection/
 │       │   │   ├── detector.py
 │       │   │   ├── models/
@@ -612,6 +491,7 @@ mirela-sdk/
 │       │   │   └── evaluation/
 │       │   └── utils/
 │       ├── interface/          # GUI module
+│       │   ├── README.md
 │       │   ├── gui.py
 │       │   └── *_component.py
 │       ├── examples/           # Working examples

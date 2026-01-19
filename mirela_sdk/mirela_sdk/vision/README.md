@@ -4,9 +4,15 @@ Camera abstraction layer and image processing algorithms for ROS2. Provides unif
 
 ## Documentation Index
 
-- **README.md**: This file - Architecture overview and quick start
+- **README.md**: This file - Module architecture, API reference, and usage
 - **camera/**: Camera drivers and abstraction layer
-- **algorithms/**: Vision algorithms (markers, color, line, distance)
+  - `drivers/`: Camera implementations (`opencv_cam.py`, `realsense_cam.py`, `oakd_cam.py`, etc.)
+  - `calibration/`: Intrinsic camera calibration
+- **algorithms/**: Vision algorithms
+  - `markers/`: ArUco fiducial marker detection
+  - `color/`: HSV/LAB color space filtering
+  - `line/`: Line detection with multiple estimation methods
+  - `distance/`: Pixel-to-distance regression models
 - **nodes/**: ROS2 nodes for common vision tasks
 - **utils/**: Utility functions for image-based calculations
 
@@ -963,6 +969,51 @@ vision/
 └── utils/                   # Utilities
     └── image_calculus.py
 ```
+
+## References
+
+### OpenCV
+
+| Function/Module | Documentation | Used In |
+|-----------------|---------------|---------|
+| `cv2.aruco.ArucoDetector` | [ArUco Detection Tutorial](https://docs.opencv.org/4.x/d5/dae/tutorial_aruco_detection.html) | `Aruco.detect()` |
+| `cv2.aruco.estimatePoseSingleMarkers` | [ArUco Pose Estimation](https://docs.opencv.org/4.x/d9/d6a/group__aruco.html#ga84dd2e88f3e8c3255eb78e0f79571571) | `Aruco.pose_estimate()` |
+| `cv2.cvtColor` | [Color Space Conversions](https://docs.opencv.org/4.x/d8/d01/group__imgproc__color__conversions.html) | `ColorDetector.filterColor()` |
+| `cv2.inRange` | [Thresholding Operations](https://docs.opencv.org/4.x/da/d97/tutorial_threshold_inRange.html) | `ColorDetector.filterColor()` |
+| `cv2.morphologyEx` | [Morphological Transformations](https://docs.opencv.org/4.x/d9/d61/tutorial_py_morphological_ops.html) | `ColorDetector.filterColor()` |
+| `cv2.HoughLinesP` | [Hough Line Transform](https://docs.opencv.org/4.x/d9/db0/tutorial_hough_lines.html) | `HoughLinesP.estimate()` |
+| `cv2.fitLine` | [Fitting a Line](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#gaf849da1fdafa67ee84b1e9a23b93f91f) | `HoughLinesP`, `RansacLine` |
+| `cv2.minAreaRect` | [Contour Features](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#ga3d476a3417130ae5154aea421ca7ead9) | `RotatedRect.estimate()` |
+| `cv2.fitEllipse` | [Contour Features](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#gaf259efaad93098103d6c27b9e4900ffa) | `FitEllipse.estimate()` |
+| `cv2.calibrateCamera` | [Camera Calibration](https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html) | `Calibration` |
+| `cv2.VideoCapture` | [Video I/O](https://docs.opencv.org/4.x/d8/dfe/classcv_1_1VideoCapture.html) | `OpenCVCam` |
+
+### ROS2
+
+| Package/Message | Documentation | Used In |
+|-----------------|---------------|---------|
+| `sensor_msgs/Image` | [sensor_msgs/Image](https://docs.ros.org/en/humble/p/sensor_msgs/msg/Image.html) | `ROSCam`, `WebcamPublisherNode` |
+| `sensor_msgs/CompressedImage` | [sensor_msgs/CompressedImage](https://docs.ros.org/en/humble/p/sensor_msgs/msg/CompressedImage.html) | `WebcamPublisherNode` |
+| `cv_bridge` | [cv_bridge](https://github.com/ros-perception/vision_opencv/tree/humble) | `ROSCam` |
+| `mirela_interfaces/ArucoTransforms` | [mirela_interfaces](../../../mirela_interfaces/README.md) | `ArucoNode` |
+| `mirela_interfaces/LineInfo` | [mirela_interfaces](../../../mirela_interfaces/README.md) | `LineDetectionNode` |
+
+### Camera SDKs
+
+| SDK | Documentation | Camera Class |
+|-----|---------------|--------------|
+| Intel RealSense | [RealSense SDK 2.0](https://dev.intelrealsense.com/docs/docs-get-started) | `RealsenseCam` |
+| DepthAI | [Luxonis DepthAI Documentation](https://docs.luxonis.com/software/) | `OakdCam` |
+| GStreamer | [GStreamer nvarguscamerasrc](https://docs.nvidia.com/jetson/archives/r35.4.1/DeveloperGuide/text/SD/CameraDevelopment/CameraSoftwareDevelopmentSolution.html) | `IMX219Cam` |
+
+### Scientific Computing
+
+| Library | Documentation | Used In |
+|---------|---------------|---------|
+| `numpy.polyfit` | [numpy.polyfit](https://numpy.org/doc/stable/reference/generated/numpy.polyfit.html) | `PolynomialModel.fit()` |
+| `numpy.polyval` | [numpy.polyval](https://numpy.org/doc/stable/reference/generated/numpy.polyval.html) | `PolynomialModel.estimate()` |
+| `scipy.optimize.curve_fit` | [scipy.optimize.curve_fit](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html) | `ExponentialModel`, `LogarithmicModel`, `InversePowerModel` |
+| `sklearn.linear_model.HuberRegressor` | [HuberRegressor](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.HuberRegressor.html) | `RobustPoly2Model.fit()` |
 
 ## Contributing
 

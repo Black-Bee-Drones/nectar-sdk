@@ -1,14 +1,5 @@
 # Mirela SDK - Installation Guide 🦥
 
-## Requirements
-
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| Ubuntu | 22.04+ | Tested on 22.04 LTS |
-| Disk Space | 10GB+ | ROS2 + dependencies |
-| RAM | 4GB min, 8GB+ recommended | For AI module |
-| Python | 3.10+ | Included with Ubuntu 22.04 |
-
 ## Quick Install 🚀
 
 ```bash
@@ -208,7 +199,7 @@ source install/local_setup.bash
 
 ## Docker Alternative 🐳
 
-For a pre-configured environment, see [`docker/README.md`](docker/README.md):
+For a pre-configured environment, see [`docker/README.md`](../docker/README.md):
 
 ```bash
 # Linux
