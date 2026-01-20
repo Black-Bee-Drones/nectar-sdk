@@ -37,6 +37,15 @@ from mirela_sdk.vision.algorithms import (
     ModelType,
     ModelCalibrator,
     CalibrationResult,
+    # MediaPipe
+    HandTracker,
+    HandTrackerConfig,
+    HandResult,
+    HandLandmark,
+    FaceMeshTracker,
+    FaceMeshTrackerConfig,
+    FaceResult,
+    FaceLandmarkRegion,
 )
 
 from mirela_sdk.vision.utils import ImageCalculus
@@ -50,6 +59,7 @@ from mirela_sdk.vision.nodes import (
 )
 
 __all__ = [
+    # Camera
     "AbstractCam",
     "Calibration",
     "DepthCam",
@@ -71,9 +81,12 @@ __all__ = [
     "RealsenseCam",
     "OakdCam",
     "OakdCameraResolution",
+    # Markers
     "Aruco",
+    # Color
     "ColorDetector",
     "ColorSpace",
+    # Line
     "LineDetector",
     "ILineEstimationMethod",
     "HoughLinesP",
@@ -81,11 +94,23 @@ __all__ = [
     "FitEllipse",
     "RansacLine",
     "AdaptiveHoughLinesP",
+    # Distance
     "DistanceEstimator",
     "ModelType",
     "ModelCalibrator",
     "CalibrationResult",
+    # MediaPipe
+    "HandTracker",
+    "HandTrackerConfig",
+    "HandResult",
+    "HandLandmark",
+    "FaceMeshTracker",
+    "FaceMeshTrackerConfig",
+    "FaceResult",
+    "FaceLandmarkRegion",
+    # Utils
     "ImageCalculus",
+    # Nodes
     "ArucoNode",
     "ClickColorCalibrationNode",
     "ColorCalibrationNode",

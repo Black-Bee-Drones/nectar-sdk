@@ -15,11 +15,24 @@ from .distance import (
     ModelCalibrator,
     CalibrationResult,
 )
+from .mediapipe import (
+    HandTracker,
+    HandTrackerConfig,
+    HandResult,
+    HandLandmark,
+    FaceMeshTracker,
+    FaceMeshTrackerConfig,
+    FaceResult,
+    FaceLandmarkRegion,
+)
 
 __all__ = [
+    # Markers
     "Aruco",
+    # Color
     "ColorDetector",
     "ColorSpace",
+    # Line
     "LineDetector",
     "ILineEstimationMethod",
     "HoughLinesP",
@@ -27,8 +40,18 @@ __all__ = [
     "FitEllipse",
     "RansacLine",
     "AdaptiveHoughLinesP",
+    # Distance
     "DistanceEstimator",
     "ModelType",
     "ModelCalibrator",
     "CalibrationResult",
+    # MediaPipe
+    "HandTracker",
+    "HandTrackerConfig",
+    "HandResult",
+    "HandLandmark",
+    "FaceMeshTracker",
+    "FaceMeshTrackerConfig",
+    "FaceResult",
+    "FaceLandmarkRegion",
 ]

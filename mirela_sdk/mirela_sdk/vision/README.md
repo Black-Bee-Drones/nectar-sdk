@@ -701,6 +701,239 @@ pixels = np.array([15, 20, 25, 30])
 distances = estimator.estimate_batch(pixels)
 ```
 
+### MediaPipe Tracking
+
+Hand and face tracking using MediaPipe's machine learning models. Provides real-time landmark detection for gesture recognition, face tracking, and human-computer interaction.
+
+**MediaPipe Architecture**:
+
+```mermaid
+classDiagram
+    class HandTrackerConfig {
+        <<dataclass>>
+        +model_path Optional~str~
+        +num_hands int
+        +min_detection_confidence float
+        +min_presence_confidence float
+        +min_tracking_confidence float
+        +running_mode str
+    }
+    
+    class HandResult {
+        <<dataclass>>
+        +landmarks list
+        +world_landmarks list
+        +handedness str
+        +confidence float
+    }
+    
+    class HandLandmark {
+        <<enumeration>>
+        WRIST
+        THUMB_TIP
+        INDEX_FINGER_TIP
+        ...
+    }
+    
+    class HandTracker {
+        -_config HandTrackerConfig
+        -_detector HandLandmarker
+        -_detection_result HandLandmarkerResult
+        +detection_result property
+        +is_running bool
+        +start()
+        +close()
+        +detect(frame, draw) ndarray
+        +draw_landmarks(image) ndarray
+        +get_hands() List~HandResult~
+        +raised_fingers(hand_idx) List~int~
+        +get_landmarks(hand_idx, landmark_ids) list
+        +get_world_landmarks(hand_idx) list
+        +find_distance(l1, l2, image, hand_idx, draw) tuple
+        +estimate_depth(hand_idx, width, height) float
+    }
+    
+    class FaceMeshTrackerConfig {
+        <<dataclass>>
+        +model_path Optional~str~
+        +num_faces int
+        +min_detection_confidence float
+        +min_presence_confidence float
+        +min_tracking_confidence float
+        +output_blendshapes bool
+        +running_mode str
+    }
+    
+    class FaceResult {
+        <<dataclass>>
+        +landmarks list
+        +blendshapes Optional~list~
+    }
+    
+    class FaceLandmarkRegion {
+        <<class>>
+        +FACE_OVAL List~int~
+        +LIPS List~int~
+        +LEFT_EYE List~int~
+        +RIGHT_EYE List~int~
+        +LEFT_IRIS List~int~
+        +RIGHT_IRIS List~int~
+    }
+    
+    class FaceMeshTracker {
+        -_config FaceMeshTrackerConfig
+        -_detector FaceLandmarker
+        -_detection_result FaceLandmarkerResult
+        +detection_result property
+        +is_running bool
+        +start()
+        +close()
+        +detect(frame, draw) ndarray
+        +draw_landmarks(image, tesselation, contours, irises) ndarray
+        +draw_region(image, landmark_indices, color, radius) ndarray
+        +get_faces() List~FaceResult~
+        +get_landmarks(face_idx, landmark_ids) list
+        +get_eye_aspect_ratio(eye, face_idx) float
+        +get_mouth_aspect_ratio(face_idx) float
+    }
+    
+    HandTracker o-- HandTrackerConfig
+    HandTracker --> HandResult
+    FaceMeshTracker o-- FaceMeshTrackerConfig
+    FaceMeshTracker --> FaceResult
+```
+
+#### Hand Tracking
+
+Detects hands and provides 21 landmark points per hand using MediaPipe HandLandmarker. Supports gesture recognition via finger state detection.
+
+**API**:
+```python
+HandTracker(config: HandTrackerConfig = None)
+
+tracker.start()                           # Initialize detector
+tracker.detect(frame, draw=True)          # Detect hands
+tracker.get_hands()                       # Get HandResult list
+tracker.raised_fingers(hand_idx=0)        # [thumb, index, middle, ring, pinky]
+tracker.close()                           # Release resources
+```
+
+**Configuration**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_path` | str | None | Path to model (auto-downloads if None) |
+| `num_hands` | int | 2 | Maximum hands to detect |
+| `min_detection_confidence` | float | 0.5 | Detection threshold |
+| `min_presence_confidence` | float | 0.5 | Presence threshold |
+| `min_tracking_confidence` | float | 0.5 | Tracking threshold |
+| `running_mode` | str | "IMAGE" | "IMAGE" (sync) or "LIVE_STREAM" (async) |
+
+**Example**:
+```python
+from mirela_sdk.vision import HandTracker, HandTrackerConfig
+
+config = HandTrackerConfig(num_hands=2, running_mode="IMAGE")
+
+with HandTracker(config) as tracker:
+    while True:
+        frame = camera.get_frame()
+        tracker.detect(frame, draw=True)
+        
+        fingers = tracker.raised_fingers()
+        if fingers:
+            count = sum(fingers)
+            print(f"Fingers raised: {count}")
+        
+        cv2.imshow("Hands", frame)
+        if cv2.waitKey(1) == ord('q'):
+            break
+```
+
+**Gesture Recognition**:
+```python
+from mirela_sdk.vision import HandTracker, HandLandmark
+
+with HandTracker() as tracker:
+    tracker.detect(frame)
+    
+    # Get finger states: [thumb, index, middle, ring, pinky]
+    fingers = tracker.raised_fingers()
+    
+    # Map to gestures
+    gestures = {
+        (0, 0, 0, 0, 0): "fist",
+        (1, 1, 1, 1, 1): "open_palm",
+        (0, 1, 0, 0, 0): "pointing",
+        (0, 1, 1, 0, 0): "peace",
+        (1, 0, 0, 0, 1): "rock",
+    }
+    
+    gesture = gestures.get(tuple(fingers), "unknown")
+```
+
+#### Face Mesh Tracking
+
+Detects faces and provides 478 landmark points per face for detailed facial feature tracking.
+
+**API**:
+```python
+FaceMeshTracker(config: FaceMeshTrackerConfig = None)
+
+tracker.start()                           # Initialize detector
+tracker.detect(frame, draw=True)          # Detect face mesh
+tracker.get_faces()                       # Get FaceResult list
+tracker.get_eye_aspect_ratio("left")      # Blink detection
+tracker.get_mouth_aspect_ratio()          # Mouth open detection
+tracker.close()                           # Release resources
+```
+
+**Configuration**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_path` | str | None | Path to model (auto-downloads if None) |
+| `num_faces` | int | 1 | Maximum faces to detect |
+| `output_blendshapes` | bool | False | Output expression blendshapes |
+| `running_mode` | str | "LIVE_STREAM" | "IMAGE" (sync) or "LIVE_STREAM" (async) |
+
+**Example**:
+```python
+from mirela_sdk.vision import FaceMeshTracker, FaceMeshTrackerConfig
+from mirela_sdk.vision.algorithms.pose.face_tracker import FaceLandmarkRegion
+
+config = FaceMeshTrackerConfig(num_faces=1)
+
+with FaceMeshTracker(config) as tracker:
+    while True:
+        frame = camera.get_frame()
+        tracker.detect(frame, draw=True)
+        
+        # Blink detection
+        left_ear = tracker.get_eye_aspect_ratio("left")
+        right_ear = tracker.get_eye_aspect_ratio("right")
+        
+        if left_ear < 0.15 and right_ear < 0.15:
+            print("Blink detected!")
+        
+        cv2.imshow("Face", frame)
+        if cv2.waitKey(1) == ord('q'):
+            break
+```
+
+**Facial Region Extraction**:
+```python
+from mirela_sdk.vision import FaceLandmarkRegion
+
+with FaceMeshTracker() as tracker:
+    tracker.detect(frame)
+    
+    # Get specific regions
+    left_eye = tracker.get_landmarks(landmark_ids=FaceLandmarkRegion.LEFT_EYE)
+    lips = tracker.get_landmarks(landmark_ids=FaceLandmarkRegion.LIPS)
+    
+    # Draw specific region
+    tracker.draw_region(frame, FaceLandmarkRegion.LEFT_EYE, color=(0, 255, 0))
+```
+
 ## ROS2 Nodes
 
 ### Node Architecture
@@ -952,11 +1185,15 @@ vision/
 │   │   └── color_calibration.json
 │   ├── line/                # Line detection
 │   │   └── line_detector.py
-│   └── distance/            # Distance estimation
-│       ├── models.py
-│       ├── estimator.py
-│       ├── calibrator.py
-│       └── parameters.yaml
+│   ├── distance/            # Distance estimation
+│   │   ├── models.py
+│   │   ├── estimator.py
+│   │   ├── calibrator.py
+│   │   └── parameters.yaml
+│   └── mediapipe/           # MediaPipe solutions
+│       ├── __init__.py
+│       ├── hand_tracker.py  # Hand tracking (21 landmarks)
+│       └── face_tracker.py  # Face mesh (478 landmarks)
 │
 ├── nodes/                   # ROS2 nodes
 │   ├── __init__.py
@@ -1005,6 +1242,13 @@ vision/
 | Intel RealSense | [RealSense SDK 2.0](https://dev.intelrealsense.com/docs/docs-get-started) | `RealsenseCam` |
 | DepthAI | [Luxonis DepthAI Documentation](https://docs.luxonis.com/software/) | `OakdCam` |
 | GStreamer | [GStreamer nvarguscamerasrc](https://docs.nvidia.com/jetson/archives/r35.4.1/DeveloperGuide/text/SD/CameraDevelopment/CameraSoftwareDevelopmentSolution.html) | `IMX219Cam` |
+
+### MediaPipe
+
+| Model | Documentation | Class |
+|-------|---------------|-------|
+| Hand Landmarker | [MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) | `HandTracker` |
+| Face Landmarker | [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) | `FaceMeshTracker` |
 
 ### Scientific Computing
 
