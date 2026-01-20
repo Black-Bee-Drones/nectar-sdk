@@ -7,8 +7,7 @@ Deep learning inference and model management for aerial robotics.
 ```
 ai/
 ├── detection/          # Object detection (see detection/README.md)
-├── utils/              # Utilities (RoboflowUploader)
-└── notebooks/          # Training notebooks
+└── utils/              # Utilities (RoboflowUploader)
 ```
 
 ## Architecture
@@ -219,6 +218,14 @@ class DetectorNode(Node):
         annotated = self.detector.draw_detections(frame, result)
         frame[:] = annotated
 ```
+
+## Notebooks
+
+Training notebooks are hosted on Google Colab for easy access to GPU resources:
+
+| Notebook | Description |
+|----------|-------------|
+| [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1wIVALzoWfBYOlEwwSncHajSe8_OLjxCP?usp=sharing) | **Object Detection Training** - Train and evaluate YOLO, DETR, and RF-DETR models with Roboflow datasets |
 
 ## Dependencies
 
