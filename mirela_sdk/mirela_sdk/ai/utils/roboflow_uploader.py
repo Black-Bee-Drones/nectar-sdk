@@ -1,11 +1,37 @@
+"""Roboflow image uploader for dataset management."""
+
 import os
-from pathlib import Path
-from typing import Optional, List, Set
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 
 class RoboflowUploader:
+    """
+    Upload images to Roboflow for dataset annotation.
+
+    Parameters
+    ----------
+    api_key : str
+        Roboflow API key.
+    workspace : str, optional
+        Workspace name. Uses default if not provided.
+
+    Attributes
+    ----------
+    SUPPORTED_FORMATS : Set[str]
+        Supported image formats.
+
+    Examples
+    --------
+    >>> uploader = RoboflowUploader(api_key="rf_xxx")
+    >>> uploader.upload_directory(
+    ...     directory_path="/path/to/images",
+    ...     project_name="my-project",
+    ...     batch_name="batch-1",
+    ... )
+    """
 
     SUPPORTED_FORMATS: Set[str] = {
         ".jpg",
@@ -19,18 +45,11 @@ class RoboflowUploader:
     }
 
     def __init__(self, api_key: str, workspace: Optional[str] = None):
-        """
-        Initialize Roboflow uploader.
-
-        Args:
-            api_key: Your Roboflow API key
-            workspace: Workspace name (optional, will use default if not provided)
-        """
         try:
             from roboflow import Roboflow
         except ImportError as exc:
             raise ImportError(
-                "roboflow not installed. Install with: pip install roboflow"
+                "roboflow not installed. Install: pip install roboflow"
             ) from exc
 
         self.rf = Roboflow(api_key=api_key)
@@ -52,11 +71,15 @@ class RoboflowUploader:
         """
         Get Roboflow project.
 
-        Args:
-            project_name: Name of the project
+        Parameters
+        ----------
+        project_name : str
+            Project name.
 
-        Returns:
-            Roboflow project instance
+        Returns
+        -------
+        Project
+            Roboflow project instance.
         """
         self._project = self.workspace.project(project_name)
         return self._project
@@ -69,20 +92,29 @@ class RoboflowUploader:
         recursive: bool = False,
         verbose: bool = True,
         max_workers: int = 10,
-    ) -> dict:
+    ) -> Dict:
         """
-        Upload all images from a directory to Roboflow project.
+        Upload images from directory to Roboflow.
 
-        Args:
-            directory_path: Path to directory containing images
-            project_name: Name of the Roboflow project
-            batch_name: Optional batch name for uploaded images
-            recursive: If True, recursively upload from subdirectories
-            verbose: Print upload status
-            max_workers: Number of parallel upload threads (default 10)
+        Parameters
+        ----------
+        directory_path : str
+            Path to directory containing images.
+        project_name : str
+            Roboflow project name.
+        batch_name : str, optional
+            Batch name for uploaded images.
+        recursive : bool, optional
+            Upload from subdirectories. Defaults to False.
+        verbose : bool, optional
+            Print status. Defaults to True.
+        max_workers : int, optional
+            Parallel upload threads. Defaults to 10.
 
-        Returns:
-            Dictionary with upload statistics
+        Returns
+        -------
+        Dict
+            Upload statistics with keys: total, success, failed, failed_files.
         """
         project = self.get_project(project_name)
         directory = Path(directory_path).expanduser().resolve()
@@ -91,11 +123,10 @@ class RoboflowUploader:
             raise FileNotFoundError(f"Directory not found: {directory_path}")
 
         stats = {"total": 0, "success": 0, "failed": 0, "skipped": 0}
-        failed_files = []
+        failed_files: List[Tuple[str, str]] = []
         counter_lock = threading.Lock()
         upload_counter = {"value": 0}
 
-        # Get all image files
         if recursive:
             image_files = self._find_images_recursive(directory)
         else:
@@ -104,26 +135,23 @@ class RoboflowUploader:
         stats["total"] = len(image_files)
 
         if verbose:
-            print(f"\nUploading {stats['total']} images to project '{project_name}'")
+            print(f"\nUploading {stats['total']} images to '{project_name}'")
             if batch_name:
-                print(f"Batch name: {batch_name}")
+                print(f"Batch: {batch_name}")
             print(f"Source: {directory}")
-            print(f"Parallel workers: {max_workers}\n")
+            print(f"Workers: {max_workers}\n")
 
-        def upload_image(image_path):
-
+        def upload_image(image_path: Path) -> Tuple[bool, str, Optional[str]]:
             try:
                 project.upload(image_path=str(image_path), batch_name=batch_name)
 
                 with counter_lock:
                     stats["success"] += 1
                     upload_counter["value"] += 1
-                    current_count = upload_counter["value"]
+                    current = upload_counter["value"]
 
                     if verbose:
-                        print(
-                            f"[{current_count}/{stats['total']}] ✓ Uploaded: {image_path.name}"
-                        )
+                        print(f"[{current}/{stats['total']}] ✓ {image_path.name}")
 
                 return True, image_path.name, None
 
@@ -131,37 +159,32 @@ class RoboflowUploader:
                 with counter_lock:
                     stats["failed"] += 1
                     upload_counter["value"] += 1
-                    current_count = upload_counter["value"]
+                    current = upload_counter["value"]
 
                     if verbose:
                         print(
-                            f"[{current_count}/{stats['total']}] ✗ Failed: {image_path.name} - {exc}"
+                            f"[{current}/{stats['total']}] ✗ {image_path.name}: {exc}"
                         )
 
                 return False, image_path.name, str(exc)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(upload_image, img_path): img_path
-                for img_path in image_files
-            }
+            futures = {executor.submit(upload_image, img): img for img in image_files}
 
             for future in as_completed(futures):
                 success, filename, error = future.result()
                 if not success and error:
                     failed_files.append((filename, error))
 
-        # Print summary
         if verbose:
-            print(f"\n{'='*60}")
-            print("Upload Summary:")
-            print(f"  Total files: {stats['total']}")
-            print(f"  Successful: {stats['success']}")
-            print(f"  Failed: {stats['failed']}")
-            print(f"{'='*60}\n")
+            print(f"\n{'='*50}")
+            print(
+                f"Total: {stats['total']} | Success: {stats['success']} | Failed: {stats['failed']}"
+            )
+            print(f"{'='*50}\n")
 
             if failed_files:
-                print("Failed uploads:")
+                print("Failed:")
                 for filename, error in failed_files:
                     print(f"  - {filename}: {error}")
 
@@ -170,33 +193,42 @@ class RoboflowUploader:
 
     def upload_multiple_directories(
         self,
-        directories: List[tuple],
+        directories: List[Tuple[str, str]],
         project_name: str,
         verbose: bool = True,
         max_workers: int = 10,
-    ) -> dict:
+    ) -> Dict:
         """
-        Upload images from multiple directories with different batch names.
+        Upload images from multiple directories with batch names.
 
-        Args:
-            directories: List of tuples (directory_path, batch_name)
-            project_name: Name of the Roboflow project
-            verbose: Print upload status
-            max_workers: Number of parallel upload threads (default 10)
+        Parameters
+        ----------
+        directories : List[Tuple[str, str]]
+            List of (directory_path, batch_name) tuples.
+        project_name : str
+            Roboflow project name.
+        verbose : bool, optional
+            Print status. Defaults to True.
+        max_workers : int, optional
+            Parallel upload threads. Defaults to 10.
 
-        Returns:
-            Dictionary with overall upload statistics
+        Returns
+        -------
+        Dict
+            Overall statistics with keys: total_batches, total_images,
+            total_success, total_failed, batches.
 
-        Example:
-            uploader.upload_multiple_directories(
-                directories=[
-                    ("/path/to/dir1", "batch-1"),
-                    ("/path/to/dir2", "batch-2"),
-                ],
-                project_name="my-project"
-            )
+        Examples
+        --------
+        >>> uploader.upload_multiple_directories(
+        ...     directories=[
+        ...         ("/path/to/dir1", "batch-1"),
+        ...         ("/path/to/dir2", "batch-2"),
+        ...     ],
+        ...     project_name="my-project",
+        ... )
         """
-        overall_stats = {
+        overall = {
             "total_batches": len(directories),
             "total_images": 0,
             "total_success": 0,
@@ -206,9 +238,9 @@ class RoboflowUploader:
 
         for directory_path, batch_name in directories:
             if verbose:
-                print(f"\n{'#'*60}")
-                print(f"Processing batch: {batch_name}")
-                print(f"{'#'*60}")
+                print(f"\n{'#'*50}")
+                print(f"Batch: {batch_name}")
+                print(f"{'#'*50}")
 
             stats = self.upload_directory(
                 directory_path=directory_path,
@@ -219,25 +251,26 @@ class RoboflowUploader:
                 max_workers=max_workers,
             )
 
-            overall_stats["total_images"] += stats["total"]
-            overall_stats["total_success"] += stats["success"]
-            overall_stats["total_failed"] += stats["failed"]
-            overall_stats["batches"][batch_name] = stats
+            overall["total_images"] += stats["total"]
+            overall["total_success"] += stats["success"]
+            overall["total_failed"] += stats["failed"]
+            overall["batches"][batch_name] = stats
 
         if verbose:
-            print(f"\n{'='*60}")
-            print("OVERALL SUMMARY")
-            print(f"{'='*60}")
-            print(f"Total batches: {overall_stats['total_batches']}")
-            print(f"Total images: {overall_stats['total_images']}")
-            print(f"Total successful: {overall_stats['total_success']}")
-            print(f"Total failed: {overall_stats['total_failed']}")
-            print(f"{'='*60}\n")
+            print(f"\n{'='*50}")
+            print("OVERALL")
+            print(
+                f"Batches: {overall['total_batches']} | Images: {overall['total_images']}"
+            )
+            print(
+                f"Success: {overall['total_success']} | Failed: {overall['total_failed']}"
+            )
+            print(f"{'='*50}\n")
 
-        return overall_stats
+        return overall
 
     def _find_images(self, directory: Path) -> List[Path]:
-        """Find all images in directory (non-recursive)."""
+        """Find images in directory (non-recursive)."""
         images = []
         for file_path in directory.iterdir():
             if (
@@ -248,7 +281,7 @@ class RoboflowUploader:
         return sorted(images)
 
     def _find_images_recursive(self, directory: Path) -> List[Path]:
-        """Find all images in directory and subdirectories."""
+        """Find images in directory and subdirectories."""
         images = []
         for root, _, files in os.walk(directory):
             root_path = Path(root)
@@ -260,52 +293,23 @@ class RoboflowUploader:
 
 
 def main():
-    """Example usage script."""
+    """CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Upload images to Roboflow project")
+    parser = argparse.ArgumentParser(description="Upload images to Roboflow")
+    parser.add_argument("--api-key", required=True, help="Roboflow API key")
+    parser.add_argument("--project", required=True, help="Project name")
+    parser.add_argument("--directory", required=True, help="Image directory")
+    parser.add_argument("--batch-name", help="Batch name")
     parser.add_argument(
-        "--api-key",
-        required=True,
-        help="Roboflow API key",
+        "--recursive", action="store_true", help="Include subdirectories"
     )
-    parser.add_argument(
-        "--project",
-        required=True,
-        help="Roboflow project name",
-    )
-    parser.add_argument(
-        "--directory",
-        required=True,
-        help="Directory containing images",
-    )
-    parser.add_argument(
-        "--batch-name",
-        help="Optional batch name for uploads",
-    )
-    parser.add_argument(
-        "--recursive",
-        action="store_true",
-        help="Recursively upload from subdirectories",
-    )
-    parser.add_argument(
-        "--workspace",
-        help="Workspace name (optional)",
-    )
-    parser.add_argument(
-        "--max-workers",
-        type=int,
-        default=10,
-        help="Number of parallel upload threads (default: 10)",
-    )
+    parser.add_argument("--workspace", help="Workspace name")
+    parser.add_argument("--max-workers", type=int, default=10, help="Parallel threads")
 
     args = parser.parse_args()
 
-    uploader = RoboflowUploader(
-        api_key=args.api_key,
-        workspace=args.workspace,
-    )
-
+    uploader = RoboflowUploader(api_key=args.api_key, workspace=args.workspace)
     uploader.upload_directory(
         directory_path=args.directory,
         project_name=args.project,

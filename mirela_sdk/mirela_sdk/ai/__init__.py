@@ -1,15 +1,51 @@
-"""AI module for detection, inference, and model management."""
-
-from .detection import YOLODetector, BaseDetectionModel, UltralyticsDetectionModel
-from .detection import Detection, DetectionResult, ModelLoader
-from .utils import RoboflowUploader
+from mirela_sdk.ai.detection import (
+    # Simple API
+    Detector,
+    Framework,
+    # Model classes
+    UltralyticsModel,
+    TransformersModel,
+    RFDETRModel,
+    BaseDetectionModel,
+    # Types
+    Detection,
+    DetectionResult,
+    Prediction,
+    DetectionInput,
+    # Configs
+    TrainingConfig,
+    EvaluationConfig,
+    EvaluationMetrics,
+    # Utilities
+    ModelLoader,
+    ObjectDetectionEvaluator,
+    DatasetConverter,
+    DatasetMerger,
+)
+from mirela_sdk.ai.utils import RoboflowUploader
 
 __all__ = [
-    "YOLODetector",
+    # Simple API
+    "Detector",
+    "Framework",
+    # Model classes
+    "UltralyticsModel",
+    "TransformersModel",
+    "RFDETRModel",
     "BaseDetectionModel",
-    "UltralyticsDetectionModel",
+    # Types
     "Detection",
     "DetectionResult",
+    "Prediction",
+    "DetectionInput",
+    # Configs
+    "TrainingConfig",
+    "EvaluationConfig",
+    "EvaluationMetrics",
+    # Utilities
     "ModelLoader",
+    "ObjectDetectionEvaluator",
+    "DatasetConverter",
+    "DatasetMerger",
     "RoboflowUploader",
 ]
