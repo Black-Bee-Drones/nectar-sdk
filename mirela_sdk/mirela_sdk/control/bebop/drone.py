@@ -82,10 +82,13 @@ class BebopDrone(BaseDrone):
     def _get_driver_name(self) -> str:
         return "bebop_driver"
 
-    def _start_driver(self) -> bool:
+    def _get_driver_command(self) -> str:
         config: BebopConfig = self._config
-        cmd = f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={config.ip}"
-        return ProcessUtils.start_process(cmd, "bebop_driver")
+        return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={config.ip}"
+
+    def _start_driver(self) -> bool:
+        cmd = self._get_driver_command()
+        return ProcessUtils.start_process(cmd, self._get_driver_name())
 
     def connect(self) -> bool:
         self._connected = self._driver_running

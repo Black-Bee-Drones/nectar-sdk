@@ -13,6 +13,13 @@ from mirela_sdk.control.config import (
 
 from mirela_sdk.control.factory import DroneFactory
 
+from mirela_sdk.control.driver_monitor import (
+    DriverMonitor,
+    DriverStatus,
+    DriverInfo,
+    DRIVER_INFO,
+)
+
 from mirela_sdk.control.exceptions import (
     DroneError,
     DriverNotFoundError,
@@ -51,6 +58,10 @@ __all__ = [
     "MavrosConfig",
     "BebopConfig",
     "DroneFactory",
+    "DriverMonitor",
+    "DriverStatus",
+    "DriverInfo",
+    "DRIVER_INFO",
     "DroneError",
     "DriverNotFoundError",
     "TakeoffPositionNotSetError",

@@ -387,11 +387,15 @@ class MavrosDrone(BaseDrone):
         """Return MAVROS driver node name."""
         return "mavros_node"
 
+    def _get_driver_command(self) -> str:
+        """Return command to start MAVROS driver."""
+        config: MavrosConfig = self._config
+        return f"ros2 launch mavros apm.launch fcu_url:={config.connection_string}"
+
     def _start_driver(self) -> bool:
         """Launch MAVROS driver process."""
-        config: MavrosConfig = self._config
-        cmd = f"ros2 launch mavros apm.launch fcu_url:={config.connection_string}"
-        return ProcessUtils.start_process(cmd, "mavros_node")
+        cmd = self._get_driver_command()
+        return ProcessUtils.start_process(cmd, self._get_driver_name())
 
     def connect(self) -> bool:
         """

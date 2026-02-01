@@ -20,6 +20,10 @@ setup(
             os.path.join("share", package_name, "control", "config"),
             glob(os.path.join("control", "config", "*.yaml")),
         ),
+        (
+            os.path.join("share", package_name, "interface", "images"),
+            glob(os.path.join("mirela_sdk", "interface", "images", "*.png")),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -29,7 +33,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "gui = mirela_sdk.interface.gui:main",
+            "gui = mirela_sdk.interface.app:main",
             # vision
             "aruco_node = mirela_sdk.vision.nodes.aruco_node:main",
             "color_calibration_node = mirela_sdk.vision.nodes.color_calibration_node:main",
