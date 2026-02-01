@@ -1,6 +1,7 @@
 import os
 import shlex
 import subprocess
+from typing import List, Optional
 from time import sleep
 
 
@@ -8,10 +9,14 @@ class ProcessUtils:
     @staticmethod
     def is_gui_available() -> bool:
         """
-        Check if the GUI is available
+        Check if the GUI is available.
+
+        Returns
+        -------
+        bool
+            True if gnome-terminal is available.
         """
         try:
-            # Check if the DISPLAY environment variable is set
             return bool(
                 subprocess.run(
                     ["which", "gnome-terminal"],
@@ -23,6 +28,91 @@ class ProcessUtils:
         except Exception:
             print("\033[94mGUI is not available\033[94m")
             return False
+
+    @staticmethod
+    def get_ros2_nodes(timeout: float = 5.0) -> List[str]:
+        """
+        Get list of running ROS2 nodes.
+
+        Parameters
+        ----------
+        timeout : float, default=5.0
+            Maximum time to wait for ros2 node list command.
+
+        Returns
+        -------
+        List[str]
+            List of fully qualified node names.
+        """
+        try:
+            result = subprocess.run(
+                shlex.split("ros2 node list"),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if result.returncode == 0:
+                return [
+                    line.strip()
+                    for line in result.stdout.strip().split("\n")
+                    if line.strip()
+                ]
+            return []
+        except subprocess.TimeoutExpired:
+            return []
+        except Exception:
+            return []
+
+    @staticmethod
+    def is_node_running(node_pattern: str, timeout: float = 5.0) -> bool:
+        """
+        Check if a ROS2 node matching pattern is running.
+
+        Parameters
+        ----------
+        node_pattern : str
+            Node name or pattern to search for.
+        timeout : float, default=5.0
+            Maximum time to wait for ros2 node list command.
+
+        Returns
+        -------
+        bool
+            True if a matching node is found.
+        """
+        nodes = ProcessUtils.get_ros2_nodes(timeout)
+        return any(node_pattern in node for node in nodes)
+
+    @staticmethod
+    def wait_for_node(
+        node_pattern: str,
+        timeout: float = 10.0,
+        poll_interval: float = 0.5,
+    ) -> bool:
+        """
+        Wait for a ROS2 node to appear in the node graph.
+
+        Parameters
+        ----------
+        node_pattern : str
+            Node name or pattern to search for.
+        timeout : float, default=10.0
+            Maximum time to wait.
+        poll_interval : float, default=0.5
+            Time between status checks.
+
+        Returns
+        -------
+        bool
+            True if node appeared within timeout.
+        """
+        elapsed = 0.0
+        while elapsed < timeout:
+            if ProcessUtils.is_node_running(node_pattern, timeout=2.0):
+                return True
+            sleep(poll_interval)
+            elapsed += poll_interval
+        return False
 
     @staticmethod
     def start_process(
