@@ -148,23 +148,6 @@ class ColorCalibrationManager:
     def sample_at_point(
         self, frame: np.ndarray, x: int, y: int
     ) -> Tuple[bool, np.ndarray]:
-        """
-        Sample color region at clicked point using flood fill.
-
-        Parameters
-        ----------
-        frame : np.ndarray
-            BGR image frame.
-        x : int
-            X coordinate in frame.
-        y : int
-            Y coordinate in frame.
-
-        Returns
-        -------
-        tuple
-            (success, sampled_pixels) where success indicates if sampling worked.
-        """
         h, w = frame.shape[:2]
         if not (0 <= x < w and 0 <= y < h):
             return False, np.array([])
@@ -217,21 +200,6 @@ class ColorCalibrationManager:
         self._upper = np.array(upper, dtype=np.uint8)
 
     def apply_filter(self, frame: np.ndarray, return_mask: bool = False) -> np.ndarray:
-        """
-        Apply color filter to frame.
-
-        Parameters
-        ----------
-        frame : np.ndarray
-            BGR input frame.
-        return_mask : bool
-            If True, return binary mask instead of filtered image.
-
-        Returns
-        -------
-        np.ndarray
-            Filtered image or binary mask.
-        """
         if self._color_space == "HSV":
             converted = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         else:
@@ -249,14 +217,6 @@ class ColorCalibrationManager:
         return cv2.bitwise_and(frame, frame, mask=mask)
 
     def get_available_presets(self) -> Dict[str, List[str]]:
-        """
-        Get available color presets from calibration file.
-
-        Returns
-        -------
-        dict
-            Dictionary mapping color names to available color spaces.
-        """
         if not os.path.exists(self._calibration_path):
             return {}
 
@@ -268,21 +228,6 @@ class ColorCalibrationManager:
             return {}
 
     def load_preset(self, name: str, color_space: Optional[str] = None) -> bool:
-        """
-        Load color preset from calibration file.
-
-        Parameters
-        ----------
-        name : str
-            Preset name.
-        color_space : str, optional
-            Color space to load (defaults to current).
-
-        Returns
-        -------
-        bool
-            True if loaded successfully.
-        """
         if color_space is None:
             color_space = self._color_space
 
@@ -307,19 +252,6 @@ class ColorCalibrationManager:
             return False
 
     def save_preset(self, name: str) -> bool:
-        """
-        Save current color values as preset.
-
-        Parameters
-        ----------
-        name : str
-            Preset name.
-
-        Returns
-        -------
-        bool
-            True if saved successfully.
-        """
         data = {}
         if os.path.exists(self._calibration_path):
             try:
@@ -446,8 +378,8 @@ class VisionTab(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
         splitter = QSplitter(Qt.Horizontal)
 
@@ -456,7 +388,7 @@ class VisionTab(QWidget):
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
-        splitter.setSizes([420, 800])
+        splitter.setSizes([380, 720])
 
         layout.addWidget(splitter)
 
@@ -464,13 +396,13 @@ class VisionTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(400)
-        scroll.setMaximumWidth(480)
+        scroll.setMinimumWidth(360)
+        scroll.setMaximumWidth(440)
 
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 8, 0)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(6)
 
         layout.addWidget(self._create_camera_selector())
         layout.addWidget(self._create_color_calibration_section())
@@ -490,16 +422,16 @@ class VisionTab(QWidget):
     def _create_video_panel(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(8, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(4, 0, 0, 0)
+        layout.setSpacing(6)
 
         header = QLabel("Live Preview")
         header.setStyleSheet(
             f"""
-            font-size: 16px;
-            font-weight: bold;
+            font-size: 13px;
+            font-weight: 600;
             color: {COLORS.accent};
-            padding: 8px;
+            padding: 4px 0;
         """
         )
         header.setAlignment(Qt.AlignCenter)
@@ -521,41 +453,53 @@ class VisionTab(QWidget):
     def _create_camera_selector(self) -> QGroupBox:
         group = QGroupBox("Camera Source")
         layout = QVBoxLayout(group)
+        layout.setSpacing(6)
 
-        source_layout = QHBoxLayout()
+        # Source row
+        source_row = QHBoxLayout()
+        source_row.setSpacing(6)
+        src_lbl = QLabel("Source:")
+        src_lbl.setProperty("secondary", True)
+        src_lbl.setFixedWidth(50)
         self._source_combo = QComboBox()
-        self._source_combo.addItems(
-            [
-                "webcam",
-                "realsense",
-                "oakd",
-                "ros",
-                "file",
-            ]
-        )
+        self._source_combo.addItems(["webcam", "realsense", "oakd", "ros", "file"])
         self._source_combo.setEditable(True)
+        source_row.addWidget(src_lbl)
+        source_row.addWidget(self._source_combo, 1)
+        layout.addLayout(source_row)
 
-        source_layout.addWidget(QLabel("Source:"))
-        source_layout.addWidget(self._source_combo, 1)
+        # Config grid
+        config_grid = QGridLayout()
+        config_grid.setSpacing(4)
 
-        config_layout = QGridLayout()
-        config_layout.addWidget(QLabel("Device/Topic:"), 0, 0)
+        dev_lbl = QLabel("Device:")
+        dev_lbl.setProperty("secondary", True)
         self._device_input = QLineEdit("0")
-        config_layout.addWidget(self._device_input, 0, 1)
+        self._device_input.setPlaceholderText("/topic or device")
+        config_grid.addWidget(dev_lbl, 0, 0)
+        config_grid.addWidget(self._device_input, 0, 1)
 
-        config_layout.addWidget(QLabel("Width:"), 1, 0)
+        w_lbl = QLabel("W:")
+        w_lbl.setProperty("secondary", True)
         self._width_spin = QSpinBox()
         self._width_spin.setRange(320, 1920)
         self._width_spin.setValue(640)
-        config_layout.addWidget(self._width_spin, 1, 1)
+        config_grid.addWidget(w_lbl, 1, 0)
+        config_grid.addWidget(self._width_spin, 1, 1)
 
-        config_layout.addWidget(QLabel("Height:"), 2, 0)
+        h_lbl = QLabel("H:")
+        h_lbl.setProperty("secondary", True)
         self._height_spin = QSpinBox()
         self._height_spin.setRange(240, 1080)
         self._height_spin.setValue(480)
-        config_layout.addWidget(self._height_spin, 2, 1)
+        config_grid.addWidget(h_lbl, 2, 0)
+        config_grid.addWidget(self._height_spin, 2, 1)
 
+        layout.addLayout(config_grid)
+
+        # Buttons
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(6)
         self._start_btn = QPushButton("Start")
         self._start_btn.setProperty("accent", True)
         self._start_btn.clicked.connect(self._start_camera)
@@ -566,9 +510,6 @@ class VisionTab(QWidget):
 
         btn_layout.addWidget(self._start_btn)
         btn_layout.addWidget(self._stop_btn)
-
-        layout.addLayout(source_layout)
-        layout.addLayout(config_layout)
         layout.addLayout(btn_layout)
 
         return group
@@ -584,30 +525,37 @@ class VisionTab(QWidget):
         )
 
         cs_layout = QHBoxLayout()
-        cs_layout.addWidget(QLabel("Color Space:"))
+        cs_layout.setSpacing(6)
+        cs_lbl = QLabel("Space:")
+        cs_lbl.setProperty("secondary", True)
         self._color_space_combo = QComboBox()
         self._color_space_combo.addItems(["HSV", "LAB"])
         self._color_space_combo.currentTextChanged.connect(self._on_color_space_changed)
+        cs_layout.addWidget(cs_lbl)
         cs_layout.addWidget(self._color_space_combo, 1)
 
         self._click_sample_cb = QCheckBox("Click to Sample")
         self._click_sample_cb.setToolTip("Click on video to sample color region")
         self._click_sample_cb.stateChanged.connect(self._on_click_sample_changed)
 
-        tolerance_layout = QHBoxLayout()
-        tolerance_layout.addWidget(QLabel("Tolerance:"))
+        tol_layout = QHBoxLayout()
+        tol_layout.setSpacing(6)
+        tol_lbl = QLabel("Tol:")
+        tol_lbl.setProperty("secondary", True)
         self._tolerance_spin = QSpinBox()
         self._tolerance_spin.setRange(1, 50)
         self._tolerance_spin.setValue(15)
         self._tolerance_spin.valueChanged.connect(
             lambda v: setattr(self._color_manager, "flood_tolerance", v)
         )
-        tolerance_layout.addWidget(self._tolerance_spin, 1)
+        tol_layout.addWidget(tol_lbl)
+        tol_layout.addWidget(self._tolerance_spin, 1)
 
         self._sample_label = QLabel("Samples: 0")
-        self._sample_label.setProperty("secondary", True)
+        self._sample_label.setProperty("muted", True)
 
         sample_btn_layout = QHBoxLayout()
+        sample_btn_layout.setSpacing(4)
         self._undo_sample_btn = QPushButton("Undo")
         self._undo_sample_btn.clicked.connect(self._on_undo_sample)
         self._reset_sample_btn = QPushButton("Reset")
@@ -616,39 +564,41 @@ class VisionTab(QWidget):
         sample_btn_layout.addWidget(self._reset_sample_btn)
 
         self._ch1_label = QLabel("Hue")
+        self._ch1_label.setProperty("secondary", True)
         self._lower_ch1 = LabeledSlider("Min", 0, 179, 0, 0)
         self._upper_ch1 = LabeledSlider("Max", 0, 179, 179, 0)
         self._lower_ch1.valueChanged.connect(self._on_slider_changed)
         self._upper_ch1.valueChanged.connect(self._on_slider_changed)
 
-        self._ch2_label = QLabel("Saturation")
+        self._ch2_label = QLabel("Sat")
+        self._ch2_label.setProperty("secondary", True)
         self._lower_ch2 = LabeledSlider("Min", 0, 255, 0, 0)
         self._upper_ch2 = LabeledSlider("Max", 0, 255, 255, 0)
         self._lower_ch2.valueChanged.connect(self._on_slider_changed)
         self._upper_ch2.valueChanged.connect(self._on_slider_changed)
 
-        self._ch3_label = QLabel("Value")
+        self._ch3_label = QLabel("Val")
+        self._ch3_label.setProperty("secondary", True)
         self._lower_ch3 = LabeledSlider("Min", 0, 255, 0, 0)
         self._upper_ch3 = LabeledSlider("Max", 0, 255, 255, 0)
         self._lower_ch3.valueChanged.connect(self._on_slider_changed)
         self._upper_ch3.valueChanged.connect(self._on_slider_changed)
 
-        preset_label = QLabel("Presets")
-        preset_label.setProperty("secondary", True)
-
         preset_layout = QHBoxLayout()
+        preset_layout.setSpacing(4)
         self._preset_combo = QComboBox()
         self._preset_combo.setEditable(False)
-        self._preset_combo.setMinimumWidth(120)
         self._refresh_presets()
         preset_layout.addWidget(self._preset_combo, 1)
 
         preset_btn_layout = QHBoxLayout()
+        preset_btn_layout.setSpacing(4)
         self._load_preset_btn = QPushButton("Load")
         self._load_preset_btn.clicked.connect(self._on_load_preset)
         self._save_preset_btn = QPushButton("Save")
         self._save_preset_btn.clicked.connect(self._on_save_preset)
-        self._refresh_preset_btn = QPushButton("Refresh")
+        self._refresh_preset_btn = QPushButton("↻")
+        self._refresh_preset_btn.setFixedWidth(28)
         self._refresh_preset_btn.clicked.connect(self._refresh_presets)
         preset_btn_layout.addWidget(self._load_preset_btn)
         preset_btn_layout.addWidget(self._save_preset_btn)
@@ -660,29 +610,31 @@ class VisionTab(QWidget):
         section.add_widget(self._color_filter_cb)
         section.add_layout(cs_layout)
         section.add_widget(self._click_sample_cb)
-        section.add_layout(tolerance_layout)
+        section.add_layout(tol_layout)
         section.add_widget(self._sample_label)
         section.add_layout(sample_btn_layout)
 
         ch1_layout = QHBoxLayout()
+        ch1_layout.setSpacing(4)
         ch1_layout.addWidget(self._ch1_label)
         ch1_layout.addWidget(self._lower_ch1)
         ch1_layout.addWidget(self._upper_ch1)
         section.add_layout(ch1_layout)
 
         ch2_layout = QHBoxLayout()
+        ch2_layout.setSpacing(4)
         ch2_layout.addWidget(self._ch2_label)
         ch2_layout.addWidget(self._lower_ch2)
         ch2_layout.addWidget(self._upper_ch2)
         section.add_layout(ch2_layout)
 
         ch3_layout = QHBoxLayout()
+        ch3_layout.setSpacing(4)
         ch3_layout.addWidget(self._ch3_label)
         ch3_layout.addWidget(self._lower_ch3)
         ch3_layout.addWidget(self._upper_ch3)
         section.add_layout(ch3_layout)
 
-        section.add_widget(preset_label)
         section.add_layout(preset_layout)
         section.add_layout(preset_btn_layout)
         section.add_widget(self._show_mask_cb)
@@ -700,77 +652,68 @@ class VisionTab(QWidget):
         )
 
         method_layout = QHBoxLayout()
-        method_layout.addWidget(QLabel("Method:"))
+        method_layout.setSpacing(6)
+        method_lbl = QLabel("Method:")
+        method_lbl.setProperty("secondary", True)
         self._line_method_combo = QComboBox()
         self._line_method_combo.addItems(self.ESTIMATION_METHODS)
         self._line_method_combo.currentTextChanged.connect(self._on_line_method_changed)
+        method_layout.addWidget(method_lbl)
         method_layout.addWidget(self._line_method_combo, 1)
 
         self._show_roi_cb = QCheckBox("Show ROI")
         self._show_roi_cb.setChecked(True)
-        self._show_roi_cb.setToolTip("Display Region of Interest rectangle")
 
-        roi_label = QLabel("ROI (Region of Interest)")
-        roi_label.setProperty("secondary", True)
-
-        self._roi_width = LabeledSlider("Width", 100, 640, 400, 0)
-        self._roi_height = LabeledSlider("Height", 100, 480, 280, 0)
-
-        info_label = QLabel("Line detection uses color filter if enabled")
-        info_label.setProperty("secondary", True)
-        info_label.setWordWrap(True)
+        roi_layout = QHBoxLayout()
+        roi_layout.setSpacing(4)
+        self._roi_width = LabeledSlider("W", 100, 640, 400, 0)
+        self._roi_height = LabeledSlider("H", 100, 480, 280, 0)
+        roi_layout.addWidget(self._roi_width)
+        roi_layout.addWidget(self._roi_height)
 
         section.add_widget(self._line_detect_cb)
         section.add_layout(method_layout)
         section.add_widget(self._show_roi_cb)
-        section.add_widget(roi_label)
-
-        roi_layout = QHBoxLayout()
-        roi_layout.addWidget(self._roi_width)
-        roi_layout.addWidget(self._roi_height)
         section.add_layout(roi_layout)
-
-        section.add_widget(info_label)
 
         return section
 
     def _create_edge_detection_section(self) -> CollapsibleSection:
         section = CollapsibleSection("Edge Detection")
 
-        self._canny_cb = QCheckBox("Enable Canny Edge")
+        self._canny_cb = QCheckBox("Canny Edge")
         self._canny_cb.stateChanged.connect(
             lambda: self._toggle_filter("canny", self._canny_cb.isChecked())
         )
 
-        self._lower_canny = LabeledSlider("Lower Threshold", 0, 255, 100, 0)
-        self._upper_canny = LabeledSlider("Upper Threshold", 0, 255, 200, 0)
+        canny_layout = QHBoxLayout()
+        canny_layout.setSpacing(4)
+        self._lower_canny = LabeledSlider("Lo", 0, 255, 100, 0)
+        self._upper_canny = LabeledSlider("Hi", 0, 255, 200, 0)
+        canny_layout.addWidget(self._lower_canny)
+        canny_layout.addWidget(self._upper_canny)
 
-        self._contour_cb = QCheckBox("Enable Contour Detection")
+        self._contour_cb = QCheckBox("Contour Detection")
         self._contour_cb.stateChanged.connect(
             lambda: self._toggle_filter("contour", self._contour_cb.isChecked())
         )
 
         section.add_widget(self._canny_cb)
-
-        canny_layout = QHBoxLayout()
-        canny_layout.addWidget(self._lower_canny)
-        canny_layout.addWidget(self._upper_canny)
         section.add_layout(canny_layout)
-
         section.add_widget(self._contour_cb)
         return section
 
     def _create_blur_section(self) -> CollapsibleSection:
         section = CollapsibleSection("Blur & Sharpen")
 
-        self._blur_cb = QCheckBox("Enable Gaussian Blur")
+        self._blur_cb = QCheckBox("Gaussian Blur")
         self._blur_cb.stateChanged.connect(
             lambda: self._toggle_filter("blur", self._blur_cb.isChecked())
         )
 
-        self._blur_kernel = LabeledSlider("Kernel Size", 1, 31, 5, 0)
+        self._blur_kernel = LabeledSlider("Kernel", 1, 31, 5, 0)
 
-        self._sharpen_cb = QCheckBox("Enable Sharpen")
+        self._sharpen_cb = QCheckBox("Sharpen")
         self._sharpen_cb.stateChanged.connect(
             lambda: self._toggle_filter("sharpen", self._sharpen_cb.isChecked())
         )
@@ -784,28 +727,28 @@ class VisionTab(QWidget):
     def _create_transform_section(self) -> CollapsibleSection:
         section = CollapsibleSection("Transformations")
 
-        self._rotation_cb = QCheckBox("Enable Rotation")
+        self._rotation_cb = QCheckBox("Rotation")
         self._rotation_cb.stateChanged.connect(
             lambda: self._toggle_filter("rotation", self._rotation_cb.isChecked())
         )
 
         self._rotation_angle = LabeledSlider("Angle", 0, 360, 0, 0)
 
-        self._resize_cb = QCheckBox("Enable Resize")
+        self._resize_cb = QCheckBox("Resize")
         self._resize_cb.stateChanged.connect(
             lambda: self._toggle_filter("resize", self._resize_cb.isChecked())
         )
 
-        self._resize_width = LabeledSlider("Width", 100, 1920, 640, 0)
-        self._resize_height = LabeledSlider("Height", 100, 1080, 480, 0)
+        resize_layout = QHBoxLayout()
+        resize_layout.setSpacing(4)
+        self._resize_width = LabeledSlider("W", 100, 1920, 640, 0)
+        self._resize_height = LabeledSlider("H", 100, 1080, 480, 0)
+        resize_layout.addWidget(self._resize_width)
+        resize_layout.addWidget(self._resize_height)
 
         section.add_widget(self._rotation_cb)
         section.add_widget(self._rotation_angle)
         section.add_widget(self._resize_cb)
-
-        resize_layout = QHBoxLayout()
-        resize_layout.addWidget(self._resize_width)
-        resize_layout.addWidget(self._resize_height)
         section.add_layout(resize_layout)
 
         return section
@@ -813,18 +756,21 @@ class VisionTab(QWidget):
     def _create_morphology_section(self) -> CollapsibleSection:
         section = CollapsibleSection("Morphological Ops")
 
-        self._morphology_cb = QCheckBox("Enable Morphology")
+        self._morphology_cb = QCheckBox("Morphology")
         self._morphology_cb.stateChanged.connect(
             lambda: self._toggle_filter("morphology", self._morphology_cb.isChecked())
         )
 
         op_layout = QHBoxLayout()
-        op_layout.addWidget(QLabel("Operation:"))
+        op_layout.setSpacing(6)
+        op_lbl = QLabel("Op:")
+        op_lbl.setProperty("secondary", True)
         self._morph_op_combo = QComboBox()
         self._morph_op_combo.addItems(["erode", "dilate", "open", "close"])
-        op_layout.addWidget(self._morph_op_combo)
+        op_layout.addWidget(op_lbl)
+        op_layout.addWidget(self._morph_op_combo, 1)
 
-        self._morph_kernel = LabeledSlider("Kernel Size", 1, 31, 5, 0)
+        self._morph_kernel = LabeledSlider("Kernel", 1, 31, 5, 0)
 
         self._adaptive_thresh_cb = QCheckBox("Adaptive Threshold")
         self._adaptive_thresh_cb.stateChanged.connect(
@@ -889,37 +835,32 @@ class VisionTab(QWidget):
     def _create_aruco_section(self) -> CollapsibleSection:
         section = CollapsibleSection("ArUco Markers")
 
-        self._aruco_cb = QCheckBox("Enable ArUco Detection")
+        self._aruco_cb = QCheckBox("ArUco Detection")
         self._aruco_cb.stateChanged.connect(
             lambda: self._toggle_filter("aruco", self._aruco_cb.isChecked())
         )
 
         dict_layout = QHBoxLayout()
-        dict_layout.addWidget(QLabel("Dictionary:"))
+        dict_layout.setSpacing(6)
+        dict_lbl = QLabel("Dict:")
+        dict_lbl.setProperty("secondary", True)
         self._aruco_dict_combo = QComboBox()
         self._aruco_dict_combo.addItems(
             [
                 "DICT_4X4_50",
                 "DICT_4X4_100",
-                "DICT_4X4_250",
-                "DICT_4X4_1000",
                 "DICT_5X5_50",
                 "DICT_5X5_100",
-                "DICT_5X5_250",
-                "DICT_5X5_1000",
                 "DICT_6X6_50",
                 "DICT_6X6_100",
                 "DICT_6X6_250",
-                "DICT_6X6_1000",
                 "DICT_7X7_50",
-                "DICT_7X7_100",
-                "DICT_7X7_250",
-                "DICT_7X7_1000",
                 "DICT_ARUCO_ORIGINAL",
             ]
         )
-        self._aruco_dict_combo.setCurrentIndex(10)
-        dict_layout.addWidget(self._aruco_dict_combo)
+        self._aruco_dict_combo.setCurrentIndex(6)
+        dict_layout.addWidget(dict_lbl)
+        dict_layout.addWidget(self._aruco_dict_combo, 1)
 
         section.add_widget(self._aruco_cb)
         section.add_layout(dict_layout)
@@ -972,14 +913,14 @@ class VisionTab(QWidget):
 
         if color_space == "HSV":
             self._ch1_label.setText("Hue")
-            self._ch2_label.setText("Saturation")
-            self._ch3_label.setText("Value")
+            self._ch2_label.setText("Sat")
+            self._ch3_label.setText("Val")
             self._lower_ch1.setValue(0)
             self._upper_ch1.setValue(179)
         else:
-            self._ch1_label.setText("L (Lightness)")
-            self._ch2_label.setText("A (Green-Red)")
-            self._ch3_label.setText("B (Blue-Yellow)")
+            self._ch1_label.setText("L")
+            self._ch2_label.setText("A")
+            self._ch3_label.setText("B")
             self._lower_ch1.setValue(0)
             self._upper_ch1.setValue(255)
 
@@ -1361,20 +1302,12 @@ class OpenCVUtils:
         self._aruco_dicts = {
             "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
             "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
-            "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
-            "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
             "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
             "DICT_5X5_100": cv2.aruco.DICT_5X5_100,
-            "DICT_5X5_250": cv2.aruco.DICT_5X5_250,
-            "DICT_5X5_1000": cv2.aruco.DICT_5X5_1000,
             "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
             "DICT_6X6_100": cv2.aruco.DICT_6X6_100,
             "DICT_6X6_250": cv2.aruco.DICT_6X6_250,
-            "DICT_6X6_1000": cv2.aruco.DICT_6X6_1000,
             "DICT_7X7_50": cv2.aruco.DICT_7X7_50,
-            "DICT_7X7_100": cv2.aruco.DICT_7X7_100,
-            "DICT_7X7_250": cv2.aruco.DICT_7X7_250,
-            "DICT_7X7_1000": cv2.aruco.DICT_7X7_1000,
             "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
         }
 

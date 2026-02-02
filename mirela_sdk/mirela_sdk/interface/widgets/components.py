@@ -26,12 +26,12 @@ class Card(QFrame):
             Card {{
                 background-color: {COLORS.surface};
                 border: 1px solid {COLORS.border};
-                border-radius: 8px;
+                border-radius: 6px;
             }}
         """)
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(16, 16, 16, 16)
-        self._layout.setSpacing(12)
+        self._layout.setContentsMargins(12, 12, 12, 12)
+        self._layout.setSpacing(8)
 
     def add_widget(self, widget: QWidget) -> None:
         self._layout.addWidget(widget)
@@ -41,7 +41,7 @@ class Card(QFrame):
 
 
 class StatusIndicator(QWidget):
-    """Circular status indicator with label."""
+    """Compact circular status indicator with label."""
 
     def __init__(
         self,
@@ -52,10 +52,10 @@ class StatusIndicator(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self._indicator = QLabel()
-        self._indicator.setFixedSize(12, 12)
+        self._indicator.setFixedSize(8, 8)
         self._label = QLabel(label)
         self._label.setProperty("secondary", True)
 
@@ -76,7 +76,7 @@ class StatusIndicator(QWidget):
         color = colors.get(status, COLORS.text_muted)
         self._indicator.setStyleSheet(f"""
             background-color: {color};
-            border-radius: 6px;
+            border-radius: 4px;
         """)
 
     def set_label(self, label: str) -> None:
@@ -84,7 +84,7 @@ class StatusIndicator(QWidget):
 
 
 class LabeledSlider(QWidget):
-    """Vertical slider with label and value display."""
+    """Compact vertical slider with label and value display."""
 
     valueChanged = Signal(float)
 
@@ -105,27 +105,32 @@ class LabeledSlider(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(2)
         layout.setAlignment(Qt.AlignCenter)
 
         self._label = QLabel(label)
         self._label.setAlignment(Qt.AlignCenter)
-        self._label.setProperty("secondary", True)
+        self._label.setProperty("muted", True)
+        self._label.setFixedWidth(40)
 
         self._value_label = QLabel(f"{default:.{decimals}f}")
         self._value_label.setAlignment(Qt.AlignCenter)
-        self._value_label.setStyleSheet(f"color: {COLORS.accent}; font-weight: bold;")
+        self._value_label.setStyleSheet(
+            f"color: {COLORS.accent}; font-weight: 600; font-size: 11px;"
+        )
+        self._value_label.setFixedWidth(40)
 
         self._slider = QSlider(Qt.Vertical)
         self._slider.setMinimum(int(min_val * self._scale))
         self._slider.setMaximum(int(max_val * self._scale))
         self._slider.setValue(int(default * self._scale))
-        self._slider.setMinimumHeight(100)
+        self._slider.setMinimumHeight(80)
+        self._slider.setMaximumWidth(24)
         self._slider.valueChanged.connect(self._on_value_changed)
 
-        layout.addWidget(self._label)
+        layout.addWidget(self._label, 0, Qt.AlignHCenter)
         layout.addWidget(self._slider, 1, Qt.AlignHCenter)
-        layout.addWidget(self._value_label)
+        layout.addWidget(self._value_label, 0, Qt.AlignHCenter)
 
     def _on_value_changed(self, value: int) -> None:
         real_value = value / self._scale
@@ -143,7 +148,7 @@ class LabeledSlider(QWidget):
 
 
 class CollapsibleSection(QWidget):
-    """Collapsible section with toggle button."""
+    """Compact collapsible section with toggle button."""
 
     def __init__(
         self,
@@ -159,8 +164,8 @@ class CollapsibleSection(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        arrow = "▶" if collapsed else "▼"
-        self._toggle = QPushButton(f"{arrow} {title}")
+        arrow = "▸" if collapsed else "▾"
+        self._toggle = QPushButton(f"{arrow}  {title}")
         self._toggle.setCheckable(True)
         self._toggle.setChecked(not collapsed)
         self._toggle.setStyleSheet(f"""
@@ -168,13 +173,17 @@ class CollapsibleSection(QWidget):
                 background-color: {COLORS.surface_elevated};
                 color: {COLORS.text_primary};
                 border: none;
-                padding: 10px 16px;
+                padding: 6px 10px;
                 text-align: left;
-                font-weight: 600;
-                border-radius: 6px;
+                font-weight: 500;
+                font-size: 11px;
+                border-radius: 4px;
             }}
             QPushButton:hover {{
                 background-color: {COLORS.border};
+            }}
+            QPushButton:checked {{
+                color: {COLORS.accent};
             }}
         """)
         self._toggle.clicked.connect(self._on_toggle)
@@ -183,8 +192,8 @@ class CollapsibleSection(QWidget):
         self._content.setStyleSheet("background-color: transparent;")
         self._content.setVisible(not collapsed)
         self._content_layout = QVBoxLayout(self._content)
-        self._content_layout.setContentsMargins(8, 8, 8, 8)
-        self._content_layout.setSpacing(8)
+        self._content_layout.setContentsMargins(6, 6, 6, 6)
+        self._content_layout.setSpacing(6)
 
         main_layout.addWidget(self._toggle)
         main_layout.addWidget(self._content)
@@ -192,8 +201,8 @@ class CollapsibleSection(QWidget):
     def _on_toggle(self) -> None:
         self._collapsed = not self._toggle.isChecked()
         self._content.setVisible(not self._collapsed)
-        arrow = "▶" if self._collapsed else "▼"
-        self._toggle.setText(f"{arrow} {self._title}")
+        arrow = "▸" if self._collapsed else "▾"
+        self._toggle.setText(f"{arrow}  {self._title}")
 
     def add_widget(self, widget: QWidget) -> None:
         self._content_layout.addWidget(widget)
@@ -203,7 +212,7 @@ class CollapsibleSection(QWidget):
 
 
 class KeyButton(QPushButton):
-    """Keyboard control button with visual feedback."""
+    """Compact keyboard control button with visual feedback."""
 
     def __init__(
         self,
@@ -213,7 +222,7 @@ class KeyButton(QPushButton):
     ) -> None:
         super().__init__(text, parent)
         self.key_code = key_code
-        self.setFixedSize(48, 48)
+        self.setFixedSize(36, 36)
         self._pressed = False
         self._update_style()
 
@@ -224,9 +233,9 @@ class KeyButton(QPushButton):
                     background-color: {COLORS.accent};
                     color: {COLORS.background};
                     border: none;
-                    border-radius: 8px;
-                    font-weight: bold;
-                    font-size: 14px;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    font-size: 12px;
                 }}
             """)
         else:
@@ -235,16 +244,18 @@ class KeyButton(QPushButton):
                     background-color: {COLORS.surface_elevated};
                     color: {COLORS.text_primary};
                     border: 1px solid {COLORS.border};
-                    border-radius: 8px;
-                    font-weight: bold;
-                    font-size: 14px;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    font-size: 12px;
                 }}
                 QPushButton:hover {{
                     background-color: {COLORS.border};
+                    border-color: {COLORS.border_focus};
                 }}
                 QPushButton:disabled {{
                     background-color: {COLORS.surface};
                     color: {COLORS.text_muted};
+                    border-color: {COLORS.surface_elevated};
                 }}
             """)
 
@@ -272,13 +283,6 @@ class VideoDisplay(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(320, 240)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setStyleSheet(f"""
-            QLabel {{
-                background-color: {COLORS.background};
-                border: 2px solid {COLORS.border};
-                border-radius: 8px;
-            }}
-        """)
         self._placeholder_text = "No video source"
         self._current_frame_size = None
         self._click_enabled = False
@@ -290,9 +294,10 @@ class VideoDisplay(QLabel):
         self.setStyleSheet(f"""
             QLabel {{
                 background-color: {COLORS.background};
-                border: 2px solid {COLORS.border};
-                border-radius: 8px;
+                border: 1px solid {COLORS.border};
+                border-radius: 6px;
                 color: {COLORS.text_muted};
+                font-size: 11px;
             }}
         """)
 
@@ -311,6 +316,15 @@ class VideoDisplay(QLabel):
         if frame is None or frame.size == 0:
             self._show_placeholder()
             return
+
+        # Restore normal style when displaying
+        self.setStyleSheet(f"""
+            QLabel {{
+                background-color: {COLORS.background};
+                border: 1px solid {COLORS.border};
+                border-radius: 6px;
+            }}
+        """)
 
         if len(frame.shape) == 2:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
@@ -361,13 +375,13 @@ class VideoDisplay(QLabel):
 
 
 class ImageViewer(QWidget):
-    """Image viewer with zoom and info display."""
+    """Compact image viewer with info display."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(4)
 
         self._display = VideoDisplay()
         self._info_label = QLabel()
@@ -392,3 +406,42 @@ class ImageViewer(QWidget):
     def clear(self) -> None:
         self._display.clear_display()
         self._info_label.setText("")
+
+
+class CompactFormRow(QWidget):
+    """Horizontal form row with label and widget."""
+
+    def __init__(
+        self,
+        label: str,
+        widget: QWidget,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        lbl = QLabel(label)
+        lbl.setProperty("secondary", True)
+        lbl.setFixedWidth(70)
+
+        layout.addWidget(lbl)
+        layout.addWidget(widget, 1)
+
+
+class SectionHeader(QLabel):
+    """Styled section header label."""
+
+    def __init__(self, text: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(text, parent)
+        self.setStyleSheet(f"""
+            QLabel {{
+                color: {COLORS.accent};
+                font-weight: 600;
+                font-size: 11px;
+                padding: 4px 0;
+                border-bottom: 1px solid {COLORS.border};
+                margin-bottom: 4px;
+            }}
+        """)

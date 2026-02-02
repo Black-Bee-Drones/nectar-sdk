@@ -6,6 +6,8 @@ from mirela_sdk.interface.widgets.components import (
     KeyButton,
     VideoDisplay,
     ImageViewer,
+    CompactFormRow,
+    SectionHeader,
 )
 from mirela_sdk.interface.widgets.drone_config import DroneConfigPanel
 
@@ -17,5 +19,7 @@ __all__ = [
     "KeyButton",
     "VideoDisplay",
     "ImageViewer",
+    "CompactFormRow",
+    "SectionHeader",
     "DroneConfigPanel",
 ]

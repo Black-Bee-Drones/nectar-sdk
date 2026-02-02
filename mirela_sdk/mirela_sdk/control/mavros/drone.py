@@ -422,15 +422,19 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if arming successful.
+            True if arming successful, False on failure or timeout.
         """
-        self.set_mode("GUIDED")
-        self.delay(0.5)
-        req = CommandBool.Request()
-        req.value = True
-        self._call_service(self._arm_srv, req, "Armed", "Arm failed")
-        self.delay(1.5)
-        return True
+        try:
+            self.set_mode("GUIDED")
+            self.delay(0.5)
+            req = CommandBool.Request()
+            req.value = True
+            self._call_service(self._arm_srv, req, "Armed", "Arm failed")
+            self.delay(1.5)
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Arm failed: {e}")
+            return False
 
     def disarm(self) -> bool:
         """
@@ -442,19 +446,23 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if disarming successful.
+            True if disarming successful, False on failure or timeout.
         """
-        cmd = CommandLong.Request()
-        cmd.command = 400  # MAV_CMD_COMPONENT_ARM_DISARM
-        cmd.param1 = 0.0
-        cmd.param2 = 21196.0  # Force disarm flag
-        cmd.param3 = 0.0
-        cmd.param4 = 0.0
-        cmd.param5 = 0.0
-        cmd.param6 = 0.0
-        cmd.param7 = 0.0
-        self._call_service(self._command_srv, cmd, "Disarmed", "Disarm failed")
-        return True
+        try:
+            cmd = CommandLong.Request()
+            cmd.command = 400  # MAV_CMD_COMPONENT_ARM_DISARM
+            cmd.param1 = 0.0
+            cmd.param2 = 21196.0  # Force disarm flag
+            cmd.param3 = 0.0
+            cmd.param4 = 0.0
+            cmd.param5 = 0.0
+            cmd.param6 = 0.0
+            cmd.param7 = 0.0
+            self._call_service(self._command_srv, cmd, "Disarmed", "Disarm failed")
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Disarm failed: {e}")
+            return False
 
     def takeoff(self, altitude: float, max_retries: int = 2) -> bool:
         """
@@ -473,7 +481,7 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if takeoff successful, False if all retries exhausted.
+            True if takeoff successful, False if all retries exhausted or service timeout.
         """
         req = CommandTOL.Request()
         req.altitude = float(altitude)
@@ -481,7 +489,10 @@ class MavrosDrone(BaseDrone):
         for attempt in range(max_retries):
             self._node.get_logger().info(f"Takeoff attempt {attempt + 1}/{max_retries}")
 
-            self.arm()
+            if not self.arm():
+                self._node.get_logger().error("Arm failed, cannot takeoff")
+                return False
+
             self.delay(3.0)
 
             if attempt == 0:
@@ -489,12 +500,17 @@ class MavrosDrone(BaseDrone):
 
             takeoff_height = self.height
 
-            self._call_service(
-                self._takeoff_srv,
-                req,
-                f"Takeoff to {altitude}m",
-                "Takeoff command failed",
-            )
+            try:
+                self._call_service(
+                    self._takeoff_srv,
+                    req,
+                    f"Takeoff to {altitude}m",
+                    "Takeoff command failed",
+                )
+            except TimeoutError as e:
+                self._node.get_logger().error(f"Takeoff service timeout: {e}")
+                return False
+
             self.delay(altitude * 3)
 
             height_gain = abs(self.height - takeoff_height)
@@ -531,22 +547,29 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if motors disarmed (landed), False if still armed after timeout.
+            True if motors disarmed (landed), False if still armed after timeout
+            or on service timeout.
         """
-        req = CommandTOL.Request()
-        req.altitude = 0.0
-        self._call_service(self._land_srv, req, "Landing", "Land failed", sync=False)
+        try:
+            req = CommandTOL.Request()
+            req.altitude = 0.0
+            self._call_service(
+                self._land_srv, req, "Landing", "Land failed", sync=False
+            )
 
-        duration = Duration(seconds=timeout)
-        start = self._node.get_clock().now()
+            duration = Duration(seconds=timeout)
+            start = self._node.get_clock().now()
 
-        while self._node.get_clock().now() - start < duration:
-            rclpy.spin_once(self._node, timeout_sec=0.1)
-            if not self._mavros_state.armed:
-                break
+            while self._node.get_clock().now() - start < duration:
+                rclpy.spin_once(self._node, timeout_sec=0.1)
+                if not self._mavros_state.armed:
+                    break
 
-        self.delay(0.1)
-        return not self._mavros_state.armed
+            self.delay(0.1)
+            return not self._mavros_state.armed
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Land service timeout: {e}")
+            return False
 
     def move_velocity(
         self,
@@ -1063,12 +1086,16 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if home position set successfully.
+            True if home position set successfully, False on failure or timeout.
         """
-        req = CommandHome.Request()
-        req.current_gps = True
-        self._call_service(self._home_srv, req, "Home set", "Set home failed")
-        return True
+        try:
+            req = CommandHome.Request()
+            req.current_gps = True
+            self._call_service(self._home_srv, req, "Home set", "Set home failed")
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set home failed: {e}")
+            return False
 
     def rtl(
         self,
@@ -1109,22 +1136,28 @@ class MavrosDrone(BaseDrone):
         return self._rtl_pid(altitude, precision, land)
 
     def _rtl_ardupilot(self, altitude: Optional[float], land: bool) -> bool:
-        if altitude is not None:
-            param = Parameter()
-            param.name = "RTL_ALT"
-            param.value.integer_value = int(altitude * 100)
+        try:
+            if altitude is not None:
+                param = Parameter()
+                param.name = "RTL_ALT"
+                param.value.integer_value = int(altitude * 100)
 
-            req = SetParameters.Request()
-            req.parameters.append(param)
-            self._call_service(self._param_srv, req, "RTL_ALT set", "RTL_ALT failed")
-            self.delay(1.0)
+                req = SetParameters.Request()
+                req.parameters.append(param)
+                self._call_service(
+                    self._param_srv, req, "RTL_ALT set", "RTL_ALT failed"
+                )
+                self.delay(1.0)
 
-        self.set_mode("RTL")
+            self.set_mode("RTL")
 
-        if not land:
-            self.delay(5.0)
+            if not land:
+                self.delay(5.0)
 
-        return True
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"RTL ArduPilot failed: {e}")
+            return False
 
     def _rtl_pid(self, altitude: Optional[float], precision: float, land: bool) -> bool:
         if self._takeoff_position is None:
@@ -1146,7 +1179,7 @@ class MavrosDrone(BaseDrone):
 
         return True
 
-    def set_mode(self, mode: str) -> None:
+    def set_mode(self, mode: str) -> bool:
         """
         Set FCU flight mode.
 
@@ -1154,12 +1187,28 @@ class MavrosDrone(BaseDrone):
         ----------
         mode : str
             Flight mode name (e.g., 'GUIDED', 'STABILIZE', 'LOITER', 'RTL', 'LAND').
-        """
-        req = SetMode.Request()
-        req.custom_mode = mode
-        self._call_service(self._mode_srv, req, f"Mode: {mode}", f"Mode {mode} failed")
 
-    def set_param(self, param_id: str, param_value: int) -> None:
+        Returns
+        -------
+        bool
+            True if mode set successfully, False on failure or timeout.
+
+        See Also
+        --------
+        https://ardupilot.org/copter/docs/flight-modes.html
+        """
+        try:
+            req = SetMode.Request()
+            req.custom_mode = mode
+            self._call_service(
+                self._mode_srv, req, f"Mode: {mode}", f"Mode {mode} failed"
+            )
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set mode failed: {e}")
+            return False
+
+    def set_param(self, param_id: str, param_value: int) -> bool:
         """
         Set ArduPilot parameter.
 
@@ -1169,18 +1218,28 @@ class MavrosDrone(BaseDrone):
             Parameter name (e.g., 'RTL_ALT').
         param_value : int
             Integer parameter value.
+
+        Returns
+        -------
+        bool
+            True if parameter set successfully, False on failure or timeout.
         """
-        param = Parameter()
-        param.name = param_id
-        param.value.integer_value = param_value
+        try:
+            param = Parameter()
+            param.name = param_id
+            param.value.integer_value = param_value
 
-        req = SetParameters.Request()
-        req.parameters.append(param)
-        self._call_service(
-            self._param_srv, req, f"{param_id} set", f"{param_id} failed"
-        )
+            req = SetParameters.Request()
+            req.parameters.append(param)
+            self._call_service(
+                self._param_srv, req, f"{param_id} set", f"{param_id} failed"
+            )
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set param {param_id} failed: {e}")
+            return False
 
-    def do_servo(self, aux_out: int, pwm_value: int) -> None:
+    def do_servo(self, aux_out: int, pwm_value: int) -> bool:
         """
         Control auxiliary servo output.
 
@@ -1190,14 +1249,24 @@ class MavrosDrone(BaseDrone):
             Servo channel (0-7 maps to AUX outputs 1-8, FCU channels 9-16).
         pwm_value : int
             PWM value (typically 1000-2000 µs).
+
+        Returns
+        -------
+        bool
+            True if servo command sent successfully, False on failure or timeout.
         """
-        cmd = CommandLong.Request()
-        cmd.command = 183
-        cmd.param1 = float(aux_out + 8)
-        cmd.param2 = float(pwm_value)
-        self._call_service(
-            self._command_srv, cmd, f"Servo {aux_out} set", "Servo failed"
-        )
+        try:
+            cmd = CommandLong.Request()
+            cmd.command = 183
+            cmd.param1 = float(aux_out + 8)
+            cmd.param2 = float(pwm_value)
+            self._call_service(
+                self._command_srv, cmd, f"Servo {aux_out} set", "Servo failed"
+            )
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Servo command failed: {e}")
+            return False
 
     def _set_takeoff_position(self) -> None:
         """Store current position as takeoff reference."""
@@ -1270,24 +1339,89 @@ class MavrosDrone(BaseDrone):
         self._node.get_logger().info("PID configuration updated")
 
     def _call_service(
-        self, service, request, success_msg: str, fail_msg: str, sync: bool = True
+        self,
+        service,
+        request,
+        success_msg: str,
+        fail_msg: str,
+        sync: bool = False,
+        timeout: float = 10.0,
     ):
-        while not service.wait_for_service(timeout_sec=1.0):
-            self._node.get_logger().info(f"Waiting for {service.srv_name}...")
+        """
+        Call a ROS2 service with timeout and optional async execution.
+
+        Parameters
+        ----------
+        service : Client
+            ROS2 service client.
+        request : SrvTypeRequest
+            Service request message.
+        success_msg : str
+            Message to log on success.
+        fail_msg : str
+            Message to log on failure.
+        sync : bool, default=False
+            If True, blocks until service completes.
+            If False, returns immediately (non-blocking).
+        timeout : float, default=10.0
+            Maximum time in seconds to wait for service availability.
+
+        Returns
+        -------
+        Any or None
+            Service response if sync=True, None if async or on failure.
+
+        Raises
+        ------
+        TimeoutError
+            If service not available within timeout.
+        """
+        elapsed = 0.0
+        wait_interval = 1.0
+
+        while not service.wait_for_service(timeout_sec=wait_interval):
+            elapsed += wait_interval
+            self._node.get_logger().info(
+                f"Service {service.srv_name} not available, waiting... ({elapsed:.0f}s)"
+            )
+            if elapsed >= timeout:
+                self._node.get_logger().error(
+                    f"\033[31;1m{fail_msg} - Service {service.srv_name} not available after {timeout}s\033[0m"
+                )
+                raise TimeoutError(
+                    f"Service {service.srv_name} not available after {timeout}s"
+                )
+
+        self._node.get_logger().debug(
+            f"Calling service {service.srv_name} | sync={sync}"
+        )
 
         if sync:
-            result = service.call(request)
-            if result:
-                self._node.get_logger().info(success_msg)
-            else:
-                self._node.get_logger().error(fail_msg)
+            try:
+                result = service.call(request)
+                if result is not None:
+                    self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
+                else:
+                    self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
+                return result
+            except Exception as e:
+                self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
+                return None
         else:
             future = service.call_async(request)
-            future.add_done_callback(
-                lambda f: self._node.get_logger().info(
-                    success_msg if f.result() else fail_msg
-                )
-            )
+
+            def _handle_response(future):
+                try:
+                    result = future.result()
+                    if result is not None:
+                        self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
+                    else:
+                        self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
+                except Exception as e:
+                    self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
+
+            future.add_done_callback(_handle_response)
+            return None
 
 
 DroneFactory.register("mavros", MavrosDrone.from_config)

@@ -1,6 +1,5 @@
 import sys
 import pathlib
-from typing import Optional
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -11,9 +10,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QTabWidget,
     QStatusBar,
-    QSplashScreen,
 )
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont, QPixmap, QIcon
 
 from mirela_sdk.interface.theme import get_stylesheet, COLORS
@@ -24,6 +22,9 @@ from mirela_sdk.interface.tabs import ControlTab, VisionTab, ROSTab
 class MirelaApp(QMainWindow):
     """
     Mirela SDK main application window.
+
+    Professional drone control and vision tools interface
+    for robotics competition teams.
     """
 
     def __init__(self) -> None:
@@ -39,7 +40,7 @@ class MirelaApp(QMainWindow):
 
     def _setup_window(self) -> None:
         self.setWindowTitle("Mirela SDK")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(1100, 700)
 
         logo_path = self._images_dir / "logo.png"
         if logo_path.exists():
@@ -65,59 +66,75 @@ class MirelaApp(QMainWindow):
         self._vision_tab = VisionTab()
         self._ros_tab = ROSTab()
 
-        self._tab_widget.addTab(self._control_tab, "Control")
-        self._tab_widget.addTab(self._vision_tab, "Vision")
-        self._tab_widget.addTab(self._ros_tab, "ROS")
+        self._tab_widget.addTab(self._control_tab, "  Control  ")
+        self._tab_widget.addTab(self._vision_tab, "  Vision  ")
+        self._tab_widget.addTab(self._ros_tab, "  ROS  ")
 
         layout.addWidget(self._tab_widget, 1)
 
     def _create_header(self) -> QWidget:
         header = QWidget()
-        header.setStyleSheet(f"""
+        header.setStyleSheet(
+            f"""
             QWidget {{
                 background-color: {COLORS.surface};
                 border-bottom: 1px solid {COLORS.border};
             }}
-        """)
-        header.setFixedHeight(60)
+        """
+        )
+        header.setFixedHeight(48)
 
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setContentsMargins(12, 6, 12, 6)
 
+        # Logo and title
         logo_layout = QHBoxLayout()
-        logo_layout.setSpacing(12)
+        logo_layout.setSpacing(10)
 
         logo_path = self._images_dir / "logo.png"
         if logo_path.exists():
             logo_label = QLabel()
             pixmap = QPixmap(str(logo_path))
-            scaled = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             logo_label.setPixmap(scaled)
             logo_layout.addWidget(logo_label)
 
         title_layout = QVBoxLayout()
         title_layout.setSpacing(0)
+        title_layout.setContentsMargins(0, 0, 0, 0)
 
-        title = QLabel("Mirela SDK")
-        title.setStyleSheet(f"""
-            font-size: 18px;
-            font-weight: bold;
+        title = QLabel("MIRELA SDK")
+        title.setStyleSheet(
+            f"""
+            font-size: 14px;
+            font-weight: 700;
             color: {COLORS.text_primary};
-        """)
+            letter-spacing: 1px;
+        """
+        )
 
         subtitle = QLabel("Drone Control & Vision Tools")
-        subtitle.setStyleSheet(f"""
-            font-size: 11px;
+        subtitle.setStyleSheet(
+            f"""
+            font-size: 10px;
             color: {COLORS.text_muted};
-        """)
+        """
+        )
 
         title_layout.addWidget(title)
         title_layout.addWidget(subtitle)
 
         logo_layout.addLayout(title_layout)
 
-        self._ros_status_label = QLabel("● ROS2: Initializing...")
-        self._ros_status_label.setStyleSheet(f"color: {COLORS.warning};")
+        # ROS status
+        self._ros_status_label = QLabel("● ROS2: Initializing")
+        self._ros_status_label.setStyleSheet(
+            f"""
+            color: {COLORS.warning};
+            font-size: 11px;
+            font-weight: 500;
+        """
+        )
 
         layout.addLayout(logo_layout)
         layout.addStretch()
@@ -132,7 +149,9 @@ class MirelaApp(QMainWindow):
         self._status_message = QLabel("Ready")
         self._statusbar.addWidget(self._status_message)
 
-        self._statusbar.addPermanentWidget(QLabel("Mirela SDK v2.0"))
+        version_label = QLabel("Mirela SDK v2.0")
+        version_label.setStyleSheet(f"color: {COLORS.text_muted};")
+        self._statusbar.addPermanentWidget(version_label)
 
     def _connect_signals(self) -> None:
         self._ros_executor.status_changed.connect(self._on_ros_status_changed)
@@ -149,11 +168,23 @@ class MirelaApp(QMainWindow):
     def _on_ros_status_changed(self, running: bool) -> None:
         if running:
             self._ros_status_label.setText("● ROS2: Connected")
-            self._ros_status_label.setStyleSheet(f"color: {COLORS.success};")
+            self._ros_status_label.setStyleSheet(
+                f"""
+                color: {COLORS.success};
+                font-size: 11px;
+                font-weight: 500;
+            """
+            )
             self._status_message.setText("ROS2 node active")
         else:
             self._ros_status_label.setText("● ROS2: Disconnected")
-            self._ros_status_label.setStyleSheet(f"color: {COLORS.error};")
+            self._ros_status_label.setStyleSheet(
+                f"""
+                color: {COLORS.error};
+                font-size: 11px;
+                font-weight: 500;
+            """
+            )
             self._status_message.setText("ROS2 node inactive")
 
     @Slot(str)
@@ -173,11 +204,14 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    font = QFont("Inter", 10)
+    # Use JetBrains Mono for monospace feel, fallback to system fonts
+    font = QFont("JetBrains Mono", 10)
     if not font.exactMatch():
-        font = QFont("SF Pro Display", 10)
+        font = QFont("SF Mono", 10)
         if not font.exactMatch():
-            font = QFont("Segoe UI", 10)
+            font = QFont("Consolas", 10)
+            if not font.exactMatch():
+                font = QFont("monospace", 10)
     app.setFont(font)
 
     window = MirelaApp()

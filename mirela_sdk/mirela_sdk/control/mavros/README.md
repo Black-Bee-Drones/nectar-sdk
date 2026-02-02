@@ -64,6 +64,7 @@ classDiagram
         -_compute_target(x, y, z, yaw, reference) tuple
         -_compute_errors(target_x, target_y, target_z, target_yaw) tuple
         -_create_pid(axis) PIDController
+        -_call_service(service, request, success_msg, fail_msg, sync, timeout) Any
         -_get_driver_name() str
         -_start_driver() bool
     }
@@ -561,6 +562,47 @@ drone.move_to(x=5.0, y=3.0, z=2.0, reference=MoveReference.WORLD)
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 ```
 
+## Service Call Behavior
+
+All MAVROS service calls use the `_call_service` method with configurable timeout and sync/async modes.
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sync` | `False` | If True, blocks until service completes. If False, returns immediately (non-blocking). |
+| `timeout` | `10.0` | Maximum seconds to wait for service availability. |
+
+### Async Mode (Default)
+
+```python
+# Non-blocking: returns immediately, result logged via callback
+drone.arm()  # Uses async by default
+drone.set_mode("GUIDED")
+```
+
+### Sync Mode
+
+```python
+# Blocking: waits for service response
+result = drone._call_service(
+    service, request, "Success", "Failed",
+    sync=True  # Blocks until complete
+)
+```
+
+### Timeout Behavior
+
+If a service is not available within the timeout period, a `TimeoutError` is raised:
+
+```python
+try:
+    drone.arm()
+except TimeoutError as e:
+    # Service not available after 10 seconds
+    drone.node.get_logger().error(f"Service timeout: {e}")
+```
+
 ## Error Handling
 
 ```python
@@ -583,6 +625,12 @@ try:
         heading = drone.heading  # Raises SensorNotAvailableError
 except SensorNotAvailableError as e:
     drone.node.get_logger().warn(f"Sensor unavailable: {e}")
+
+try:
+    # Service timeout
+    drone.arm()
+except TimeoutError as e:
+    drone.node.get_logger().error(f"Service not available: {e}")
 ```
 
 ---

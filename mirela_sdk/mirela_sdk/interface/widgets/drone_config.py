@@ -3,18 +3,21 @@ from typing import Optional, Dict, Any
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLineEdit,
     QComboBox,
     QCheckBox,
-    QGroupBox,
-    QFormLayout,
+    QLabel,
+    QFrame,
 )
 from PySide6.QtCore import Signal
+
+from mirela_sdk.interface.theme import COLORS
 
 
 class DroneConfigPanel(QWidget):
     """
-    Configuration panel for drone settings.
+    Compact configuration panel for drone settings.
 
     Dynamically generates UI based on drone config dataclass fields.
     Supports Mavros and Bebop configuration types.
@@ -37,7 +40,7 @@ class DroneConfigPanel(QWidget):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self._mavros_panel = self._create_mavros_panel()
         self._bebop_panel = self._create_bebop_panel()
@@ -47,52 +50,137 @@ class DroneConfigPanel(QWidget):
 
         self._bebop_panel.setVisible(False)
 
-    def _create_mavros_panel(self) -> QGroupBox:
-        group = QGroupBox("Mavros Configuration")
-        layout = QFormLayout(group)
-        layout.setSpacing(8)
+    def _create_config_row(
+        self, label: str, widget: QWidget, tooltip: str = ""
+    ) -> QHBoxLayout:
+        """Create a compact horizontal config row."""
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
 
+        lbl = QLabel(label)
+        lbl.setProperty("secondary", True)
+        lbl.setFixedWidth(72)
+        if tooltip:
+            lbl.setToolTip(tooltip)
+            widget.setToolTip(tooltip)
+
+        row.addWidget(lbl)
+        row.addWidget(widget, 1)
+        return row
+
+    def _create_mavros_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS.surface_elevated};
+                border: 1px solid {COLORS.border};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # Header
+        header = QLabel("MAVROS")
+        header.setStyleSheet(f"""
+            color: {COLORS.accent};
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        """)
+        layout.addWidget(header)
+
+        # Pose source
         self._mavros_pose_source = QComboBox()
         self._mavros_pose_source.addItems(["GPS (Outdoor)", "Vision (Indoor)"])
         self._mavros_pose_source.currentIndexChanged.connect(self._on_config_changed)
-        layout.addRow("Pose Source:", self._mavros_pose_source)
+        layout.addLayout(
+            self._create_config_row(
+                "Pose:", self._mavros_pose_source, "Position estimation source"
+            )
+        )
 
+        # Navigation strategy
         self._mavros_nav_strategy = QComboBox()
         self._mavros_nav_strategy.addItems(["PID", "Setpoint"])
         self._mavros_nav_strategy.currentIndexChanged.connect(self._on_config_changed)
-        layout.addRow("Navigation:", self._mavros_nav_strategy)
+        layout.addLayout(
+            self._create_config_row(
+                "Navigation:", self._mavros_nav_strategy, "Navigation control strategy"
+            )
+        )
 
-        self._mavros_use_lidar = QCheckBox()
+        # LiDAR checkbox
+        lidar_row = QHBoxLayout()
+        lidar_row.setContentsMargins(0, 0, 0, 0)
+        lidar_row.setSpacing(8)
+        self._mavros_use_lidar = QCheckBox("Use LiDAR altitude")
         self._mavros_use_lidar.setChecked(True)
         self._mavros_use_lidar.stateChanged.connect(self._on_config_changed)
-        layout.addRow("Use LiDAR:", self._mavros_use_lidar)
+        lidar_row.addWidget(self._mavros_use_lidar)
+        layout.addLayout(lidar_row)
 
+        # Connection string
         self._mavros_connection = QLineEdit()
         self._mavros_connection.setText("serial:///dev/ttyUSB0:921600")
         self._mavros_connection.setPlaceholderText("serial:///dev/ttyUSB0:921600")
         self._mavros_connection.textChanged.connect(self._on_config_changed)
-        layout.addRow("Connection:", self._mavros_connection)
+        layout.addLayout(
+            self._create_config_row(
+                "Connection:", self._mavros_connection, "FCU connection string"
+            )
+        )
 
-        return group
+        return panel
 
-    def _create_bebop_panel(self) -> QGroupBox:
-        group = QGroupBox("Bebop Configuration")
-        layout = QFormLayout(group)
-        layout.setSpacing(8)
+    def _create_bebop_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS.surface_elevated};
+                border: 1px solid {COLORS.border};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
+        # Header
+        header = QLabel("BEBOP")
+        header.setStyleSheet(f"""
+            color: {COLORS.accent};
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        """)
+        layout.addWidget(header)
+
+        # IP Address
         self._bebop_ip = QLineEdit()
         self._bebop_ip.setText("192.168.42.1")
         self._bebop_ip.setPlaceholderText("192.168.42.1")
         self._bebop_ip.textChanged.connect(self._on_config_changed)
-        layout.addRow("IP Address:", self._bebop_ip)
+        layout.addLayout(
+            self._create_config_row("IP:", self._bebop_ip, "Bebop drone IP address")
+        )
 
+        # Namespace
         self._bebop_namespace = QLineEdit()
         self._bebop_namespace.setText("bebop")
         self._bebop_namespace.setPlaceholderText("bebop")
         self._bebop_namespace.textChanged.connect(self._on_config_changed)
-        layout.addRow("Namespace:", self._bebop_namespace)
+        layout.addLayout(
+            self._create_config_row(
+                "Namespace:", self._bebop_namespace, "ROS namespace for topics"
+            )
+        )
 
-        return group
+        return panel
 
     def _on_config_changed(self) -> None:
         self.config_changed.emit()

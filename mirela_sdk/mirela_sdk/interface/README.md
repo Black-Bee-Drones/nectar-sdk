@@ -40,8 +40,22 @@ classDiagram
         -_instance_initialized bool
         -_controls_enabled bool
         -_key_states Dict
+        -_moveto_running bool
         +set_node(node)
         +cleanup()
+    }
+
+    class MoveToWorker {
+        -_drone BaseDrone
+        -_x float
+        -_y float
+        -_z float
+        -_yaw float
+        -_reference MoveReference
+        -_timeout float
+        -_precision float
+        +setup(drone, x, y, z, yaw, reference, timeout, precision)
+        +run()
     }
 
     class DroneConfigPanel {
@@ -84,6 +98,7 @@ classDiagram
     MirelaApp *-- VisionTab
     MirelaApp *-- ROSTab
     VisionTab *-- OpenCVUtils
+    ControlTab o-- MoveToWorker
 ```
 
 ### Widget Architecture
@@ -193,25 +208,94 @@ stateDiagram-v2
 - Requires driver to be running
 - Enables flight controls when initialized
 
-#### Keyboard Controls
+#### Status Panel
+
+| Indicator | Source | Description |
+|-----------|--------|-------------|
+| **Driver** | ProcessUtils | ROS2 driver process running |
+| **Instance** | DroneFactory | Drone object initialized |
+| **FCU** | `mavros_state.connected` | FCU heartbeat received (Mavros only) |
+| **Armed** | `mavros_state.armed` | Motors armed state from FCU (Mavros only) |
+
+> Note: Armed status comes from FCU heartbeat (same as MissionPlanner), not from tracking `arm()` method calls.
+
+#### Telemetry Panel
+
+**Mavros Telemetry** (from FCU via MAVROS):
+
+| Field | Indoor (Vision) | Outdoor (GPS) |
+|-------|-----------------|---------------|
+| Position | X, Y, Z (meters) | Lat, Lon (degrees), Alt (meters) |
+| Height | Best source (LiDAR > Vision > RelAlt) | Best source |
+| LiDAR | Rangefinder altitude | Rangefinder altitude |
+| RelAlt | N/A | Relative altitude above home |
+| Yaw | From quaternion | Compass heading |
+| Heading | N/A | Compass heading |
+| Mode | Flight mode | Flight mode |
+
+**Bebop Telemetry**:
+- Bebop driver does not expose telemetry data
+- All fields show "N/A"
+
+#### Velocity Control
+
+Combined keyboard controls and velocity sliders in one compact panel.
 
 | Key | Action |
 |-----|--------|
-| W | Thrust up (+Z) |
-| S | Thrust down (-Z) |
+| W | Move up (+Z) |
+| S | Move down (-Z) |
 | A | Yaw left (+yaw) |
 | D | Yaw right (-yaw) |
-| ↑ | Pitch forward (+X) |
-| ↓ | Pitch backward (-X) |
-| ← | Roll left (+Y) |
-| → | Roll right (-Y) |
+| ↑ | Move forward (+X) |
+| ↓ | Move backward (-X) |
+| ← | Move left (+Y) |
+| → | Move right (-Y) |
+
+**Velocity Sliders**: Adjust maximum velocity for each axis (Vx, Vy, Vz, Vyaw).
+
+**Reference Frame**: Body or World frame selection.
+
+#### Position Control (Mavros only)
+
+Navigate to a target position using `move_to()`. Hidden for drones without position control.
+
+| Parameter | Description | Range |
+|-----------|-------------|-------|
+| X | Forward (+) / Backward (-) offset | ±20 m |
+| Y | Left (+) / Right (-) offset | ±20 m |
+| Z | Up (+) / Down (-) offset | ±20 m |
+| Yaw | Target yaw angle | ±180° |
+
+Each axis has a **checkbox** to enable/disable it:
+- **Checked**: Axis is used with the specified value
+- **Unchecked**: Axis is ignored (None)
+
+At least one of X, Y, or Z must be enabled to execute.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| Reference | Reference frame for movement | Body |
+| Precision | Arrival threshold in meters | 0.2 m |
+| Timeout | Maximum navigation time | 60 s |
+
+**Reference Frames**:
+- **Body**: Relative to current drone orientation
+- **World**: Relative to world frame (NED)
+- **Takeoff**: Relative to takeoff position
+
+The operation runs in a background thread. Cancel button stops navigation immediately.
 
 #### Supported Drones
 
-| Drone | Features |
-|-------|----------|
-| **Mavros** | Arm, disarm, takeoff, land, velocity control, mode setting |
-| **Bebop** | Takeoff, land, flip maneuvers, velocity control |
+| Drone | Features | Capabilities |
+|-------|----------|--------------|
+| **Mavros** | Arm, disarm, takeoff, land, velocity control, position control, mode setting | Telemetry, Position Control |
+| **Bebop** | Takeoff, land, flip maneuvers, velocity control | - |
+
+**Capability-based UI**: Panels are shown/hidden based on drone capabilities:
+- **Position Control**: Only visible for drones supporting `move_to()` (Mavros)
+- **Telemetry**: Only visible for drones exposing sensor data (Mavros)
 
 #### Configuration
 
@@ -226,8 +310,6 @@ stateDiagram-v2
 |---------------|-------------|
 | IP Address | Drone IP (default: 192.168.42.1) |
 | Namespace | ROS2 namespace |
-
-**Velocity Sliders**: Adjust maximum velocity for each axis (pitch, roll, thrust, yaw).
 
 ### Vision Tab
 
