@@ -32,6 +32,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from mirela_sdk.interface.theme import COLORS
 from mirela_sdk.interface.widgets import VideoDisplay
@@ -367,6 +368,12 @@ class ROSTab(QWidget):
 
         self._image_compressed_cb = QCheckBox("Compressed")
         control_layout.addWidget(self._image_compressed_cb)
+
+        control_layout.addWidget(QLabel("QoS:"))
+        self._image_qos_combo = QComboBox()
+        self._image_qos_combo.addItems(["Best Effort", "Reliable"])
+        self._image_qos_combo.setToolTip("Match publisher's QoS policy")
+        control_layout.addWidget(self._image_qos_combo)
 
         self._image_subscribe_btn = QPushButton("Subscribe")
         self._image_subscribe_btn.setProperty("accent", True)
@@ -737,17 +744,30 @@ class ROSTab(QWidget):
             if "image_subscription" in self._subscriptions:
                 self._node.destroy_subscription(self._subscriptions["image_subscription"])
 
+            qos_selection = self._image_qos_combo.currentText()
+            if qos_selection == "Best Effort":
+                reliability = ReliabilityPolicy.BEST_EFFORT
+            else:
+                reliability = ReliabilityPolicy.RELIABLE
+
+            qos = QoSProfile(
+                reliability=reliability,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+
             sub = self._node.create_subscription(
                 msg_type,
                 topic,
                 self._on_image_received,
-                10
+                qos
             )
             self._subscriptions["image_subscription"] = sub
 
             self._image_subscribe_btn.setEnabled(False)
             self._image_unsubscribe_btn.setEnabled(True)
-            self._image_info_label.setText(f"Subscribed to {topic}")
+            self._image_info_label.setText(f"Subscribed to {topic} ({qos_selection})")
 
         except Exception as e:
             self._image_info_label.setText(f"Error: {e}")
