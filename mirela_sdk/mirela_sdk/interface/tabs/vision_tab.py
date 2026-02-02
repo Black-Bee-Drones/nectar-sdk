@@ -1,4 +1,7 @@
-from typing import Optional, List, Callable, Dict, Any, Tuple
+from typing import Optional, List, Callable, Dict, Any, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mirela_sdk.vision.camera.abstract import DepthCam
 import os
 import json
 import time
@@ -12,11 +15,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QGroupBox,
-    QGridLayout,
     QCheckBox,
     QSplitter,
     QScrollArea,
-    QLineEdit,
     QSpinBox,
     QMessageBox,
     QInputDialog,
@@ -29,7 +30,8 @@ from mirela_sdk.interface.theme import COLORS
 from mirela_sdk.interface.widgets import (
     CollapsibleSection,
     LabeledSlider,
-    VideoDisplay,
+    DualVideoDisplay,
+    CameraConfigPanel,
 )
 
 
@@ -278,15 +280,32 @@ class ColorCalibrationManager:
 
 
 class CameraInitWorker(QObject):
-    """Background worker for camera initialization."""
+    """
+    Background worker for camera initialization.
+
+    Handles camera creation and startup in a separate thread to prevent
+    UI blocking during potentially slow hardware initialization.
+
+    Parameters
+    ----------
+    config : dict
+        Camera configuration from CameraConfigPanel.get_config().
+    enable_depth : bool
+        Whether to enable depth capture for depth-capable cameras.
+    node : Node, optional
+        ROS2 node for ROS-based cameras.
+    """
 
     finished = Signal(bool, str)
     camera_ready = Signal(object)
 
-    def __init__(self, source: str, config: dict) -> None:
+    def __init__(
+        self, config: Dict[str, Any], enable_depth: bool = False, node=None
+    ) -> None:
         super().__init__()
-        self._source = source
         self._config = config
+        self._enable_depth = enable_depth
+        self._node = node
         self._camera = None
 
     @property
@@ -295,35 +314,104 @@ class CameraInitWorker(QObject):
 
     def run(self) -> None:
         try:
-            from mirela_sdk.vision import CameraFactory, OpenCVConfig
-
-            if self._source == "webcam":
-                config = OpenCVConfig(
-                    device_index=self._config.get("device", 0),
-                    width=self._config.get("width", 640),
-                    height=self._config.get("height", 480),
-                )
-                self._camera = CameraFactory.from_source("webcam", config=config)
-            elif self._source == "ros":
-                from mirela_sdk.vision import ROSConfig
-
-                config = ROSConfig(topic=self._config.get("topic", "/camera/image_raw"))
-                self._camera = CameraFactory.from_source(
-                    "ros", config=config, node=self._config.get("node")
-                )
-            elif self._source == "file":
-                from mirela_sdk.vision import FileImageConfig
-
-                config = FileImageConfig(path=self._config.get("path", ""))
-                self._camera = CameraFactory.from_source("file", config=config)
-            else:
-                self._camera = CameraFactory.from_source(self._source)
-
+            camera_type = self._config.get("type", "webcam")
+            self._camera = self._create_camera(camera_type)
             self._camera.start()
             self.camera_ready.emit(self._camera)
             self.finished.emit(True, "")
         except Exception as e:
             self.finished.emit(False, str(e))
+
+    def _create_camera(self, camera_type: str):
+        """Create camera instance based on type and configuration."""
+        if camera_type == "webcam":
+            from mirela_sdk.vision.camera import OpenCVConfig, OpenCVCam
+
+            config = OpenCVConfig(
+                device_index=self._config.get("device_index", 0),
+                width=self._config.get("width"),
+                height=self._config.get("height"),
+                fps=self._config.get("fps", 30),
+                autofocus=self._config.get("autofocus", True),
+                threaded=self._config.get("threaded", True),
+            )
+            return OpenCVCam(config)
+
+        elif camera_type == "realsense":
+            from mirela_sdk.vision.camera import RealSenseConfig, RealsenseCam
+
+            width = self._config.get("width", 640)
+            height = self._config.get("height", 480)
+            use_ros = self._config.get("use_ros_topics", False)
+
+            config = RealSenseConfig(
+                color_res=(width, height),
+                depth_res=(width, height),
+                fps=self._config.get("fps", 30),
+                align_to_color=self._config.get("align_to_color", True),
+                enable_depth=self._enable_depth,
+                use_ros_topics=use_ros,
+                color_topic=self._config.get("color_topic", "/camera/color/image_raw"),
+                depth_topic=self._config.get(
+                    "depth_topic", "/camera/depth/image_rect_raw"
+                ),
+                color_compressed=self._config.get("color_compressed", True),
+            )
+            if use_ros and self._node is not None:
+                return RealsenseCam(config, node=self._node)
+            return RealsenseCam(config)
+
+        elif camera_type == "oakd":
+            from mirela_sdk.vision.camera import OakDConfig, OakdCam
+
+            config = OakDConfig(
+                cam_num=self._config.get("cam_num", 1),
+                enable_depth=self._enable_depth,
+            )
+            return OakdCam(config)
+
+        elif camera_type == "ros":
+            from mirela_sdk.vision.camera import ROSConfig, ROSCam
+
+            config = ROSConfig(
+                topic=self._config.get("topic", "/camera/image_raw"),
+                compressed=self._config.get("compressed", False),
+            )
+            if self._node is None:
+                raise ValueError("ROS camera requires a ROS node")
+            return ROSCam(self._node, config)
+
+        elif camera_type == "file":
+            from mirela_sdk.vision.camera import FileImageConfig, FileImageCam
+
+            config = FileImageConfig(path=self._config.get("path", ""))
+            return FileImageCam(config)
+
+        elif camera_type == "c920":
+            from mirela_sdk.vision.camera import C920Config, C920Cam
+
+            config = C920Config(
+                profile=self._config.get("profile", 1),
+                fallback_device_index=self._config.get("fallback_device_index", 0),
+            )
+            return C920Cam(config)
+
+        elif camera_type == "imx219":
+            from mirela_sdk.vision.camera import IMX219Config, IMX219Cam
+
+            config = IMX219Config(
+                sensor_id=self._config.get("sensor_id", 0),
+                width=self._config.get("width", 1920),
+                height=self._config.get("height", 1080),
+                fps=self._config.get("fps", 30),
+                flip=self._config.get("flip", 0),
+            )
+            return IMX219Cam(config)
+
+        else:
+            from mirela_sdk.vision.camera import CameraFactory
+
+            return CameraFactory.from_source(camera_type)
 
 
 class VisionTab(QWidget):
@@ -372,6 +460,17 @@ class VisionTab(QWidget):
 
         self._color_manager = ColorCalibrationManager()
 
+        # Depth estimation state
+        self._depth_enabled = False
+        self._show_depth_map = False
+        self._measure_distance = False
+        self._selected_point: Optional[Tuple[int, int]] = None
+        self._current_distance: Optional[float] = None
+        self._current_depth_frame: Optional[np.ndarray] = None
+        self._depth_colormap = cv2.COLORMAP_PLASMA
+        self._depth_min_m = 0.1
+        self._depth_max_m = 5.0
+
         self._setup_ui()
         self._setup_timers()
         self._init_cv_utils()
@@ -405,6 +504,7 @@ class VisionTab(QWidget):
         layout.setSpacing(6)
 
         layout.addWidget(self._create_camera_selector())
+        layout.addWidget(self._create_depth_estimation_section())
         layout.addWidget(self._create_color_calibration_section())
         layout.addWidget(self._create_line_detection_section())
         layout.addWidget(self._create_edge_detection_section())
@@ -436,9 +536,11 @@ class VisionTab(QWidget):
         )
         header.setAlignment(Qt.AlignCenter)
 
-        self._video_display = VideoDisplay()
+        # Use DualVideoDisplay for RGB + Depth side-by-side
+        self._video_display = DualVideoDisplay()
         self._video_display.set_placeholder("Select a camera source to start")
-        self._video_display.clicked.connect(self._on_video_clicked)
+        self._video_display.rgb_clicked.connect(self._on_video_clicked)
+        self._video_display.depth_clicked.connect(self._on_depth_clicked)
 
         self._info_label = QLabel("FPS: -- | Resolution: --")
         self._info_label.setProperty("secondary", True)
@@ -455,47 +557,9 @@ class VisionTab(QWidget):
         layout = QVBoxLayout(group)
         layout.setSpacing(6)
 
-        # Source row
-        source_row = QHBoxLayout()
-        source_row.setSpacing(6)
-        src_lbl = QLabel("Source:")
-        src_lbl.setProperty("secondary", True)
-        src_lbl.setFixedWidth(50)
-        self._source_combo = QComboBox()
-        self._source_combo.addItems(["webcam", "realsense", "oakd", "ros", "file"])
-        self._source_combo.setEditable(True)
-        source_row.addWidget(src_lbl)
-        source_row.addWidget(self._source_combo, 1)
-        layout.addLayout(source_row)
-
-        # Config grid
-        config_grid = QGridLayout()
-        config_grid.setSpacing(4)
-
-        dev_lbl = QLabel("Device:")
-        dev_lbl.setProperty("secondary", True)
-        self._device_input = QLineEdit("0")
-        self._device_input.setPlaceholderText("/topic or device")
-        config_grid.addWidget(dev_lbl, 0, 0)
-        config_grid.addWidget(self._device_input, 0, 1)
-
-        w_lbl = QLabel("W:")
-        w_lbl.setProperty("secondary", True)
-        self._width_spin = QSpinBox()
-        self._width_spin.setRange(320, 1920)
-        self._width_spin.setValue(640)
-        config_grid.addWidget(w_lbl, 1, 0)
-        config_grid.addWidget(self._width_spin, 1, 1)
-
-        h_lbl = QLabel("H:")
-        h_lbl.setProperty("secondary", True)
-        self._height_spin = QSpinBox()
-        self._height_spin.setRange(240, 1080)
-        self._height_spin.setValue(480)
-        config_grid.addWidget(h_lbl, 2, 0)
-        config_grid.addWidget(self._height_spin, 2, 1)
-
-        layout.addLayout(config_grid)
+        # Dynamic camera configuration panel
+        self._camera_config = CameraConfigPanel()
+        layout.addWidget(self._camera_config)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -513,6 +577,100 @@ class VisionTab(QWidget):
         layout.addLayout(btn_layout)
 
         return group
+
+    def _create_depth_estimation_section(self) -> CollapsibleSection:
+        """Create depth estimation controls for RealSense/OAK-D cameras."""
+        section = CollapsibleSection("Depth Estimation")
+
+        # Enable depth checkbox
+        self._depth_enable_cb = QCheckBox("Enable Depth Mode")
+        self._depth_enable_cb.setToolTip(
+            "Enable depth capture (RealSense/OAK-D only). Requires camera restart."
+        )
+        self._depth_enable_cb.stateChanged.connect(self._on_depth_enabled_changed)
+
+        # Info label about depth
+        depth_info = QLabel("Supports: RealSense, OAK-D")
+        depth_info.setProperty("muted", True)
+
+        # Show depth map checkbox
+        self._show_depth_map_cb = QCheckBox("Show Depth Map (side-by-side)")
+        self._show_depth_map_cb.setToolTip(
+            "Display colorized depth alongside RGB in side-by-side view"
+        )
+        self._show_depth_map_cb.setEnabled(False)
+        self._show_depth_map_cb.stateChanged.connect(self._on_show_depth_changed)
+
+        # Measure distance checkbox
+        self._measure_distance_cb = QCheckBox("Click to Measure Distance")
+        self._measure_distance_cb.setToolTip(
+            "Click on image to measure distance at point"
+        )
+        self._measure_distance_cb.setEnabled(False)
+        self._measure_distance_cb.stateChanged.connect(
+            self._on_measure_distance_changed
+        )
+
+        # Distance display
+        self._distance_label = QLabel("Distance: -- m")
+        self._distance_label.setStyleSheet(
+            f"color: {COLORS.accent}; font-weight: 600; font-size: 13px; padding: 4px;"
+        )
+        self._distance_label.setAlignment(Qt.AlignCenter)
+
+        # Point coordinates display
+        self._point_label = QLabel("Point: (-, -)")
+        self._point_label.setProperty("muted", True)
+        self._point_label.setAlignment(Qt.AlignCenter)
+
+        # Colormap selector
+        colormap_layout = QHBoxLayout()
+        colormap_layout.setSpacing(6)
+        cmap_lbl = QLabel("Colormap:")
+        cmap_lbl.setProperty("secondary", True)
+        self._colormap_combo = QComboBox()
+        self._colormap_combo.addItems(
+            ["PLASMA", "JET", "VIRIDIS", "INFERNO", "MAGMA", "TURBO", "HOT", "BONE"]
+        )
+        self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
+        colormap_layout.addWidget(cmap_lbl)
+        colormap_layout.addWidget(self._colormap_combo, 1)
+
+        # Depth range sliders
+        range_label = QLabel("Depth Range (m)")
+        range_label.setProperty("secondary", True)
+
+        range_layout = QHBoxLayout()
+        range_layout.setSpacing(4)
+        self._depth_min_slider = LabeledSlider("Min", 0.0, 2.0, 0.1, 1)
+        self._depth_max_slider = LabeledSlider("Max", 1.0, 15.0, 5.0, 1)
+        self._depth_min_slider.valueChanged.connect(
+            lambda v: setattr(self, "_depth_min_m", v)
+        )
+        self._depth_max_slider.valueChanged.connect(
+            lambda v: setattr(self, "_depth_max_m", v)
+        )
+        range_layout.addWidget(self._depth_min_slider)
+        range_layout.addWidget(self._depth_max_slider)
+
+        # Reset point button
+        self._reset_point_btn = QPushButton("Reset Point")
+        self._reset_point_btn.clicked.connect(self._on_reset_depth_point)
+        self._reset_point_btn.setEnabled(False)
+
+        # Add all widgets to section
+        section.add_widget(self._depth_enable_cb)
+        section.add_widget(depth_info)
+        section.add_widget(self._show_depth_map_cb)
+        section.add_widget(self._measure_distance_cb)
+        section.add_widget(self._distance_label)
+        section.add_widget(self._point_label)
+        section.add_layout(colormap_layout)
+        section.add_widget(range_label)
+        section.add_layout(range_layout)
+        section.add_widget(self._reset_point_btn)
+
+        return section
 
     def _create_color_calibration_section(self) -> CollapsibleSection:
         section = CollapsibleSection("Color Calibration")
@@ -928,20 +1086,32 @@ class VisionTab(QWidget):
 
     @Slot()
     def _on_click_sample_changed(self) -> None:
-        enabled = self._click_sample_cb.isChecked()
-        self._video_display.enable_click(enabled)
+        enabled = self._click_sample_cb.isChecked() or self._measure_distance
+        self._video_display.enable_rgb_click(enabled)
 
     @Slot(int, int)
     def _on_video_clicked(self, x: int, y: int) -> None:
-        if not self._click_sample_cb.isChecked():
-            return
-
         if self._current_frame is None:
             return
 
-        success, _ = self._color_manager.sample_at_point(self._current_frame, x, y)
-        if success:
-            self._update_sliders_from_manager()
+        # Handle color sampling
+        if self._click_sample_cb.isChecked():
+            success, _ = self._color_manager.sample_at_point(self._current_frame, x, y)
+            if success:
+                self._update_sliders_from_manager()
+
+        # Handle depth measurement
+        if self._measure_distance and self._is_depth_camera():
+            self._selected_point = (x, y)
+            self._point_label.setText(f"Point: ({x}, {y})")
+
+            distance = self._get_distance_at_point(x, y)
+            if distance is not None and distance > 0:
+                self._current_distance = distance
+                self._distance_label.setText(f"Distance: {distance:.3f} m")
+            else:
+                self._current_distance = None
+                self._distance_label.setText("Distance: N/A")
 
     @Slot()
     def _on_slider_changed(self) -> None:
@@ -989,6 +1159,122 @@ class VisionTab(QWidget):
         else:
             QMessageBox.warning(self, "Save Failed", "Could not save preset")
 
+    @Slot()
+    def _on_depth_enabled_changed(self) -> None:
+        """Handle depth enable checkbox toggle."""
+        self._depth_enabled = self._depth_enable_cb.isChecked()
+        if self._camera is not None:
+            QMessageBox.information(
+                self,
+                "Restart Required",
+                "Please stop and restart the camera to apply depth mode changes.",
+            )
+
+    @Slot()
+    def _on_show_depth_changed(self) -> None:
+        """Handle show depth map checkbox toggle."""
+        self._show_depth_map = self._show_depth_map_cb.isChecked()
+        self._video_display.set_dual_mode(self._show_depth_map)
+
+    @Slot(int, int)
+    def _on_depth_clicked(self, x: int, y: int) -> None:
+        """Handle click on depth display for distance measurement."""
+        if not self._measure_distance or not self._is_depth_camera():
+            return
+
+        self._selected_point = (x, y)
+        self._point_label.setText(f"Point: ({x}, {y})")
+
+        distance = self._get_distance_at_point(x, y)
+        if distance is not None and distance > 0:
+            self._current_distance = distance
+            self._distance_label.setText(f"Distance: {distance:.3f} m")
+        else:
+            self._current_distance = None
+            self._distance_label.setText("Distance: N/A")
+
+    @Slot()
+    def _on_measure_distance_changed(self) -> None:
+        """Handle measure distance checkbox toggle."""
+        self._measure_distance = self._measure_distance_cb.isChecked()
+        click_enabled = self._measure_distance or self._click_sample_cb.isChecked()
+        self._video_display.enable_rgb_click(click_enabled)
+        self._video_display.enable_depth_click(self._measure_distance)
+        self._reset_point_btn.setEnabled(self._measure_distance)
+        if not self._measure_distance:
+            self._selected_point = None
+            self._current_distance = None
+            self._distance_label.setText("Distance: -- m")
+            self._point_label.setText("Point: (-, -)")
+
+    @Slot(str)
+    def _on_colormap_changed(self, colormap_name: str) -> None:
+        """Handle colormap selection change."""
+        colormaps = {
+            "PLASMA": cv2.COLORMAP_PLASMA,
+            "JET": cv2.COLORMAP_JET,
+            "VIRIDIS": cv2.COLORMAP_VIRIDIS,
+            "INFERNO": cv2.COLORMAP_INFERNO,
+            "MAGMA": cv2.COLORMAP_MAGMA,
+            "TURBO": cv2.COLORMAP_TURBO,
+            "HOT": cv2.COLORMAP_HOT,
+            "BONE": cv2.COLORMAP_BONE,
+        }
+        self._depth_colormap = colormaps.get(colormap_name, cv2.COLORMAP_PLASMA)
+
+    @Slot()
+    def _on_reset_depth_point(self) -> None:
+        """Reset the selected depth measurement point."""
+        self._selected_point = None
+        self._current_distance = None
+        self._distance_label.setText("Distance: -- m")
+        self._point_label.setText("Point: (-, -)")
+
+    def _is_depth_camera(self) -> bool:
+        """Check if current camera supports depth."""
+        if self._camera is None:
+            return False
+        from mirela_sdk.vision.camera.abstract import DepthCam
+
+        return isinstance(self._camera, DepthCam)
+
+    def _get_depth_frame(self) -> Optional[np.ndarray]:
+        """Get depth frame from camera if available."""
+        if not self._is_depth_camera():
+            return None
+        try:
+            return self._camera.get_depth_frame()
+        except Exception:
+            return None
+
+    def _get_distance_at_point(self, u: int, v: int) -> Optional[float]:
+        """Get distance at pixel coordinates."""
+        if not self._is_depth_camera():
+            return None
+        try:
+            return self._camera.get_distance(u, v)
+        except Exception:
+            return None
+
+    def _colorize_depth(self, depth_frame: np.ndarray) -> np.ndarray:
+        """Convert depth frame to colorized visualization."""
+        if depth_frame is None:
+            return None
+
+        depth_clip = depth_frame.copy()
+        depth_clip[depth_clip <= 0] = float("nan")
+
+        # Normalize to range
+        depth_norm = (depth_clip - self._depth_min_m) / (
+            self._depth_max_m - self._depth_min_m
+        )
+        depth_norm = np.clip(depth_norm, 0, 1)
+        depth_vis = (depth_norm * 255).astype(np.float32)
+        depth_vis = np.nan_to_num(depth_vis, nan=0.0).astype(np.uint8)
+
+        # Apply colormap
+        return cv2.applyColorMap(depth_vis, self._depth_colormap)
+
     @Slot(str)
     def _on_line_method_changed(self, method_name: str) -> None:
         try:
@@ -1018,27 +1304,18 @@ class VisionTab(QWidget):
 
     @Slot()
     def _start_camera(self) -> None:
-        source = self._source_combo.currentText()
-        device = self._device_input.text()
+        # Get configuration from the dynamic config panel
+        config = self._camera_config.get_config()
+        camera_type = config.get("type", "webcam")
 
         self._start_btn.setEnabled(False)
+        self._camera_config.setEnabled(False)
         self._video_display.set_placeholder("Connecting...")
 
-        config = {
-            "width": self._width_spin.value(),
-            "height": self._height_spin.value(),
-            "node": self._node,
-        }
-
-        if source == "webcam":
-            config["device"] = int(device) if device.isdigit() else 0
-        elif source == "ros":
-            config["topic"] = device if device.startswith("/") else f"/{device}"
-        elif source == "file":
-            config["path"] = device
-
         self._camera_thread = QThread()
-        self._camera_worker = CameraInitWorker(source, config)
+        self._camera_worker = CameraInitWorker(
+            config, enable_depth=self._depth_enabled, node=self._node
+        )
         self._camera_worker.moveToThread(self._camera_thread)
 
         self._camera_thread.started.connect(self._camera_worker.run)
@@ -1057,14 +1334,29 @@ class VisionTab(QWidget):
         if success and self._camera:
             self._frame_timer.start()
             self._stop_btn.setEnabled(True)
-            self._source_combo.setEnabled(False)
             self._video_display.set_placeholder("Starting...")
+
+            # Enable depth controls if camera supports depth
+            is_depth = self._is_depth_camera() and self._depth_enabled
+            self._show_depth_map_cb.setEnabled(is_depth)
+            self._measure_distance_cb.setEnabled(is_depth)
+
+            camera_type = self._camera_config.camera_type
+            if is_depth:
+                self._info_label.setText(
+                    f"{camera_type.upper()} depth camera connected"
+                )
+            else:
+                self._info_label.setText(f"{camera_type.upper()} camera connected")
         else:
             self._video_display.set_placeholder(
                 f"Error: {error}" if error else "Connection failed"
             )
             self._start_btn.setEnabled(True)
+            self._camera_config.setEnabled(True)
             self._camera = None
+            self._show_depth_map_cb.setEnabled(False)
+            self._measure_distance_cb.setEnabled(False)
 
     @Slot()
     def _stop_camera(self) -> None:
@@ -1084,10 +1376,24 @@ class VisionTab(QWidget):
         self._current_frame = None
         self._video_display.clear_display()
         self._video_display.set_placeholder("Select a camera source to start")
+        self._video_display.set_dual_mode(False)
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._source_combo.setEnabled(True)
+        self._camera_config.setEnabled(True)
         self._prev_gray = None
+
+        # Reset depth state
+        self._current_depth_frame = None
+        self._selected_point = None
+        self._current_distance = None
+        self._show_depth_map = False
+        self._show_depth_map_cb.setEnabled(False)
+        self._show_depth_map_cb.setChecked(False)
+        self._measure_distance_cb.setEnabled(False)
+        self._measure_distance_cb.setChecked(False)
+        self._reset_point_btn.setEnabled(False)
+        self._distance_label.setText("Distance: -- m")
+        self._point_label.setText("Point: (-, -)")
 
     def _toggle_filter(self, filter_name: str, enabled: bool) -> None:
         if enabled:
@@ -1108,9 +1414,60 @@ class VisionTab(QWidget):
                 return
 
             self._current_frame = frame.copy()
+            rgb_frame = frame.copy()
+            depth_vis = None
 
-            frame = self._apply_filters(frame)
+            # Handle depth processing
+            if self._depth_enabled and self._is_depth_camera():
+                depth_frame = self._get_depth_frame()
+                self._current_depth_frame = depth_frame
 
+                # Create colorized depth visualization
+                if depth_frame is not None:
+                    depth_vis = self._colorize_depth(depth_frame)
+
+                # Update distance at selected point
+                if self._measure_distance and self._selected_point is not None:
+                    u, v = self._selected_point
+                    distance = self._get_distance_at_point(u, v)
+                    if distance is not None and distance > 0:
+                        self._current_distance = distance
+                        self._distance_label.setText(f"Distance: {distance:.3f} m")
+
+            # Apply filters to RGB frame
+            rgb_frame = self._apply_filters(rgb_frame)
+
+            # Draw depth measurement point on both frames
+            if self._measure_distance and self._selected_point is not None:
+                u, v = self._selected_point
+                h, w = rgb_frame.shape[:2]
+                if 0 <= u < w and 0 <= v < h:
+                    # Draw on RGB
+                    cv2.circle(rgb_frame, (u, v), 8, (0, 255, 255), 2)
+                    cv2.circle(rgb_frame, (u, v), 3, (0, 255, 255), -1)
+
+                    if self._current_distance is not None:
+                        text = f"{self._current_distance:.2f}m"
+                        text_x = max(10, min(u + 15, w - 80))
+                        text_y = max(25, min(v - 10, h - 10))
+                        cv2.putText(
+                            rgb_frame,
+                            text,
+                            (text_x, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (0, 255, 255),
+                            2,
+                        )
+
+                    # Draw on depth visualization if available
+                    if depth_vis is not None:
+                        dh, dw = depth_vis.shape[:2]
+                        if 0 <= u < dw and 0 <= v < dh:
+                            cv2.circle(depth_vis, (u, v), 8, (255, 255, 255), 2)
+                            cv2.circle(depth_vis, (u, v), 3, (255, 255, 255), -1)
+
+            # Update FPS counter
             self._fps_counter += 1
             if self._fps_counter >= 30:
                 elapsed = time.time() - self._fps_start
@@ -1118,10 +1475,22 @@ class VisionTab(QWidget):
                 self._fps_start = time.time()
                 self._fps_counter = 0
 
-            h, w = frame.shape[:2]
-            self._info_label.setText(f"FPS: {self._fps:.1f} | Resolution: {w}x{h}")
+            h, w = rgb_frame.shape[:2]
+            depth_str = (
+                " | Depth: ON"
+                if self._depth_enabled and self._is_depth_camera()
+                else ""
+            )
+            self._info_label.setText(
+                f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}"
+            )
 
-            self._video_display.display_frame(frame)
+            # Display RGB frame (always)
+            self._video_display.display_rgb(rgb_frame)
+
+            # Display depth visualization if enabled and available
+            if self._show_depth_map and depth_vis is not None:
+                self._video_display.display_depth(depth_vis)
 
         except Exception as e:
             self._info_label.setText(f"Error: {e}")

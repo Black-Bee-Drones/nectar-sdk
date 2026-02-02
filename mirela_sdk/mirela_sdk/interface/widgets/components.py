@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 import cv2
 import numpy as np
 from PySide6.QtWidgets import (
@@ -10,6 +10,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFrame,
     QSizePolicy,
+    QStackedWidget,
+    QLineEdit,
+    QSpinBox,
+    QCheckBox,
+    QComboBox,
+    QGridLayout,
+    QGroupBox,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
@@ -445,3 +452,515 @@ class SectionHeader(QLabel):
                 margin-bottom: 4px;
             }}
         """)
+
+
+class DualVideoDisplay(QWidget):
+    """
+    Dual video display widget for RGB and depth side-by-side view.
+
+    Signals
+    -------
+    rgb_clicked : Signal(int, int)
+        Emitted when RGB display is clicked with frame coordinates.
+    depth_clicked : Signal(int, int)
+        Emitted when depth display is clicked with frame coordinates.
+    """
+
+    rgb_clicked = Signal(int, int)
+    depth_clicked = Signal(int, int)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._dual_mode = False
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        # RGB display container
+        self._rgb_container = QWidget()
+        rgb_layout = QVBoxLayout(self._rgb_container)
+        rgb_layout.setContentsMargins(0, 0, 0, 0)
+        rgb_layout.setSpacing(2)
+
+        self._rgb_header = QLabel("RGB")
+        self._rgb_header.setStyleSheet(
+            f"color: {COLORS.text_secondary}; font-size: 10px; font-weight: 500;"
+        )
+        self._rgb_header.setAlignment(Qt.AlignCenter)
+
+        self._rgb_display = VideoDisplay()
+        self._rgb_display.clicked.connect(self.rgb_clicked.emit)
+
+        rgb_layout.addWidget(self._rgb_header)
+        rgb_layout.addWidget(self._rgb_display, 1)
+
+        # Depth display container
+        self._depth_container = QWidget()
+        depth_layout = QVBoxLayout(self._depth_container)
+        depth_layout.setContentsMargins(0, 0, 0, 0)
+        depth_layout.setSpacing(2)
+
+        self._depth_header = QLabel("Depth")
+        self._depth_header.setStyleSheet(
+            f"color: {COLORS.accent}; font-size: 10px; font-weight: 500;"
+        )
+        self._depth_header.setAlignment(Qt.AlignCenter)
+
+        self._depth_display = VideoDisplay()
+        self._depth_display.clicked.connect(self.depth_clicked.emit)
+
+        depth_layout.addWidget(self._depth_header)
+        depth_layout.addWidget(self._depth_display, 1)
+
+        layout.addWidget(self._rgb_container, 1)
+        layout.addWidget(self._depth_container, 1)
+
+        # Initially hide depth and headers
+        self._depth_container.setVisible(False)
+        self._rgb_header.setVisible(False)
+
+    def set_dual_mode(self, enabled: bool) -> None:
+        """Enable or disable side-by-side dual display mode."""
+        self._dual_mode = enabled
+        self._depth_container.setVisible(enabled)
+        self._rgb_header.setVisible(enabled)
+        self._depth_header.setVisible(enabled)
+
+    def display_rgb(self, frame: np.ndarray) -> None:
+        """Display RGB frame."""
+        self._rgb_display.display_frame(frame)
+
+    def display_depth(self, frame: np.ndarray) -> None:
+        """Display depth frame (colorized)."""
+        if self._dual_mode:
+            self._depth_display.display_frame(frame)
+
+    def set_placeholder(self, text: str) -> None:
+        """Set placeholder text for RGB display."""
+        self._rgb_display.set_placeholder(text)
+        self._depth_display.set_placeholder("No depth data")
+
+    def clear_display(self) -> None:
+        """Clear both displays."""
+        self._rgb_display.clear_display()
+        self._depth_display.clear_display()
+
+    def enable_rgb_click(self, enabled: bool) -> None:
+        """Enable click events on RGB display."""
+        self._rgb_display.enable_click(enabled)
+
+    def enable_depth_click(self, enabled: bool) -> None:
+        """Enable click events on depth display."""
+        self._depth_display.enable_click(enabled)
+
+    @property
+    def rgb_display(self) -> VideoDisplay:
+        """Access underlying RGB VideoDisplay."""
+        return self._rgb_display
+
+    @property
+    def depth_display(self) -> VideoDisplay:
+        """Access underlying depth VideoDisplay."""
+        return self._depth_display
+
+
+class CameraConfigPanel(QWidget):
+    """
+    Dynamic camera configuration panel.
+
+    Shows different configuration options based on selected camera type.
+    Emits configChanged signal when any setting is modified.
+
+    Signals
+    -------
+    configChanged : Signal()
+        Emitted when any configuration value changes.
+    """
+
+    configChanged = Signal()
+
+    CAMERA_TYPES = ["webcam", "realsense", "oakd", "ros", "file", "c920", "imx219"]
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._current_type = "webcam"
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(6)
+
+        # Camera type selector
+        type_layout = QHBoxLayout()
+        type_layout.setSpacing(6)
+        type_lbl = QLabel("Camera:")
+        type_lbl.setProperty("secondary", True)
+        type_lbl.setFixedWidth(55)
+
+        self._type_combo = QComboBox()
+        self._type_combo.addItems(self.CAMERA_TYPES)
+        self._type_combo.currentTextChanged.connect(self._on_type_changed)
+        type_layout.addWidget(type_lbl)
+        type_layout.addWidget(self._type_combo, 1)
+        main_layout.addLayout(type_layout)
+
+        # Stacked widget for different camera configs
+        self._stack = QStackedWidget()
+        self._config_pages: Dict[str, QWidget] = {}
+
+        self._create_webcam_config()
+        self._create_realsense_config()
+        self._create_oakd_config()
+        self._create_ros_config()
+        self._create_file_config()
+        self._create_c920_config()
+        self._create_imx219_config()
+
+        main_layout.addWidget(self._stack)
+
+    def _create_config_page(self, name: str) -> QWidget:
+        """Create a config page and add to stack."""
+        page = QWidget()
+        page.setObjectName(name)
+        self._config_pages[name] = page
+        self._stack.addWidget(page)
+        return page
+
+    def _create_webcam_config(self) -> None:
+        """Create webcam (OpenCV) configuration panel."""
+        page = self._create_config_page("webcam")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Device index
+        layout.addWidget(self._make_label("Device:"), 0, 0)
+        self._webcam_device = QSpinBox()
+        self._webcam_device.setRange(0, 10)
+        self._webcam_device.setValue(0)
+        self._webcam_device.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._webcam_device, 0, 1)
+
+        # Resolution
+        layout.addWidget(self._make_label("Width:"), 1, 0)
+        self._webcam_width = QSpinBox()
+        self._webcam_width.setRange(320, 1920)
+        self._webcam_width.setValue(640)
+        self._webcam_width.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._webcam_width, 1, 1)
+
+        layout.addWidget(self._make_label("Height:"), 2, 0)
+        self._webcam_height = QSpinBox()
+        self._webcam_height.setRange(240, 1080)
+        self._webcam_height.setValue(480)
+        self._webcam_height.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._webcam_height, 2, 1)
+
+        # FPS
+        layout.addWidget(self._make_label("FPS:"), 3, 0)
+        self._webcam_fps = QSpinBox()
+        self._webcam_fps.setRange(1, 120)
+        self._webcam_fps.setValue(30)
+        self._webcam_fps.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._webcam_fps, 3, 1)
+
+        # Autofocus
+        self._webcam_autofocus = QCheckBox("Autofocus")
+        self._webcam_autofocus.setChecked(True)
+        self._webcam_autofocus.stateChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._webcam_autofocus, 4, 0, 1, 2)
+
+        # Threaded
+        self._webcam_threaded = QCheckBox("Threaded capture")
+        self._webcam_threaded.setChecked(True)
+        self._webcam_threaded.setToolTip("Use background thread for capture")
+        self._webcam_threaded.stateChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._webcam_threaded, 5, 0, 1, 2)
+
+    def _create_realsense_config(self) -> None:
+        """Create RealSense configuration panel."""
+        page = self._create_config_page("realsense")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Resolution
+        layout.addWidget(self._make_label("Width:"), 0, 0)
+        self._rs_width = QSpinBox()
+        self._rs_width.setRange(320, 1920)
+        self._rs_width.setValue(640)
+        self._rs_width.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_width, 0, 1)
+
+        layout.addWidget(self._make_label("Height:"), 1, 0)
+        self._rs_height = QSpinBox()
+        self._rs_height.setRange(240, 1080)
+        self._rs_height.setValue(480)
+        self._rs_height.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_height, 1, 1)
+
+        # FPS
+        layout.addWidget(self._make_label("FPS:"), 2, 0)
+        self._rs_fps = QSpinBox()
+        self._rs_fps.setRange(6, 90)
+        self._rs_fps.setValue(30)
+        self._rs_fps.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_fps, 2, 1)
+
+        # Align to color
+        self._rs_align = QCheckBox("Align depth to color")
+        self._rs_align.setChecked(True)
+        self._rs_align.stateChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_align, 3, 0, 1, 2)
+
+        # Use ROS topics
+        self._rs_use_ros = QCheckBox("Use ROS topics")
+        self._rs_use_ros.setToolTip("Subscribe to ROS topics instead of direct SDK")
+        self._rs_use_ros.stateChanged.connect(self._on_rs_ros_toggled)
+        layout.addWidget(self._rs_use_ros, 4, 0, 1, 2)
+
+        # ROS topic fields (initially hidden)
+        self._rs_color_topic_lbl = self._make_label("Color topic:")
+        layout.addWidget(self._rs_color_topic_lbl, 5, 0)
+        self._rs_color_topic = QLineEdit("/camera/color/image_raw")
+        self._rs_color_topic.textChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_color_topic, 5, 1)
+
+        self._rs_depth_topic_lbl = self._make_label("Depth topic:")
+        layout.addWidget(self._rs_depth_topic_lbl, 6, 0)
+        self._rs_depth_topic = QLineEdit("/camera/depth/image_rect_raw")
+        self._rs_depth_topic.textChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_depth_topic, 6, 1)
+
+        self._rs_compressed = QCheckBox("Color compressed")
+        self._rs_compressed.setChecked(True)
+        self._rs_compressed.stateChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_compressed, 7, 0, 1, 2)
+
+        # Initially hide ROS topic fields
+        self._toggle_rs_ros_fields(False)
+
+    def _on_rs_ros_toggled(self) -> None:
+        """Handle ROS topics toggle."""
+        use_ros = self._rs_use_ros.isChecked()
+        self._toggle_rs_ros_fields(use_ros)
+        self.configChanged.emit()
+
+    def _toggle_rs_ros_fields(self, visible: bool) -> None:
+        """Show/hide ROS topic configuration fields."""
+        self._rs_color_topic_lbl.setVisible(visible)
+        self._rs_color_topic.setVisible(visible)
+        self._rs_depth_topic_lbl.setVisible(visible)
+        self._rs_depth_topic.setVisible(visible)
+        self._rs_compressed.setVisible(visible)
+
+    def _create_oakd_config(self) -> None:
+        """Create OAK-D configuration panel."""
+        page = self._create_config_page("oakd")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Camera number
+        layout.addWidget(self._make_label("Camera:"), 0, 0)
+        self._oakd_cam = QComboBox()
+        self._oakd_cam.addItems(["RGB (1)", "Left Mono (2)", "Right Mono (3)"])
+        self._oakd_cam.currentIndexChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._oakd_cam, 0, 1)
+
+        # Info label
+        info = QLabel("Depth enabled in Depth Estimation section")
+        info.setProperty("muted", True)
+        info.setWordWrap(True)
+        layout.addWidget(info, 1, 0, 1, 2)
+
+    def _create_ros_config(self) -> None:
+        """Create ROS camera configuration panel."""
+        page = self._create_config_page("ros")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Topic
+        layout.addWidget(self._make_label("Topic:"), 0, 0)
+        self._ros_topic = QLineEdit("/camera/image_raw")
+        self._ros_topic.textChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._ros_topic, 0, 1)
+
+        # Compressed
+        self._ros_compressed = QCheckBox("Compressed topic")
+        self._ros_compressed.stateChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._ros_compressed, 1, 0, 1, 2)
+
+    def _create_file_config(self) -> None:
+        """Create file image configuration panel."""
+        page = self._create_config_page("file")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Path
+        layout.addWidget(self._make_label("Path:"), 0, 0)
+        self._file_path = QLineEdit()
+        self._file_path.setPlaceholderText("/path/to/image.jpg")
+        self._file_path.textChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._file_path, 0, 1)
+
+    def _create_c920_config(self) -> None:
+        """Create Logitech C920 configuration panel."""
+        page = self._create_config_page("c920")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Profile
+        layout.addWidget(self._make_label("Profile:"), 0, 0)
+        self._c920_profile = QComboBox()
+        self._c920_profile.addItems(["640×480", "1280×720", "1920×1080"])
+        self._c920_profile.setCurrentIndex(1)
+        self._c920_profile.currentIndexChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._c920_profile, 0, 1)
+
+        # Fallback device
+        layout.addWidget(self._make_label("Fallback:"), 1, 0)
+        self._c920_fallback = QSpinBox()
+        self._c920_fallback.setRange(0, 10)
+        self._c920_fallback.setValue(0)
+        self._c920_fallback.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._c920_fallback, 1, 1)
+
+    def _create_imx219_config(self) -> None:
+        """Create IMX219 (Jetson) configuration panel."""
+        page = self._create_config_page("imx219")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        # Sensor ID
+        layout.addWidget(self._make_label("Sensor ID:"), 0, 0)
+        self._imx_sensor = QSpinBox()
+        self._imx_sensor.setRange(0, 3)
+        self._imx_sensor.setValue(0)
+        self._imx_sensor.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._imx_sensor, 0, 1)
+
+        # Resolution
+        layout.addWidget(self._make_label("Width:"), 1, 0)
+        self._imx_width = QSpinBox()
+        self._imx_width.setRange(640, 3280)
+        self._imx_width.setValue(1920)
+        self._imx_width.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._imx_width, 1, 1)
+
+        layout.addWidget(self._make_label("Height:"), 2, 0)
+        self._imx_height = QSpinBox()
+        self._imx_height.setRange(480, 2464)
+        self._imx_height.setValue(1080)
+        self._imx_height.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._imx_height, 2, 1)
+
+        # FPS
+        layout.addWidget(self._make_label("FPS:"), 3, 0)
+        self._imx_fps = QSpinBox()
+        self._imx_fps.setRange(1, 60)
+        self._imx_fps.setValue(30)
+        self._imx_fps.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._imx_fps, 3, 1)
+
+        # Flip
+        layout.addWidget(self._make_label("Flip:"), 4, 0)
+        self._imx_flip = QComboBox()
+        self._imx_flip.addItems(["None (0)", "Horizontal (1)", "Rotate 180 (2)"])
+        self._imx_flip.currentIndexChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._imx_flip, 4, 1)
+
+    def _make_label(self, text: str) -> QLabel:
+        """Create a styled label for config fields."""
+        lbl = QLabel(text)
+        lbl.setProperty("secondary", True)
+        lbl.setFixedWidth(70)
+        return lbl
+
+    def _on_type_changed(self, camera_type: str) -> None:
+        """Handle camera type selection change."""
+        self._current_type = camera_type
+        if camera_type in self._config_pages:
+            self._stack.setCurrentWidget(self._config_pages[camera_type])
+        self.configChanged.emit()
+
+    @property
+    def camera_type(self) -> str:
+        """Current selected camera type."""
+        return self._current_type
+
+    def set_camera_type(self, camera_type: str) -> None:
+        """Set the camera type programmatically."""
+        idx = self._type_combo.findText(camera_type)
+        if idx >= 0:
+            self._type_combo.setCurrentIndex(idx)
+
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Get current configuration as dictionary.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Configuration dictionary with camera type and settings.
+        """
+        config = {"type": self._current_type}
+
+        if self._current_type == "webcam":
+            config.update({
+                "device_index": self._webcam_device.value(),
+                "width": self._webcam_width.value(),
+                "height": self._webcam_height.value(),
+                "fps": self._webcam_fps.value(),
+                "autofocus": self._webcam_autofocus.isChecked(),
+                "threaded": self._webcam_threaded.isChecked(),
+            })
+        elif self._current_type == "realsense":
+            config.update({
+                "width": self._rs_width.value(),
+                "height": self._rs_height.value(),
+                "fps": self._rs_fps.value(),
+                "align_to_color": self._rs_align.isChecked(),
+                "use_ros_topics": self._rs_use_ros.isChecked(),
+                "color_topic": self._rs_color_topic.text(),
+                "depth_topic": self._rs_depth_topic.text(),
+                "color_compressed": self._rs_compressed.isChecked(),
+            })
+        elif self._current_type == "oakd":
+            config.update({
+                "cam_num": self._oakd_cam.currentIndex() + 1,
+            })
+        elif self._current_type == "ros":
+            config.update({
+                "topic": self._ros_topic.text(),
+                "compressed": self._ros_compressed.isChecked(),
+            })
+        elif self._current_type == "file":
+            config.update({
+                "path": self._file_path.text(),
+            })
+        elif self._current_type == "c920":
+            config.update({
+                "profile": self._c920_profile.currentIndex(),
+                "fallback_device_index": self._c920_fallback.value(),
+            })
+        elif self._current_type == "imx219":
+            config.update({
+                "sensor_id": self._imx_sensor.value(),
+                "width": self._imx_width.value(),
+                "height": self._imx_height.value(),
+                "fps": self._imx_fps.value(),
+                "flip": self._imx_flip.currentIndex(),
+            })
+
+        return config
+
+    def setEnabled(self, enabled: bool) -> None:
+        """Enable or disable all config controls."""
+        self._type_combo.setEnabled(enabled)
+        for page in self._config_pages.values():
+            page.setEnabled(enabled)
