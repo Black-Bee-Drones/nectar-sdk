@@ -286,6 +286,7 @@ class ControlTab(QWidget):
         self._setup_status_checker()
         self._update_ui_state()
         self._update_capability_panels()
+        self._update_status_indicators()
         self.setFocusPolicy(Qt.StrongFocus)
 
     def _setup_ui(self) -> None:
@@ -404,6 +405,12 @@ class ControlTab(QWidget):
         layout.addWidget(self._status_armed, 1, 1)
 
         return group
+
+    def _update_status_indicators(self) -> None:
+        """Update status indicators based on drone capabilities."""
+        has_fcu = self._drone_type == "mavros"
+        self._status_fcu.setVisible(has_fcu)
+        self._status_armed.setVisible(has_fcu)
 
     def _create_flight_controls(self) -> QGroupBox:
         group = QGroupBox("Flight")
@@ -938,6 +945,7 @@ class ControlTab(QWidget):
         self._config_panel.set_drone_type(self._drone_type)
 
         self._update_capability_panels()
+        self._update_status_indicators()
 
         if self._status_checker:
             self._status_checker.set_drone_type(self._drone_type)
@@ -1343,13 +1351,20 @@ class ControlTab(QWidget):
 
     def _update_mavros_telemetry(self) -> None:
         """Update telemetry for MavrosDrone."""
-        if not hasattr(self._drone, "mavros_state"):
+        if self._drone_type != "mavros":
             return
 
-        state = self._drone.mavros_state
-        self._status_fcu.set_status("active" if state.connected else "inactive")
-        self._status_armed.set_status("active" if state.armed else "inactive")
-        self._mode_label.setText(f"Mode: {state.mode or '--'}")
+        # Use generic properties from BaseDrone
+        fcu_connected = self._drone.is_fcu_connected
+        if fcu_connected is not None:
+            self._status_fcu.set_status("active" if fcu_connected else "inactive")
+
+        armed = self._drone.is_armed
+        if armed is not None:
+            self._status_armed.set_status("active" if armed else "inactive")
+
+        mode = self._drone.flight_mode
+        self._mode_label.setText(f"Mode: {mode or '--'}")
 
         if hasattr(self._drone, "height"):
             self._alt_height_label.setText(f"Height: {self._drone.height:.2f}m")
@@ -1417,28 +1432,29 @@ class ControlTab(QWidget):
                 self._alt_rel_label.setText("RelAlt: --")
 
     def _update_bebop_telemetry(self) -> None:
-        """Update telemetry for BebopDrone."""
+        """Update telemetry for BebopDrone (limited telemetry available)."""
         if self._drone_type != "bebop":
             return
 
-        self._status_fcu.set_status("inactive")
-        self._status_armed.set_status("inactive")
-        self._mode_label.setText("Mode: N/A (Bebop)")
-        self._no_telemetry_label.setText("No telemetry")
+        # Bebop has no telemetry feedback via SDK
+        self._mode_label.setText("Mode: --")
+        self._no_telemetry_label.setText("Telemetry N/A")
 
-        self._pos_x_label.setText("X: N/A")
-        self._pos_y_label.setText("Y: N/A")
-        self._pos_z_label.setText("Z: N/A")
-        self._alt_height_label.setText("Height: N/A")
-        self._alt_lidar_label.setText("LiDAR: N/A")
-        self._alt_rel_label.setText("RelAlt: N/A")
-        self._yaw_label.setText("Yaw: N/A")
-        self._heading_label.setText("Heading: N/A")
+        self._pos_x_label.setText("X: --")
+        self._pos_y_label.setText("Y: --")
+        self._pos_z_label.setText("Z: --")
+        self._alt_height_label.setText("Height: --")
+        self._alt_lidar_label.setText("LiDAR: --")
+        self._alt_rel_label.setText("RelAlt: --")
+        self._yaw_label.setText("Yaw: --")
+        self._heading_label.setText("Heading: --")
 
     def _clear_telemetry(self) -> None:
         """Clear all telemetry displays."""
-        self._status_fcu.set_status("inactive")
-        self._status_armed.set_status("inactive")
+        if self._status_fcu.isVisible():
+            self._status_fcu.set_status("inactive")
+        if self._status_armed.isVisible():
+            self._status_armed.set_status("inactive")
         self._mode_label.setText("Mode: --")
 
         self._pos_x_label.setText("X: --")
