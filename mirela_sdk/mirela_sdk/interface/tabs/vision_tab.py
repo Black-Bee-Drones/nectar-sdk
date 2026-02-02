@@ -32,6 +32,7 @@ from mirela_sdk.interface.widgets import (
     LabeledSlider,
     DualVideoDisplay,
     CameraConfigPanel,
+    DetectionConfigPanel,
 )
 
 
@@ -459,6 +460,11 @@ class VisionTab(QWidget):
         self._fps_start = time.time()
 
         self._color_manager = ColorCalibrationManager()
+
+        # AI Detection state
+        self._ai_detector = None
+        self._detection_enabled = False
+        self._last_detection_result = None
 
         # Depth estimation state
         self._depth_enabled = False
@@ -975,6 +981,20 @@ class VisionTab(QWidget):
     def _create_detection_section(self) -> CollapsibleSection:
         section = CollapsibleSection("AI Detection")
 
+        # Object detection toggle
+        self._object_detect_cb = QCheckBox("Enable Object Detection")
+        self._object_detect_cb.setToolTip("Run AI object detection on camera frames")
+        self._object_detect_cb.stateChanged.connect(self._on_object_detection_toggled)
+
+        # Detection configuration panel
+        self._detection_panel = DetectionConfigPanel()
+        self._detection_panel.detectorReady.connect(self._on_detector_ready)
+        self._detection_panel.detectorUnloaded.connect(self._on_detector_unloaded)
+        self._detection_panel.statusChanged.connect(
+            lambda msg: self._info_label.setText(msg)
+        )
+
+        # Hand and face tracking (existing)
         self._hand_cb = QCheckBox("Hand Tracking")
         self._hand_cb.stateChanged.connect(
             lambda: self._toggle_filter("hand", self._hand_cb.isChecked())
@@ -985,10 +1005,38 @@ class VisionTab(QWidget):
             lambda: self._toggle_filter("face", self._face_cb.isChecked())
         )
 
+        section.add_widget(self._object_detect_cb)
+        section.add_widget(self._detection_panel)
         section.add_widget(self._hand_cb)
         section.add_widget(self._face_cb)
 
         return section
+
+    @Slot()
+    def _on_object_detection_toggled(self) -> None:
+        """Handle object detection enable/disable toggle."""
+        enabled = self._object_detect_cb.isChecked()
+        self._detection_enabled = enabled and self._ai_detector is not None
+
+        if enabled and self._ai_detector is None:
+            self._info_label.setText("Load a detection model first")
+            self._object_detect_cb.setChecked(False)
+
+    @Slot(object)
+    def _on_detector_ready(self, detector) -> None:
+        """Handle detector loaded event."""
+        self._ai_detector = detector
+        self._object_detect_cb.setEnabled(True)
+        self._object_detect_cb.setChecked(True)
+        self._detection_enabled = True
+
+    @Slot()
+    def _on_detector_unloaded(self) -> None:
+        """Handle detector unloaded event."""
+        self._ai_detector = None
+        self._detection_enabled = False
+        self._object_detect_cb.setChecked(False)
+        self._last_detection_result = None
 
     def _create_aruco_section(self) -> CollapsibleSection:
         section = CollapsibleSection("ArUco Markers")
@@ -1615,6 +1663,10 @@ class VisionTab(QWidget):
                 frame = self._cv_utils.optical_flow(self._prev_gray, curr_gray, frame)
             self._prev_gray = curr_gray
 
+        # AI Object Detection
+        if self._detection_enabled and self._ai_detector is not None:
+            frame = self._apply_object_detection(frame)
+
         if "hand" in self._filter_params:
             frame = self._cv_utils.detect_hands(frame)
 
@@ -1624,6 +1676,55 @@ class VisionTab(QWidget):
         if "aruco" in self._filter_params:
             dict_type = self._aruco_dict_combo.currentText()
             frame = self._cv_utils.detect_aruco_markers(frame, dict_type)
+
+        return frame
+
+    def _apply_object_detection(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Run AI object detection on frame and draw results.
+
+        Parameters
+        ----------
+        frame : np.ndarray
+            Input frame (BGR).
+
+        Returns
+        -------
+        np.ndarray
+            Frame with detection annotations.
+        """
+        if self._ai_detector is None or not self._ai_detector.is_loaded:
+            return frame
+
+        try:
+            # Run detection
+            conf = self._detection_panel.conf_threshold
+            iou = self._detection_panel.iou_threshold
+            result = self._ai_detector.detect(frame, conf=conf, iou=iou)
+            self._last_detection_result = result
+
+            # Draw detections on frame
+            if len(result) > 0:
+                frame = self._ai_detector.draw_detections(
+                    frame,
+                    result,
+                    show_labels=self._detection_panel.show_labels,
+                    show_confidence=self._detection_panel.show_confidence,
+                    show_class=self._detection_panel.show_labels,
+                )
+
+            # Update stats in panel
+            class_counts = {}
+            for det in result:
+                name = det.class_name or f"class_{det.class_id}"
+                class_counts[name] = class_counts.get(name, 0) + 1
+
+            inference_ms = result.inference_time * 1000
+            self._detection_panel.update_stats(len(result), inference_ms, class_counts)
+
+        except Exception as e:
+            # Log error but don't crash the frame loop
+            self._info_label.setText(f"Detection error: {str(e)[:30]}")
 
         return frame
 
@@ -1642,6 +1743,11 @@ class VisionTab(QWidget):
                 self._camera.close()
             except Exception:
                 pass
+
+        # Cleanup detection panel
+        if hasattr(self, "_detection_panel"):
+            self._detection_panel.cleanup()
+        self._ai_detector = None
 
         if self._cv_utils:
             if (

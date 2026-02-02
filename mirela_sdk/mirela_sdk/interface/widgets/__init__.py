@@ -19,6 +19,7 @@ from mirela_sdk.interface.widgets.param_reconfigure import (
     ParameterInfo,
     ParamType,
 )
+from mirela_sdk.interface.widgets.detection_panel import DetectionConfigPanel
 
 __all__ = [
     "Card",
@@ -38,4 +39,5 @@ __all__ = [
     "ParameterGroupWidget",
     "ParameterInfo",
     "ParamType",
+    "DetectionConfigPanel",
 ]
