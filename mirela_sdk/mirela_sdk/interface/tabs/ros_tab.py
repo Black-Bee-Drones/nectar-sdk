@@ -1,7 +1,5 @@
-from typing import Optional, Dict, Any, List
-import json
+from typing import Optional, Dict, Any
 import yaml
-import threading
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,23 +8,15 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QGroupBox,
-    QGridLayout,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
-    QTextEdit,
     QPlainTextEdit,
     QLineEdit,
     QSplitter,
-    QScrollArea,
-    QListWidget,
-    QListWidgetItem,
     QSpinBox,
     QCheckBox,
     QHeaderView,
-    QTableWidget,
-    QTableWidgetItem,
-    QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
@@ -35,7 +25,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from mirela_sdk.interface.theme import COLORS
-from mirela_sdk.interface.widgets import VideoDisplay
+from mirela_sdk.interface.widgets import VideoDisplay, ParameterReconfigureWidget
 
 
 class ROSTab(QWidget):
@@ -306,53 +296,23 @@ class ROSTab(QWidget):
 
     def _create_parameters_tab(self) -> QWidget:
         widget = QWidget()
-        layout = QHBoxLayout(widget)
+        layout = QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        splitter = QSplitter(Qt.Horizontal)
+        self._param_reconfigure = ParameterReconfigureWidget()
+        self._param_reconfigure.parameterSet.connect(self._on_parameter_set)
+        self._param_reconfigure.errorOccurred.connect(self._on_param_error)
 
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 8, 0)
-
-        header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("Nodes"))
-
-        self._refresh_nodes_btn = QPushButton("Refresh")
-        self._refresh_nodes_btn.clicked.connect(self._refresh_nodes)
-        header_layout.addWidget(self._refresh_nodes_btn)
-
-        self._nodes_list = QListWidget()
-        self._nodes_list.itemClicked.connect(self._on_node_selected)
-        self._nodes_list.setAlternatingRowColors(True)
-
-        left_layout.addLayout(header_layout)
-        left_layout.addWidget(self._nodes_list, 1)
-
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(8, 0, 0, 0)
-
-        self._param_node_label = QLabel("Select a node to view parameters")
-        self._param_node_label.setProperty("secondary", True)
-
-        self._params_table = QTableWidget()
-        self._params_table.setColumnCount(3)
-        self._params_table.setHorizontalHeaderLabels(["Parameter", "Value", "Type"])
-        self._params_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._params_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self._params_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self._params_table.setAlternatingRowColors(True)
-
-        right_layout.addWidget(self._param_node_label)
-        right_layout.addWidget(self._params_table, 1)
-
-        splitter.addWidget(left_panel)
-        splitter.addWidget(right_panel)
-        splitter.setSizes([250, 750])
-
-        layout.addWidget(splitter)
+        layout.addWidget(self._param_reconfigure)
         return widget
+
+    @Slot(str, str, object)
+    def _on_parameter_set(self, node_name: str, param_name: str, value: Any) -> None:
+        pass
+
+    @Slot(str)
+    def _on_param_error(self, error: str) -> None:
+        pass
 
     def _create_image_viewer_tab(self) -> QWidget:
         widget = QWidget()
@@ -702,23 +662,6 @@ class ROSTab(QWidget):
             pass
         return None
 
-    @Slot()
-    def _refresh_nodes(self) -> None:
-        if not self._node:
-            return
-
-        self._nodes_list.clear()
-        nodes = self._node.get_node_names_and_namespaces()
-
-        for node_name, namespace in sorted(nodes):
-            full_name = f"{namespace}/{node_name}" if namespace != "/" else f"/{node_name}"
-            item = QListWidgetItem(full_name)
-            self._nodes_list.addItem(item)
-
-    @Slot(QListWidgetItem)
-    def _on_node_selected(self, item: QListWidgetItem) -> None:
-        node_name = item.text()
-        self._param_node_label.setText(f"Parameters for: {node_name}")
 
     @Slot()
     def _subscribe_image_topic(self) -> None:
@@ -815,7 +758,7 @@ class ROSTab(QWidget):
         self._node = node
         self._refresh_topics()
         self._refresh_services()
-        self._refresh_nodes()
+        self._param_reconfigure.set_node(node)
 
     def cleanup(self) -> None:
         self._refresh_timer.stop()
@@ -832,3 +775,5 @@ class ROSTab(QWidget):
                 self._node.destroy_publisher(self._publisher)
             except Exception:
                 pass
+
+        self._param_reconfigure.cleanup()

@@ -12,6 +12,13 @@ from mirela_sdk.interface.widgets.components import (
     CameraConfigPanel,
 )
 from mirela_sdk.interface.widgets.drone_config import DroneConfigPanel
+from mirela_sdk.interface.widgets.param_reconfigure import (
+    ParameterReconfigureWidget,
+    ParameterEditor,
+    ParameterGroupWidget,
+    ParameterInfo,
+    ParamType,
+)
 
 __all__ = [
     "Card",
@@ -26,4 +33,9 @@ __all__ = [
     "DualVideoDisplay",
     "CameraConfigPanel",
     "DroneConfigPanel",
+    "ParameterReconfigureWidget",
+    "ParameterEditor",
+    "ParameterGroupWidget",
+    "ParameterInfo",
+    "ParamType",
 ]
