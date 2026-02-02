@@ -107,6 +107,21 @@ class MavrosDrone(BaseDrone):
         return self._mavros_state
 
     @property
+    def is_armed(self) -> Optional[bool]:
+        """Check if motors are armed."""
+        return self._mavros_state.armed if self._mavros_state else None
+
+    @property
+    def flight_mode(self) -> Optional[str]:
+        """Current ArduPilot/PX4 flight mode."""
+        return self._mavros_state.mode if self._mavros_state else None
+
+    @property
+    def is_fcu_connected(self) -> Optional[bool]:
+        """Check if FCU is connected via MAVROS."""
+        return self._mavros_state.connected if self._mavros_state else None
+
+    @property
     def gps(self) -> NavSatFix:
         """
         GPS fix data.

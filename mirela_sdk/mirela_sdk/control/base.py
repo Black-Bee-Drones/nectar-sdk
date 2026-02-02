@@ -74,6 +74,42 @@ class BaseDrone(ABC):
         return self._driver_running
 
     @property
+    def is_armed(self) -> Optional[bool]:
+        """
+        Check if motors are armed.
+
+        Returns
+        -------
+        Optional[bool]
+            True if armed, False if disarmed, None if not supported.
+        """
+        return None
+
+    @property
+    def flight_mode(self) -> Optional[str]:
+        """
+        Current flight mode.
+
+        Returns
+        -------
+        Optional[str]
+            Flight mode name, or None if not available.
+        """
+        return None
+
+    @property
+    def is_fcu_connected(self) -> Optional[bool]:
+        """
+        Check if FCU/autopilot is connected.
+
+        Returns
+        -------
+        Optional[bool]
+            True if connected, False otherwise, None if not applicable.
+        """
+        return None
+
+    @property
     def driver_session_name(self) -> str:
         """Tmux session name used for the driver process."""
         return self._get_driver_name()
