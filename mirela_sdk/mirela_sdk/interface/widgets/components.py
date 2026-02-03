@@ -111,33 +111,34 @@ class LabeledSlider(QWidget):
         self._scale = 10 ** decimals
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
         layout.setAlignment(Qt.AlignCenter)
 
         self._label = QLabel(label)
         self._label.setAlignment(Qt.AlignCenter)
         self._label.setProperty("muted", True)
-        self._label.setFixedWidth(40)
 
         self._value_label = QLabel(f"{default:.{decimals}f}")
         self._value_label.setAlignment(Qt.AlignCenter)
         self._value_label.setStyleSheet(
-            f"color: {COLORS.accent}; font-weight: 600; font-size: 11px;"
+            f"color: {COLORS.accent}; font-weight: 600; font-size: 12px;"
         )
-        self._value_label.setFixedWidth(40)
 
         self._slider = QSlider(Qt.Vertical)
         self._slider.setMinimum(int(min_val * self._scale))
         self._slider.setMaximum(int(max_val * self._scale))
         self._slider.setValue(int(default * self._scale))
-        self._slider.setMinimumHeight(80)
-        self._slider.setMaximumWidth(24)
+        self._slider.setMinimumHeight(100)
+        self._slider.setFixedWidth(20)
         self._slider.valueChanged.connect(self._on_value_changed)
 
         layout.addWidget(self._label, 0, Qt.AlignHCenter)
         layout.addWidget(self._slider, 1, Qt.AlignHCenter)
         layout.addWidget(self._value_label, 0, Qt.AlignHCenter)
+
+        self.setMinimumWidth(50)
+        self.setMaximumWidth(70)
 
     def _on_value_changed(self, value: int) -> None:
         real_value = value / self._scale
@@ -219,7 +220,7 @@ class CollapsibleSection(QWidget):
 
 
 class KeyButton(QPushButton):
-    """Compact keyboard control button with visual feedback."""
+    """Keyboard control button with visual feedback."""
 
     def __init__(
         self,
@@ -229,7 +230,7 @@ class KeyButton(QPushButton):
     ) -> None:
         super().__init__(text, parent)
         self.key_code = key_code
-        self.setFixedSize(36, 36)
+        self.setFixedSize(42, 42)
         self._pressed = False
         self._update_style()
 
@@ -240,9 +241,9 @@ class KeyButton(QPushButton):
                     background-color: {COLORS.accent};
                     color: {COLORS.background};
                     border: none;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    font-size: 12px;
+                    border-radius: 8px;
+                    font-weight: 700;
+                    font-size: 14px;
                 }}
             """)
         else:
@@ -251,9 +252,9 @@ class KeyButton(QPushButton):
                     background-color: {COLORS.surface_elevated};
                     color: {COLORS.text_primary};
                     border: 1px solid {COLORS.border};
-                    border-radius: 6px;
+                    border-radius: 8px;
                     font-weight: 600;
-                    font-size: 12px;
+                    font-size: 14px;
                 }}
                 QPushButton:hover {{
                     background-color: {COLORS.border};

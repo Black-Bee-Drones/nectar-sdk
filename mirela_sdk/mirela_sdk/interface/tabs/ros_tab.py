@@ -22,10 +22,42 @@ from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 
 from rclpy.node import Node
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    qos_profile_sensor_data,
+    qos_profile_system_default,
+)
 
 from mirela_sdk.interface.theme import COLORS
 from mirela_sdk.interface.widgets import ParameterReconfigureWidget
 from mirela_sdk.interface.widgets.message_editor import MessageFieldEditor
+
+
+QOS_PROFILES = {
+    "Default (Reliable)": QoSProfile(
+        reliability=QoSReliabilityPolicy.RELIABLE,
+        durability=QoSDurabilityPolicy.VOLATILE,
+        history=QoSHistoryPolicy.KEEP_LAST,
+        depth=10,
+    ),
+    "Sensor Data (Best Effort)": qos_profile_sensor_data,
+    "System Default": qos_profile_system_default,
+    "Reliable + Transient Local": QoSProfile(
+        reliability=QoSReliabilityPolicy.RELIABLE,
+        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        history=QoSHistoryPolicy.KEEP_LAST,
+        depth=10,
+    ),
+    "Best Effort": QoSProfile(
+        reliability=QoSReliabilityPolicy.BEST_EFFORT,
+        durability=QoSDurabilityPolicy.VOLATILE,
+        history=QoSHistoryPolicy.KEEP_LAST,
+        depth=10,
+    ),
+}
 
 
 class ROSTab(QWidget):
@@ -115,6 +147,21 @@ class ROSTab(QWidget):
         sub_group = QGroupBox("Subscribe")
         sub_layout = QVBoxLayout(sub_group)
 
+        qos_layout = QHBoxLayout()
+        qos_layout.addWidget(QLabel("QoS:"))
+        self._sub_qos_combo = QComboBox()
+        self._sub_qos_combo.addItems(list(QOS_PROFILES.keys()))
+        self._sub_qos_combo.setCurrentText("Default (Reliable)")
+        self._sub_qos_combo.setToolTip("Select QoS profile to match publisher settings")
+        qos_layout.addWidget(self._sub_qos_combo, 1)
+
+        self._auto_qos_btn = QPushButton("Auto")
+        self._auto_qos_btn.setToolTip("Auto-detect QoS from publisher")
+        self._auto_qos_btn.clicked.connect(lambda: self._auto_detect_qos(verbose=True))
+        qos_layout.addWidget(self._auto_qos_btn)
+
+        sub_layout.addLayout(qos_layout)
+
         sub_btn_layout = QHBoxLayout()
         self._subscribe_btn = QPushButton("Subscribe")
         self._subscribe_btn.setProperty("accent", True)
@@ -176,6 +223,14 @@ class ROSTab(QWidget):
         type_layout.addWidget(self._load_type_btn)
 
         pub_layout.addLayout(type_layout)
+
+        pub_qos_layout = QHBoxLayout()
+        pub_qos_layout.addWidget(QLabel("QoS:"))
+        self._pub_qos_combo = QComboBox()
+        self._pub_qos_combo.addItems(list(QOS_PROFILES.keys()))
+        self._pub_qos_combo.setCurrentText("Default (Reliable)")
+        pub_qos_layout.addWidget(self._pub_qos_combo, 1)
+        pub_layout.addLayout(pub_qos_layout)
 
         self._pub_input_stack = QStackedWidget()
 
@@ -432,6 +487,7 @@ class ROSTab(QWidget):
         self._publish_type_combo.setCurrentText(topic_type)
 
         self._load_publish_fields()
+        self._auto_detect_qos()
 
     @Slot(str)
     def _on_publish_type_changed(self, type_str: str) -> None:
@@ -461,6 +517,44 @@ class ROSTab(QWidget):
         self._pub_raw_input.clear()
 
     @Slot()
+    def _auto_detect_qos(self, verbose: bool = False) -> None:
+        if not self._node or not self._selected_topic:
+            return
+
+        topic = self._selected_topic
+        try:
+            endpoint_info_list = self._node.get_publishers_info_by_topic(topic)
+            if not endpoint_info_list:
+                if verbose:
+                    self._message_display.appendPlainText(f"No publishers found for {topic}")
+                return
+
+            endpoint_info = endpoint_info_list[0]
+            qos = endpoint_info.qos_profile
+
+            if qos.reliability == QoSReliabilityPolicy.BEST_EFFORT:
+                if qos.durability == QoSDurabilityPolicy.VOLATILE:
+                    self._sub_qos_combo.setCurrentText("Best Effort")
+                else:
+                    self._sub_qos_combo.setCurrentText("Sensor Data (Best Effort)")
+            else:
+                if qos.durability == QoSDurabilityPolicy.TRANSIENT_LOCAL:
+                    self._sub_qos_combo.setCurrentText("Reliable + Transient Local")
+                else:
+                    self._sub_qos_combo.setCurrentText("Default (Reliable)")
+
+            if verbose:
+                self._message_display.appendPlainText(
+                    f"Detected QoS for {topic}: "
+                    f"reliability={qos.reliability.name}, "
+                    f"durability={qos.durability.name}"
+                )
+
+        except Exception as e:
+            if verbose:
+                self._message_display.appendPlainText(f"Error detecting QoS: {e}")
+
+    @Slot()
     def _subscribe_to_topic(self) -> None:
         if not self._node or not self._selected_topic:
             return
@@ -486,16 +580,19 @@ class ROSTab(QWidget):
                 self._message_display.appendPlainText(f"Error: Unknown message type {topic_type}")
                 return
 
+            qos_name = self._sub_qos_combo.currentText()
+            qos_profile = QOS_PROFILES.get(qos_name, QOS_PROFILES["Default (Reliable)"])
+
             sub = self._node.create_subscription(
                 msg_class,
                 topic,
                 lambda msg, t=topic: self._on_message_received(t, msg),
-                10
+                qos_profile
             )
             self._subscriptions[topic] = sub
             self._subscribe_btn.setEnabled(False)
             self._unsubscribe_btn.setEnabled(True)
-            self._message_display.appendPlainText(f"Subscribed to {topic}")
+            self._message_display.appendPlainText(f"Subscribed to {topic} (QoS: {qos_name})")
 
         except Exception as e:
             self._message_display.appendPlainText(f"Error: {e}")
@@ -610,13 +707,15 @@ class ROSTab(QWidget):
                         self._message_display.appendPlainText(f"Error parsing message: {e}")
                         return
 
-            if self._publisher is None or self._publisher.topic != topic:
+            if self._publisher is None or self._publisher.topic_name != topic:
                 if self._publisher:
                     try:
                         self._node.destroy_publisher(self._publisher)
                     except Exception:
                         pass
-                self._publisher = self._node.create_publisher(msg_class, topic, 10)
+                pub_qos_name = self._pub_qos_combo.currentText()
+                pub_qos = QOS_PROFILES.get(pub_qos_name, QOS_PROFILES["Default (Reliable)"])
+                self._publisher = self._node.create_publisher(msg_class, topic, pub_qos)
 
             rate = self._publish_rate_spin.value()
             if rate > 0:

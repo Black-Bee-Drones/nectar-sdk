@@ -10,9 +10,8 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QCheckBox,
     QDoubleSpinBox,
-    QSplitter,
-    QScrollArea,
     QFrame,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QThread, QObject
 
@@ -239,15 +238,6 @@ class MoveToWorker(QObject):
 
 
 class ControlTab(QWidget):
-    """
-    Drone control tab with keyboard controls and velocity management.
-
-    Separates driver connection from drone instance initialization:
-    - Driver: Start/stop the ROS2 driver process (mavros or bebop)
-    - Instance: Create/destroy drone object with configuration
-    - Controls: Only enabled when both driver running AND instance initialized
-    """
-
     KEY_MAP = {
         Qt.Key_W: ("vz", 1),
         Qt.Key_S: ("vz", -1),
@@ -290,257 +280,134 @@ class ControlTab(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
 
     def _setup_ui(self) -> None:
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._create_left_panel())
-        splitter.addWidget(self._create_right_panel())
-        splitter.setSizes([360, 640])
-
-        layout.addWidget(splitter)
-
-    def _create_left_panel(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(340)
-        scroll.setMaximumWidth(420)
-
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 4, 0)
-        layout.setSpacing(8)
-
         layout.addWidget(self._create_connection_panel())
-        layout.addWidget(self._create_status_panel())
-        layout.addWidget(self._create_flight_controls())
-        layout.addWidget(self._create_drone_specific_controls())
-        layout.addStretch()
-
-        scroll.setWidget(container)
-        return scroll
-
-    def _create_right_panel(self) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(4, 0, 0, 0)
-        layout.setSpacing(8)
-
-        layout.addWidget(self._create_velocity_control_panel())
-        layout.addWidget(self._create_position_control_panel())
+        layout.addWidget(self._create_control_area(), 1)
+        layout.addWidget(self._create_flight_actions_bar())
         layout.addWidget(self._create_telemetry_panel())
-
-        return container
 
     def _create_connection_panel(self) -> QGroupBox:
         group = QGroupBox("Connection")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(6)
+        main_layout = QVBoxLayout(group)
+        main_layout.setSpacing(8)
 
-        # Drone type selector
-        type_row = QHBoxLayout()
-        type_row.setSpacing(8)
+        top_layout = QHBoxLayout()
+        top_layout.setSpacing(12)
+
+        type_layout = QHBoxLayout()
+        type_layout.setSpacing(6)
         lbl = QLabel("Drone:")
         lbl.setProperty("secondary", True)
-        lbl.setFixedWidth(50)
         self._drone_combo = QComboBox()
         self._drone_combo.addItems(["Mavros", "Bebop"])
+        self._drone_combo.setFixedWidth(100)
         self._drone_combo.currentTextChanged.connect(self._on_drone_type_changed)
-        type_row.addWidget(lbl)
-        type_row.addWidget(self._drone_combo, 1)
-        layout.addLayout(type_row)
+        type_layout.addWidget(lbl)
+        type_layout.addWidget(self._drone_combo)
+        top_layout.addLayout(type_layout)
 
-        # Config panel
         self._config_panel = DroneConfigPanel()
         self._config_panel.set_drone_type("mavros")
-        layout.addWidget(self._config_panel)
+        self._config_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        top_layout.addWidget(self._config_panel, 1)
 
-        # Separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {COLORS.border};")
-        layout.addWidget(sep)
-
-        # Buttons row
-        btn_layout = QGridLayout()
+        btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
 
         self._driver_btn = QPushButton("Connect Driver")
         self._driver_btn.setProperty("accent", True)
+        self._driver_btn.setMinimumWidth(140)
         self._driver_btn.clicked.connect(self._toggle_driver)
-        btn_layout.addWidget(self._driver_btn, 0, 0)
+        btn_layout.addWidget(self._driver_btn)
 
         self._instance_btn = QPushButton("Initialize")
         self._instance_btn.setEnabled(False)
+        self._instance_btn.setMinimumWidth(100)
         self._instance_btn.clicked.connect(self._toggle_instance)
-        btn_layout.addWidget(self._instance_btn, 0, 1)
+        btn_layout.addWidget(self._instance_btn)
 
-        layout.addLayout(btn_layout)
+        top_layout.addLayout(btn_layout)
+        main_layout.addLayout(top_layout)
 
-        # Progress label
-        self._progress_label = QLabel("")
-        self._progress_label.setProperty("secondary", True)
-        self._progress_label.setWordWrap(True)
-        layout.addWidget(self._progress_label)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background-color: {COLORS.border};")
+        main_layout.addWidget(sep)
 
-        return group
+        status_layout = QHBoxLayout()
+        status_layout.setSpacing(12)
 
-    def _create_status_panel(self) -> QGroupBox:
-        group = QGroupBox("Status")
-        layout = QGridLayout(group)
-        layout.setSpacing(4)
-        layout.setContentsMargins(8, 12, 8, 8)
+        status_header = QLabel("Status")
+        status_header.setProperty("secondary", True)
+        status_header.setStyleSheet(f"color: {COLORS.text_muted}; font-size: 10px;")
+        status_header.setFixedWidth(40)
+        status_layout.addWidget(status_header)
 
         self._status_driver = StatusIndicator("Driver", "inactive")
         self._status_instance = StatusIndicator("Instance", "inactive")
         self._status_fcu = StatusIndicator("FCU", "inactive")
         self._status_armed = StatusIndicator("Armed", "inactive")
 
-        layout.addWidget(self._status_driver, 0, 0)
-        layout.addWidget(self._status_instance, 0, 1)
-        layout.addWidget(self._status_fcu, 1, 0)
-        layout.addWidget(self._status_armed, 1, 1)
+        status_layout.addWidget(self._status_driver)
+        status_layout.addWidget(self._status_instance)
+        status_layout.addWidget(self._status_fcu)
+        status_layout.addWidget(self._status_armed)
+
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.VLine)
+        sep2.setFixedWidth(1)
+        sep2.setStyleSheet(f"background-color: {COLORS.border};")
+        status_layout.addWidget(sep2)
+
+        self._mode_label = QLabel("Mode: --")
+        self._mode_label.setProperty("secondary", True)
+        status_layout.addWidget(self._mode_label)
+
+        status_layout.addStretch()
+
+        self._progress_label = QLabel("")
+        self._progress_label.setProperty("secondary", True)
+        status_layout.addWidget(self._progress_label)
+
+        main_layout.addLayout(status_layout)
 
         return group
 
-    def _update_status_indicators(self) -> None:
-        """Update status indicators based on drone capabilities."""
-        has_fcu = self._drone_type == "mavros"
-        self._status_fcu.setVisible(has_fcu)
-        self._status_armed.setVisible(has_fcu)
-
-    def _create_flight_controls(self) -> QGroupBox:
-        group = QGroupBox("Flight")
-        layout = QHBoxLayout(group)
-        layout.setSpacing(6)
-
-        self._enable_btn = QPushButton("Enable Controls")
-        self._enable_btn.setCheckable(True)
-        self._enable_btn.setEnabled(False)
-        self._enable_btn.clicked.connect(self._toggle_controls)
-
-        self._emergency_btn = QPushButton("STOP")
-        self._emergency_btn.setProperty("danger", True)
-        self._emergency_btn.setEnabled(False)
-        self._emergency_btn.clicked.connect(self._emergency_stop)
-
-        layout.addWidget(self._enable_btn, 1)
-        layout.addWidget(self._emergency_btn)
-
-        return group
-
-    def _create_drone_specific_controls(self) -> QWidget:
+    def _create_control_area(self) -> QWidget:
         container = QWidget()
-        layout = QVBoxLayout(container)
+        layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self._mavros_group = self._create_mavros_controls()
-        self._bebop_group = self._create_bebop_controls()
+        layout.addWidget(self._create_velocity_control_panel())
+        self._position_panel = self._create_position_control_panel()
+        layout.addWidget(self._position_panel)
 
-        layout.addWidget(self._mavros_group)
-        layout.addWidget(self._bebop_group)
-
-        self._bebop_group.setVisible(False)
         return container
-
-    def _create_mavros_controls(self) -> QGroupBox:
-        group = QGroupBox("Mavros Actions")
-        layout = QGridLayout(group)
-        layout.setSpacing(4)
-
-        self._arm_btn = QPushButton("Arm")
-        self._arm_btn.setEnabled(False)
-        self._arm_btn.clicked.connect(self._arm)
-
-        self._disarm_btn = QPushButton("Disarm")
-        self._disarm_btn.setEnabled(False)
-        self._disarm_btn.clicked.connect(self._disarm)
-
-        self._takeoff_btn = QPushButton("Takeoff")
-        self._takeoff_btn.setProperty("success", True)
-        self._takeoff_btn.setEnabled(False)
-        self._takeoff_btn.clicked.connect(self._takeoff)
-
-        self._land_btn = QPushButton("Land")
-        self._land_btn.setEnabled(False)
-        self._land_btn.clicked.connect(self._land)
-
-        layout.addWidget(self._arm_btn, 0, 0)
-        layout.addWidget(self._disarm_btn, 0, 1)
-        layout.addWidget(self._takeoff_btn, 1, 0)
-        layout.addWidget(self._land_btn, 1, 1)
-
-        # Arm + Takeoff
-        self._arm_takeoff_btn = QPushButton("Arm + Takeoff")
-        self._arm_takeoff_btn.setProperty("accent", True)
-        self._arm_takeoff_btn.setEnabled(False)
-        self._arm_takeoff_btn.clicked.connect(self._arm_takeoff)
-        layout.addWidget(self._arm_takeoff_btn, 2, 0, 1, 2)
-
-        # Altitude
-        alt_row = QHBoxLayout()
-        alt_row.setSpacing(6)
-        alt_lbl = QLabel("Alt:")
-        alt_lbl.setProperty("secondary", True)
-        self._altitude_spin = QDoubleSpinBox()
-        self._altitude_spin.setRange(0.5, 10.0)
-        self._altitude_spin.setValue(1.5)
-        self._altitude_spin.setSingleStep(0.1)
-        self._altitude_spin.setSuffix(" m")
-        alt_row.addWidget(alt_lbl)
-        alt_row.addWidget(self._altitude_spin, 1)
-        layout.addLayout(alt_row, 3, 0, 1, 2)
-
-        return group
-
-    def _create_bebop_controls(self) -> QGroupBox:
-        group = QGroupBox("Bebop Actions")
-        layout = QGridLayout(group)
-        layout.setSpacing(4)
-
-        self._bebop_takeoff_btn = QPushButton("Takeoff")
-        self._bebop_takeoff_btn.setProperty("success", True)
-        self._bebop_takeoff_btn.setEnabled(False)
-        self._bebop_takeoff_btn.clicked.connect(self._bebop_takeoff)
-
-        self._bebop_land_btn = QPushButton("Land")
-        self._bebop_land_btn.setEnabled(False)
-        self._bebop_land_btn.clicked.connect(self._bebop_land)
-
-        self._flip_btn = QPushButton("Flip...")
-        self._flip_btn.setEnabled(False)
-        self._flip_btn.clicked.connect(self._show_flip_menu)
-
-        layout.addWidget(self._bebop_takeoff_btn, 0, 0)
-        layout.addWidget(self._bebop_land_btn, 0, 1)
-        layout.addWidget(self._flip_btn, 1, 0, 1, 2)
-
-        return group
 
     def _create_velocity_control_panel(self) -> QGroupBox:
         self._velocity_group = QGroupBox("Velocity Control")
-        main_layout = QVBoxLayout(self._velocity_group)
-        main_layout.setSpacing(6)
+        self._velocity_group.setMinimumWidth(360)
+        self._velocity_group.setMaximumWidth(440)
+        main_layout = QHBoxLayout(self._velocity_group)
+        main_layout.setSpacing(16)
 
-        # Top: Keys + Sliders
-        top_layout = QHBoxLayout()
-        top_layout.setSpacing(12)
-
-        # Keys section
-        keys_widget = QWidget()
-        keys_layout = QHBoxLayout(keys_widget)
-        keys_layout.setSpacing(16)
+        keys_container = QWidget()
+        keys_layout = QVBoxLayout(keys_container)
         keys_layout.setContentsMargins(0, 0, 0, 0)
+        keys_layout.setSpacing(12)
 
-        # WASD
-        wasd_layout = QVBoxLayout()
+        wasd_container = QWidget()
+        wasd_layout = QVBoxLayout(wasd_container)
+        wasd_layout.setContentsMargins(0, 0, 0, 0)
         wasd_layout.setSpacing(2)
+
         wasd_grid = QGridLayout()
-        wasd_grid.setSpacing(2)
+        wasd_grid.setSpacing(3)
 
         self._key_w = KeyButton("W", Qt.Key_W)
         self._key_a = KeyButton("A", Qt.Key_A)
@@ -552,18 +419,20 @@ class ControlTab(QWidget):
         wasd_grid.addWidget(self._key_s, 1, 1)
         wasd_grid.addWidget(self._key_d, 1, 2)
 
-        wasd_label = QLabel("Z/Yaw")
+        wasd_label = QLabel("Z / Yaw")
         wasd_label.setProperty("muted", True)
         wasd_label.setAlignment(Qt.AlignCenter)
 
         wasd_layout.addLayout(wasd_grid)
         wasd_layout.addWidget(wasd_label)
 
-        # Arrows
-        arrows_layout = QVBoxLayout()
+        arrows_container = QWidget()
+        arrows_layout = QVBoxLayout(arrows_container)
+        arrows_layout.setContentsMargins(0, 0, 0, 0)
         arrows_layout.setSpacing(2)
+
         arrows_grid = QGridLayout()
-        arrows_grid.setSpacing(2)
+        arrows_grid.setSpacing(3)
 
         self._key_up = KeyButton("↑", Qt.Key_Up)
         self._key_left = KeyButton("←", Qt.Key_Left)
@@ -575,15 +444,15 @@ class ControlTab(QWidget):
         arrows_grid.addWidget(self._key_down, 1, 1)
         arrows_grid.addWidget(self._key_right, 1, 2)
 
-        arrows_label = QLabel("X/Y")
+        arrows_label = QLabel("X / Y")
         arrows_label.setProperty("muted", True)
         arrows_label.setAlignment(Qt.AlignCenter)
 
         arrows_layout.addLayout(arrows_grid)
         arrows_layout.addWidget(arrows_label)
 
-        keys_layout.addLayout(wasd_layout)
-        keys_layout.addLayout(arrows_layout)
+        keys_layout.addWidget(wasd_container)
+        keys_layout.addWidget(arrows_container)
 
         self._key_buttons = {
             Qt.Key_W: self._key_w,
@@ -596,11 +465,13 @@ class ControlTab(QWidget):
             Qt.Key_Right: self._key_right,
         }
 
-        # Sliders section
-        sliders_widget = QWidget()
-        sliders_layout = QHBoxLayout(sliders_widget)
-        sliders_layout.setSpacing(8)
+        sliders_container = QWidget()
+        sliders_layout = QVBoxLayout(sliders_container)
         sliders_layout.setContentsMargins(0, 0, 0, 0)
+        sliders_layout.setSpacing(8)
+
+        sliders_grid = QGridLayout()
+        sliders_grid.setSpacing(8)
 
         self._vx_slider = LabeledSlider("Vx", 0.0, 1.0, 0.2)
         self._vy_slider = LabeledSlider("Vy", 0.0, 1.0, 0.2)
@@ -616,47 +487,45 @@ class ControlTab(QWidget):
 
         for slider in self._velocity_sliders:
             slider.setEnabled(False)
-            sliders_layout.addWidget(slider)
 
-        top_layout.addWidget(keys_widget)
-        top_layout.addWidget(sliders_widget, 1)
+        sliders_grid.addWidget(self._vx_slider, 0, 0)
+        sliders_grid.addWidget(self._vy_slider, 0, 1)
+        sliders_grid.addWidget(self._vz_slider, 1, 0)
+        sliders_grid.addWidget(self._vyaw_slider, 1, 1)
 
-        main_layout.addLayout(top_layout)
+        sliders_layout.addLayout(sliders_grid, 1)
 
-        # Options row
-        options_layout = QHBoxLayout()
-        options_layout.setSpacing(8)
-
+        ref_layout = QHBoxLayout()
+        ref_layout.setSpacing(6)
         ref_lbl = QLabel("Ref:")
         ref_lbl.setProperty("secondary", True)
         self._vel_reference_combo = QComboBox()
         self._vel_reference_combo.addItems(["Body", "World"])
         self._vel_reference_combo.setCurrentIndex(0)
-        self._vel_reference_combo.setMaximumWidth(80)
+        self._vel_reference_combo.setFixedWidth(80)
+        ref_layout.addWidget(ref_lbl)
+        ref_layout.addWidget(self._vel_reference_combo)
+        ref_layout.addStretch()
 
-        options_layout.addWidget(ref_lbl)
-        options_layout.addWidget(self._vel_reference_combo)
-        options_layout.addStretch()
+        sliders_layout.addLayout(ref_layout)
 
-        help_label = QLabel("WASD: Z/Yaw  |  Arrows: X/Y")
-        help_label.setProperty("muted", True)
-        options_layout.addWidget(help_label)
-
-        main_layout.addLayout(options_layout)
+        main_layout.addWidget(keys_container)
+        main_layout.addWidget(sliders_container, 1)
 
         return self._velocity_group
 
     def _create_position_control_panel(self) -> QGroupBox:
         self._position_group = QGroupBox("Position Control")
+        self._position_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QVBoxLayout(self._position_group)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
 
-        # Position inputs grid
         grid = QGridLayout()
-        grid.setSpacing(4)
+        grid.setSpacing(6)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
 
         self._pos_x_check = QCheckBox("X")
-        self._pos_x_check.setChecked(False)
         self._pos_x_spin = QDoubleSpinBox()
         self._pos_x_spin.setRange(-20.0, 20.0)
         self._pos_x_spin.setValue(0.0)
@@ -669,7 +538,6 @@ class ControlTab(QWidget):
         grid.addWidget(self._pos_x_spin, 0, 1)
 
         self._pos_y_check = QCheckBox("Y")
-        self._pos_y_check.setChecked(False)
         self._pos_y_spin = QDoubleSpinBox()
         self._pos_y_spin.setRange(-20.0, 20.0)
         self._pos_y_spin.setValue(0.0)
@@ -682,7 +550,6 @@ class ControlTab(QWidget):
         grid.addWidget(self._pos_y_spin, 0, 3)
 
         self._pos_z_check = QCheckBox("Z")
-        self._pos_z_check.setChecked(False)
         self._pos_z_spin = QDoubleSpinBox()
         self._pos_z_spin.setRange(-20.0, 20.0)
         self._pos_z_spin.setValue(0.0)
@@ -695,7 +562,6 @@ class ControlTab(QWidget):
         grid.addWidget(self._pos_z_spin, 1, 1)
 
         self._pos_yaw_check = QCheckBox("Yaw")
-        self._pos_yaw_check.setChecked(False)
         self._pos_yaw_spin = QDoubleSpinBox()
         self._pos_yaw_spin.setRange(-180.0, 180.0)
         self._pos_yaw_spin.setValue(0.0)
@@ -709,16 +575,15 @@ class ControlTab(QWidget):
 
         layout.addLayout(grid)
 
-        # Options row
         options_layout = QHBoxLayout()
-        options_layout.setSpacing(6)
+        options_layout.setSpacing(12)
 
         ref_lbl = QLabel("Ref:")
         ref_lbl.setProperty("secondary", True)
         self._pos_reference_combo = QComboBox()
         self._pos_reference_combo.addItems(["Body", "World", "Takeoff"])
         self._pos_reference_combo.setCurrentIndex(0)
-        self._pos_reference_combo.setMaximumWidth(80)
+        self._pos_reference_combo.setFixedWidth(90)
 
         prec_lbl = QLabel("Prec:")
         prec_lbl.setProperty("secondary", True)
@@ -728,7 +593,7 @@ class ControlTab(QWidget):
         self._pos_precision_spin.setSingleStep(0.1)
         self._pos_precision_spin.setDecimals(2)
         self._pos_precision_spin.setSuffix(" m")
-        self._pos_precision_spin.setMaximumWidth(80)
+        self._pos_precision_spin.setFixedWidth(80)
 
         timeout_lbl = QLabel("T/O:")
         timeout_lbl.setProperty("secondary", True)
@@ -738,7 +603,7 @@ class ControlTab(QWidget):
         self._pos_timeout_spin.setSingleStep(10.0)
         self._pos_timeout_spin.setDecimals(0)
         self._pos_timeout_spin.setSuffix(" s")
-        self._pos_timeout_spin.setMaximumWidth(80)
+        self._pos_timeout_spin.setFixedWidth(80)
 
         options_layout.addWidget(ref_lbl)
         options_layout.addWidget(self._pos_reference_combo)
@@ -750,9 +615,8 @@ class ControlTab(QWidget):
 
         layout.addLayout(options_layout)
 
-        # Buttons
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(6)
+        btn_layout.setSpacing(8)
 
         self._pos_go_btn = QPushButton("Go")
         self._pos_go_btn.setProperty("accent", True)
@@ -762,12 +626,12 @@ class ControlTab(QWidget):
 
         self._pos_cancel_btn = QPushButton("Cancel")
         self._pos_cancel_btn.setEnabled(False)
+        self._pos_cancel_btn.setMinimumWidth(75)
         self._pos_cancel_btn.clicked.connect(self._cancel_move_to)
         btn_layout.addWidget(self._pos_cancel_btn)
 
         layout.addLayout(btn_layout)
 
-        # Status
         self._pos_status_label = QLabel("")
         self._pos_status_label.setProperty("secondary", True)
         layout.addWidget(self._pos_status_label)
@@ -785,43 +649,167 @@ class ControlTab(QWidget):
 
         return self._position_group
 
+    def _create_flight_actions_bar(self) -> QGroupBox:
+        group = QGroupBox("Flight Actions")
+        layout = QHBoxLayout(group)
+        layout.setSpacing(8)
+
+        self._enable_btn = QPushButton("Enable Controls")
+        self._enable_btn.setCheckable(True)
+        self._enable_btn.setEnabled(False)
+        self._enable_btn.setMinimumWidth(120)
+        self._enable_btn.clicked.connect(self._toggle_controls)
+        layout.addWidget(self._enable_btn)
+
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.VLine)
+        sep1.setFixedWidth(1)
+        sep1.setStyleSheet(f"background-color: {COLORS.border};")
+        layout.addWidget(sep1)
+
+        self._mavros_actions = QWidget()
+        mavros_layout = QHBoxLayout(self._mavros_actions)
+        mavros_layout.setContentsMargins(0, 0, 0, 0)
+        mavros_layout.setSpacing(6)
+
+        self._arm_btn = QPushButton("Arm")
+        self._arm_btn.setEnabled(False)
+        self._arm_btn.setMinimumWidth(60)
+        self._arm_btn.clicked.connect(self._arm)
+
+        self._disarm_btn = QPushButton("Disarm")
+        self._disarm_btn.setEnabled(False)
+        self._disarm_btn.setMinimumWidth(70)
+        self._disarm_btn.clicked.connect(self._disarm)
+
+        alt_lbl = QLabel("Alt:")
+        alt_lbl.setProperty("secondary", True)
+        self._altitude_spin = QDoubleSpinBox()
+        self._altitude_spin.setRange(0.5, 10.0)
+        self._altitude_spin.setValue(1.5)
+        self._altitude_spin.setSingleStep(0.1)
+        self._altitude_spin.setSuffix(" m")
+        self._altitude_spin.setMinimumWidth(75)
+
+        self._takeoff_btn = QPushButton("Takeoff")
+        self._takeoff_btn.setProperty("success", True)
+        self._takeoff_btn.setEnabled(False)
+        self._takeoff_btn.setMinimumWidth(80)
+        self._takeoff_btn.clicked.connect(self._takeoff)
+
+        self._land_btn = QPushButton("Land")
+        self._land_btn.setEnabled(False)
+        self._land_btn.setMinimumWidth(60)
+        self._land_btn.clicked.connect(self._land)
+
+        self._arm_takeoff_btn = QPushButton("Arm + Takeoff")
+        self._arm_takeoff_btn.setProperty("accent", True)
+        self._arm_takeoff_btn.setEnabled(False)
+        self._arm_takeoff_btn.setMinimumWidth(115)
+        self._arm_takeoff_btn.clicked.connect(self._arm_takeoff)
+
+        mavros_layout.addWidget(self._arm_btn)
+        mavros_layout.addWidget(self._disarm_btn)
+        mavros_layout.addWidget(alt_lbl)
+        mavros_layout.addWidget(self._altitude_spin)
+        mavros_layout.addWidget(self._takeoff_btn)
+        mavros_layout.addWidget(self._land_btn)
+        mavros_layout.addWidget(self._arm_takeoff_btn)
+
+        layout.addWidget(self._mavros_actions)
+
+        self._bebop_actions = QWidget()
+        bebop_layout = QHBoxLayout(self._bebop_actions)
+        bebop_layout.setContentsMargins(0, 0, 0, 0)
+        bebop_layout.setSpacing(6)
+
+        self._bebop_takeoff_btn = QPushButton("Takeoff")
+        self._bebop_takeoff_btn.setProperty("success", True)
+        self._bebop_takeoff_btn.setEnabled(False)
+        self._bebop_takeoff_btn.setMinimumWidth(80)
+        self._bebop_takeoff_btn.clicked.connect(self._bebop_takeoff)
+
+        self._bebop_land_btn = QPushButton("Land")
+        self._bebop_land_btn.setEnabled(False)
+        self._bebop_land_btn.setMinimumWidth(70)
+        self._bebop_land_btn.clicked.connect(self._bebop_land)
+
+        self._flip_btn = QPushButton("Flip...")
+        self._flip_btn.setEnabled(False)
+        self._flip_btn.setMinimumWidth(80)
+        self._flip_btn.clicked.connect(self._show_flip_menu)
+
+        bebop_layout.addWidget(self._bebop_takeoff_btn)
+        bebop_layout.addWidget(self._bebop_land_btn)
+        bebop_layout.addWidget(self._flip_btn)
+
+        layout.addWidget(self._bebop_actions)
+        self._bebop_actions.setVisible(False)
+
+        layout.addStretch()
+
+        self._emergency_btn = QPushButton("STOP")
+        self._emergency_btn.setProperty("danger", True)
+        self._emergency_btn.setEnabled(False)
+        self._emergency_btn.setMinimumWidth(70)
+        self._emergency_btn.clicked.connect(self._emergency_stop)
+        layout.addWidget(self._emergency_btn)
+
+        return group
+
     def _create_telemetry_panel(self) -> QGroupBox:
         self._telemetry_group = QGroupBox("Telemetry")
-        layout = QGridLayout(self._telemetry_group)
-        layout.setSpacing(4)
-        layout.setColumnStretch(0, 1)
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(2, 1)
+        layout = QHBoxLayout(self._telemetry_group)
+        layout.setSpacing(24)
 
-        # Row 0: Mode
-        self._mode_label = QLabel("Mode: --")
-        self._mode_label.setProperty("secondary", True)
-        layout.addWidget(self._mode_label, 0, 0, 1, 3)
-
-        # Row 1: Position
         self._pos_x_label = QLabel("X: --")
         self._pos_y_label = QLabel("Y: --")
         self._pos_z_label = QLabel("Z: --")
-        layout.addWidget(self._pos_x_label, 1, 0)
-        layout.addWidget(self._pos_y_label, 1, 1)
-        layout.addWidget(self._pos_z_label, 1, 2)
 
-        # Row 2: Altitude sources
+        pos_layout = QHBoxLayout()
+        pos_layout.setSpacing(12)
+        pos_layout.addWidget(self._pos_x_label)
+        pos_layout.addWidget(self._pos_y_label)
+        pos_layout.addWidget(self._pos_z_label)
+        layout.addLayout(pos_layout)
+
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.VLine)
+        sep1.setFixedWidth(1)
+        sep1.setStyleSheet(f"background-color: {COLORS.border};")
+        layout.addWidget(sep1)
+
+        self._yaw_label = QLabel("Yaw: --")
+        self._heading_label = QLabel("Heading: --")
+
+        orient_layout = QHBoxLayout()
+        orient_layout.setSpacing(12)
+        orient_layout.addWidget(self._yaw_label)
+        orient_layout.addWidget(self._heading_label)
+        layout.addLayout(orient_layout)
+
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.VLine)
+        sep2.setFixedWidth(1)
+        sep2.setStyleSheet(f"background-color: {COLORS.border};")
+        layout.addWidget(sep2)
+
         self._alt_height_label = QLabel("Height: --")
         self._alt_lidar_label = QLabel("LiDAR: --")
         self._alt_rel_label = QLabel("RelAlt: --")
-        layout.addWidget(self._alt_height_label, 2, 0)
-        layout.addWidget(self._alt_lidar_label, 2, 1)
-        layout.addWidget(self._alt_rel_label, 2, 2)
 
-        # Row 3: Orientation
-        self._yaw_label = QLabel("Yaw: --")
-        self._heading_label = QLabel("Heading: --")
+        alt_layout = QHBoxLayout()
+        alt_layout.setSpacing(12)
+        alt_layout.addWidget(self._alt_height_label)
+        alt_layout.addWidget(self._alt_lidar_label)
+        alt_layout.addWidget(self._alt_rel_label)
+        layout.addLayout(alt_layout)
+
+        layout.addStretch()
+
         self._no_telemetry_label = QLabel("")
         self._no_telemetry_label.setProperty("muted", True)
-        layout.addWidget(self._yaw_label, 3, 0)
-        layout.addWidget(self._heading_label, 3, 1)
-        layout.addWidget(self._no_telemetry_label, 3, 2)
+        layout.addWidget(self._no_telemetry_label)
 
         return self._telemetry_group
 
@@ -883,6 +871,11 @@ class ControlTab(QWidget):
         self._set_bebop_controls_enabled(can_control and self._drone_type == "bebop")
         self._set_position_control_enabled(can_control and self._drone_type == "mavros")
 
+    def _update_status_indicators(self) -> None:
+        has_fcu = self._drone_type == "mavros"
+        self._status_fcu.setVisible(has_fcu)
+        self._status_armed.setVisible(has_fcu)
+
     def _set_mavros_controls_enabled(self, enabled: bool) -> None:
         self._arm_btn.setEnabled(enabled)
         self._disarm_btn.setEnabled(enabled)
@@ -940,8 +933,8 @@ class ControlTab(QWidget):
         self._drone_type = drone_type.lower()
         is_mavros = self._drone_type == "mavros"
 
-        self._mavros_group.setVisible(is_mavros)
-        self._bebop_group.setVisible(not is_mavros)
+        self._mavros_actions.setVisible(is_mavros)
+        self._bebop_actions.setVisible(not is_mavros)
         self._config_panel.set_drone_type(self._drone_type)
 
         self._update_capability_panels()
@@ -954,7 +947,7 @@ class ControlTab(QWidget):
         has_position_control = self._drone_type == "mavros"
         has_telemetry = self._drone_type == "mavros"
 
-        self._position_group.setVisible(has_position_control)
+        self._position_panel.setVisible(has_position_control)
         self._telemetry_group.setVisible(has_telemetry)
 
     @Slot()
@@ -980,7 +973,7 @@ class ControlTab(QWidget):
     def _connect_driver(self) -> None:
         self._driver_btn.setEnabled(False)
         self._driver_btn.setText("Connecting...")
-        self._show_progress("Connecting driver...")
+        self._show_progress("Connecting...")
 
         config = self._config_panel.get_config()
         conn_str = config.get("connection_string", "")
@@ -1004,7 +997,7 @@ class ControlTab(QWidget):
 
         self._driver_btn.setEnabled(False)
         self._driver_btn.setText("Disconnecting...")
-        self._show_progress("Disconnecting driver...")
+        self._show_progress("Disconnecting...")
 
         self._driver_thread = QThread()
         self._driver_worker = DriverWorker()
@@ -1048,12 +1041,12 @@ class ControlTab(QWidget):
 
     def _initialize_instance(self) -> None:
         if not self._node:
-            self._show_progress("No ROS2 node available")
+            self._show_progress("No ROS2 node")
             return
 
         self._instance_btn.setEnabled(False)
         self._instance_btn.setText("Initializing...")
-        self._show_progress("Initializing drone instance...")
+        self._show_progress("Initializing...")
 
         config = self._config_panel.create_config_object()
 
@@ -1141,26 +1134,22 @@ class ControlTab(QWidget):
         if self._drone:
             try:
                 if not self._drone.arm():
-                    self._show_progress("Arm command failed")
-            except TimeoutError as e:
-                self._show_progress("Arm timeout: service unavailable")
-                self._log_error(f"Arm failed: {e}")
+                    self._show_progress("Arm failed")
+            except TimeoutError:
+                self._show_progress("Arm timeout")
             except Exception as e:
-                self._show_progress(f"Arm failed: {e}")
-                self._log_error(f"Arm failed: {e}")
+                self._show_progress(f"Arm: {e}")
 
     @Slot()
     def _disarm(self) -> None:
         if self._drone:
             try:
                 if not self._drone.disarm():
-                    self._show_progress("Disarm command failed")
-            except TimeoutError as e:
-                self._show_progress("Disarm timeout: service unavailable")
-                self._log_error(f"Disarm failed: {e}")
+                    self._show_progress("Disarm failed")
+            except TimeoutError:
+                self._show_progress("Disarm timeout")
             except Exception as e:
-                self._show_progress(f"Disarm failed: {e}")
-                self._log_error(f"Disarm failed: {e}")
+                self._show_progress(f"Disarm: {e}")
 
     @Slot()
     def _takeoff(self) -> None:
@@ -1168,12 +1157,10 @@ class ControlTab(QWidget):
             try:
                 if not self._drone.takeoff(self._altitude_spin.value()):
                     self._show_progress("Takeoff failed")
-            except TimeoutError as e:
-                self._show_progress("Takeoff timeout: service unavailable")
-                self._log_error(f"Takeoff failed: {e}")
+            except TimeoutError:
+                self._show_progress("Takeoff timeout")
             except Exception as e:
-                self._show_progress(f"Takeoff failed: {e}")
-                self._log_error(f"Takeoff failed: {e}")
+                self._show_progress(f"Takeoff: {e}")
 
     @Slot()
     def _land(self) -> None:
@@ -1181,12 +1168,10 @@ class ControlTab(QWidget):
             try:
                 if not self._drone.land():
                     self._show_progress("Land failed")
-            except TimeoutError as e:
-                self._show_progress("Land timeout: service unavailable")
-                self._log_error(f"Land failed: {e}")
+            except TimeoutError:
+                self._show_progress("Land timeout")
             except Exception as e:
-                self._show_progress(f"Land failed: {e}")
-                self._log_error(f"Land failed: {e}")
+                self._show_progress(f"Land: {e}")
 
     @Slot()
     def _arm_takeoff(self) -> None:
@@ -1197,12 +1182,10 @@ class ControlTab(QWidget):
                     return
                 if not self._drone.takeoff(self._altitude_spin.value()):
                     self._show_progress("Takeoff failed")
-            except TimeoutError as e:
-                self._show_progress("Timeout: service unavailable")
-                self._log_error(f"Arm+Takeoff failed: {e}")
+            except TimeoutError:
+                self._show_progress("Timeout")
             except Exception as e:
-                self._show_progress(f"Arm+Takeoff failed: {e}")
-                self._log_error(f"Arm+Takeoff failed: {e}")
+                self._show_progress(f"Error: {e}")
 
     @Slot()
     def _execute_move_to(self) -> None:
@@ -1228,7 +1211,7 @@ class ControlTab(QWidget):
         timeout = self._pos_timeout_spin.value()
 
         if x is None and y is None and z is None:
-            self._pos_status_label.setText("Enable at least one axis (X, Y, or Z)")
+            self._pos_status_label.setText("Enable at least X, Y, or Z")
             return
 
         self._moveto_running = True
@@ -1277,24 +1260,20 @@ class ControlTab(QWidget):
         if self._drone:
             try:
                 self._drone.takeoff(1.0)
-            except TimeoutError as e:
-                self._show_progress("Takeoff timeout: service unavailable")
-                self._log_error(f"Takeoff failed: {e}")
+            except TimeoutError:
+                self._show_progress("Takeoff timeout")
             except Exception as e:
-                self._show_progress(f"Takeoff failed: {e}")
-                self._log_error(f"Takeoff failed: {e}")
+                self._show_progress(f"Takeoff: {e}")
 
     @Slot()
     def _bebop_land(self) -> None:
         if self._drone:
             try:
                 self._drone.land()
-            except TimeoutError as e:
-                self._show_progress("Land timeout: service unavailable")
-                self._log_error(f"Land failed: {e}")
+            except TimeoutError:
+                self._show_progress("Land timeout")
             except Exception as e:
-                self._show_progress(f"Land failed: {e}")
-                self._log_error(f"Land failed: {e}")
+                self._show_progress(f"Land: {e}")
 
     @Slot()
     def _show_flip_menu(self) -> None:
@@ -1331,7 +1310,7 @@ class ControlTab(QWidget):
             try:
                 self._drone.flip(direction)
             except Exception as e:
-                self._log_error(f"Flip failed: {e}")
+                self._show_progress(f"Flip: {e}")
 
     @Slot()
     def _update_telemetry(self) -> None:
@@ -1350,11 +1329,9 @@ class ControlTab(QWidget):
             pass
 
     def _update_mavros_telemetry(self) -> None:
-        """Update telemetry for MavrosDrone."""
         if self._drone_type != "mavros":
             return
 
-        # Use generic properties from BaseDrone
         fcu_connected = self._drone.is_fcu_connected
         if fcu_connected is not None:
             self._status_fcu.set_status("active" if fcu_connected else "inactive")
@@ -1432,25 +1409,13 @@ class ControlTab(QWidget):
                 self._alt_rel_label.setText("RelAlt: --")
 
     def _update_bebop_telemetry(self) -> None:
-        """Update telemetry for BebopDrone (limited telemetry available)."""
         if self._drone_type != "bebop":
             return
 
-        # Bebop has no telemetry feedback via SDK
         self._mode_label.setText("Mode: --")
         self._no_telemetry_label.setText("Telemetry N/A")
 
-        self._pos_x_label.setText("X: --")
-        self._pos_y_label.setText("Y: --")
-        self._pos_z_label.setText("Z: --")
-        self._alt_height_label.setText("Height: --")
-        self._alt_lidar_label.setText("LiDAR: --")
-        self._alt_rel_label.setText("RelAlt: --")
-        self._yaw_label.setText("Yaw: --")
-        self._heading_label.setText("Heading: --")
-
     def _clear_telemetry(self) -> None:
-        """Clear all telemetry displays."""
         if self._status_fcu.isVisible():
             self._status_fcu.set_status("inactive")
         if self._status_armed.isVisible():
@@ -1522,10 +1487,6 @@ class ControlTab(QWidget):
             self._key_buttons[key].set_pressed(False)
         else:
             super().keyReleaseEvent(event)
-
-    def _log_error(self, message: str) -> None:
-        if self._node:
-            self._node.get_logger().error(message)
 
     def set_node(self, node: Node) -> None:
         self._node = node
