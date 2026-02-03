@@ -15,24 +15,21 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QSplitter,
     QSpinBox,
-    QCheckBox,
     QHeaderView,
+    QStackedWidget,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from mirela_sdk.interface.theme import COLORS
-from mirela_sdk.interface.widgets import VideoDisplay, ParameterReconfigureWidget
+from mirela_sdk.interface.widgets import ParameterReconfigureWidget
+from mirela_sdk.interface.widgets.message_editor import MessageFieldEditor
 
 
 class ROSTab(QWidget):
-    """ROS2 tools tab with topics, services, and parameters browser."""
-
     message_received = Signal(str, str)
-    image_received = Signal(object)
 
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -40,8 +37,10 @@ class ROSTab(QWidget):
         self._subscriptions: Dict[str, Any] = {}
         self._topic_data: Dict[str, Any] = {}
         self._selected_topic: Optional[str] = None
+        self._selected_service: Optional[str] = None
         self._publisher = None
-        self._cv_bridge = None
+        self._current_pub_msg_class = None
+        self._current_srv_class = None
 
         self._setup_ui()
         self._setup_timers()
@@ -56,7 +55,6 @@ class ROSTab(QWidget):
         self._tab_widget.addTab(self._create_topics_tab(), "Topics")
         self._tab_widget.addTab(self._create_services_tab(), "Services")
         self._tab_widget.addTab(self._create_parameters_tab(), "Parameters")
-        self._tab_widget.addTab(self._create_image_viewer_tab(), "Image Viewer")
 
         layout.addWidget(self._tab_widget)
 
@@ -150,8 +148,12 @@ class ROSTab(QWidget):
         pub_group = QGroupBox("Publish")
         pub_layout = QVBoxLayout(pub_group)
 
+        topic_row = QHBoxLayout()
+        topic_row.addWidget(QLabel("Topic:"))
         self._publish_topic_input = QLineEdit()
         self._publish_topic_input.setPlaceholderText("Topic name...")
+        topic_row.addWidget(self._publish_topic_input, 1)
+        pub_layout.addLayout(topic_row)
 
         type_layout = QHBoxLayout()
         type_layout.addWidget(QLabel("Type:"))
@@ -166,12 +168,40 @@ class ROSTab(QWidget):
             "geometry_msgs/msg/PoseStamped",
             "sensor_msgs/msg/Joy",
         ])
+        self._publish_type_combo.currentTextChanged.connect(self._on_publish_type_changed)
         type_layout.addWidget(self._publish_type_combo, 1)
 
-        self._publish_message = QPlainTextEdit()
-        self._publish_message.setPlaceholderText("Enter message as YAML or JSON...")
-        self._publish_message.setMaximumHeight(150)
-        self._publish_message.setFont(QFont("JetBrains Mono", 10))
+        self._load_type_btn = QPushButton("Load Fields")
+        self._load_type_btn.clicked.connect(self._load_publish_fields)
+        type_layout.addWidget(self._load_type_btn)
+
+        pub_layout.addLayout(type_layout)
+
+        self._pub_input_stack = QStackedWidget()
+
+        self._pub_fields_editor = MessageFieldEditor()
+        self._pub_fields_editor.setMinimumHeight(120)
+        self._pub_fields_editor.setMaximumHeight(200)
+
+        self._pub_raw_input = QPlainTextEdit()
+        self._pub_raw_input.setPlaceholderText("Enter message as YAML or JSON...")
+        self._pub_raw_input.setFont(QFont("JetBrains Mono", 10))
+        self._pub_raw_input.setMinimumHeight(120)
+        self._pub_raw_input.setMaximumHeight(200)
+
+        self._pub_input_stack.addWidget(self._pub_fields_editor)
+        self._pub_input_stack.addWidget(self._pub_raw_input)
+
+        mode_layout = QHBoxLayout()
+        self._pub_mode_combo = QComboBox()
+        self._pub_mode_combo.addItems(["Form Fields", "Raw YAML/JSON"])
+        self._pub_mode_combo.currentIndexChanged.connect(self._on_pub_mode_changed)
+        mode_layout.addWidget(QLabel("Input Mode:"))
+        mode_layout.addWidget(self._pub_mode_combo)
+        mode_layout.addStretch()
+
+        pub_layout.addLayout(mode_layout)
+        pub_layout.addWidget(self._pub_input_stack)
 
         pub_btn_layout = QHBoxLayout()
         self._publish_btn = QPushButton("Publish")
@@ -184,13 +214,15 @@ class ROSTab(QWidget):
         self._publish_rate_spin.setSuffix(" Hz")
         self._publish_rate_spin.setToolTip("0 = single publish")
 
+        self._clear_pub_fields_btn = QPushButton("Clear")
+        self._clear_pub_fields_btn.clicked.connect(self._clear_publish_fields)
+
         pub_btn_layout.addWidget(self._publish_btn)
         pub_btn_layout.addWidget(QLabel("Rate:"))
         pub_btn_layout.addWidget(self._publish_rate_spin)
+        pub_btn_layout.addStretch()
+        pub_btn_layout.addWidget(self._clear_pub_fields_btn)
 
-        pub_layout.addWidget(self._publish_topic_input)
-        pub_layout.addLayout(type_layout)
-        pub_layout.addWidget(self._publish_message)
         pub_layout.addLayout(pub_btn_layout)
 
         layout.addWidget(self._topic_info_label)
@@ -241,8 +273,12 @@ class ROSTab(QWidget):
         call_group = QGroupBox("Call Service")
         call_layout = QVBoxLayout(call_group)
 
+        srv_name_row = QHBoxLayout()
+        srv_name_row.addWidget(QLabel("Service:"))
         self._service_name_input = QLineEdit()
         self._service_name_input.setPlaceholderText("Service name...")
+        srv_name_row.addWidget(self._service_name_input, 1)
+        call_layout.addLayout(srv_name_row)
 
         srv_type_layout = QHBoxLayout()
         srv_type_layout.addWidget(QLabel("Type:"))
@@ -253,19 +289,60 @@ class ROSTab(QWidget):
             "std_srvs/srv/SetBool",
             "std_srvs/srv/Trigger",
         ])
+        self._service_type_combo.currentTextChanged.connect(self._on_service_type_changed)
         srv_type_layout.addWidget(self._service_type_combo, 1)
 
-        self._service_request = QPlainTextEdit()
-        self._service_request.setPlaceholderText("Enter request as YAML or JSON...")
-        self._service_request.setFont(QFont("JetBrains Mono", 10))
-        self._service_request.setMaximumHeight(120)
+        self._load_srv_type_btn = QPushButton("Load Fields")
+        self._load_srv_type_btn.clicked.connect(self._load_service_fields)
+        srv_type_layout.addWidget(self._load_srv_type_btn)
 
+        call_layout.addLayout(srv_type_layout)
+
+        req_label = QLabel("Request:")
+        req_label.setProperty("secondary", True)
+        call_layout.addWidget(req_label)
+
+        self._srv_input_stack = QStackedWidget()
+
+        self._srv_fields_editor = MessageFieldEditor()
+        self._srv_fields_editor.setMinimumHeight(100)
+
+        self._srv_raw_input = QPlainTextEdit()
+        self._srv_raw_input.setPlaceholderText("Enter request as YAML or JSON...")
+        self._srv_raw_input.setFont(QFont("JetBrains Mono", 10))
+        self._srv_raw_input.setMinimumHeight(100)
+
+        self._srv_input_stack.addWidget(self._srv_fields_editor)
+        self._srv_input_stack.addWidget(self._srv_raw_input)
+
+        srv_mode_layout = QHBoxLayout()
+        self._srv_mode_combo = QComboBox()
+        self._srv_mode_combo.addItems(["Form Fields", "Raw YAML/JSON"])
+        self._srv_mode_combo.currentIndexChanged.connect(self._on_srv_mode_changed)
+        srv_mode_layout.addWidget(QLabel("Input Mode:"))
+        srv_mode_layout.addWidget(self._srv_mode_combo)
+        srv_mode_layout.addStretch()
+
+        call_layout.addLayout(srv_mode_layout)
+        call_layout.addWidget(self._srv_input_stack)
+
+        srv_btn_layout = QHBoxLayout()
         self._call_service_btn = QPushButton("Call Service")
         self._call_service_btn.setProperty("accent", True)
         self._call_service_btn.clicked.connect(self._call_service)
 
+        self._clear_srv_fields_btn = QPushButton("Clear")
+        self._clear_srv_fields_btn.clicked.connect(self._clear_service_fields)
+
+        srv_btn_layout.addWidget(self._call_service_btn)
+        srv_btn_layout.addStretch()
+        srv_btn_layout.addWidget(self._clear_srv_fields_btn)
+
+        call_layout.addLayout(srv_btn_layout)
+
         resp_label = QLabel("Response:")
         resp_label.setProperty("secondary", True)
+        call_layout.addWidget(resp_label)
 
         self._service_response = QPlainTextEdit()
         self._service_response.setReadOnly(True)
@@ -276,12 +353,6 @@ class ROSTab(QWidget):
             }}
         """)
 
-        call_layout.addWidget(self._service_name_input)
-        call_layout.addLayout(srv_type_layout)
-        call_layout.addWidget(QLabel("Request:"))
-        call_layout.addWidget(self._service_request)
-        call_layout.addWidget(self._call_service_btn)
-        call_layout.addWidget(resp_label)
         call_layout.addWidget(self._service_response, 1)
 
         right_layout.addWidget(self._service_info_label)
@@ -314,59 +385,17 @@ class ROSTab(QWidget):
     def _on_param_error(self, error: str) -> None:
         pass
 
-    def _create_image_viewer_tab(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-
-        control_layout = QHBoxLayout()
-
-        control_layout.addWidget(QLabel("Topic:"))
-        self._image_topic_input = QLineEdit()
-        self._image_topic_input.setPlaceholderText("/camera/image_raw")
-        control_layout.addWidget(self._image_topic_input, 1)
-
-        self._image_compressed_cb = QCheckBox("Compressed")
-        control_layout.addWidget(self._image_compressed_cb)
-
-        control_layout.addWidget(QLabel("QoS:"))
-        self._image_qos_combo = QComboBox()
-        self._image_qos_combo.addItems(["Best Effort", "Reliable"])
-        self._image_qos_combo.setToolTip("Match publisher's QoS policy")
-        control_layout.addWidget(self._image_qos_combo)
-
-        self._image_subscribe_btn = QPushButton("Subscribe")
-        self._image_subscribe_btn.setProperty("accent", True)
-        self._image_subscribe_btn.clicked.connect(self._subscribe_image_topic)
-        control_layout.addWidget(self._image_subscribe_btn)
-
-        self._image_unsubscribe_btn = QPushButton("Unsubscribe")
-        self._image_unsubscribe_btn.clicked.connect(self._unsubscribe_image_topic)
-        self._image_unsubscribe_btn.setEnabled(False)
-        control_layout.addWidget(self._image_unsubscribe_btn)
-
-        self._image_display = VideoDisplay()
-        self._image_display.set_placeholder("Subscribe to an image topic")
-
-        self._image_info_label = QLabel("No image")
-        self._image_info_label.setProperty("secondary", True)
-        self._image_info_label.setAlignment(Qt.AlignCenter)
-
-        layout.addLayout(control_layout)
-        layout.addWidget(self._image_display, 1)
-        layout.addWidget(self._image_info_label)
-
-        return widget
-
     def _setup_timers(self) -> None:
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._auto_refresh)
         self._refresh_timer.setInterval(5000)
         self._refresh_timer.start()
 
+        self._publish_timer = QTimer(self)
+        self._publish_timer.timeout.connect(self._timed_publish)
+
     def _connect_signals(self) -> None:
         self.message_received.connect(self._display_message)
-        self.image_received.connect(self._display_image)
 
     @Slot()
     def _refresh_topics(self) -> None:
@@ -401,6 +430,35 @@ class ROSTab(QWidget):
 
         self._publish_topic_input.setText(self._selected_topic)
         self._publish_type_combo.setCurrentText(topic_type)
+
+        self._load_publish_fields()
+
+    @Slot(str)
+    def _on_publish_type_changed(self, type_str: str) -> None:
+        pass
+
+    @Slot()
+    def _load_publish_fields(self) -> None:
+        type_str = self._publish_type_combo.currentText().strip()
+        if not type_str:
+            return
+
+        msg_class = self._get_message_class(type_str)
+        if msg_class:
+            self._current_pub_msg_class = msg_class
+            self._pub_fields_editor.set_message_class(msg_class)
+        else:
+            self._current_pub_msg_class = None
+            self._message_display.appendPlainText(f"Could not load message type: {type_str}")
+
+    @Slot(int)
+    def _on_pub_mode_changed(self, index: int) -> None:
+        self._pub_input_stack.setCurrentIndex(index)
+
+    @Slot()
+    def _clear_publish_fields(self) -> None:
+        self._pub_fields_editor.clear_values()
+        self._pub_raw_input.clear()
 
     @Slot()
     def _subscribe_to_topic(self) -> None:
@@ -525,7 +583,6 @@ class ROSTab(QWidget):
 
         topic = self._publish_topic_input.text().strip()
         type_str = self._publish_type_combo.currentText().strip()
-        msg_text = self._publish_message.toPlainText().strip()
 
         if not topic or not type_str:
             return
@@ -538,23 +595,78 @@ class ROSTab(QWidget):
 
             msg = msg_class()
 
-            if msg_text:
-                try:
-                    data = yaml.safe_load(msg_text)
-                    if data:
-                        self._fill_message(msg, data)
-                except Exception as e:
-                    self._message_display.appendPlainText(f"Error parsing message: {e}")
-                    return
+            if self._pub_input_stack.currentIndex() == 0:
+                data = self._pub_fields_editor.get_values()
+                if data:
+                    self._fill_message(msg, data)
+            else:
+                msg_text = self._pub_raw_input.toPlainText().strip()
+                if msg_text:
+                    try:
+                        data = yaml.safe_load(msg_text)
+                        if data:
+                            self._fill_message(msg, data)
+                    except Exception as e:
+                        self._message_display.appendPlainText(f"Error parsing message: {e}")
+                        return
 
             if self._publisher is None or self._publisher.topic != topic:
+                if self._publisher:
+                    try:
+                        self._node.destroy_publisher(self._publisher)
+                    except Exception:
+                        pass
                 self._publisher = self._node.create_publisher(msg_class, topic, 10)
 
-            self._publisher.publish(msg)
-            self._message_display.appendPlainText(f"Published to {topic}")
+            rate = self._publish_rate_spin.value()
+            if rate > 0:
+                if not self._publish_timer.isActive():
+                    interval = int(1000 / rate)
+                    self._publish_timer.setInterval(interval)
+                    self._publish_timer.start()
+                    self._publish_btn.setText("Stop")
+                else:
+                    self._publish_timer.stop()
+                    self._publish_btn.setText("Publish")
+            else:
+                self._publisher.publish(msg)
+                self._message_display.appendPlainText(f"Published to {topic}")
 
         except Exception as e:
             self._message_display.appendPlainText(f"Error publishing: {e}")
+
+    @Slot()
+    def _timed_publish(self) -> None:
+        if not self._publisher:
+            return
+
+        type_str = self._publish_type_combo.currentText().strip()
+
+        try:
+            msg_class = self._get_message_class(type_str)
+            if msg_class is None:
+                return
+
+            msg = msg_class()
+
+            if self._pub_input_stack.currentIndex() == 0:
+                data = self._pub_fields_editor.get_values()
+                if data:
+                    self._fill_message(msg, data)
+            else:
+                msg_text = self._pub_raw_input.toPlainText().strip()
+                if msg_text:
+                    try:
+                        data = yaml.safe_load(msg_text)
+                        if data:
+                            self._fill_message(msg, data)
+                    except Exception:
+                        return
+
+            self._publisher.publish(msg)
+
+        except Exception:
+            pass
 
     def _fill_message(self, msg: Any, data: Dict) -> None:
         for key, value in data.items():
@@ -563,7 +675,10 @@ class ROSTab(QWidget):
                 if hasattr(attr, "get_fields_and_field_types") and isinstance(value, dict):
                     self._fill_message(attr, value)
                 else:
-                    setattr(msg, key, value)
+                    try:
+                        setattr(msg, key, value)
+                    except Exception:
+                        pass
 
     @Slot()
     def _refresh_services(self) -> None:
@@ -587,12 +702,43 @@ class ROSTab(QWidget):
 
     @Slot(QTreeWidgetItem, int)
     def _on_service_selected(self, item: QTreeWidgetItem, column: int) -> None:
-        service_name = item.text(0)
+        self._selected_service = item.text(0)
         service_type = item.text(1)
 
-        self._service_info_label.setText(f"Service: {service_name}\nType: {service_type}")
-        self._service_name_input.setText(service_name)
+        self._service_info_label.setText(f"Service: {self._selected_service}\nType: {service_type}")
+        self._service_name_input.setText(self._selected_service)
         self._service_type_combo.setCurrentText(service_type)
+
+        self._load_service_fields()
+
+    @Slot(str)
+    def _on_service_type_changed(self, type_str: str) -> None:
+        pass
+
+    @Slot()
+    def _load_service_fields(self) -> None:
+        type_str = self._service_type_combo.currentText().strip()
+        if not type_str:
+            return
+
+        srv_class = self._get_service_class(type_str)
+        if srv_class:
+            self._current_srv_class = srv_class
+            if hasattr(srv_class, "Request"):
+                self._srv_fields_editor.set_message_class(srv_class.Request)
+        else:
+            self._current_srv_class = None
+            self._service_response.setPlainText(f"Could not load service type: {type_str}")
+
+    @Slot(int)
+    def _on_srv_mode_changed(self, index: int) -> None:
+        self._srv_input_stack.setCurrentIndex(index)
+
+    @Slot()
+    def _clear_service_fields(self) -> None:
+        self._srv_fields_editor.clear_values()
+        self._srv_raw_input.clear()
+        self._service_response.clear()
 
     @Slot()
     def _call_service(self) -> None:
@@ -601,7 +747,6 @@ class ROSTab(QWidget):
 
         service_name = self._service_name_input.text().strip()
         type_str = self._service_type_combo.currentText().strip()
-        request_text = self._service_request.toPlainText().strip()
 
         if not service_name or not type_str:
             return
@@ -620,15 +765,22 @@ class ROSTab(QWidget):
 
             request = srv_class.Request()
 
-            if request_text:
-                try:
-                    data = yaml.safe_load(request_text)
-                    if data:
-                        self._fill_message(request, data)
-                except Exception as e:
-                    self._service_response.setPlainText(f"Error parsing request: {e}")
-                    return
+            if self._srv_input_stack.currentIndex() == 0:
+                data = self._srv_fields_editor.get_values()
+                if data:
+                    self._fill_message(request, data)
+            else:
+                request_text = self._srv_raw_input.toPlainText().strip()
+                if request_text:
+                    try:
+                        data = yaml.safe_load(request_text)
+                        if data:
+                            self._fill_message(request, data)
+                    except Exception as e:
+                        self._service_response.setPlainText(f"Error parsing request: {e}")
+                        return
 
+            self._service_response.setPlainText("Calling service...")
             future = client.call_async(request)
 
             def handle_response():
@@ -662,97 +814,9 @@ class ROSTab(QWidget):
             pass
         return None
 
-
-    @Slot()
-    def _subscribe_image_topic(self) -> None:
-        if not self._node:
-            return
-
-        topic = self._image_topic_input.text().strip()
-        if not topic:
-            return
-
-        try:
-            if self._cv_bridge is None:
-                from cv_bridge import CvBridge
-                self._cv_bridge = CvBridge()
-
-            if self._image_compressed_cb.isChecked():
-                from sensor_msgs.msg import CompressedImage
-                msg_type = CompressedImage
-            else:
-                from sensor_msgs.msg import Image
-                msg_type = Image
-
-            if "image_subscription" in self._subscriptions:
-                self._node.destroy_subscription(self._subscriptions["image_subscription"])
-
-            qos_selection = self._image_qos_combo.currentText()
-            if qos_selection == "Best Effort":
-                reliability = ReliabilityPolicy.BEST_EFFORT
-            else:
-                reliability = ReliabilityPolicy.RELIABLE
-
-            qos = QoSProfile(
-                reliability=reliability,
-                history=HistoryPolicy.KEEP_LAST,
-                depth=1,
-                durability=DurabilityPolicy.VOLATILE,
-            )
-
-            sub = self._node.create_subscription(
-                msg_type,
-                topic,
-                self._on_image_received,
-                qos
-            )
-            self._subscriptions["image_subscription"] = sub
-
-            self._image_subscribe_btn.setEnabled(False)
-            self._image_unsubscribe_btn.setEnabled(True)
-            self._image_info_label.setText(f"Subscribed to {topic} ({qos_selection})")
-
-        except Exception as e:
-            self._image_info_label.setText(f"Error: {e}")
-
-    def _on_image_received(self, msg: Any) -> None:
-        try:
-            if hasattr(msg, "format"):
-                import cv2
-                import numpy as np
-                np_arr = np.frombuffer(msg.data, np.uint8)
-                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            else:
-                frame = self._cv_bridge.imgmsg_to_cv2(msg, "bgr8")
-
-            self.image_received.emit(frame)
-        except Exception as e:
-            self.image_received.emit(None)
-
-    @Slot(object)
-    def _display_image(self, frame) -> None:
-        if frame is not None:
-            self._image_display.display_frame(frame)
-            h, w = frame.shape[:2]
-            self._image_info_label.setText(f"Resolution: {w}×{h}")
-        else:
-            self._image_display.clear_display()
-
-    @Slot()
-    def _unsubscribe_image_topic(self) -> None:
-        if "image_subscription" in self._subscriptions:
-            self._node.destroy_subscription(self._subscriptions["image_subscription"])
-            del self._subscriptions["image_subscription"]
-
-        self._image_display.clear_display()
-        self._image_subscribe_btn.setEnabled(True)
-        self._image_unsubscribe_btn.setEnabled(False)
-        self._image_info_label.setText("Unsubscribed")
-
     @Slot()
     def _auto_refresh(self) -> None:
-        if self._tab_widget.currentIndex() == 0:
-            pass
+        pass
 
     def set_node(self, node: Node) -> None:
         self._node = node
@@ -762,6 +826,7 @@ class ROSTab(QWidget):
 
     def cleanup(self) -> None:
         self._refresh_timer.stop()
+        self._publish_timer.stop()
 
         for sub in self._subscriptions.values():
             try:

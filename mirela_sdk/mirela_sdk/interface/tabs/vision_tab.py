@@ -372,11 +372,27 @@ class CameraInitWorker(QObject):
             return OakdCam(config)
 
         elif camera_type == "ros":
-            from mirela_sdk.vision.camera import ROSConfig, ROSCam
+            from mirela_sdk.vision.camera import ROSConfig, ROSCam, QoSReliability, QoSDurability
+
+            reliability_str = self._config.get("reliability", "Best Effort")
+            if reliability_str == "Reliable":
+                reliability = QoSReliability.RELIABLE
+            else:
+                reliability = QoSReliability.BEST_EFFORT
+
+            durability_str = self._config.get("durability", "Volatile")
+            if durability_str == "Transient Local":
+                durability = QoSDurability.TRANSIENT_LOCAL
+            else:
+                durability = QoSDurability.VOLATILE
 
             config = ROSConfig(
                 topic=self._config.get("topic", "/camera/image_raw"),
                 compressed=self._config.get("compressed", False),
+                reliability=reliability,
+                durability=durability,
+                history_depth=self._config.get("history_depth", 1),
+                encoding=self._config.get("encoding", "bgr8"),
             )
             if self._node is None:
                 raise ValueError("ROS camera requires a ROS node")

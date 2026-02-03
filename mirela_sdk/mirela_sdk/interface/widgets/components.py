@@ -781,16 +781,43 @@ class CameraConfigPanel(QWidget):
         layout.setContentsMargins(0, 4, 0, 0)
         layout.setSpacing(4)
 
-        # Topic
         layout.addWidget(self._make_label("Topic:"), 0, 0)
         self._ros_topic = QLineEdit("/camera/image_raw")
         self._ros_topic.textChanged.connect(self.configChanged.emit)
         layout.addWidget(self._ros_topic, 0, 1)
 
-        # Compressed
         self._ros_compressed = QCheckBox("Compressed topic")
         self._ros_compressed.stateChanged.connect(self.configChanged.emit)
         layout.addWidget(self._ros_compressed, 1, 0, 1, 2)
+
+        layout.addWidget(self._make_label("QoS:"), 2, 0)
+        self._ros_reliability = QComboBox()
+        self._ros_reliability.addItems(["Best Effort", "Reliable"])
+        self._ros_reliability.setToolTip("QoS reliability policy")
+        self._ros_reliability.currentIndexChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._ros_reliability, 2, 1)
+
+        layout.addWidget(self._make_label("Durability:"), 3, 0)
+        self._ros_durability = QComboBox()
+        self._ros_durability.addItems(["Volatile", "Transient Local"])
+        self._ros_durability.setToolTip("QoS durability policy")
+        self._ros_durability.currentIndexChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._ros_durability, 3, 1)
+
+        layout.addWidget(self._make_label("History:"), 4, 0)
+        self._ros_history_depth = QSpinBox()
+        self._ros_history_depth.setRange(1, 100)
+        self._ros_history_depth.setValue(1)
+        self._ros_history_depth.setToolTip("QoS history depth")
+        self._ros_history_depth.valueChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._ros_history_depth, 4, 1)
+
+        layout.addWidget(self._make_label("Encoding:"), 5, 0)
+        self._ros_encoding = QComboBox()
+        self._ros_encoding.addItems(["bgr8", "rgb8", "mono8", "passthrough"])
+        self._ros_encoding.setToolTip("Image encoding for cv_bridge conversion")
+        self._ros_encoding.currentIndexChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._ros_encoding, 5, 1)
 
     def _create_file_config(self) -> None:
         """Create file image configuration panel."""
@@ -938,6 +965,10 @@ class CameraConfigPanel(QWidget):
             config.update({
                 "topic": self._ros_topic.text(),
                 "compressed": self._ros_compressed.isChecked(),
+                "reliability": self._ros_reliability.currentText(),
+                "durability": self._ros_durability.currentText(),
+                "history_depth": self._ros_history_depth.value(),
+                "encoding": self._ros_encoding.currentText(),
             })
         elif self._current_type == "file":
             config.update({

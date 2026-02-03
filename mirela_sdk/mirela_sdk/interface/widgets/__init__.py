@@ -20,6 +20,7 @@ from mirela_sdk.interface.widgets.param_reconfigure import (
     ParamType,
 )
 from mirela_sdk.interface.widgets.detection_panel import DetectionConfigPanel
+from mirela_sdk.interface.widgets.message_editor import MessageFieldEditor
 
 __all__ = [
     "Card",
@@ -40,4 +41,5 @@ __all__ = [
     "ParameterInfo",
     "ParamType",
     "DetectionConfigPanel",
+    "MessageFieldEditor",
 ]

@@ -8,22 +8,36 @@ from sensor_msgs.msg import CompressedImage as RosCompressedImage
 from cv_bridge import CvBridge
 
 from mirela_sdk.vision.camera.abstract import AbstractCam
-from mirela_sdk.vision.camera.config import ROSConfig
+from mirela_sdk.vision.camera.config import ROSConfig, QoSReliability, QoSDurability
 
 
 class ROSCam(AbstractCam):
     """
     Camera driver for ROS image topics.
 
-    Subscribes to sensor_msgs/Image or sensor_msgs/CompressedImage topics.
-    Uses BEST_EFFORT QoS 
+    Subscribes to sensor_msgs/Image or sensor_msgs/CompressedImage topics
+    with configurable QoS settings.
 
     Parameters
     ----------
     node : Node
         ROS2 node for subscription creation.
     config : ROSConfig
-        Configuration with topic name and compression settings.
+        Configuration with topic, compression, and QoS settings.
+
+    Examples
+    --------
+    >>> from rclpy.node import Node
+    >>> from mirela_sdk.vision.camera import ROSCam, ROSConfig, QoSReliability
+    >>>
+    >>> config = ROSConfig(
+    ...     topic="/camera/image_raw",
+    ...     compressed=False,
+    ...     reliability=QoSReliability.BEST_EFFORT
+    ... )
+    >>> cam = ROSCam(node, config)
+    >>> cam.start()
+    >>> frame = cam.get_frame()
     """
 
     def __init__(self, node: Node, config: ROSConfig) -> None:
@@ -38,11 +52,32 @@ class ROSCam(AbstractCam):
         self._frame_count = 0
         self._last_frame_count = -1
 
-        self._qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+        self._qos = self._build_qos_profile()
+
+    def _build_qos_profile(self) -> QoSProfile:
+        """
+        Build QoS profile from configuration.
+
+        Returns
+        -------
+        QoSProfile
+            Configured QoS profile for subscription.
+        """
+        if self._config.reliability == QoSReliability.RELIABLE:
+            reliability = ReliabilityPolicy.RELIABLE
+        else:
+            reliability = ReliabilityPolicy.BEST_EFFORT
+
+        if self._config.durability == QoSDurability.TRANSIENT_LOCAL:
+            durability = DurabilityPolicy.TRANSIENT_LOCAL
+        else:
+            durability = DurabilityPolicy.VOLATILE
+
+        return QoSProfile(
+            reliability=reliability,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-            durability=DurabilityPolicy.VOLATILE,
+            depth=self._config.history_depth,
+            durability=durability,
         )
 
     def _cb(self, msg) -> None:
@@ -50,10 +85,12 @@ class ROSCam(AbstractCam):
         try:
             if self._config.compressed:
                 frame = self._bridge.compressed_imgmsg_to_cv2(
-                    msg, desired_encoding="bgr8"
+                    msg, desired_encoding=self._config.encoding
                 )
             else:
-                frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+                frame = self._bridge.imgmsg_to_cv2(
+                    msg, desired_encoding=self._config.encoding
+                )
 
             with self._lock:
                 self._frame = frame
@@ -66,10 +103,14 @@ class ROSCam(AbstractCam):
     def start(self) -> None:
         """
         Create subscription to configured topic.
+
+        Subscribes to either sensor_msgs/Image or sensor_msgs/CompressedImage
+        based on the compressed configuration option.
         """
+        reliability_str = self._config.reliability.value
         self._node.get_logger().info(
             f"ROSCam: Subscribing to {self._config.topic} "
-            f"(compressed={self._config.compressed})"
+            f"(compressed={self._config.compressed}, qos={reliability_str})"
         )
 
         if self._config.compressed:
@@ -117,6 +158,21 @@ class ROSCam(AbstractCam):
 
             self._last_frame_count = current_count
             return self._frame.copy()
+
+    @property
+    def topic(self) -> str:
+        """Return the subscribed topic name."""
+        return self._config.topic
+
+    @property
+    def is_compressed(self) -> bool:
+        """Return whether using compressed image transport."""
+        return self._config.compressed
+
+    @property
+    def qos_reliability(self) -> QoSReliability:
+        """Return the QoS reliability setting."""
+        return self._config.reliability
 
     def close(self) -> None:
         """Destroy subscription and release resources."""

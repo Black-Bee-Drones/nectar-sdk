@@ -45,7 +45,8 @@ def get_device(device: Optional[str] = None) -> "torch.device":
 
     if device is None or device == "auto":
         if torch.cuda.is_available():
-            return torch.device("cuda")
+            # use explicit index for ONNX Runtime compatibility
+            return torch.device("cuda:0")
         elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return torch.device("mps")
         else:
@@ -60,11 +61,16 @@ def get_device(device: Optional[str] = None) -> "torch.device":
         logger.warning("MPS not available, falling back to CPU")
         return torch.device("cpu")
 
-    # Handle CUDA
-    if device.startswith("cuda"):
+    if device == "cuda":
+        if torch.cuda.is_available():
+            return torch.device("cuda:0")
+        logger.warning("CUDA not available, falling back to CPU")
+        return torch.device("cpu")
+
+    if device.startswith("cuda:"):
         if torch.cuda.is_available():
             return torch.device(device)
-        logger.warning(f"CUDA not available, falling back to CPU")
+        logger.warning("CUDA not available, falling back to CPU")
         return torch.device("cpu")
 
     # Handle numeric index

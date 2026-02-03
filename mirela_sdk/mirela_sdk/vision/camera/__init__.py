@@ -9,6 +9,8 @@ from mirela_sdk.vision.camera.config import (
     IMX219Config,
     RealSenseConfig,
     OakDConfig,
+    QoSReliability,
+    QoSDurability,
 )
 from mirela_sdk.vision.camera.factory import CameraFactory
 from mirela_sdk.vision.camera.handler import ImageHandler
@@ -35,6 +37,8 @@ __all__ = [
     "IMX219Config",
     "RealSenseConfig",
     "OakDConfig",
+    "QoSReliability",
+    "QoSDurability",
     "CameraFactory",
     "ImageHandler",
     "FileImageCam",
