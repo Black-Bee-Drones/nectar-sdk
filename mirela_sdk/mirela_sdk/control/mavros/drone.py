@@ -721,6 +721,8 @@ class MavrosDrone(BaseDrone):
         if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
             raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
 
+        self._validate_position_sensors()
+
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
             f"strategy={strategy.name} precision={precision}m"
@@ -778,6 +780,8 @@ class MavrosDrone(BaseDrone):
         """
         if self.is_indoor:
             raise CapabilityNotSupportedError("GPS navigation", "indoor mode")
+
+        self._validate_position_sensors()
 
         alt = altitude if altitude is not None else self.rel_alt
         hdg = heading if heading is not None else self.heading
@@ -1103,6 +1107,24 @@ class MavrosDrone(BaseDrone):
         msg.pose.orientation.z = quat[2]
         msg.pose.orientation.w = quat[3]
         return msg
+
+    def _validate_position_sensors(self) -> None:
+        """
+        Validate that position sensors are available for navigation.
+
+        Raises
+        ------
+        SensorNotAvailableError
+            If required position sensor data is missing.
+        """
+        if self.is_indoor:
+            if self._vision_pos is None:
+                raise SensorNotAvailableError(
+                    "Vision pose", "navigation requires sensor data"
+                )
+        else:
+            if self._gps is None:
+                raise SensorNotAvailableError("GPS", "navigation requires sensor data")
 
     def _compute_errors(self, target, yaw: Optional[float]):
         if self.is_indoor:

@@ -1607,7 +1607,12 @@ class ControlTab(QWidget):
             elif any(v != 0.0 for v in self._last_velocity_cmd):
                 self._node.get_logger().debug("Velocity: stopped")
 
+        should_send = has_movement or (cmd_changed and not has_movement)
+
         self._last_velocity_cmd = current_cmd
+
+        if not should_send:
+            return
 
         try:
             from mirela_sdk.control import MoveReference
