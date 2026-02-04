@@ -564,50 +564,83 @@ drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 
 ## Service Call Behavior
 
-All MAVROS service calls use the `_call_service` method with configurable timeout, sync/async modes, and **automatic response validation**.
+All MAVROS service calls use `_call_service` with automatic response validation and deadlock-safe execution.
 
-#### Validation Logic
-The system automatically validates service responses based on message type:
-- **SetMode**: Checks `mode_sent` field.
-- **Commands** (Arm/Takeoff/Land): Checks `success` field and logs MAVLink `result` codes (ACCEPTED, DENIED, FAILED, etc.).
-- **SetParameters**: Checks `successful` field in results.
+### Async Pattern with Spin Loop
+
+Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), synchronous `client.call()` causes deadlock when called from callbacks or the same thread as the executor. We use `call_async()` with a spin loop:
+
+```python
+future = service.call_async(request)
+while not future.done():
+    rclpy.spin_once(self._node, timeout_sec=0.05)
+    if elapsed > timeout:
+        raise TimeoutError(...)
+result = future.result()
+```
+
+This pattern:
+- Avoids deadlock (no blocking on executor thread)
+- Maintains ROS2 communication during wait
+- Allows timeout handling
+- Provides synchronous-like behavior when needed
 
 ### Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `sync` | `False` | If True, blocks until service completes. If False, returns immediately (non-blocking). |
-| `timeout` | `10.0` | Maximum seconds to wait for service availability. |
+| `sync` | `True` | If True, waits for response using spin loop. If False, returns immediately. |
+| `timeout` | `10.0` | Maximum seconds to wait for service availability and response. |
 
-### Async Mode (Default)
+### Response Validation
 
-```python
-# Non-blocking: returns immediately, result logged via callback
-drone.arm()  # Uses async by default
-drone.set_mode("GUIDED")
+Responses are validated based on message type:
+
+| Service Type | Field Checked | Failure Condition |
+|--------------|---------------|-------------------|
+| `SetMode` | `mode_sent` | `False` |
+| `CommandBool`, `CommandTOL`, `CommandLong` | `success`, `result` | `success=False` or `result != ACCEPTED` |
+| `SetParameters` | `results[].successful` | Any `False` |
+
+### MAV_RESULT Codes
+
+MAVROS command services return [MAVLink MAV_RESULT](https://mavlink.io/en/messages/common.html#MAV_RESULT) codes in the `result` field:
+
+| Code | Name | Description |
+|------|------|-------------|
+| 0 | `ACCEPTED` | Command executed successfully |
+| 1 | `TEMPORARILY_REJECTED` | Command valid but cannot execute now |
+| 2 | `DENIED` | Command invalid or not permitted |
+| 3 | `UNSUPPORTED` | Command not supported by autopilot |
+| 4 | `FAILED` | Command failed to execute |
+| 5 | `IN_PROGRESS` | Command being executed |
+
+Failed commands log the result code:
+```
+[WARN] /mavros/cmd/arming: Failed (Result: DENIED)
 ```
 
-### Sync Mode
+### Usage Examples
+
+**Flight actions** (arm, disarm, takeoff, land) use `sync=True`:
 
 ```python
-# Blocking: waits for service response
-result = drone._call_service(
-    service, request, "Success", "Failed",
-    sync=True  # Blocks until complete
-)
+def arm(self) -> bool:
+    req = CommandBool.Request()
+    req.value = True
+    res = self._call_service(
+        self._arm_srv, req, "Armed", "Arm failed", sync=True
+    )
+    return bool(res)
 ```
 
-### Timeout Behavior
-
-If a service is not available within the timeout period, a `TimeoutError` is raised:
+**Timeout handling**:
 
 ```python
 try:
     drone.arm()
 except TimeoutError as e:
-    # Service not available after 10 seconds
     drone.node.get_logger().error(f"Service timeout: {e}")
-```
 
 ## Error Handling
 
@@ -643,8 +676,20 @@ except TimeoutError as e:
 
 ## References
 
-- [ArduPilot Copter Documentation](https://ardupilot.org/copter/)
-- [MAVROS Documentation](https://github.com/mavlink/mavros)
-- [ArduPilot Altitude Understanding](https://ardupilot.org/copter/docs/common-understanding-altitude.html)
+### MAVLink & MAVROS
 - [MAVLink Protocol](https://mavlink.io/en/)
+- [MAV_RESULT Enum](https://mavlink.io/en/messages/common.html#MAV_RESULT)
+- [MAV_CMD Commands](https://mavlink.io/en/messages/common.html#mav_commands)
+- [MAVROS GitHub](https://github.com/mavlink/mavros)
+- [MAVROS ROS2 API](https://docs.ros.org/en/humble/p/mavros/)
+
+### ArduPilot
+- [ArduPilot Copter Documentation](https://ardupilot.org/copter/)
+- [Flight Modes](https://ardupilot.org/copter/docs/flight-modes.html)
+- [Understanding Altitude](https://ardupilot.org/copter/docs/common-understanding-altitude.html)
+
+### ROS2
+- [Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html)
+- [ROS2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
+- [Callback Groups](https://docs.ros.org/en/humble/How-To-Guides/Using-callback-groups.html)
 
