@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List
+from typing import Optional, List, Callable, Union
 
 import rclpy
 from rclpy.duration import Duration
@@ -609,8 +609,8 @@ class BaseDrone(ABC):
         self,
         msg_type: type,
         topic: str,
-        callback: callable,
-        qos: QoSProfile | int,
+        callback: Callable,
+        qos: Union[QoSProfile, int],
     ) -> Subscription:
         """
         Create ROS2 subscriber with reentrant callback group.
@@ -645,7 +645,7 @@ class BaseDrone(ABC):
         self,
         msg_type: type,
         topic: str,
-        qos: QoSProfile | int,
+        qos: Union[QoSProfile, int],
     ) -> Publisher:
         """
         Create ROS2 publisher with reentrant callback group.
@@ -733,6 +733,7 @@ class BaseDrone(ABC):
         self._subscribers.clear()
         self._publishers.clear()
         self._clients.clear()
+        self._node.get_logger().debug("Drone resources cleaned up")
 
     def __del__(self) -> None:
         self.cleanup()

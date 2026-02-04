@@ -216,20 +216,26 @@ class MavrosDrone(BaseDrone):
         return self._gps
 
     @property
-    def position_as_target(self) -> Union[PositionTarget, GeoPoseStamped]:
+    def position_as_target(self) -> Optional[Union[PositionTarget, GeoPoseStamped]]:
         """
         Current position converted to setpoint message type.
 
         Returns
         -------
-        Union[PositionTarget, GeoPoseStamped]
-            PositionTarget for indoor, GeoPoseStamped for outdoor.
+        Optional[Union[PositionTarget, GeoPoseStamped]]
+            PositionTarget for indoor, GeoPoseStamped for outdoor, None if no position data.
         """
         if self.is_indoor:
+            if self._vision_pos is None:
+                self._node.get_logger().debug("position_as_target: No vision data")
+                return None
             lidar = self.lidar_alt if self._lidar_available else None
             return PositionUtils.convert_position_to_target(
                 self._vision_pos, lidar=lidar
             )
+        if self._gps is None:
+            self._node.get_logger().debug("position_as_target: No GPS data")
+            return None
         return PositionUtils.convert_position_to_target(self._gps, self.heading)
 
     def _setup_subscribers(self) -> None:
@@ -648,6 +654,11 @@ class MavrosDrone(BaseDrone):
         msg.velocity.z = vz
         msg.yaw_rate = vyaw
 
+        self._node.get_logger().debug(
+            f"Velocity cmd: vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} vyaw={vyaw:.2f} "
+            f"ref={reference.name}"
+        )
+
         if duration is None:
             self._local_pub.publish(msg)
         else:
@@ -710,6 +721,11 @@ class MavrosDrone(BaseDrone):
         if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
             raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
 
+        self._node.get_logger().info(
+            f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
+            f"strategy={strategy.name} precision={precision}m"
+        )
+
         self.delay(0.05)
         target = self._compute_target(x, y, z, yaw, reference)
 
@@ -765,6 +781,11 @@ class MavrosDrone(BaseDrone):
 
         alt = altitude if altitude is not None else self.rel_alt
         hdg = heading if heading is not None else self.heading
+
+        self._node.get_logger().info(
+            f"move_to_gps: lat={latitude:.6f} lon={longitude:.6f} alt={alt:.1f}m "
+            f"hdg={hdg:.1f}° strategy={strategy.name} precision={precision}m"
+        )
 
         target = GPSUtils.create_gps_setpoint(
             latitude, longitude, alt, hdg, self._initial_altitude
@@ -1106,6 +1127,7 @@ class MavrosDrone(BaseDrone):
 
     def emergency_stop(self) -> None:
         """Execute emergency stop via force disarm."""
+        self._node.get_logger().warn("Emergency stop triggered")
         self.disarm()
 
     def set_home(self) -> bool:
@@ -1314,7 +1336,13 @@ class MavrosDrone(BaseDrone):
             True if position set successfully, False if sensor data missing.
         """
         try:
-            self._takeoff_position = self.position_as_target
+            pos = self.position_as_target
+            if pos is None:
+                self._node.get_logger().error(
+                    "Cannot set takeoff position: No position data"
+                )
+                return False
+            self._takeoff_position = pos
             self._node.get_logger().info("Takeoff position set")
             return True
         except (SensorNotAvailableError, ValueError, AttributeError) as e:
