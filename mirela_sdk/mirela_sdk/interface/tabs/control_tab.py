@@ -166,6 +166,58 @@ class DriverStatusChecker(QObject):
             self.status_checked.emit(False)
 
 
+class FlightActionWorker(QObject):
+    finished = Signal(bool, str)
+    progress = Signal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._drone = None
+        self._action: str = ""
+        self._altitude: float = 1.5
+
+    def setup(self, drone, action: str, altitude: float = 1.5) -> None:
+        self._drone = drone
+        self._action = action
+        self._altitude = altitude
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            if self._action == "arm":
+                self.progress.emit("Arming (set GUIDED, arm)...")
+                success = self._drone.arm()
+                self.finished.emit(success, "" if success else "Arm rejected by FCU")
+            elif self._action == "disarm":
+                self.progress.emit("Disarming (force)...")
+                success = self._drone.disarm()
+                self.finished.emit(success, "" if success else "Disarm rejected")
+            elif self._action == "takeoff":
+                self.progress.emit(f"Takeoff to {self._altitude:.1f}m...")
+                success = self._drone.takeoff(self._altitude)
+                self.finished.emit(success, "" if success else "Takeoff failed")
+            elif self._action == "land":
+                self.progress.emit("Landing...")
+                success = self._drone.land()
+                self.finished.emit(success, "" if success else "Land failed")
+            elif self._action == "arm_takeoff":
+                self.progress.emit("Arm + Takeoff: arming...")
+                if not self._drone.arm():
+                    self.finished.emit(False, "Arm rejected by FCU")
+                    return
+                self.progress.emit(
+                    f"Arm + Takeoff: takeoff to {self._altitude:.1f}m..."
+                )
+                success = self._drone.takeoff(self._altitude)
+                self.finished.emit(success, "" if success else "Takeoff failed")
+            else:
+                self.finished.emit(False, f"Unknown action: {self._action}")
+        except TimeoutError as e:
+            self.finished.emit(False, f"Service timeout: {e}")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
 class MoveToWorker(QObject):
     finished = Signal(bool, str)
     progress = Signal(str)
@@ -209,13 +261,23 @@ class MoveToWorker(QObject):
             try:
                 self._drone.move_velocity(0, 0, 0, 0)
             except Exception:
-                # Best-effort stop on cancel; drone may be disconnected
                 pass
 
     @Slot()
     def run(self) -> None:
         try:
-            self.progress.emit("Moving to position...")
+            parts = []
+            if self._x is not None:
+                parts.append(f"x={self._x:.1f}")
+            if self._y is not None:
+                parts.append(f"y={self._y:.1f}")
+            if self._z is not None:
+                parts.append(f"z={self._z:.1f}")
+            if self._yaw is not None:
+                parts.append(f"yaw={self._yaw:.0f}")
+            target_str = ", ".join(parts) if parts else "none"
+            self.progress.emit(f"Moving: {target_str}")
+
             success = self._drone.move_to(
                 x=self._x,
                 y=self._y,
@@ -228,9 +290,9 @@ class MoveToWorker(QObject):
             if self._cancelled:
                 self.finished.emit(False, "Cancelled")
             elif success:
-                self.finished.emit(True, "Position reached")
+                self.finished.emit(True, f"Reached: {target_str}")
             else:
-                self.finished.emit(False, "Timeout")
+                self.finished.emit(False, f"Timeout ({self._timeout:.0f}s)")
         except Exception as e:
             if self._cancelled:
                 self.finished.emit(False, "Cancelled")
@@ -271,6 +333,11 @@ class ControlTab(QWidget):
         self._moveto_thread: Optional[QThread] = None
         self._moveto_worker: Optional[MoveToWorker] = None
         self._moveto_running: bool = False
+        self._flight_thread: Optional[QThread] = None
+        self._flight_worker: Optional[FlightActionWorker] = None
+        self._flight_action_running: bool = False
+        self._last_velocity_cmd: tuple = (0.0, 0.0, 0.0, 0.0)
+        self._velocity_log_counter: int = 0
 
         self._setup_ui()
         self._setup_timers()
@@ -509,6 +576,13 @@ class ControlTab(QWidget):
         ref_layout.addStretch()
 
         sliders_layout.addLayout(ref_layout)
+
+        self._velocity_status_label = QLabel("Cmd: vx=0.00 vy=0.00 vz=0.00 vyaw=0.00")
+        self._velocity_status_label.setProperty("secondary", True)
+        self._velocity_status_label.setStyleSheet(
+            f"color: {COLORS.text_muted}; font-size: 10px;"
+        )
+        sliders_layout.addWidget(self._velocity_status_label)
 
         main_layout.addWidget(keys_container)
         main_layout.addWidget(sliders_container, 1)
@@ -863,14 +937,22 @@ class ControlTab(QWidget):
         )
 
         self._enable_btn.setEnabled(can_control)
-        self._emergency_btn.setEnabled(can_control)
+        self._emergency_btn.setEnabled(can_control and self._controls_enabled)
 
         if not can_control and self._controls_enabled:
             self._disable_controls()
 
-        self._set_mavros_controls_enabled(can_control and self._drone_type == "mavros")
-        self._set_bebop_controls_enabled(can_control and self._drone_type == "bebop")
-        self._set_position_control_enabled(can_control and self._drone_type == "mavros")
+        controls_active = can_control and self._controls_enabled
+        self._set_velocity_control_enabled(controls_active)
+        self._set_mavros_controls_enabled(
+            controls_active and self._drone_type == "mavros"
+        )
+        self._set_bebop_controls_enabled(
+            controls_active and self._drone_type == "bebop"
+        )
+        self._set_position_control_enabled(
+            controls_active and self._drone_type == "mavros"
+        )
 
     def _update_status_indicators(self) -> None:
         has_fcu = self._drone_type == "mavros"
@@ -880,6 +962,7 @@ class ControlTab(QWidget):
     def _set_mavros_controls_enabled(self, enabled: bool) -> None:
         self._arm_btn.setEnabled(enabled)
         self._disarm_btn.setEnabled(enabled)
+        self._altitude_spin.setEnabled(enabled)
         self._takeoff_btn.setEnabled(enabled)
         self._land_btn.setEnabled(enabled)
         self._arm_takeoff_btn.setEnabled(enabled)
@@ -888,6 +971,13 @@ class ControlTab(QWidget):
         self._bebop_takeoff_btn.setEnabled(enabled)
         self._bebop_land_btn.setEnabled(enabled)
         self._flip_btn.setEnabled(enabled)
+
+    def _set_velocity_control_enabled(self, enabled: bool) -> None:
+        for slider in self._velocity_sliders:
+            slider.setEnabled(enabled)
+        self._vel_reference_combo.setEnabled(enabled)
+        for btn in self._key_buttons.values():
+            btn.setEnabled(enabled)
 
     def _set_position_control_enabled(self, enabled: bool) -> None:
         if not self._moveto_running:
@@ -913,10 +1003,6 @@ class ControlTab(QWidget):
         self._enable_btn.style().unpolish(self._enable_btn)
         self._enable_btn.style().polish(self._enable_btn)
         self._command_timer.stop()
-
-        for slider in self._velocity_sliders:
-            slider.setEnabled(False)
-
         self._stop_movement()
 
     def _stop_movement(self) -> None:
@@ -1020,9 +1106,13 @@ class ControlTab(QWidget):
 
         if success:
             self._driver_connected = True
+            if self._node:
+                self._node.get_logger().info(f"Driver connected ({self._drone_type})")
         else:
             self._driver_connected = False
             self._show_progress(f"Error: {error}")
+            if self._node:
+                self._node.get_logger().error(f"Driver connection failed: {error}")
 
         self._update_ui_state()
 
@@ -1031,6 +1121,8 @@ class ControlTab(QWidget):
         self._driver_btn.setEnabled(True)
         self._show_progress("")
         self._driver_connected = False
+        if self._node:
+            self._node.get_logger().info("Driver disconnected")
         self._update_ui_state()
 
     @Slot()
@@ -1069,8 +1161,9 @@ class ControlTab(QWidget):
         if self._drone:
             try:
                 self._drone.cleanup()
+                if self._node:
+                    self._node.get_logger().info("Drone instance cleaned up")
             except Exception:
-                # Ignore cleanup errors; drone may already be disconnected
                 pass
             self._drone = None
 
@@ -1089,10 +1182,16 @@ class ControlTab(QWidget):
 
         if success and self._drone:
             self._instance_initialized = True
+            if self._node:
+                self._node.get_logger().info(
+                    f"Drone instance initialized ({self._drone_type})"
+                )
         else:
             self._instance_initialized = False
             self._drone = None
             self._show_progress(f"Error: {error}")
+            if self._node:
+                self._node.get_logger().error(f"Drone initialization failed: {error}")
 
         self._update_ui_state()
 
@@ -1107,21 +1206,27 @@ class ControlTab(QWidget):
             self._enable_btn.setText("Disable Controls")
             self._enable_btn.setProperty("danger", True)
             self._command_timer.start()
-            for slider in self._velocity_sliders:
-                slider.setEnabled(True)
+            if self._node:
+                self._node.get_logger().info("Controls enabled")
         else:
             self._enable_btn.setText("Enable Controls")
             self._enable_btn.setProperty("danger", False)
             self._command_timer.stop()
-            for slider in self._velocity_sliders:
-                slider.setEnabled(False)
             self._stop_movement()
+            self._velocity_status_label.setText(
+                "Cmd: vx=0.00 vy=0.00 vz=0.00 vyaw=0.00"
+            )
+            if self._node:
+                self._node.get_logger().info("Controls disabled")
 
         self._enable_btn.style().unpolish(self._enable_btn)
         self._enable_btn.style().polish(self._enable_btn)
+        self._update_ui_state()
 
     @Slot()
     def _emergency_stop(self) -> None:
+        if self._node:
+            self._node.get_logger().warn("EMERGENCY STOP triggered")
         self._controls_enabled = False
         self._enable_btn.setChecked(False)
         self._toggle_controls()
@@ -1130,66 +1235,85 @@ class ControlTab(QWidget):
             try:
                 self._drone.emergency_stop()
             except Exception:
-                # Emergency stop is best-effort; connection may be lost
                 pass
+
+    def _execute_flight_action(self, action: str, altitude: float = 1.5) -> None:
+        if not self._drone or self._flight_action_running:
+            return
+
+        if self._node:
+            if action in ("takeoff", "arm_takeoff"):
+                self._node.get_logger().info(
+                    f"Flight action: {action} (alt={altitude:.1f}m)"
+                )
+            else:
+                self._node.get_logger().info(f"Flight action: {action}")
+
+        self._flight_action_running = True
+        self._set_flight_buttons_enabled(False)
+
+        self._flight_thread = QThread()
+        self._flight_worker = FlightActionWorker()
+        self._flight_worker.setup(self._drone, action, altitude)
+        self._flight_worker.moveToThread(self._flight_thread)
+
+        self._flight_thread.started.connect(self._flight_worker.run)
+        self._flight_worker.progress.connect(self._show_progress)
+        self._flight_worker.finished.connect(self._on_flight_action_finished)
+        self._flight_worker.finished.connect(self._flight_thread.quit)
+
+        self._flight_thread.start()
+
+    def _set_flight_buttons_enabled(self, enabled: bool) -> None:
+        controls_should_be_active = (
+            self._driver_connected
+            and self._instance_initialized
+            and self._controls_enabled
+        )
+        actual_enabled = enabled and controls_should_be_active
+        if self._drone_type == "mavros":
+            self._arm_btn.setEnabled(actual_enabled)
+            self._disarm_btn.setEnabled(actual_enabled)
+            self._takeoff_btn.setEnabled(actual_enabled)
+            self._land_btn.setEnabled(actual_enabled)
+            self._arm_takeoff_btn.setEnabled(actual_enabled)
+        else:
+            self._bebop_takeoff_btn.setEnabled(actual_enabled)
+            self._bebop_land_btn.setEnabled(actual_enabled)
+            self._flip_btn.setEnabled(actual_enabled)
+
+    @Slot(bool, str)
+    def _on_flight_action_finished(self, success: bool, error: str) -> None:
+        self._flight_action_running = False
+        if error:
+            self._show_progress(f"Error: {error}")
+            if self._node:
+                self._node.get_logger().error(f"Flight action failed: {error}")
+        else:
+            self._show_progress("Done")
+            if self._node:
+                self._node.get_logger().info("Flight action completed")
+        self._set_flight_buttons_enabled(True)
 
     @Slot()
     def _arm(self) -> None:
-        if self._drone:
-            try:
-                if not self._drone.arm():
-                    self._show_progress("Arm failed")
-            except TimeoutError:
-                self._show_progress("Arm timeout")
-            except Exception as e:
-                self._show_progress(f"Arm: {e}")
+        self._execute_flight_action("arm")
 
     @Slot()
     def _disarm(self) -> None:
-        if self._drone:
-            try:
-                if not self._drone.disarm():
-                    self._show_progress("Disarm failed")
-            except TimeoutError:
-                self._show_progress("Disarm timeout")
-            except Exception as e:
-                self._show_progress(f"Disarm: {e}")
+        self._execute_flight_action("disarm")
 
     @Slot()
     def _takeoff(self) -> None:
-        if self._drone:
-            try:
-                if not self._drone.takeoff(self._altitude_spin.value()):
-                    self._show_progress("Takeoff failed")
-            except TimeoutError:
-                self._show_progress("Takeoff timeout")
-            except Exception as e:
-                self._show_progress(f"Takeoff: {e}")
+        self._execute_flight_action("takeoff", self._altitude_spin.value())
 
     @Slot()
     def _land(self) -> None:
-        if self._drone:
-            try:
-                if not self._drone.land():
-                    self._show_progress("Land failed")
-            except TimeoutError:
-                self._show_progress("Land timeout")
-            except Exception as e:
-                self._show_progress(f"Land: {e}")
+        self._execute_flight_action("land")
 
     @Slot()
     def _arm_takeoff(self) -> None:
-        if self._drone:
-            try:
-                if not self._drone.arm():
-                    self._show_progress("Arm failed")
-                    return
-                if not self._drone.takeoff(self._altitude_spin.value()):
-                    self._show_progress("Takeoff failed")
-            except TimeoutError:
-                self._show_progress("Timeout")
-            except Exception as e:
-                self._show_progress(f"Error: {e}")
+        self._execute_flight_action("arm_takeoff", self._altitude_spin.value())
 
     @Slot()
     def _execute_move_to(self) -> None:
@@ -1203,9 +1327,8 @@ class ControlTab(QWidget):
             "World": MoveReference.WORLD,
             "Takeoff": MoveReference.TAKEOFF,
         }
-        reference = reference_map.get(
-            self._pos_reference_combo.currentText(), MoveReference.BODY
-        )
+        ref_name = self._pos_reference_combo.currentText()
+        reference = reference_map.get(ref_name, MoveReference.BODY)
 
         x = self._pos_x_spin.value() if self._pos_x_check.isChecked() else None
         y = self._pos_y_spin.value() if self._pos_y_check.isChecked() else None
@@ -1217,6 +1340,20 @@ class ControlTab(QWidget):
         if x is None and y is None and z is None:
             self._pos_status_label.setText("Enable at least X, Y, or Z")
             return
+
+        if self._node:
+            parts = []
+            if x is not None:
+                parts.append(f"x={x:.1f}")
+            if y is not None:
+                parts.append(f"y={y:.1f}")
+            if z is not None:
+                parts.append(f"z={z:.1f}")
+            if yaw is not None:
+                parts.append(f"yaw={yaw:.0f}")
+            self._node.get_logger().info(
+                f"Position control: {', '.join(parts)} ref={ref_name} prec={precision:.2f}m"
+            )
 
         self._moveto_running = True
         self._pos_status_label.setText("Moving...")
@@ -1251,33 +1388,26 @@ class ControlTab(QWidget):
         self._moveto_running = False
         if success:
             self._pos_status_label.setText(message)
+            if self._node:
+                self._node.get_logger().info(f"Position control: {message}")
         else:
             self._pos_status_label.setText(f"Failed: {message}")
+            if self._node:
+                self._node.get_logger().warn(f"Position control failed: {message}")
         self._set_position_control_enabled(
             self._driver_connected
             and self._instance_initialized
+            and self._controls_enabled
             and self._drone_type == "mavros"
         )
 
     @Slot()
     def _bebop_takeoff(self) -> None:
-        if self._drone:
-            try:
-                self._drone.takeoff(1.0)
-            except TimeoutError:
-                self._show_progress("Takeoff timeout")
-            except Exception as e:
-                self._show_progress(f"Takeoff: {e}")
+        self._execute_flight_action("takeoff", 1.0)
 
     @Slot()
     def _bebop_land(self) -> None:
-        if self._drone:
-            try:
-                self._drone.land()
-            except TimeoutError:
-                self._show_progress("Land timeout")
-            except Exception as e:
-                self._show_progress(f"Land: {e}")
+        self._execute_flight_action("land")
 
     @Slot()
     def _show_flip_menu(self) -> None:
@@ -1461,6 +1591,24 @@ class ControlTab(QWidget):
         vz *= self._vz_slider.value()
         vyaw *= self._vyaw_slider.value()
 
+        current_cmd = (vx, vy, vz, vyaw)
+        self._velocity_status_label.setText(
+            f"Cmd: vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} vyaw={vyaw:.2f}"
+        )
+
+        cmd_changed = current_cmd != self._last_velocity_cmd
+        has_movement = any(v != 0.0 for v in current_cmd)
+
+        if cmd_changed and self._node:
+            if has_movement:
+                self._node.get_logger().debug(
+                    f"Velocity: vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} vyaw={vyaw:.2f}"
+                )
+            elif any(v != 0.0 for v in self._last_velocity_cmd):
+                self._node.get_logger().debug("Velocity: stopped")
+
+        self._last_velocity_cmd = current_cmd
+
         try:
             from mirela_sdk.control import MoveReference
 
@@ -1470,7 +1618,6 @@ class ControlTab(QWidget):
             )
             self._drone.move_velocity(vx, vy, vz, vyaw, reference=reference)
         except Exception:
-            # Velocity commands are continuous; ignore transient failures
             pass
 
     def keyPressEvent(self, event) -> None:
@@ -1479,8 +1626,9 @@ class ControlTab(QWidget):
 
         key = event.key()
         if key in self._key_buttons:
-            self._key_states[key] = True
-            self._key_buttons[key].set_pressed(True)
+            if self._controls_enabled:
+                self._key_states[key] = True
+                self._key_buttons[key].set_pressed(True)
         else:
             super().keyPressEvent(event)
 
@@ -1522,5 +1670,9 @@ class ControlTab(QWidget):
             self._cancel_move_to()
             self._moveto_thread.quit()
             self._moveto_thread.wait(1000)
+
+        if self._flight_thread and self._flight_thread.isRunning():
+            self._flight_thread.quit()
+            self._flight_thread.wait(1000)
 
         self._cleanup_instance()

@@ -440,13 +440,18 @@ class MavrosDrone(BaseDrone):
             True if arming successful, False on failure or timeout.
         """
         try:
-            self.set_mode("GUIDED")
+            if not self.set_mode("GUIDED"):
+                return False
             self.delay(0.5)
             req = CommandBool.Request()
             req.value = True
-            self._call_service(self._arm_srv, req, "Armed", "Arm failed")
-            self.delay(1.5)
-            return True
+            res = self._call_service(
+                self._arm_srv, req, "Armed", "Arm failed", sync=True
+            )
+            if res:
+                self.delay(1.5)
+                return True
+            return False
         except TimeoutError as e:
             self._node.get_logger().error(f"Arm failed: {e}")
             return False
@@ -473,8 +478,10 @@ class MavrosDrone(BaseDrone):
             cmd.param5 = 0.0
             cmd.param6 = 0.0
             cmd.param7 = 0.0
-            self._call_service(self._command_srv, cmd, "Disarmed", "Disarm failed")
-            return True
+            res = self._call_service(
+                self._command_srv, cmd, "Disarmed", "Disarm failed", sync=True
+            )
+            return bool(res)
         except TimeoutError as e:
             self._node.get_logger().error(f"Disarm failed: {e}")
             return False
@@ -511,17 +518,22 @@ class MavrosDrone(BaseDrone):
             self.delay(3.0)
 
             if attempt == 0:
-                self._set_takeoff_position()
+                if not self._set_takeoff_position():
+                    self._node.get_logger().error("Failed to set takeoff position")
+                    return False
 
             takeoff_height = self.height
 
             try:
-                self._call_service(
+                res = self._call_service(
                     self._takeoff_srv,
                     req,
                     f"Takeoff to {altitude}m",
                     "Takeoff command failed",
+                    sync=True,
                 )
+                if not res:
+                    return False
             except TimeoutError as e:
                 self._node.get_logger().error(f"Takeoff service timeout: {e}")
                 return False
@@ -568,9 +580,11 @@ class MavrosDrone(BaseDrone):
         try:
             req = CommandTOL.Request()
             req.altitude = 0.0
-            self._call_service(
-                self._land_srv, req, "Landing", "Land failed", sync=False
+            res = self._call_service(
+                self._land_srv, req, "Landing", "Land failed", sync=True
             )
+            if not res:
+                return False
 
             duration = Duration(seconds=timeout)
             start = self._node.get_clock().now()
@@ -1106,8 +1120,10 @@ class MavrosDrone(BaseDrone):
         try:
             req = CommandHome.Request()
             req.current_gps = True
-            self._call_service(self._home_srv, req, "Home set", "Set home failed")
-            return True
+            res = self._call_service(
+                self._home_srv, req, "Home set", "Set home failed", sync=True
+            )
+            return bool(res)
         except TimeoutError as e:
             self._node.get_logger().error(f"Set home failed: {e}")
             return False
@@ -1160,11 +1176,12 @@ class MavrosDrone(BaseDrone):
                 req = SetParameters.Request()
                 req.parameters.append(param)
                 self._call_service(
-                    self._param_srv, req, "RTL_ALT set", "RTL_ALT failed"
+                    self._param_srv, req, "RTL_ALT set", "RTL_ALT failed", sync=True
                 )
                 self.delay(1.0)
 
-            self.set_mode("RTL")
+            if not self.set_mode("RTL"):
+                return False
 
             if not land:
                 self.delay(5.0)
@@ -1215,10 +1232,10 @@ class MavrosDrone(BaseDrone):
         try:
             req = SetMode.Request()
             req.custom_mode = mode
-            self._call_service(
-                self._mode_srv, req, f"Mode: {mode}", f"Mode {mode} failed"
+            res = self._call_service(
+                self._mode_srv, req, f"Mode: {mode}", f"Mode {mode} failed", sync=True
             )
-            return True
+            return bool(res)
         except TimeoutError as e:
             self._node.get_logger().error(f"Set mode failed: {e}")
             return False
@@ -1246,10 +1263,10 @@ class MavrosDrone(BaseDrone):
 
             req = SetParameters.Request()
             req.parameters.append(param)
-            self._call_service(
-                self._param_srv, req, f"{param_id} set", f"{param_id} failed"
+            res = self._call_service(
+                self._param_srv, req, f"{param_id} set", f"{param_id} failed", sync=True
             )
-            return True
+            return bool(res)
         except TimeoutError as e:
             self._node.get_logger().error(f"Set param {param_id} failed: {e}")
             return False
@@ -1275,18 +1292,34 @@ class MavrosDrone(BaseDrone):
             cmd.command = 183
             cmd.param1 = float(aux_out + 8)
             cmd.param2 = float(pwm_value)
-            self._call_service(
-                self._command_srv, cmd, f"Servo {aux_out} set", "Servo failed"
+            res = self._call_service(
+                self._command_srv,
+                cmd,
+                f"Servo {aux_out} set",
+                "Servo failed",
+                sync=True,
             )
-            return True
+            return bool(res)
         except TimeoutError as e:
             self._node.get_logger().error(f"Servo command failed: {e}")
             return False
 
-    def _set_takeoff_position(self) -> None:
-        """Store current position as takeoff reference."""
-        self._takeoff_position = self.position_as_target
-        self._node.get_logger().info("Takeoff position set")
+    def _set_takeoff_position(self) -> bool:
+        """
+        Store current position as takeoff reference.
+
+        Returns
+        -------
+        bool
+            True if position set successfully, False if sensor data missing.
+        """
+        try:
+            self._takeoff_position = self.position_as_target
+            self._node.get_logger().info("Takeoff position set")
+            return True
+        except (SensorNotAvailableError, ValueError, AttributeError) as e:
+            self._node.get_logger().error(f"Cannot set takeoff position: {e}")
+            return False
 
     def set_takeoff_position(self, pose=None, heading: Optional[float] = None) -> None:
         """
@@ -1353,6 +1386,55 @@ class MavrosDrone(BaseDrone):
             raise TypeError(f"Invalid config type: {type(config)}")
         self._node.get_logger().info("PID configuration updated")
 
+    def _validate_service_response(self, response, service_name: str) -> bool:
+        """
+        Validate service response based on message type.
+
+        Checks MAVROS-specific fields (mode_sent, success, result) and
+        rcl_interfaces SetParameters results. Logs MAVLink result codes on failure.
+        """
+        # SetMode
+        if hasattr(response, "mode_sent"):
+            if not response.mode_sent:
+                self._node.get_logger().warn(f"{service_name}: Mode not sent")
+            return response.mode_sent
+
+        # MAVROS Commands (CommandBool, CommandTOL, CommandLong, CommandHome)
+        if hasattr(response, "success") and hasattr(response, "result"):
+            if response.success:
+                return True
+
+            # MAV_RESULT enum codes
+            results = {
+                0: "ACCEPTED",
+                1: "TEMPORARILY_REJECTED",
+                2: "DENIED",
+                3: "UNSUPPORTED",
+                4: "FAILED",
+                5: "IN_PROGRESS",
+            }
+            res_str = results.get(response.result, f"UNKNOWN={response.result}")
+            self._node.get_logger().warn(f"{service_name}: Failed (Result: {res_str})")
+            return False
+
+        # Generic success check
+        if hasattr(response, "success"):
+            if not response.success:
+                self._node.get_logger().warn(f"{service_name}: Failed")
+            return response.success
+
+        # SetParameters (rcl_interfaces)
+        if hasattr(response, "results"):
+            for res in response.results:
+                if not res.successful:
+                    self._node.get_logger().warn(
+                        f"{service_name}: Param set failed: {res.reason}"
+                    )
+                    return False
+            return True
+
+        return True
+
     def _call_service(
         self,
         service,
@@ -1376,7 +1458,7 @@ class MavrosDrone(BaseDrone):
         fail_msg : str
             Message to log on failure.
         sync : bool, default=False
-            If True, blocks until service completes.
+            If True, blocks (spins) until service completes.
             If False, returns immediately (non-blocking).
         timeout : float, default=10.0
             Maximum time in seconds to wait for service availability.
@@ -1412,13 +1494,30 @@ class MavrosDrone(BaseDrone):
         )
 
         if sync:
+            # Use call_async + spin loop to avoid deadlocks
+            future = service.call_async(request)
+            start_time = self._node.get_clock().now()
+
+            while not future.done():
+                rclpy.spin_once(self._node, timeout_sec=0.05)
+                if (
+                    self._node.get_clock().now() - start_time
+                ).nanoseconds / 1e9 > timeout:
+                    self._node.get_logger().error(
+                        f"\033[31;1m{fail_msg}: Timeout waiting for response\033[0m"
+                    )
+                    return None
+
             try:
-                result = service.call(request)
-                if result is not None:
+                result = future.result()
+                if result is not None and self._validate_service_response(
+                    result, service.srv_name
+                ):
                     self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
+                    return result
                 else:
                     self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
-                return result
+                    return None
             except Exception as e:
                 self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
                 return None
@@ -1428,7 +1527,9 @@ class MavrosDrone(BaseDrone):
             def _handle_response(future):
                 try:
                     result = future.result()
-                    if result is not None:
+                    if result is not None and self._validate_service_response(
+                        result, service.srv_name
+                    ):
                         self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
                     else:
                         self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")

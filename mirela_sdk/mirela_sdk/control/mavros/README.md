@@ -564,7 +564,13 @@ drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 
 ## Service Call Behavior
 
-All MAVROS service calls use the `_call_service` method with configurable timeout and sync/async modes.
+All MAVROS service calls use the `_call_service` method with configurable timeout, sync/async modes, and **automatic response validation**.
+
+#### Validation Logic
+The system automatically validates service responses based on message type:
+- **SetMode**: Checks `mode_sent` field.
+- **Commands** (Arm/Takeoff/Land): Checks `success` field and logs MAVLink `result` codes (ACCEPTED, DENIED, FAILED, etc.).
+- **SetParameters**: Checks `successful` field in results.
 
 ### Parameters
 
