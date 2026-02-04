@@ -339,28 +339,46 @@ class CameraInitWorker(QObject):
             return OpenCVCam(config)
 
         elif camera_type == "realsense":
-            from mirela_sdk.vision.camera import RealSenseConfig, RealsenseCam
-
-            width = self._config.get("width", 640)
-            height = self._config.get("height", 480)
             use_ros = self._config.get("use_ros_topics", False)
 
-            config = RealSenseConfig(
-                color_res=(width, height),
-                depth_res=(width, height),
-                fps=self._config.get("fps", 30),
-                align_to_color=self._config.get("align_to_color", True),
-                enable_depth=self._enable_depth,
-                use_ros_topics=use_ros,
-                color_topic=self._config.get("color_topic", "/camera/color/image_raw"),
-                depth_topic=self._config.get(
-                    "depth_topic", "/camera/depth/image_rect_raw"
-                ),
-                color_compressed=self._config.get("color_compressed", True),
-            )
-            if use_ros and self._node is not None:
-                return RealsenseCam(config, node=self._node)
-            return RealsenseCam(config)
+            if use_ros:
+                from mirela_sdk.vision.camera import ROSDepthConfig, ROSDepthCam, QoSReliability
+
+                color_topic = self._config.get("color_topic", "/camera/color/image_raw")
+                color_compressed = self._config.get("color_compressed", True)
+                if color_compressed and not color_topic.endswith("/compressed"):
+                    color_topic = color_topic + "/compressed"
+
+                depth_topic = self._config.get("depth_topic", "/camera/depth/image_rect_raw")
+                depth_compressed = self._config.get("depth_compressed", False)
+                if depth_compressed and not depth_topic.endswith("/compressedDepth"):
+                    depth_topic = depth_topic + "/compressedDepth"
+
+                config = ROSDepthConfig(
+                    topic=color_topic,
+                    compressed=color_compressed,
+                    depth_topic=depth_topic,
+                    depth_compressed=depth_compressed,
+                    enable_depth=self._enable_depth,
+                    reliability=QoSReliability.BEST_EFFORT,
+                )
+                if self._node is None:
+                    raise ValueError("ROS depth camera requires a ROS node")
+                return ROSDepthCam(self._node, config)
+            else:
+                from mirela_sdk.vision.camera import RealSenseConfig, RealsenseCam
+
+                width = self._config.get("width", 640)
+                height = self._config.get("height", 480)
+
+                config = RealSenseConfig(
+                    color_res=(width, height),
+                    depth_res=(width, height),
+                    fps=self._config.get("fps", 30),
+                    align_to_color=self._config.get("align_to_color", True),
+                    enable_depth=self._enable_depth,
+                )
+                return RealsenseCam(config)
 
         elif camera_type == "oakd":
             from mirela_sdk.vision.camera import OakDConfig, OakdCam
@@ -1316,6 +1334,10 @@ class VisionTab(QWidget):
         if not self._is_depth_camera():
             return None
         try:
+            from mirela_sdk.vision.camera import ROSDepthCam
+
+            if isinstance(self._camera, ROSDepthCam) and self._current_frame is not None:
+                return self._camera.get_distance(u, v, color_shape=self._current_frame.shape)
             return self._camera.get_distance(u, v)
         except Exception:
             return None
@@ -1527,9 +1549,17 @@ class VisionTab(QWidget):
                     # Draw on depth visualization if available
                     if depth_vis is not None:
                         dh, dw = depth_vis.shape[:2]
-                        if 0 <= u < dw and 0 <= v < dh:
-                            cv2.circle(depth_vis, (u, v), 8, (255, 255, 255), 2)
-                            cv2.circle(depth_vis, (u, v), 3, (255, 255, 255), -1)
+                        from mirela_sdk.vision.camera import ROSDepthCam
+
+                        if isinstance(self._camera, ROSDepthCam):
+                            scaled_u = int(u * dw / w) if w > 0 else u
+                            scaled_v = int(v * dh / h) if h > 0 else v
+                        else:
+                            scaled_u, scaled_v = u, v
+
+                        if 0 <= scaled_u < dw and 0 <= scaled_v < dh:
+                            cv2.circle(depth_vis, (scaled_u, scaled_v), 8, (255, 255, 255), 2)
+                            cv2.circle(depth_vis, (scaled_u, scaled_v), 3, (255, 255, 255), -1)
 
             # Update FPS counter
             self._fps_counter += 1

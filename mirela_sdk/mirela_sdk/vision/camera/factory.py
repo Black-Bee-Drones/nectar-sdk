@@ -8,6 +8,7 @@ from rclpy.node import Node
 from mirela_sdk.vision.camera.abstract import AbstractCam
 from mirela_sdk.vision.camera.drivers import (
     ROSCam,
+    ROSDepthCam,
     FileImageCam,
     OpenCVCam,
     C920Cam,
@@ -18,6 +19,7 @@ from mirela_sdk.vision.camera.drivers import (
 from mirela_sdk.vision.camera.config import (
     CameraConfig,
     ROSConfig,
+    ROSDepthConfig,
     FileImageConfig,
     OpenCVConfig,
     C920Config,
@@ -120,6 +122,13 @@ class CameraFactory:
                 raise ValueError("ROSCam requires a ROSConfig.")
             return builder(node, config)
 
+        if builder is ROSDepthCam:
+            if not isinstance(config, ROSDepthConfig):
+                raise ValueError("ROSDepthCam requires a ROSDepthConfig.")
+            if node is None:
+                raise ValueError("ROSDepthCam requires a ROS node.")
+            return builder(node, config)
+
         if builder is OakdCam:
             if not isinstance(config, OakDConfig):
                 raise ValueError("OakdCam requires an OakDConfig.")
@@ -129,7 +138,8 @@ class CameraFactory:
             if isinstance(config, RealSenseConfig) and config.use_ros_topics:
                 if node is None:
                     raise ValueError(
-                        "RealsenseCam with use_ros_topics=True requires a ROS node."
+                        "RealsenseCam with use_ros_topics=True requires a ROS node. "
+                        "Consider using ROSDepthCam instead."
                     )
                 return builder(config, node)
             return builder(config)
@@ -144,4 +154,5 @@ CameraFactory.register("c920", C920Cam)
 CameraFactory.register("imx219", IMX219Cam)
 CameraFactory.register("oakd", OakdCam)
 CameraFactory.register("ros", ROSCam)
+CameraFactory.register("ros_depth", ROSDepthCam)
 CameraFactory.register("file", FileImageCam)

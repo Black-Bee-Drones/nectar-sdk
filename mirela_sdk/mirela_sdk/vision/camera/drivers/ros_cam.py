@@ -140,23 +140,29 @@ class ROSCam(AbstractCam):
         Returns
         -------
         np.ndarray or None
-            BGR image, or None if no frame received yet.
+            BGR image (copy), or None if no frame received yet.
         """
         if wait_for_new:
+            with self._lock:
+                if (
+                    self._frame_count > self._last_frame_count
+                    and self._frame is not None
+                ):
+                    self._last_frame_count = self._frame_count
+                    return self._frame.copy()
+
             self._frame_event.clear()
             if not self._frame_event.wait(timeout=timeout):
-                with self._lock:
-                    return self._frame.copy() if self._frame is not None else None
+                return None
 
         with self._lock:
             if self._frame is None:
                 return None
 
-            current_count = self._frame_count
-            if wait_for_new and current_count == self._last_frame_count:
+            if wait_for_new and self._frame_count == self._last_frame_count:
                 return None
 
-            self._last_frame_count = current_count
+            self._last_frame_count = self._frame_count
             return self._frame.copy()
 
     @property
@@ -180,6 +186,7 @@ class ROSCam(AbstractCam):
             try:
                 self._node.destroy_subscription(self._sub)
             except Exception:
+                # Subscription may already be destroyed during node shutdown
                 pass
             self._sub = None
         self._is_running = False

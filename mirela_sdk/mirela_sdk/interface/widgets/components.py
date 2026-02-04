@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QCheckBox,
     QComboBox,
-    QGridLayout
+    QGridLayout,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
@@ -28,13 +28,15 @@ class Card(QFrame):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             Card {{
                 background-color: {COLORS.surface};
                 border: 1px solid {COLORS.border};
                 border-radius: 6px;
             }}
-        """)
+        """
+        )
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(12, 12, 12, 12)
         self._layout.setSpacing(8)
@@ -80,10 +82,12 @@ class StatusIndicator(QWidget):
             "info": COLORS.info,
         }
         color = colors.get(status, COLORS.text_muted)
-        self._indicator.setStyleSheet(f"""
+        self._indicator.setStyleSheet(
+            f"""
             background-color: {color};
             border-radius: 4px;
-        """)
+        """
+        )
 
     def set_label(self, label: str) -> None:
         self._label.setText(label)
@@ -107,7 +111,7 @@ class LabeledSlider(QWidget):
         self._min_val = min_val
         self._max_val = max_val
         self._decimals = decimals
-        self._scale = 10 ** decimals
+        self._scale = 10**decimals
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -175,7 +179,8 @@ class CollapsibleSection(QWidget):
         self._toggle = QPushButton(f"{arrow}  {title}")
         self._toggle.setCheckable(True)
         self._toggle.setChecked(not collapsed)
-        self._toggle.setStyleSheet(f"""
+        self._toggle.setStyleSheet(
+            f"""
             QPushButton {{
                 background-color: {COLORS.surface_elevated};
                 color: {COLORS.text_primary};
@@ -192,7 +197,8 @@ class CollapsibleSection(QWidget):
             QPushButton:checked {{
                 color: {COLORS.accent};
             }}
-        """)
+        """
+        )
         self._toggle.clicked.connect(self._on_toggle)
 
         self._content = QFrame()
@@ -235,7 +241,8 @@ class KeyButton(QPushButton):
 
     def _update_style(self) -> None:
         if self._pressed:
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QPushButton {{
                     background-color: {COLORS.accent};
                     color: {COLORS.background};
@@ -244,9 +251,11 @@ class KeyButton(QPushButton):
                     font-weight: 700;
                     font-size: 14px;
                 }}
-            """)
+            """
+            )
         else:
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QPushButton {{
                     background-color: {COLORS.surface_elevated};
                     color: {COLORS.text_primary};
@@ -264,7 +273,8 @@ class KeyButton(QPushButton):
                     color: {COLORS.text_muted};
                     border-color: {COLORS.surface_elevated};
                 }}
-            """)
+            """
+            )
 
     def set_pressed(self, pressed: bool) -> None:
         self._pressed = pressed
@@ -298,7 +308,8 @@ class VideoDisplay(QLabel):
     def _show_placeholder(self) -> None:
         self.setText(self._placeholder_text)
         self._current_frame_size = None
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QLabel {{
                 background-color: {COLORS.background};
                 border: 1px solid {COLORS.border};
@@ -306,7 +317,8 @@ class VideoDisplay(QLabel):
                 color: {COLORS.text_muted};
                 font-size: 11px;
             }}
-        """)
+        """
+        )
 
     def set_placeholder(self, text: str) -> None:
         self._placeholder_text = text
@@ -325,13 +337,15 @@ class VideoDisplay(QLabel):
             return
 
         # Restore normal style when displaying
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QLabel {{
                 background-color: {COLORS.background};
                 border: 1px solid {COLORS.border};
                 border-radius: 6px;
             }}
-        """)
+        """
+        )
 
         if len(frame.shape) == 2:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
@@ -442,7 +456,8 @@ class SectionHeader(QLabel):
 
     def __init__(self, text: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(text, parent)
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QLabel {{
                 color: {COLORS.accent};
                 font-weight: 600;
@@ -451,7 +466,8 @@ class SectionHeader(QLabel):
                 border-bottom: 1px solid {COLORS.border};
                 margin-bottom: 4px;
             }}
-        """)
+        """
+        )
 
 
 class DualVideoDisplay(QWidget):
@@ -737,6 +753,11 @@ class CameraConfigPanel(QWidget):
         self._rs_compressed.stateChanged.connect(self.configChanged.emit)
         layout.addWidget(self._rs_compressed, 7, 0, 1, 2)
 
+        self._rs_depth_compressed = QCheckBox("Depth compressed")
+        self._rs_depth_compressed.setChecked(False)
+        self._rs_depth_compressed.stateChanged.connect(self.configChanged.emit)
+        layout.addWidget(self._rs_depth_compressed, 8, 0, 1, 2)
+
         # Initially hide ROS topic fields
         self._toggle_rs_ros_fields(False)
 
@@ -753,6 +774,7 @@ class CameraConfigPanel(QWidget):
         self._rs_depth_topic_lbl.setVisible(visible)
         self._rs_depth_topic.setVisible(visible)
         self._rs_compressed.setVisible(visible)
+        self._rs_depth_compressed.setVisible(visible)
 
     def _create_oakd_config(self) -> None:
         """Create OAK-D configuration panel."""
@@ -938,55 +960,70 @@ class CameraConfigPanel(QWidget):
         config = {"type": self._current_type}
 
         if self._current_type == "webcam":
-            config.update({
-                "device_index": self._webcam_device.value(),
-                "width": self._webcam_width.value(),
-                "height": self._webcam_height.value(),
-                "fps": self._webcam_fps.value(),
-                "autofocus": self._webcam_autofocus.isChecked(),
-                "threaded": self._webcam_threaded.isChecked(),
-            })
+            config.update(
+                {
+                    "device_index": self._webcam_device.value(),
+                    "width": self._webcam_width.value(),
+                    "height": self._webcam_height.value(),
+                    "fps": self._webcam_fps.value(),
+                    "autofocus": self._webcam_autofocus.isChecked(),
+                    "threaded": self._webcam_threaded.isChecked(),
+                }
+            )
         elif self._current_type == "realsense":
-            config.update({
-                "width": self._rs_width.value(),
-                "height": self._rs_height.value(),
-                "fps": self._rs_fps.value(),
-                "align_to_color": self._rs_align.isChecked(),
-                "use_ros_topics": self._rs_use_ros.isChecked(),
-                "color_topic": self._rs_color_topic.text(),
-                "depth_topic": self._rs_depth_topic.text(),
-                "color_compressed": self._rs_compressed.isChecked(),
-            })
+            config.update(
+                {
+                    "width": self._rs_width.value(),
+                    "height": self._rs_height.value(),
+                    "fps": self._rs_fps.value(),
+                    "align_to_color": self._rs_align.isChecked(),
+                    "use_ros_topics": self._rs_use_ros.isChecked(),
+                    "color_topic": self._rs_color_topic.text(),
+                    "depth_topic": self._rs_depth_topic.text(),
+                    "color_compressed": self._rs_compressed.isChecked(),
+                    "depth_compressed": self._rs_depth_compressed.isChecked(),
+                }
+            )
         elif self._current_type == "oakd":
-            config.update({
-                "cam_num": self._oakd_cam.currentIndex() + 1,
-            })
+            config.update(
+                {
+                    "cam_num": self._oakd_cam.currentIndex() + 1,
+                }
+            )
         elif self._current_type == "ros":
-            config.update({
-                "topic": self._ros_topic.text(),
-                "compressed": self._ros_compressed.isChecked(),
-                "reliability": self._ros_reliability.currentText(),
-                "durability": self._ros_durability.currentText(),
-                "history_depth": self._ros_history_depth.value(),
-                "encoding": self._ros_encoding.currentText(),
-            })
+            config.update(
+                {
+                    "topic": self._ros_topic.text(),
+                    "compressed": self._ros_compressed.isChecked(),
+                    "reliability": self._ros_reliability.currentText(),
+                    "durability": self._ros_durability.currentText(),
+                    "history_depth": self._ros_history_depth.value(),
+                    "encoding": self._ros_encoding.currentText(),
+                }
+            )
         elif self._current_type == "file":
-            config.update({
-                "path": self._file_path.text(),
-            })
+            config.update(
+                {
+                    "path": self._file_path.text(),
+                }
+            )
         elif self._current_type == "c920":
-            config.update({
-                "profile": self._c920_profile.currentIndex(),
-                "fallback_device_index": self._c920_fallback.value(),
-            })
+            config.update(
+                {
+                    "profile": self._c920_profile.currentIndex(),
+                    "fallback_device_index": self._c920_fallback.value(),
+                }
+            )
         elif self._current_type == "imx219":
-            config.update({
-                "sensor_id": self._imx_sensor.value(),
-                "width": self._imx_width.value(),
-                "height": self._imx_height.value(),
-                "fps": self._imx_fps.value(),
-                "flip": self._imx_flip.currentIndex(),
-            })
+            config.update(
+                {
+                    "sensor_id": self._imx_sensor.value(),
+                    "width": self._imx_width.value(),
+                    "height": self._imx_height.value(),
+                    "fps": self._imx_fps.value(),
+                    "flip": self._imx_flip.currentIndex(),
+                }
+            )
 
         return config
 

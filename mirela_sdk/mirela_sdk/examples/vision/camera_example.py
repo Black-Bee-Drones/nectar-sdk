@@ -1,6 +1,5 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.parameter import Parameter
 import cv2
 
 from mirela_sdk.vision.camera import (
@@ -12,6 +11,7 @@ from mirela_sdk.vision.camera import (
     OakDConfig,
     C920Config,
     ROSConfig,
+    ROSDepthConfig,
 )
 
 
@@ -27,16 +27,13 @@ class CameraExampleNode(Node):
         )
         show_result = self.get_parameter("show_result").get_parameter_value().bool_value
 
-        config = self._get_camera_config(camera_type)
+        config, source = self._get_camera_config(camera_type)
         window_name = "Camera Viewer" if show_result else None
         self.count = 0
 
-        if camera_type == "realsense_ros":
-            camera_type = "realsense"
-
         self.image_handler = ImageHandler(
             node=self,
-            image_source=camera_type,
+            image_source=source,
             config=config,
             show_result=window_name,
             image_processing_callback=self.process_frame,
@@ -45,31 +42,41 @@ class CameraExampleNode(Node):
         self.image_handler.run()
         self.get_logger().info(f"Started {camera_type} camera.")
 
-    def _get_camera_config(self, camera_type: str) -> CameraConfig:
+    def _get_camera_config(self, camera_type: str) -> tuple:
+        """Return (config, source_key) for the given camera type."""
         if camera_type == "webcam":
-            return OpenCVConfig(device_index=0, width=1280, height=720, fps=30)
+            return (
+                OpenCVConfig(device_index=0, width=1280, height=720, fps=30),
+                "webcam",
+            )
         if camera_type == "imx219":
-            return IMX219Config(sensor_id=0, width=1280, height=720, flip=2)
+            return IMX219Config(sensor_id=0, width=1280, height=720, flip=2), "imx219"
         if camera_type == "realsense":
-            return RealSenseConfig(color_res=(1280, 720), depth_res=(1280, 720), fps=30)
+            return (
+                RealSenseConfig(color_res=(1280, 720), depth_res=(1280, 720), fps=30),
+                "realsense",
+            )
         if camera_type == "realsense_ros":
-            return RealSenseConfig(
-                use_ros_topics=True,
-                color_topic="/camera/color/image_raw",
-                depth_topic="/camera/depth/image_rect_raw",
-                color_compressed=True,
-                depth_compressed=False,
+            return (
+                ROSDepthConfig(
+                    topic="/camera/color/image_raw/compressed",
+                    compressed=True,
+                    depth_topic="/camera/depth/image_rect_raw",
+                    depth_compressed=False,
+                ),
+                "ros_depth",
             )
         if camera_type == "c920":
-            return C920Config(profile=1)
+            return C920Config(profile=1), "c920"
         if camera_type == "oakd":
-            return OakDConfig()
+            return OakDConfig(), "oakd"
         if camera_type == "ros":
-            return ROSConfig(
-                topic="/camera/color/image_raw/compressed", compressed=True
+            return (
+                ROSConfig(topic="/camera/color/image_raw/compressed", compressed=True),
+                "ros",
             )
 
-        return None
+        return None, camera_type
 
     def process_frame(self, frame):
         if frame is not None:

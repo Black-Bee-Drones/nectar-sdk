@@ -31,6 +31,14 @@ class ROSConfig(CameraConfig):
 
 
 @dataclass(frozen=True)
+class ROSDepthConfig(ROSConfig):
+    depth_topic: str = "/camera/depth/image_rect_raw"
+    depth_compressed: bool = False
+    depth_encoding: str = "passthrough"
+    enable_depth: bool = True
+
+
+@dataclass(frozen=True)
 class FileImageConfig(CameraConfig):
     path: str = ""
 
