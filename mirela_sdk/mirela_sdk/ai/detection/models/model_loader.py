@@ -52,7 +52,6 @@ class ModelLoader:
                 "Filename must be provided either in repo_id (repo:file.pt) or as separate argument"
             )
 
-        # Use provided token or fall back to HF_TOKEN environment variable
         if token is None:
             token = os.environ.get("HF_TOKEN")
 

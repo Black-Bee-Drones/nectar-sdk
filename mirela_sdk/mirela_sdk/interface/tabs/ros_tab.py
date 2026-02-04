@@ -63,7 +63,9 @@ QOS_PROFILES = {
 class ROSTab(QWidget):
     message_received = Signal(str, str)
 
-    def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self._node = node
         self._subscriptions: Dict[str, Any] = {}
@@ -183,12 +185,14 @@ class ROSTab(QWidget):
         self._message_display = QPlainTextEdit()
         self._message_display.setReadOnly(True)
         self._message_display.setFont(QFont("JetBrains Mono", 10))
-        self._message_display.setStyleSheet(f"""
+        self._message_display.setStyleSheet(
+            f"""
             QPlainTextEdit {{
                 background-color: {COLORS.background};
                 font-family: "JetBrains Mono", "Consolas", monospace;
             }}
-        """)
+        """
+        )
 
         sub_layout.addLayout(sub_btn_layout)
         sub_layout.addWidget(self._message_display, 1)
@@ -207,16 +211,20 @@ class ROSTab(QWidget):
         type_layout.addWidget(QLabel("Type:"))
         self._publish_type_combo = QComboBox()
         self._publish_type_combo.setEditable(True)
-        self._publish_type_combo.addItems([
-            "std_msgs/msg/String",
-            "std_msgs/msg/Int32",
-            "std_msgs/msg/Float64",
-            "std_msgs/msg/Bool",
-            "geometry_msgs/msg/Twist",
-            "geometry_msgs/msg/PoseStamped",
-            "sensor_msgs/msg/Joy",
-        ])
-        self._publish_type_combo.currentTextChanged.connect(self._on_publish_type_changed)
+        self._publish_type_combo.addItems(
+            [
+                "std_msgs/msg/String",
+                "std_msgs/msg/Int32",
+                "std_msgs/msg/Float64",
+                "std_msgs/msg/Bool",
+                "geometry_msgs/msg/Twist",
+                "geometry_msgs/msg/PoseStamped",
+                "sensor_msgs/msg/Joy",
+            ]
+        )
+        self._publish_type_combo.currentTextChanged.connect(
+            self._on_publish_type_changed
+        )
         type_layout.addWidget(self._publish_type_combo, 1)
 
         self._load_type_btn = QPushButton("Load Fields")
@@ -340,12 +348,16 @@ class ROSTab(QWidget):
         srv_type_layout.addWidget(QLabel("Type:"))
         self._service_type_combo = QComboBox()
         self._service_type_combo.setEditable(True)
-        self._service_type_combo.addItems([
-            "std_srvs/srv/Empty",
-            "std_srvs/srv/SetBool",
-            "std_srvs/srv/Trigger",
-        ])
-        self._service_type_combo.currentTextChanged.connect(self._on_service_type_changed)
+        self._service_type_combo.addItems(
+            [
+                "std_srvs/srv/Empty",
+                "std_srvs/srv/SetBool",
+                "std_srvs/srv/Trigger",
+            ]
+        )
+        self._service_type_combo.currentTextChanged.connect(
+            self._on_service_type_changed
+        )
         srv_type_layout.addWidget(self._service_type_combo, 1)
 
         self._load_srv_type_btn = QPushButton("Load Fields")
@@ -403,11 +415,13 @@ class ROSTab(QWidget):
         self._service_response = QPlainTextEdit()
         self._service_response.setReadOnly(True)
         self._service_response.setFont(QFont("JetBrains Mono", 10))
-        self._service_response.setStyleSheet(f"""
+        self._service_response.setStyleSheet(
+            f"""
             QPlainTextEdit {{
                 background-color: {COLORS.background};
             }}
-        """)
+        """
+        )
 
         call_layout.addWidget(self._service_response, 1)
 
@@ -470,7 +484,10 @@ class ROSTab(QWidget):
     def _filter_topics(self, text: str) -> None:
         for i in range(self._topics_tree.topLevelItemCount()):
             item = self._topics_tree.topLevelItem(i)
-            matches = text.lower() in item.text(0).lower() or text.lower() in item.text(1).lower()
+            matches = (
+                text.lower() in item.text(0).lower()
+                or text.lower() in item.text(1).lower()
+            )
             item.setHidden(not matches)
 
     @Slot(QTreeWidgetItem, int)
@@ -478,7 +495,9 @@ class ROSTab(QWidget):
         self._selected_topic = item.text(0)
         topic_type = item.text(1)
 
-        self._topic_info_label.setText(f"Topic: {self._selected_topic}\nType: {topic_type}")
+        self._topic_info_label.setText(
+            f"Topic: {self._selected_topic}\nType: {topic_type}"
+        )
 
         is_subscribed = self._selected_topic in self._subscriptions
         self._subscribe_btn.setEnabled(not is_subscribed)
@@ -506,7 +525,9 @@ class ROSTab(QWidget):
             self._pub_fields_editor.set_message_class(msg_class)
         else:
             self._current_pub_msg_class = None
-            self._message_display.appendPlainText(f"Could not load message type: {type_str}")
+            self._message_display.appendPlainText(
+                f"Could not load message type: {type_str}"
+            )
 
     @Slot(int)
     def _on_pub_mode_changed(self, index: int) -> None:
@@ -527,7 +548,9 @@ class ROSTab(QWidget):
             endpoint_info_list = self._node.get_publishers_info_by_topic(topic)
             if not endpoint_info_list:
                 if verbose:
-                    self._message_display.appendPlainText(f"No publishers found for {topic}")
+                    self._message_display.appendPlainText(
+                        f"No publishers found for {topic}"
+                    )
                 return
 
             endpoint_info = endpoint_info_list[0]
@@ -573,12 +596,16 @@ class ROSTab(QWidget):
                     break
 
             if not topic_type:
-                self._message_display.appendPlainText(f"Error: Could not find type for {topic}")
+                self._message_display.appendPlainText(
+                    f"Error: Could not find type for {topic}"
+                )
                 return
 
             msg_class = self._get_message_class(topic_type)
             if msg_class is None:
-                self._message_display.appendPlainText(f"Error: Unknown message type {topic_type}")
+                self._message_display.appendPlainText(
+                    f"Error: Unknown message type {topic_type}"
+                )
                 return
 
             qos_name = self._sub_qos_combo.currentText()
@@ -588,12 +615,14 @@ class ROSTab(QWidget):
                 msg_class,
                 topic,
                 lambda msg, t=topic: self._on_message_received(t, msg),
-                qos_profile
+                qos_profile,
             )
             self._subscriptions[topic] = sub
             self._subscribe_btn.setEnabled(False)
             self._unsubscribe_btn.setEnabled(True)
-            self._message_display.appendPlainText(f"Subscribed to {topic} (QoS: {qos_name})")
+            self._message_display.appendPlainText(
+                f"Subscribed to {topic} (QoS: {qos_name})"
+            )
 
         except Exception as e:
             self._message_display.appendPlainText(f"Error: {e}")
@@ -606,6 +635,7 @@ class ROSTab(QWidget):
                 module = __import__(f"{package}.{folder}", fromlist=[msg_name])
                 return getattr(module, msg_name)
         except Exception:
+            # Message class not found or import failed
             pass
         return None
 
@@ -627,7 +657,11 @@ class ROSTab(QWidget):
                     result[field_name] = self._message_to_dict(value)
                 elif isinstance(value, (list, tuple)):
                     result[field_name] = [
-                        self._message_to_dict(v) if hasattr(v, "get_fields_and_field_types") else v
+                        (
+                            self._message_to_dict(v)
+                            if hasattr(v, "get_fields_and_field_types")
+                            else v
+                        )
                         for v in value
                     ]
                 else:
@@ -648,12 +682,13 @@ class ROSTab(QWidget):
             cursor.movePosition(
                 QTextCursor.MoveOperation.Down,
                 QTextCursor.MoveMode.KeepAnchor,
-                doc.blockCount() - max_lines
+                doc.blockCount() - max_lines,
             )
             cursor.removeSelectedText()
 
     def _get_timestamp(self) -> str:
         from datetime import datetime
+
         return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
     @Slot()
@@ -666,7 +701,9 @@ class ROSTab(QWidget):
             try:
                 self._node.destroy_subscription(self._subscriptions[topic])
             except Exception as e:
-                self._message_display.appendPlainText(f"Error destroying subscription: {e}")
+                self._message_display.appendPlainText(
+                    f"Error destroying subscription: {e}"
+                )
             del self._subscriptions[topic]
             self._message_display.appendPlainText(f"Unsubscribed from {topic}")
             self._subscribe_btn.setEnabled(True)
@@ -709,7 +746,9 @@ class ROSTab(QWidget):
                         if data:
                             self._fill_message(msg, data)
                     except Exception as e:
-                        self._message_display.appendPlainText(f"Error parsing message: {e}")
+                        self._message_display.appendPlainText(
+                            f"Error parsing message: {e}"
+                        )
                         return
 
             if self._publisher is None or self._publisher.topic_name != topic:
@@ -717,9 +756,12 @@ class ROSTab(QWidget):
                     try:
                         self._node.destroy_publisher(self._publisher)
                     except Exception:
+                        # Publisher may already be destroyed
                         pass
                 pub_qos_name = self._pub_qos_combo.currentText()
-                pub_qos = QOS_PROFILES.get(pub_qos_name, QOS_PROFILES["Default (Reliable)"])
+                pub_qos = QOS_PROFILES.get(
+                    pub_qos_name, QOS_PROFILES["Default (Reliable)"]
+                )
                 self._publisher = self._node.create_publisher(msg_class, topic, pub_qos)
 
             rate = self._publish_rate_spin.value()
@@ -765,23 +807,28 @@ class ROSTab(QWidget):
                         if data:
                             self._fill_message(msg, data)
                     except Exception:
+                        # Invalid YAML; skip publish
                         return
 
             self._publisher.publish(msg)
 
         except Exception:
+            # Timed publish failures are non-critical
             pass
 
     def _fill_message(self, msg: Any, data: Dict) -> None:
         for key, value in data.items():
             if hasattr(msg, key):
                 attr = getattr(msg, key)
-                if hasattr(attr, "get_fields_and_field_types") and isinstance(value, dict):
+                if hasattr(attr, "get_fields_and_field_types") and isinstance(
+                    value, dict
+                ):
                     self._fill_message(attr, value)
                 else:
                     try:
                         setattr(msg, key, value)
                     except Exception:
+                        # Skip incompatible field assignments
                         pass
 
     @Slot()
@@ -809,7 +856,9 @@ class ROSTab(QWidget):
         self._selected_service = item.text(0)
         service_type = item.text(1)
 
-        self._service_info_label.setText(f"Service: {self._selected_service}\nType: {service_type}")
+        self._service_info_label.setText(
+            f"Service: {self._selected_service}\nType: {service_type}"
+        )
         self._service_name_input.setText(self._selected_service)
         self._service_type_combo.setCurrentText(service_type)
 
@@ -832,7 +881,9 @@ class ROSTab(QWidget):
                 self._srv_fields_editor.set_message_class(srv_class.Request)
         else:
             self._current_srv_class = None
-            self._service_response.setPlainText(f"Could not load service type: {type_str}")
+            self._service_response.setPlainText(
+                f"Could not load service type: {type_str}"
+            )
 
     @Slot(int)
     def _on_srv_mode_changed(self, index: int) -> None:
@@ -858,7 +909,9 @@ class ROSTab(QWidget):
         try:
             srv_class = self._get_service_class(type_str)
             if srv_class is None:
-                self._service_response.setPlainText(f"Error: Unknown service type {type_str}")
+                self._service_response.setPlainText(
+                    f"Error: Unknown service type {type_str}"
+                )
                 return
 
             if service_name in self._service_clients:
@@ -868,7 +921,9 @@ class ROSTab(QWidget):
                 self._service_clients[service_name] = client
 
             if not client.wait_for_service(timeout_sec=2.0):
-                self._service_response.setPlainText(f"Service {service_name} not available")
+                self._service_response.setPlainText(
+                    f"Service {service_name} not available"
+                )
                 return
 
             request = srv_class.Request()
@@ -885,7 +940,9 @@ class ROSTab(QWidget):
                         if data:
                             self._fill_message(request, data)
                     except Exception as e:
-                        self._service_response.setPlainText(f"Error parsing request: {e}")
+                        self._service_response.setPlainText(
+                            f"Error parsing request: {e}"
+                        )
                         return
 
             self._service_response.setPlainText("Calling service...")
@@ -900,7 +957,9 @@ class ROSTab(QWidget):
                 except Exception as e:
                     self._service_response.setPlainText(f"Error: {e}")
 
-            QTimer.singleShot(100, lambda: self._check_service_response(future, handle_response))
+            QTimer.singleShot(
+                100, lambda: self._check_service_response(future, handle_response)
+            )
 
         except Exception as e:
             self._service_response.setPlainText(f"Error: {e}")
@@ -909,7 +968,9 @@ class ROSTab(QWidget):
         if future.done():
             callback()
         else:
-            QTimer.singleShot(100, lambda: self._check_service_response(future, callback))
+            QTimer.singleShot(
+                100, lambda: self._check_service_response(future, callback)
+            )
 
     def _get_service_class(self, type_str: str):
         try:
@@ -919,6 +980,7 @@ class ROSTab(QWidget):
                 module = __import__(f"{package}.{folder}", fromlist=[srv_name])
                 return getattr(module, srv_name)
         except Exception:
+            # Service class not found or import failed
             pass
         return None
 
@@ -941,18 +1003,21 @@ class ROSTab(QWidget):
                 try:
                     self._node.destroy_subscription(sub)
                 except Exception:
+                    # Subscription may already be destroyed
                     pass
 
             if self._publisher:
                 try:
                     self._node.destroy_publisher(self._publisher)
                 except Exception:
+                    # Publisher may already be destroyed
                     pass
 
             for client in self._service_clients.values():
                 try:
                     self._node.destroy_client(client)
                 except Exception:
+                    # Client may already be destroyed
                     pass
 
         self._subscriptions.clear()

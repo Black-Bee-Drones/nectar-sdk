@@ -209,6 +209,7 @@ class MoveToWorker(QObject):
             try:
                 self._drone.move_velocity(0, 0, 0, 0)
             except Exception:
+                # Best-effort stop on cancel; drone may be disconnected
                 pass
 
     @Slot()
@@ -926,6 +927,7 @@ class ControlTab(QWidget):
             try:
                 self._drone.move_velocity(0, 0, 0, 0)
             except Exception:
+                # Best-effort stop; connection may be lost
                 pass
 
     @Slot(str)
@@ -1068,6 +1070,7 @@ class ControlTab(QWidget):
             try:
                 self._drone.cleanup()
             except Exception:
+                # Ignore cleanup errors; drone may already be disconnected
                 pass
             self._drone = None
 
@@ -1127,6 +1130,7 @@ class ControlTab(QWidget):
             try:
                 self._drone.emergency_stop()
             except Exception:
+                # Emergency stop is best-effort; connection may be lost
                 pass
 
     @Slot()
@@ -1321,11 +1325,13 @@ class ControlTab(QWidget):
         try:
             self._update_mavros_telemetry()
         except Exception:
+            # Telemetry updates are non-critical; ignore failures
             pass
 
         try:
             self._update_bebop_telemetry()
         except Exception:
+            # Telemetry updates are non-critical; ignore failures
             pass
 
     def _update_mavros_telemetry(self) -> None:
@@ -1464,6 +1470,7 @@ class ControlTab(QWidget):
             )
             self._drone.move_velocity(vx, vy, vz, vyaw, reference=reference)
         except Exception:
+            # Velocity commands are continuous; ignore transient failures
             pass
 
     def keyPressEvent(self, event) -> None:

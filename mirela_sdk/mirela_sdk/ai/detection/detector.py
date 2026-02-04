@@ -76,14 +76,15 @@ class Detector:
         framework: Optional[Union[Framework, str]] = None,
         device: str = "auto",
         confidence_threshold: float = 0.25,
+        hf_token: Optional[str] = None,
         **kwargs,
     ):
         self.model_source = model_source
         self.device = device
         self.confidence_threshold = confidence_threshold
+        self._hf_token = hf_token
         self._kwargs = kwargs
 
-        # Resolve framework
         if framework is not None:
             if isinstance(framework, str):
                 framework = Framework(framework.lower())
@@ -91,7 +92,6 @@ class Detector:
         else:
             self._framework = self._detect_framework(model_source)
 
-        # Create model
         self._model = self._create_model(self._framework, model_source, **kwargs)
         self._loaded = False
 
@@ -173,7 +173,9 @@ class Detector:
                 if "/" in self.model_source and ":" in self.model_source:
                     from mirela_sdk.ai.detection.models.model_loader import ModelLoader
 
-                    model_path = ModelLoader.load(self.model_source)
+                    model_path = ModelLoader.load(
+                        self.model_source, token=self._hf_token
+                    )
 
             self._model.load_model(model_path)
             self._loaded = True

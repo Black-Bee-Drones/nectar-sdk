@@ -81,8 +81,8 @@ class MessageFieldEditor(QWidget):
             fields = self._get_fields_and_types(msg_class)
             for field_name, field_type in fields.items():
                 self._create_field_widget(field_name, field_type)
-        except Exception:
-            pass
+        except (AttributeError, TypeError, KeyError):
+            return
 
         self._content_layout.addStretch()
 
@@ -256,8 +256,8 @@ class MessageFieldEditor(QWidget):
                 package, msg_name = parts
                 module = __import__(f"{package}.msg", fromlist=[msg_name])
                 return getattr(module, msg_name, None)
-        except Exception:
-            pass
+        except (ImportError, AttributeError, ModuleNotFoundError):
+            return None
         return None
 
     def _on_value_changed(self) -> None:
@@ -332,7 +332,8 @@ class _CollapsibleField(QWidget):
         layout.setSpacing(0)
 
         self._header = QPushButton(f"+ {title}")
-        self._header.setStyleSheet(f"""
+        self._header.setStyleSheet(
+            f"""
             QPushButton {{
                 background-color: {COLORS.surface_elevated};
                 color: {COLORS.text_secondary};
@@ -347,17 +348,20 @@ class _CollapsibleField(QWidget):
                 background-color: {COLORS.border};
                 color: {COLORS.text_primary};
             }}
-        """)
+        """
+        )
         self._header.clicked.connect(self._toggle)
 
         self._container = QFrame()
-        self._container.setStyleSheet(f"""
+        self._container.setStyleSheet(
+            f"""
             QFrame {{
                 border-left: 2px solid {COLORS.accent_muted};
                 margin-left: 8px;
                 padding-left: 8px;
             }}
-        """)
+        """
+        )
         self._container_layout = QVBoxLayout(self._container)
         self._container_layout.setContentsMargins(8, 4, 0, 4)
         self._container_layout.setSpacing(0)
@@ -418,7 +422,11 @@ class _ArrayFieldEditor(QWidget):
         layout.addLayout(btn_layout)
 
     def _add_item(self) -> None:
-        base = self._element_type.split("/")[-1] if "/" in self._element_type else self._element_type
+        base = (
+            self._element_type.split("/")[-1]
+            if "/" in self._element_type
+            else self._element_type
+        )
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
@@ -454,7 +462,8 @@ class _ArrayFieldEditor(QWidget):
 
         remove_btn = QPushButton("x")
         remove_btn.setFixedSize(24, 24)
-        remove_btn.setStyleSheet(f"""
+        remove_btn.setStyleSheet(
+            f"""
             QPushButton {{
                 background-color: transparent;
                 color: {COLORS.error};
@@ -466,7 +475,8 @@ class _ArrayFieldEditor(QWidget):
                 color: {COLORS.text_primary};
                 border-radius: 4px;
             }}
-        """)
+        """
+        )
         remove_btn.clicked.connect(lambda: self._remove_item(row))
 
         row_layout.addWidget(label)
@@ -497,7 +507,11 @@ class _ArrayFieldEditor(QWidget):
 
     def get_values(self) -> List[Any]:
         result = []
-        base = self._element_type.split("/")[-1] if "/" in self._element_type else self._element_type
+        base = (
+            self._element_type.split("/")[-1]
+            if "/" in self._element_type
+            else self._element_type
+        )
         mapped = MessageFieldEditor.ROS_TYPE_MAP.get(base, "string")
 
         for row in self._items:
@@ -514,9 +528,10 @@ class _ArrayFieldEditor(QWidget):
                     result.append(text)
                 else:
                     import yaml
+
                     try:
                         result.append(yaml.safe_load(text))
-                    except Exception:
+                    except yaml.YAMLError:
                         result.append(text)
 
         return result
@@ -540,6 +555,7 @@ class _ArrayFieldEditor(QWidget):
             elif isinstance(widget, QLineEdit):
                 if isinstance(value, (dict, list)):
                     import yaml
+
                     widget.setText(yaml.dump(value, default_flow_style=True).strip())
                 else:
                     widget.setText(str(value))

@@ -122,6 +122,7 @@ class DriverMonitor:
                 try:
                     callback(new_status)
                 except Exception:
+                    # Don't let callback errors affect status notification
                     pass
 
     def check_status(self) -> DriverStatus:

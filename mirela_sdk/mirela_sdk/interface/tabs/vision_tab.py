@@ -1326,7 +1326,7 @@ class VisionTab(QWidget):
             return None
         try:
             return self._camera.get_depth_frame()
-        except Exception:
+        except (AttributeError, RuntimeError):
             return None
 
     def _get_distance_at_point(self, u: int, v: int) -> Optional[float]:
@@ -1339,7 +1339,7 @@ class VisionTab(QWidget):
             if isinstance(self._camera, ROSDepthCam) and self._current_frame is not None:
                 return self._camera.get_distance(u, v, color_shape=self._current_frame.shape)
             return self._camera.get_distance(u, v)
-        except Exception:
+        except (AttributeError, RuntimeError, IndexError):
             return None
 
     def _colorize_depth(self, depth_frame: np.ndarray) -> np.ndarray:
@@ -1385,14 +1385,12 @@ class VisionTab(QWidget):
                     color=None,
                     estimation_method=methods[method_name],
                 )
-        except ImportError:
+        except (ImportError, ModuleNotFoundError):
             self._line_detector = None
 
     @Slot()
     def _start_camera(self) -> None:
-        # Get configuration from the dynamic config panel
         config = self._camera_config.get_config()
-        camera_type = config.get("type", "webcam")
 
         self._start_btn.setEnabled(False)
         self._camera_config.setEnabled(False)
@@ -1455,7 +1453,7 @@ class VisionTab(QWidget):
         if self._camera:
             try:
                 self._camera.close()
-            except Exception:
+            except (AttributeError, RuntimeError):
                 pass
             self._camera = None
 
@@ -1639,10 +1637,10 @@ class VisionTab(QWidget):
                     else:
                         self._line_detector.external_mask = None
 
-                    frame, _, cx, cy, angle, _, _ = self._line_detector.detect_line(
+                    frame, _, _, _, _, _, _ = self._line_detector.detect_line(
                         frame, region=(roi_w, roi_h), draw=True
                     )
-                except Exception:
+                except (ValueError, RuntimeError, cv2.error):
                     pass
 
         if "canny" in self._filter_params:
@@ -1787,7 +1785,7 @@ class VisionTab(QWidget):
         if self._camera:
             try:
                 self._camera.close()
-            except Exception:
+            except (AttributeError, RuntimeError):
                 pass
 
         # Cleanup detection panel
@@ -1802,7 +1800,7 @@ class VisionTab(QWidget):
             ):
                 try:
                     self._cv_utils._hand_tracker.close()
-                except Exception:
+                except (AttributeError, RuntimeError):
                     pass
             if (
                 hasattr(self._cv_utils, "_face_tracker")
@@ -1810,7 +1808,7 @@ class VisionTab(QWidget):
             ):
                 try:
                     self._cv_utils._face_tracker.close()
-                except Exception:
+                except (AttributeError, RuntimeError):
                     pass
 
 

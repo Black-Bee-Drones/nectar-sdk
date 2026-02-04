@@ -515,14 +515,6 @@ class ParameterReconfigureWidget(QWidget):
 
     def _list_and_load_params(self, node_name: str) -> None:
         """List and load parameters using ROS2 parameter services."""
-        parts = node_name.strip("/").split("/")
-        if len(parts) >= 2:
-            namespace = "/" + "/".join(parts[:-1])
-            name = parts[-1]
-        else:
-            namespace = "/"
-            name = parts[0] if parts else node_name.strip("/")
-
         service_name = f"{node_name}/list_parameters"
         if service_name.startswith("//"):
             service_name = service_name[1:]
@@ -773,7 +765,7 @@ class ParameterReconfigureWidget(QWidget):
     def _filter_parameters(self, text: str) -> None:
         """Filter displayed parameters by name."""
         text = text.lower()
-        for group_name, group_widget in self._groups.items():
+        for group_widget in self._groups.values():
             group_visible = False
             for param_name, editor in group_widget._editors.items():
                 visible = text in param_name.lower() or not text
@@ -806,9 +798,9 @@ class ParameterReconfigureWidget(QWidget):
             self._param_clients.clear()
             return
 
-        for service_name, client in self._param_clients.items():
+        for client in self._param_clients.values():
             try:
                 self._node.destroy_client(client)
-            except Exception:
+            except (AttributeError, RuntimeError):
                 pass
         self._param_clients.clear()

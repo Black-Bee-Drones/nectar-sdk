@@ -78,12 +78,14 @@ class ROSExecutor(QObject):
             try:
                 self._executor.remove_node(self._node)
             except Exception:
+                # Node may already be removed or executor shutdown
                 pass
 
         if self._node:
             try:
                 self._node.destroy_node()
             except Exception:
+                # Node may already be destroyed
                 pass
 
         self._node = None
@@ -98,6 +100,7 @@ class ROSExecutor(QObject):
             if rclpy.ok():
                 rclpy.shutdown()
         except Exception:
+            # Context may already be shutdown
             pass
 
     def __del__(self) -> None:

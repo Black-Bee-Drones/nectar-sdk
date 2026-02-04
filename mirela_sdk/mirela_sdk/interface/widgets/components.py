@@ -599,6 +599,7 @@ class CameraConfigPanel(QWidget):
     CAMERA_TYPES = ["webcam", "realsense", "oakd", "ros", "file", "c920", "imx219"]
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
+        self._emit_config_changed = lambda *_: self.configChanged.emit()
         super().__init__(parent)
         self._current_type = "webcam"
 
@@ -654,7 +655,7 @@ class CameraConfigPanel(QWidget):
         self._webcam_device = QSpinBox()
         self._webcam_device.setRange(0, 10)
         self._webcam_device.setValue(0)
-        self._webcam_device.valueChanged.connect(self.configChanged.emit)
+        self._webcam_device.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._webcam_device, 0, 1)
 
         # Resolution
@@ -662,14 +663,14 @@ class CameraConfigPanel(QWidget):
         self._webcam_width = QSpinBox()
         self._webcam_width.setRange(320, 1920)
         self._webcam_width.setValue(640)
-        self._webcam_width.valueChanged.connect(self.configChanged.emit)
+        self._webcam_width.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._webcam_width, 1, 1)
 
         layout.addWidget(self._make_label("Height:"), 2, 0)
         self._webcam_height = QSpinBox()
         self._webcam_height.setRange(240, 1080)
         self._webcam_height.setValue(480)
-        self._webcam_height.valueChanged.connect(self.configChanged.emit)
+        self._webcam_height.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._webcam_height, 2, 1)
 
         # FPS
@@ -677,20 +678,20 @@ class CameraConfigPanel(QWidget):
         self._webcam_fps = QSpinBox()
         self._webcam_fps.setRange(1, 120)
         self._webcam_fps.setValue(30)
-        self._webcam_fps.valueChanged.connect(self.configChanged.emit)
+        self._webcam_fps.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._webcam_fps, 3, 1)
 
         # Autofocus
         self._webcam_autofocus = QCheckBox("Autofocus")
         self._webcam_autofocus.setChecked(True)
-        self._webcam_autofocus.stateChanged.connect(self.configChanged.emit)
+        self._webcam_autofocus.stateChanged.connect(self._emit_config_changed)
         layout.addWidget(self._webcam_autofocus, 4, 0, 1, 2)
 
         # Threaded
         self._webcam_threaded = QCheckBox("Threaded capture")
         self._webcam_threaded.setChecked(True)
         self._webcam_threaded.setToolTip("Use background thread for capture")
-        self._webcam_threaded.stateChanged.connect(self.configChanged.emit)
+        self._webcam_threaded.stateChanged.connect(self._emit_config_changed)
         layout.addWidget(self._webcam_threaded, 5, 0, 1, 2)
 
     def _create_realsense_config(self) -> None:
@@ -705,14 +706,14 @@ class CameraConfigPanel(QWidget):
         self._rs_width = QSpinBox()
         self._rs_width.setRange(320, 1920)
         self._rs_width.setValue(640)
-        self._rs_width.valueChanged.connect(self.configChanged.emit)
+        self._rs_width.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_width, 0, 1)
 
         layout.addWidget(self._make_label("Height:"), 1, 0)
         self._rs_height = QSpinBox()
         self._rs_height.setRange(240, 1080)
         self._rs_height.setValue(480)
-        self._rs_height.valueChanged.connect(self.configChanged.emit)
+        self._rs_height.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_height, 1, 1)
 
         # FPS
@@ -720,13 +721,13 @@ class CameraConfigPanel(QWidget):
         self._rs_fps = QSpinBox()
         self._rs_fps.setRange(6, 90)
         self._rs_fps.setValue(30)
-        self._rs_fps.valueChanged.connect(self.configChanged.emit)
+        self._rs_fps.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_fps, 2, 1)
 
         # Align to color
         self._rs_align = QCheckBox("Align depth to color")
         self._rs_align.setChecked(True)
-        self._rs_align.stateChanged.connect(self.configChanged.emit)
+        self._rs_align.stateChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_align, 3, 0, 1, 2)
 
         # Use ROS topics
@@ -739,23 +740,23 @@ class CameraConfigPanel(QWidget):
         self._rs_color_topic_lbl = self._make_label("Color topic:")
         layout.addWidget(self._rs_color_topic_lbl, 5, 0)
         self._rs_color_topic = QLineEdit("/camera/color/image_raw")
-        self._rs_color_topic.textChanged.connect(self.configChanged.emit)
+        self._rs_color_topic.textChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_color_topic, 5, 1)
 
         self._rs_depth_topic_lbl = self._make_label("Depth topic:")
         layout.addWidget(self._rs_depth_topic_lbl, 6, 0)
         self._rs_depth_topic = QLineEdit("/camera/depth/image_rect_raw")
-        self._rs_depth_topic.textChanged.connect(self.configChanged.emit)
+        self._rs_depth_topic.textChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_depth_topic, 6, 1)
 
         self._rs_compressed = QCheckBox("Color compressed")
         self._rs_compressed.setChecked(True)
-        self._rs_compressed.stateChanged.connect(self.configChanged.emit)
+        self._rs_compressed.stateChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_compressed, 7, 0, 1, 2)
 
         self._rs_depth_compressed = QCheckBox("Depth compressed")
         self._rs_depth_compressed.setChecked(False)
-        self._rs_depth_compressed.stateChanged.connect(self.configChanged.emit)
+        self._rs_depth_compressed.stateChanged.connect(self._emit_config_changed)
         layout.addWidget(self._rs_depth_compressed, 8, 0, 1, 2)
 
         # Initially hide ROS topic fields
@@ -787,7 +788,7 @@ class CameraConfigPanel(QWidget):
         layout.addWidget(self._make_label("Camera:"), 0, 0)
         self._oakd_cam = QComboBox()
         self._oakd_cam.addItems(["RGB (1)", "Left Mono (2)", "Right Mono (3)"])
-        self._oakd_cam.currentIndexChanged.connect(self.configChanged.emit)
+        self._oakd_cam.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._oakd_cam, 0, 1)
 
         # Info label
@@ -805,25 +806,25 @@ class CameraConfigPanel(QWidget):
 
         layout.addWidget(self._make_label("Topic:"), 0, 0)
         self._ros_topic = QLineEdit("/camera/image_raw")
-        self._ros_topic.textChanged.connect(self.configChanged.emit)
+        self._ros_topic.textChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_topic, 0, 1)
 
         self._ros_compressed = QCheckBox("Compressed topic")
-        self._ros_compressed.stateChanged.connect(self.configChanged.emit)
+        self._ros_compressed.stateChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_compressed, 1, 0, 1, 2)
 
         layout.addWidget(self._make_label("QoS:"), 2, 0)
         self._ros_reliability = QComboBox()
         self._ros_reliability.addItems(["Best Effort", "Reliable"])
         self._ros_reliability.setToolTip("QoS reliability policy")
-        self._ros_reliability.currentIndexChanged.connect(self.configChanged.emit)
+        self._ros_reliability.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_reliability, 2, 1)
 
         layout.addWidget(self._make_label("Durability:"), 3, 0)
         self._ros_durability = QComboBox()
         self._ros_durability.addItems(["Volatile", "Transient Local"])
         self._ros_durability.setToolTip("QoS durability policy")
-        self._ros_durability.currentIndexChanged.connect(self.configChanged.emit)
+        self._ros_durability.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_durability, 3, 1)
 
         layout.addWidget(self._make_label("History:"), 4, 0)
@@ -831,14 +832,14 @@ class CameraConfigPanel(QWidget):
         self._ros_history_depth.setRange(1, 100)
         self._ros_history_depth.setValue(1)
         self._ros_history_depth.setToolTip("QoS history depth")
-        self._ros_history_depth.valueChanged.connect(self.configChanged.emit)
+        self._ros_history_depth.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_history_depth, 4, 1)
 
         layout.addWidget(self._make_label("Encoding:"), 5, 0)
         self._ros_encoding = QComboBox()
         self._ros_encoding.addItems(["bgr8", "rgb8", "mono8", "passthrough"])
         self._ros_encoding.setToolTip("Image encoding for cv_bridge conversion")
-        self._ros_encoding.currentIndexChanged.connect(self.configChanged.emit)
+        self._ros_encoding.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_encoding, 5, 1)
 
     def _create_file_config(self) -> None:
@@ -852,7 +853,7 @@ class CameraConfigPanel(QWidget):
         layout.addWidget(self._make_label("Path:"), 0, 0)
         self._file_path = QLineEdit()
         self._file_path.setPlaceholderText("/path/to/image.jpg")
-        self._file_path.textChanged.connect(self.configChanged.emit)
+        self._file_path.textChanged.connect(self._emit_config_changed)
         layout.addWidget(self._file_path, 0, 1)
 
     def _create_c920_config(self) -> None:
@@ -867,7 +868,7 @@ class CameraConfigPanel(QWidget):
         self._c920_profile = QComboBox()
         self._c920_profile.addItems(["640×480", "1280×720", "1920×1080"])
         self._c920_profile.setCurrentIndex(1)
-        self._c920_profile.currentIndexChanged.connect(self.configChanged.emit)
+        self._c920_profile.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._c920_profile, 0, 1)
 
         # Fallback device
@@ -875,7 +876,7 @@ class CameraConfigPanel(QWidget):
         self._c920_fallback = QSpinBox()
         self._c920_fallback.setRange(0, 10)
         self._c920_fallback.setValue(0)
-        self._c920_fallback.valueChanged.connect(self.configChanged.emit)
+        self._c920_fallback.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._c920_fallback, 1, 1)
 
     def _create_imx219_config(self) -> None:
@@ -890,7 +891,7 @@ class CameraConfigPanel(QWidget):
         self._imx_sensor = QSpinBox()
         self._imx_sensor.setRange(0, 3)
         self._imx_sensor.setValue(0)
-        self._imx_sensor.valueChanged.connect(self.configChanged.emit)
+        self._imx_sensor.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._imx_sensor, 0, 1)
 
         # Resolution
@@ -898,14 +899,14 @@ class CameraConfigPanel(QWidget):
         self._imx_width = QSpinBox()
         self._imx_width.setRange(640, 3280)
         self._imx_width.setValue(1920)
-        self._imx_width.valueChanged.connect(self.configChanged.emit)
+        self._imx_width.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._imx_width, 1, 1)
 
         layout.addWidget(self._make_label("Height:"), 2, 0)
         self._imx_height = QSpinBox()
         self._imx_height.setRange(480, 2464)
         self._imx_height.setValue(1080)
-        self._imx_height.valueChanged.connect(self.configChanged.emit)
+        self._imx_height.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._imx_height, 2, 1)
 
         # FPS
@@ -913,14 +914,14 @@ class CameraConfigPanel(QWidget):
         self._imx_fps = QSpinBox()
         self._imx_fps.setRange(1, 60)
         self._imx_fps.setValue(30)
-        self._imx_fps.valueChanged.connect(self.configChanged.emit)
+        self._imx_fps.valueChanged.connect(self._emit_config_changed)
         layout.addWidget(self._imx_fps, 3, 1)
 
         # Flip
         layout.addWidget(self._make_label("Flip:"), 4, 0)
         self._imx_flip = QComboBox()
         self._imx_flip.addItems(["None (0)", "Horizontal (1)", "Rotate 180 (2)"])
-        self._imx_flip.currentIndexChanged.connect(self.configChanged.emit)
+        self._imx_flip.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._imx_flip, 4, 1)
 
     def _make_label(self, text: str) -> QLabel:

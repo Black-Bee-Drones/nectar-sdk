@@ -61,15 +61,12 @@ class ModelLoadWorker(QObject):
             self.progress.emit(f"Loading {self._model_source}...")
 
             from mirela_sdk.ai.detection import Detector
-            import os
-
-            if self._hf_token:
-                os.environ["HF_TOKEN"] = self._hf_token
 
             self._detector = Detector(
                 model_source=self._model_source,
                 framework=self._framework if self._framework != "auto" else None,
                 device=self._device,
+                hf_token=self._hf_token,
             )
 
             self.progress.emit("Initializing model...")
@@ -151,6 +148,7 @@ class DetectionConfigPanel(QWidget):
         self._detector = None
         self._load_thread: Optional[QThread] = None
         self._load_worker: Optional[ModelLoadWorker] = None
+        self._is_loading = False
 
         self._conf_threshold = 0.25
         self._iou_threshold = 0.5
@@ -551,14 +549,15 @@ class DetectionConfigPanel(QWidget):
         device = self._device_combo.currentText()
         hf_token = self._get_hf_token()
 
-        # Disable UI during loading
+        self._cleanup_load_thread()
+
         self._load_btn.setEnabled(False)
         self._source_combo.setEnabled(False)
         self._framework_combo.setEnabled(False)
         self._status_label.setText("Loading model...")
         self.statusChanged.emit("Loading detection model...")
+        self._is_loading = True
 
-        # Start loading in background thread
         self._load_thread = QThread()
         self._load_worker = ModelLoadWorker(model_source, framework, device, hf_token)
         self._load_worker.moveToThread(self._load_thread)
@@ -579,6 +578,7 @@ class DetectionConfigPanel(QWidget):
     @Slot(bool, str)
     def _on_load_finished(self, success: bool, error: str) -> None:
         """Handle model loading completion."""
+        self._is_loading = False
         if success and self._load_worker:
             self._detector = self._load_worker.detector
             model_name = self._get_model_source().split("/")[-1].split(":")[-1]
@@ -678,9 +678,22 @@ class DetectionConfigPanel(QWidget):
         elif enabled and self._detector is None:
             self._load_btn.setEnabled(True)
 
+    def _cleanup_load_thread(self) -> None:
+        """Stop and clean up the loading thread."""
+        if self._load_thread is not None:
+            if self._load_thread.isRunning():
+                self._load_thread.quit()
+                if not self._load_thread.wait(2000):
+                    self._load_thread.terminate()
+                    self._load_thread.wait(1000)
+            self._load_thread.deleteLater()
+            self._load_thread = None
+        if self._load_worker is not None:
+            self._load_worker.deleteLater()
+            self._load_worker = None
+
     def cleanup(self) -> None:
         """Clean up resources."""
-        if self._load_thread and self._load_thread.isRunning():
-            self._load_thread.quit()
-            self._load_thread.wait(1000)
+        self._cleanup_load_thread()
         self._detector = None
+        self._is_loading = False
