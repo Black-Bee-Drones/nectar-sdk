@@ -375,26 +375,148 @@ Or from command line:
 ros2 run mirela_sdk gui
 ```
 
-## ROS2 Integration
+## Execution Model
 
-The application uses a dedicated `ROSExecutor` that runs in a background thread to prevent blocking the Qt event loop:
+The interface integrates Qt6 event loop with ROS2 while avoiding deadlocks and UI freezes.
+
+### Thread Architecture
+
+```mermaid
+flowchart TB
+    subgraph MainThread["Main Thread (Qt Event Loop)"]
+        UI[UI Updates]
+        Timers[QTimers]
+        Signals[Signal/Slot]
+    end
+
+    subgraph ROSThread["ROS2 Thread"]
+        Executor[MultiThreadedExecutor]
+        Callbacks[Subscription Callbacks]
+        ServiceResponses[Service Responses]
+    end
+
+    subgraph WorkerThreads["Worker Threads (QThread)"]
+        DriverWorker[DriverWorker]
+        DroneInstanceWorker[DroneInstanceWorker]
+        MoveToWorker[MoveToWorker]
+        FlightActionWorker[FlightActionWorker]
+    end
+
+    UI --> |"QTimer 50ms"| VelocityCmd[move_velocity]
+    UI --> |"Start Thread"| WorkerThreads
+    WorkerThreads --> |"finished Signal"| UI
+    ROSThread --> |"emit Signal"| UI
+    VelocityCmd --> |"publish"| ROSThread
+```
+
+### ROS2 Integration
+
+`ROSExecutor` runs the ROS2 executor in a background thread:
 
 ```python
 from mirela_sdk.interface import ROSExecutor
 
 executor = ROSExecutor()
 executor.start("my_node")
-
-# Access the ROS2 node
 node = executor.node
-
-# Cleanup
 executor.shutdown()
 ```
 
 **Signals**:
-- `status_changed(bool)`: Emitted when ROS2 connection status changes
-- `error_occurred(str)`: Emitted on ROS2 errors
+- `status_changed(bool)`: ROS2 connection status changes
+- `error_occurred(str)`: ROS2 errors
+
+### Drone Commands
+
+| Command Type | Execution | Thread |
+|--------------|-----------|--------|
+| Velocity control | Direct publish | Main (via QTimer) |
+| Flight actions (arm, takeoff, land) | Service call | FlightActionWorker |
+| Position control (move_to) | Blocking navigation loop | MoveToWorker |
+| Driver start/stop | Process management | DriverWorker |
+
+**Velocity commands** are sent via `QTimer` at 50ms intervals. Commands are only sent when:
+- Keys are pressed (continuous movement)
+- Transitioning from movement to stop (one zero command)
+
+**Flight actions** run in `FlightActionWorker` to prevent UI blocking during service calls.
+
+**Position control** runs in `MoveToWorker` because `move_to()` contains a blocking PID loop.
+
+### Service Call Pattern
+
+ROS2 services use `call_async()` with a spin loop to avoid deadlocks:
+
+```python
+# In drone.py _call_service method
+future = service.call_async(request)
+while not future.done():
+    rclpy.spin_once(self._node, timeout_sec=0.05)
+    # Check timeout
+result = future.result()
+```
+
+This pattern:
+- Avoids deadlocks from `client.call()` blocking the executor
+- Maintains ROS2 communication during wait
+- Allows timeout handling
+
+**Service response validation** checks MAVROS-specific fields (`mode_sent`, `success`, `result`) and logs MAVLink result codes on failure.
+
+### Camera Integration
+
+| Source | Class | Notes |
+|--------|-------|-------|
+| Webcam | `WebcamCamera` | OpenCV VideoCapture |
+| RealSense | `RealsenseCamera` | pyrealsense2, requires device |
+| OAK-D | `OakDCamera` | depthai, requires device |
+| ROS Topic | `ROSCamera` | Subscribes to image topic |
+| File | `FileCamera` | Static image |
+
+Camera frame acquisition runs in the main thread via `QTimer`. For ROS cameras, the subscription callback stores the latest frame which the timer retrieves.
+
+### Sensor Validation
+
+Before navigation, `_validate_position_sensors()` checks sensor availability:
+- Indoor (Vision): Requires `_vision_pos` from `/mavros/vision_pose/pose_cov`
+- Outdoor (GPS): Requires `_gps` from `/mavros/global_position/global`
+
+Raises `SensorNotAvailableError` if data is missing.
+
+## Troubleshooting
+
+### UI Freezes
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| Freeze on arm/takeoff/land | Service call blocking main thread | Check `FlightActionWorker` is used |
+| Freeze on move_to | Navigation loop in main thread | Check `MoveToWorker` is used |
+| Freeze on driver connect | Process wait in main thread | Check `DriverWorker` is used |
+| Freeze during velocity control | Unlikely (uses QTimer) | Check timer interval |
+
+### Service Timeouts
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| "Service not available" | Driver not running | Start driver first |
+| "Timeout waiting for response" | FCU not responding | Check FCU connection |
+| "Mode not sent" | Unsupported flight mode | Check FCU firmware |
+| "Failed (Result: DENIED)" | Pre-arm checks failed | Check vehicle state |
+
+### No Telemetry
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| All fields "N/A" | No sensor data received | Check driver and FCU connection |
+| Position "N/A" | Wrong pose source | Match config to FCU setup |
+| LiDAR "N/A" | Rangefinder not connected | Check hardware |
+
+### Logging Levels
+
+- `DEBUG`: Velocity commands, telemetry updates
+- `INFO`: State changes (arm, takeoff, mode), navigation start/complete
+- `WARN`: Sensor unavailable, service failures, timeouts
+- `ERROR`: Critical failures, exceptions
 
 ## Theming
 
@@ -507,27 +629,27 @@ config_obj = panel.create_config_object()
 interface/
 ├── __init__.py           # Public API exports
 ├── README.md             # This file
-├── app.py                # Main application window
-├── ros_executor.py       # ROS2-Qt integration
-├── run_gui.py            # Entry point script
+├── app.py                # Main application (MirelaApp)
+├── ros_executor.py       # ROS2-Qt thread integration
+├── run_gui.py            # Entry point
 ├── theme.py              # Styling and colors
 │
-├── tabs/                 # Tab implementations
+├── tabs/
 │   ├── __init__.py
-│   ├── control_tab.py    # Drone control
-│   ├── vision_tab.py     # Computer vision
-│   └── ros_tab.py        # ROS2 tools
+│   ├── control_tab.py    # Drone control (workers, timers, panels)
+│   ├── vision_tab.py     # Camera and filters
+│   └── ros_tab.py        # Topics, services, parameters
 │
-├── widgets/              # Reusable components
+├── widgets/
 │   ├── __init__.py
-│   ├── components.py     # Card, StatusIndicator, etc.
-│   └── drone_config.py   # DroneConfigPanel widget
+│   ├── components.py     # Card, StatusIndicator, LabeledSlider, etc.
+│   ├── drone_config.py   # DroneConfigPanel
+│   ├── detection_panel.py # YOLO detection panel
+│   ├── message_editor.py # ROS message editor
+│   └── param_reconfigure.py # Parameter reconfigure widget
 │
-└── images/               # Assets
-    ├── logo.png
-    ├── camera.png
-    ├── photo.png
-    └── video.png
+└── images/
+    └── *.png             # UI assets
 ```
 
 ## Dependencies
