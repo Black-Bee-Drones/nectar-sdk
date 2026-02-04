@@ -1,7 +1,6 @@
-import os
 import shlex
 import subprocess
-from typing import List, Optional
+from typing import List
 from time import sleep
 
 

@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, List, Type, Tuple
+from typing import Optional, Dict, Any, List, Type
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,

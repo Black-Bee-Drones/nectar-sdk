@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, List, Tuple, Union
+from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
 from dataclasses import dataclass
 
@@ -19,27 +19,19 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QSplitter,
     QGroupBox,
-    QGridLayout,
-    QSizePolicy,
-    QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 
 from rclpy.node import Node
-from rclpy.parameter import Parameter
 from rcl_interfaces.msg import ParameterType
-from rcl_interfaces.srv import (
-    ListParameters,
-    GetParameters,
-    SetParameters,
-    DescribeParameters,
-)
+from rcl_interfaces.srv import ListParameters, GetParameters, SetParameters
 
 from mirela_sdk.interface.theme import COLORS
 
 
 class ParamType(Enum):
     """ROS2 parameter types mapped to editor types."""
+
     BOOL = 1
     INTEGER = 2
     DOUBLE = 3
@@ -55,6 +47,7 @@ class ParamType(Enum):
 @dataclass
 class ParameterInfo:
     """Container for parameter metadata and value."""
+
     name: str
     type: ParamType
     value: Any
@@ -170,8 +163,7 @@ class ParameterEditor(QWidget):
 
             self._double_scale = 1000
             self._double_slider.setRange(
-                int(min_val * self._double_scale),
-                int(max_val * self._double_scale)
+                int(min_val * self._double_scale), int(max_val * self._double_scale)
             )
             self._double_slider.setValue(int(current * self._double_scale))
 
@@ -364,9 +356,7 @@ class ParameterReconfigureWidget(QWidget):
     errorOccurred = Signal(str)
 
     def __init__(
-        self,
-        node: Optional[Node] = None,
-        parent: Optional[QWidget] = None
+        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
     ) -> None:
         super().__init__(parent)
         self._node = node
@@ -482,7 +472,9 @@ class ParameterReconfigureWidget(QWidget):
         try:
             nodes = self._node.get_node_names_and_namespaces()
             for node_name, namespace in sorted(nodes):
-                full_name = f"{namespace}/{node_name}" if namespace != "/" else f"/{node_name}"
+                full_name = (
+                    f"{namespace}/{node_name}" if namespace != "/" else f"/{node_name}"
+                )
                 full_name = full_name.replace("//", "/")
                 item = QListWidgetItem(full_name)
                 self._node_list.addItem(item)
@@ -591,21 +583,16 @@ class ParameterReconfigureWidget(QWidget):
         future = client.call_async(request)
 
         QTimer.singleShot(
-            100,
-            lambda: self._handle_get_response(future, node_name, param_names)
+            100, lambda: self._handle_get_response(future, node_name, param_names)
         )
 
     def _handle_get_response(
-        self,
-        future,
-        node_name: str,
-        param_names: List[str]
+        self, future, node_name: str, param_names: List[str]
     ) -> None:
         """Handle get_parameters response and create editors."""
         if not future.done():
             QTimer.singleShot(
-                50,
-                lambda: self._handle_get_response(future, node_name, param_names)
+                50, lambda: self._handle_get_response(future, node_name, param_names)
             )
             return
 
@@ -631,10 +618,7 @@ class ParameterReconfigureWidget(QWidget):
             self.errorOccurred.emit(f"Failed to get parameters: {e}")
             self._status_label.setText(f"Error: {e}")
 
-    def _convert_parameter_value(
-        self,
-        value
-    ) -> Tuple[ParamType, Any]:
+    def _convert_parameter_value(self, value) -> Tuple[ParamType, Any]:
         """Convert ROS2 parameter value to Python type."""
         if value.type == ParameterType.PARAMETER_BOOL:
             return ParamType.BOOL, value.bool_value
@@ -683,7 +667,7 @@ class ParameterReconfigureWidget(QWidget):
                 group_name = parts[0]
             else:
                 group_name = "General"
-            
+
             if group_name not in groups:
                 groups[group_name] = []
             groups[group_name].append(param)
@@ -698,8 +682,7 @@ class ParameterReconfigureWidget(QWidget):
 
             self._groups[group_name] = group_widget
             self._params_layout.insertWidget(
-                self._params_layout.count() - 1,
-                group_widget
+                self._params_layout.count() - 1, group_widget
             )
 
     @Slot(str, object)
@@ -738,8 +721,7 @@ class ParameterReconfigureWidget(QWidget):
 
         future = client.call_async(request)
         QTimer.singleShot(
-            50,
-            lambda: self._handle_set_response(future, param_name, value)
+            50, lambda: self._handle_set_response(future, param_name, value)
         )
 
     def _create_parameter_value(self, value: Any):
@@ -770,8 +752,7 @@ class ParameterReconfigureWidget(QWidget):
         """Handle set_parameters response."""
         if not future.done():
             QTimer.singleShot(
-                50,
-                lambda: self._handle_set_response(future, param_name, value)
+                50, lambda: self._handle_set_response(future, param_name, value)
             )
             return
 
@@ -817,4 +798,17 @@ class ParameterReconfigureWidget(QWidget):
     def cleanup(self) -> None:
         """Cleanup resources."""
         self._clear_parameters()
+        self._destroy_clients()
+
+    def _destroy_clients(self) -> None:
+        """Destroy all ROS2 service clients."""
+        if not self._node:
+            self._param_clients.clear()
+            return
+
+        for service_name, client in self._param_clients.items():
+            try:
+                self._node.destroy_client(client)
+            except Exception:
+                pass
         self._param_clients.clear()

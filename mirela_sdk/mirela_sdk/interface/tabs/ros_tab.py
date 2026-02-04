@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 
 from rclpy.node import Node
 from rclpy.qos import (
@@ -73,6 +73,7 @@ class ROSTab(QWidget):
         self._publisher = None
         self._current_pub_msg_class = None
         self._current_srv_class = None
+        self._service_clients: Dict[str, Any] = {}
 
         self._setup_ui()
         self._setup_timers()
@@ -643,8 +644,12 @@ class ROSTab(QWidget):
         doc = self._message_display.document()
         if doc.blockCount() > max_lines:
             cursor = self._message_display.textCursor()
-            cursor.movePosition(cursor.Start)
-            cursor.movePosition(cursor.Down, cursor.KeepAnchor, doc.blockCount() - max_lines)
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Down,
+                QTextCursor.MoveMode.KeepAnchor,
+                doc.blockCount() - max_lines
+            )
             cursor.removeSelectedText()
 
     def _get_timestamp(self) -> str:
@@ -856,7 +861,11 @@ class ROSTab(QWidget):
                 self._service_response.setPlainText(f"Error: Unknown service type {type_str}")
                 return
 
-            client = self._node.create_client(srv_class, service_name)
+            if service_name in self._service_clients:
+                client = self._service_clients[service_name]
+            else:
+                client = self._node.create_client(srv_class, service_name)
+                self._service_clients[service_name] = client
 
             if not client.wait_for_service(timeout_sec=2.0):
                 self._service_response.setPlainText(f"Service {service_name} not available")
@@ -927,17 +936,27 @@ class ROSTab(QWidget):
         self._refresh_timer.stop()
         self._publish_timer.stop()
 
-        for sub in self._subscriptions.values():
-            try:
-                self._node.destroy_subscription(sub)
-            except Exception:
-                pass
-        self._subscriptions.clear()
+        if self._node:
+            for sub in self._subscriptions.values():
+                try:
+                    self._node.destroy_subscription(sub)
+                except Exception:
+                    pass
 
-        if self._publisher:
-            try:
-                self._node.destroy_publisher(self._publisher)
-            except Exception:
-                pass
+            if self._publisher:
+                try:
+                    self._node.destroy_publisher(self._publisher)
+                except Exception:
+                    pass
+
+            for client in self._service_clients.values():
+                try:
+                    self._node.destroy_client(client)
+                except Exception:
+                    pass
+
+        self._subscriptions.clear()
+        self._service_clients.clear()
+        self._publisher = None
 
         self._param_reconfigure.cleanup()
