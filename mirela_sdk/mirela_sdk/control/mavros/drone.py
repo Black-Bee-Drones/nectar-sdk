@@ -930,12 +930,12 @@ class MavrosDrone(BaseDrone):
             if distance <= precision:
                 if yaw is not None and abs(dyaw) > np.radians(3):
                     continue
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().info(f"Target reached: {distance:.2f}m")
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().warn(f"Timeout. Distance: {distance:.2f}m")
                 return False
 
@@ -986,12 +986,12 @@ class MavrosDrone(BaseDrone):
             self.move_velocity(vx, vy, vz, 0.0)
 
             if distance <= precision:
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().info(f"GPS target reached: {distance:.2f}m")
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().warn(f"GPS timeout. Distance: {distance:.2f}m")
                 return False
 
