@@ -649,10 +649,10 @@ class MavrosDrone(BaseDrone):
             else PositionTarget.FRAME_BODY_NED
         )
         msg.type_mask = 1479
-        msg.velocity.x = vx
-        msg.velocity.y = vy
-        msg.velocity.z = vz
-        msg.yaw_rate = vyaw
+        msg.velocity.x = float(vx)
+        msg.velocity.y = float(vy)
+        msg.velocity.z = float(vz)
+        msg.yaw_rate = float(vyaw)
 
         self._node.get_logger().debug(
             f"Velocity cmd: vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} vyaw={vyaw:.2f} "
