@@ -80,17 +80,17 @@ class GPSUtils:
         target_altitude = initial_altitude - alt_adjust + altitude_rel
 
         setpoint = GeoPoseStamped()
-        setpoint.pose.position.latitude = latitude
-        setpoint.pose.position.longitude = longitude
-        setpoint.pose.position.altitude = target_altitude
+        setpoint.pose.position.latitude = float(latitude)
+        setpoint.pose.position.longitude = float(longitude)
+        setpoint.pose.position.altitude = float(target_altitude)
 
         yaw = radians(90 - heading)
         qx, qy, qz, qw = quaternion_from_euler(0, 0, yaw)
 
-        setpoint.pose.orientation.x = qx
-        setpoint.pose.orientation.y = qy
-        setpoint.pose.orientation.z = qz
-        setpoint.pose.orientation.w = qw
+        setpoint.pose.orientation.x = float(qx)
+        setpoint.pose.orientation.y = float(qy)
+        setpoint.pose.orientation.z = float(qz)
+        setpoint.pose.orientation.w = float(qw)
 
         return setpoint
 

@@ -1053,10 +1053,10 @@ class MavrosDrone(BaseDrone):
             | PositionTarget.IGNORE_VY
             | PositionTarget.IGNORE_VZ
         )
-        msg.position.x = pos.x + dx
-        msg.position.y = pos.y + dy
-        msg.position.z = pos.z + dz
-        msg.yaw = current_yaw + np.radians(yaw) if yaw else current_yaw
+        msg.position.x = float(pos.x + dx)
+        msg.position.y = float(pos.y + dy)
+        msg.position.z = float(pos.z + dz)
+        msg.yaw = float(current_yaw + np.radians(yaw) if yaw else current_yaw)
         return msg
 
     def _compute_gps_target(
@@ -1099,13 +1099,13 @@ class MavrosDrone(BaseDrone):
         quat = quaternion_from_euler(0, 0, np.radians(target_yaw))
 
         msg = GeoPoseStamped()
-        msg.pose.position.latitude = lat
-        msg.pose.position.longitude = lon
-        msg.pose.position.altitude = alt
-        msg.pose.orientation.x = quat[0]
-        msg.pose.orientation.y = quat[1]
-        msg.pose.orientation.z = quat[2]
-        msg.pose.orientation.w = quat[3]
+        msg.pose.position.latitude = float(lat)
+        msg.pose.position.longitude = float(lon)
+        msg.pose.position.altitude = float(alt)
+        msg.pose.orientation.x = float(quat[0])
+        msg.pose.orientation.y = float(quat[1])
+        msg.pose.orientation.z = float(quat[2])
+        msg.pose.orientation.w = float(quat[3])
         return msg
 
     def _validate_position_sensors(self) -> None:
