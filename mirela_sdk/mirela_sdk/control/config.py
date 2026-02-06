@@ -7,7 +7,7 @@ from mirela_sdk.control.types import PoseSource, NavigationStrategy
 @dataclass(frozen=True)
 class DroneConfig:
     name: str = "drone"
-    start_driver: bool = True
+    start_driver: bool = False
 
 
 @dataclass(frozen=True)
