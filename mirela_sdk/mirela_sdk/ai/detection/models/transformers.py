@@ -34,6 +34,7 @@ try:
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
+    TrainerCallback = object
 
 from PIL import Image
 

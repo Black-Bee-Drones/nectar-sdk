@@ -103,8 +103,31 @@ class MavrosDrone(BaseDrone):
 
     @property
     def mavros_state(self) -> State:
-        """MAVROS state message (connected, armed, mode)."""
+        """
+        MAVROS state message (connected, armed, mode).
+
+        Returns
+        -------
+        State
+            MAVROS state message. See:
+            https://docs.ros.org/en/humble/p/mavros_msgs/msg/State.html
+        """
         return self._mavros_state
+
+    @property
+    def is_armed(self) -> Optional[bool]:
+        """Check if motors are armed."""
+        return self._mavros_state.armed if self._mavros_state else None
+
+    @property
+    def flight_mode(self) -> Optional[str]:
+        """Current ArduPilot/PX4 flight mode."""
+        return self._mavros_state.mode if self._mavros_state else None
+
+    @property
+    def is_fcu_connected(self) -> Optional[bool]:
+        """Check if FCU is connected via MAVROS."""
+        return self._mavros_state.connected if self._mavros_state else None
 
     @property
     def gps(self) -> NavSatFix:
@@ -114,7 +137,8 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         NavSatFix
-            GPS message with latitude, longitude, altitude.
+            GPS message with latitude, longitude, altitude. See:
+            https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
 
         Raises
         ------
@@ -133,7 +157,8 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         float
-            Heading in degrees.
+            Heading in degrees from Float64 message. See:
+            https://docs.ros.org/en/humble/p/std_msgs/msg/Float64.html
 
         Raises
         ------
@@ -152,7 +177,8 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         float
-            Altitude in meters.
+            Altitude in meters from Float64 message. See:
+            https://docs.ros.org/en/humble/p/std_msgs/msg/Float64.html
 
         Raises
         ------
@@ -165,12 +191,28 @@ class MavrosDrone(BaseDrone):
 
     @property
     def vision_pos(self) -> Optional[PoseWithCovarianceStamped]:
-        """Vision-based pose estimate from external source (T265, VICON, etc.)."""
+        """
+        Vision-based pose estimate from external source (T265, d435i, etc.).
+
+        Returns
+        -------
+        Optional[PoseWithCovarianceStamped]
+            Vision pose message. See:
+            https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+        """
         return self._vision_pos
 
     @property
     def lidar_alt(self) -> Optional[float]:
-        """Lidar rangefinder altitude in meters, None if unavailable."""
+        """
+        Lidar rangefinder altitude in meters, None if unavailable.
+
+        Returns
+        -------
+        Optional[float]
+            Range value from Range message. See:
+            https://docs.ros.org/en/humble/p/sensor_msgs/msg/Range.html
+        """
         return self._rng_alt.range if self._rng_alt else None
 
     @property
@@ -195,26 +237,46 @@ class MavrosDrone(BaseDrone):
 
     @property
     def position(self) -> Union[PoseWithCovarianceStamped, NavSatFix]:
-        """Current position as vision pose (indoor) or GPS (outdoor)."""
+        """
+        Current position as vision pose (indoor) or GPS (outdoor).
+
+        Returns
+        -------
+        Union[PoseWithCovarianceStamped, NavSatFix]
+            - Indoor: PoseWithCovarianceStamped. See:
+              https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+            - Outdoor: NavSatFix. See:
+              https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
+        """
         if self.is_indoor:
             return self._vision_pos
         return self._gps
 
     @property
-    def position_as_target(self) -> Union[PositionTarget, GeoPoseStamped]:
+    def position_as_target(self) -> Optional[Union[PositionTarget, GeoPoseStamped]]:
         """
         Current position converted to setpoint message type.
 
         Returns
         -------
-        Union[PositionTarget, GeoPoseStamped]
-            PositionTarget for indoor, GeoPoseStamped for outdoor.
+        Optional[Union[PositionTarget, GeoPoseStamped]]
+            - Indoor: PositionTarget. See:
+              https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
+            - Outdoor: GeoPoseStamped. See:
+              https://docs.ros.org/en/humble/p/geographic_msgs/msg/GeoPoseStamped.html
+            - None if no position data.
         """
         if self.is_indoor:
+            if self._vision_pos is None:
+                self._node.get_logger().debug("position_as_target: No vision data")
+                return None
             lidar = self.lidar_alt if self._lidar_available else None
             return PositionUtils.convert_position_to_target(
                 self._vision_pos, lidar=lidar
             )
+        if self._gps is None:
+            self._node.get_logger().debug("position_as_target: No GPS data")
+            return None
         return PositionUtils.convert_position_to_target(self._gps, self.heading)
 
     def _setup_subscribers(self) -> None:
@@ -387,11 +449,30 @@ class MavrosDrone(BaseDrone):
         """Return MAVROS driver node name."""
         return "mavros_node"
 
-    def _start_driver(self) -> bool:
-        """Launch MAVROS driver process."""
+    def _get_driver_command(self) -> str:
+        """Return command to start MAVROS driver."""
         config: MavrosConfig = self._config
-        cmd = f"ros2 launch mavros apm.launch fcu_url:={config.connection_string}"
-        return ProcessUtils.start_process(cmd, "mavros_node")
+        return f"ros2 launch mavros apm.launch fcu_url:={config.connection_string}"
+
+    def _start_driver(self) -> bool:
+        """
+        Launch MAVROS driver process.
+
+        Checks if driver node is already running before starting. If node exists,
+        assumes driver was started manually and returns True.
+
+        Returns
+        -------
+        bool
+            True if driver started or already running, False otherwise.
+        """
+        driver_name = self._get_driver_name()
+        if ProcessUtils.is_node_running(driver_name, timeout=2.0):
+            self._node.get_logger().info(f"Driver node {driver_name} already running")
+            return True
+
+        cmd = self._get_driver_command()
+        return ProcessUtils.start_process(cmd, driver_name)
 
     def connect(self) -> bool:
         """
@@ -418,15 +499,24 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if arming successful.
+            True if arming successful, False on failure or timeout.
         """
-        self.set_mode("GUIDED")
-        self.delay(0.5)
-        req = CommandBool.Request()
-        req.value = True
-        self._call_service(self._arm_srv, req, "Armed", "Arm failed")
-        self.delay(1.5)
-        return True
+        try:
+            if not self.set_mode("GUIDED"):
+                return False
+            self.delay(0.5)
+            req = CommandBool.Request()
+            req.value = True
+            res = self._call_service(
+                self._arm_srv, req, "Armed", "Arm failed", sync=True
+            )
+            if res:
+                self.delay(1.5)
+                return True
+            return False
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Arm failed: {e}")
+            return False
 
     def disarm(self) -> bool:
         """
@@ -438,26 +528,40 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if disarming successful.
+            True if disarming successful, False on failure or timeout.
         """
-        cmd = CommandLong.Request()
-        cmd.command = 400  # MAV_CMD_COMPONENT_ARM_DISARM
-        cmd.param1 = 0.0
-        cmd.param2 = 21196.0  # Force disarm flag
-        cmd.param3 = 0.0
-        cmd.param4 = 0.0
-        cmd.param5 = 0.0
-        cmd.param6 = 0.0
-        cmd.param7 = 0.0
-        self._call_service(self._command_srv, cmd, "Disarmed", "Disarm failed")
-        return True
+        try:
+            cmd = CommandLong.Request()
+            cmd.command = 400  # MAV_CMD_COMPONENT_ARM_DISARM
+            cmd.param1 = 0.0
+            cmd.param2 = 21196.0  # Force disarm flag
+            cmd.param3 = 0.0
+            cmd.param4 = 0.0
+            cmd.param5 = 0.0
+            cmd.param6 = 0.0
+            cmd.param7 = 0.0
+            res = self._call_service(
+                self._command_srv, cmd, "Disarmed", "Disarm failed", sync=True
+            )
+            return bool(res)
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Disarm failed: {e}")
+            return False
 
-    def takeoff(self, altitude: float, max_retries: int = 2) -> bool:
+    def takeoff(
+        self,
+        altitude: float,
+        max_retries: int = 2,
+        adjust_altitude: bool = True,
+        precision: float = 0.12,
+        timeout: float = 25.0,
+    ) -> bool:
         """
-        Execute takeoff sequence with retry logic.
+        Execute takeoff sequence with retry logic and optional altitude adjustment.
 
         Arms drone, stores takeoff position, sends takeoff command, and verifies altitude gain.
         If altitude doesn't change significantly, disarms and retries up to max_retries times.
+        Optionally fine-tunes altitude using move_to to reach target precisely.
 
         Parameters
         ----------
@@ -465,11 +569,17 @@ class MavrosDrone(BaseDrone):
             Target altitude in meters.
         max_retries : int, default=2
             Maximum number of takeoff attempts.
+        adjust_altitude : bool, default=True
+            If True, fine-tune altitude using move_to after takeoff command.
+        precision : float, default=0.12
+            Altitude precision in meters for adjustment.
+        timeout : float, default=25.0
+            Maximum time in seconds for altitude adjustment.
 
         Returns
         -------
         bool
-            True if takeoff successful, False if all retries exhausted.
+            True if takeoff successful, False if all retries exhausted or service timeout.
         """
         req = CommandTOL.Request()
         req.altitude = float(altitude)
@@ -477,20 +587,33 @@ class MavrosDrone(BaseDrone):
         for attempt in range(max_retries):
             self._node.get_logger().info(f"Takeoff attempt {attempt + 1}/{max_retries}")
 
-            self.arm()
+            if not self.arm():
+                self._node.get_logger().error("Arm failed, cannot takeoff")
+                return False
+
             self.delay(3.0)
 
             if attempt == 0:
-                self._set_takeoff_position()
+                if not self._set_takeoff_position():
+                    self._node.get_logger().error("Failed to set takeoff position")
+                    return False
 
             takeoff_height = self.height
 
-            self._call_service(
-                self._takeoff_srv,
-                req,
-                f"Takeoff to {altitude}m",
-                "Takeoff command failed",
-            )
+            try:
+                res = self._call_service(
+                    self._takeoff_srv,
+                    req,
+                    f"Takeoff to {altitude}m",
+                    "Takeoff command failed",
+                    sync=True,
+                )
+                if not res:
+                    return False
+            except TimeoutError as e:
+                self._node.get_logger().error(f"Takeoff service timeout: {e}")
+                return False
+
             self.delay(altitude * 3)
 
             height_gain = abs(self.height - takeoff_height)
@@ -498,6 +621,29 @@ class MavrosDrone(BaseDrone):
                 self._node.get_logger().info(
                     f"Takeoff successful (gained {height_gain:.2f}m)"
                 )
+
+                if adjust_altitude:
+                    current_height = self.height
+                    altitude_diff = altitude - current_height
+
+                    if abs(altitude_diff) > precision:
+                        self._node.get_logger().info(
+                            f"Adjusting altitude from {current_height:.2f}m to {altitude:.2f}m"
+                        )
+                        adjustment_success = self.move_to(
+                            z=altitude_diff,
+                            precision=precision,
+                            timeout=timeout,
+                        )
+                        if adjustment_success:
+                            self._node.get_logger().info(
+                                f"Altitude adjusted to {self.height:.2f}m"
+                            )
+                        else:
+                            self._node.get_logger().warn(
+                                f"Altitude adjustment incomplete, current: {self.height:.2f}m"
+                            )
+
                 return True
 
             if attempt < max_retries - 1:
@@ -527,22 +673,31 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if motors disarmed (landed), False if still armed after timeout.
+            True if motors disarmed (landed), False if still armed after timeout
+            or on service timeout.
         """
-        req = CommandTOL.Request()
-        req.altitude = 0.0
-        self._call_service(self._land_srv, req, "Landing", "Land failed", sync=False)
+        try:
+            req = CommandTOL.Request()
+            req.altitude = 0.0
+            res = self._call_service(
+                self._land_srv, req, "Landing", "Land failed", sync=True
+            )
+            if not res:
+                return False
 
-        duration = Duration(seconds=timeout)
-        start = self._node.get_clock().now()
+            duration = Duration(seconds=timeout)
+            start = self._node.get_clock().now()
 
-        while self._node.get_clock().now() - start < duration:
-            rclpy.spin_once(self._node, timeout_sec=0.1)
-            if not self._mavros_state.armed:
-                break
+            while self._node.get_clock().now() - start < duration:
+                rclpy.spin_once(self._node, timeout_sec=0.1)
+                if not self._mavros_state.armed:
+                    break
 
-        self.delay(0.1)
-        return not self._mavros_state.armed
+            self.delay(0.1)
+            return not self._mavros_state.armed
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Land service timeout: {e}")
+            return False
 
     def move_velocity(
         self,
@@ -557,6 +712,7 @@ class MavrosDrone(BaseDrone):
         Command velocity-based movement.
 
         Publishes PositionTarget message with velocity setpoints to /mavros/setpoint_raw/local.
+        See: https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
 
         Parameters
         ----------
@@ -577,8 +733,7 @@ class MavrosDrone(BaseDrone):
         reference : MoveReference (enum), default=BODY
             BODY: relative to current orientation (FRAME_BODY_NED)
             WORLD: relative to world frame (FRAME_LOCAL_NED)
-
-            Note: TAKEOFF reference is ignored for velocity control.
+            TAKEOFF: relative to takeoff orientation.
         """
         msg = PositionTarget()
         msg.coordinate_frame = (
@@ -587,10 +742,34 @@ class MavrosDrone(BaseDrone):
             else PositionTarget.FRAME_BODY_NED
         )
         msg.type_mask = 1479
-        msg.velocity.x = vx
-        msg.velocity.y = vy
-        msg.velocity.z = vz
-        msg.yaw_rate = vyaw
+
+        if reference == MoveReference.TAKEOFF:
+            if self.is_indoor:
+                current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
+            else:
+                current_yaw = np.radians(self.heading)
+
+            takeoff_yaw = PositionUtils.get_yaw_from_pose(self._takeoff_position)
+
+            vx_body, vy_body, vz_body = (
+                PositionUtils.transform_takeoff_to_body_velocities(
+                    vx, vy, vz, current_yaw, takeoff_yaw
+                )
+            )
+            msg.velocity.x = float(vx_body)
+            msg.velocity.y = float(vy_body)
+            msg.velocity.z = float(vz_body)
+        else:
+            msg.velocity.x = float(vx)
+            msg.velocity.y = float(vy)
+            msg.velocity.z = float(vz)
+
+        msg.yaw_rate = float(vyaw)
+
+        self._node.get_logger().debug(
+            f"Velocity cmd: vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} vyaw={vyaw:.2f} "
+            f"ref={reference.name}"
+        )
 
         if duration is None:
             self._local_pub.publish(msg)
@@ -632,8 +811,9 @@ class MavrosDrone(BaseDrone):
             Target yaw in degrees (GPS) or radians (vision). None disables yaw control.
         reference : MoveReference, default=BODY
             BODY: relative to current orientation,
-            WORLD: relative to world frame,
             TAKEOFF: relative to takeoff position.
+
+            Note: WORLD reference is not supported in move_to.
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds. None for no timeout.
         precision : float, default=0.2
@@ -650,9 +830,23 @@ class MavrosDrone(BaseDrone):
         ------
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
+        CapabilityNotSupportedError
+            If reference=WORLD in position control.
         """
         if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
             raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
+
+        if reference == MoveReference.WORLD:
+            raise CapabilityNotSupportedError(
+                "WORLD reference in position control", self._config.name
+            )
+
+        self._validate_position_sensors()
+
+        self._node.get_logger().info(
+            f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
+            f"strategy={strategy.name} precision={precision}m"
+        )
 
         self.delay(0.05)
         target = self._compute_target(x, y, z, yaw, reference)
@@ -707,8 +901,15 @@ class MavrosDrone(BaseDrone):
         if self.is_indoor:
             raise CapabilityNotSupportedError("GPS navigation", "indoor mode")
 
+        self._validate_position_sensors()
+
         alt = altitude if altitude is not None else self.rel_alt
         hdg = heading if heading is not None else self.heading
+
+        self._node.get_logger().info(
+            f"move_to_gps: lat={latitude:.6f} lon={longitude:.6f} alt={alt:.1f}m "
+            f"hdg={hdg:.1f}° strategy={strategy.name} precision={precision}m"
+        )
 
         target = GPSUtils.create_gps_setpoint(
             latitude, longitude, alt, hdg, self._initial_altitude
@@ -849,12 +1050,12 @@ class MavrosDrone(BaseDrone):
             if distance <= precision:
                 if yaw is not None and abs(dyaw) > np.radians(3):
                     continue
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().info(f"Target reached: {distance:.2f}m")
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().warn(f"Timeout. Distance: {distance:.2f}m")
                 return False
 
@@ -905,12 +1106,12 @@ class MavrosDrone(BaseDrone):
             self.move_velocity(vx, vy, vz, 0.0)
 
             if distance <= precision:
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().info(f"GPS target reached: {distance:.2f}m")
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self.move_velocity(0, 0, 0, 0)
+                self.move_velocity(0.0, 0.0, 0.0, 0.0)
                 self._node.get_logger().warn(f"GPS timeout. Distance: {distance:.2f}m")
                 return False
 
@@ -949,12 +1150,9 @@ class MavrosDrone(BaseDrone):
         if reference == MoveReference.BODY:
             pos = self._vision_pos.pose.pose.position
             current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
-        elif reference == MoveReference.TAKEOFF:
+        else:
             pos = self._takeoff_position.position
             current_yaw = self._takeoff_position.yaw
-        else:
-            pos = self._vision_pos.pose.pose.position
-            current_yaw = 0.0
 
         dx = (x or 0) * np.cos(current_yaw) - (y or 0) * np.sin(current_yaw)
         dy = (x or 0) * np.sin(current_yaw) + (y or 0) * np.cos(current_yaw)
@@ -972,10 +1170,10 @@ class MavrosDrone(BaseDrone):
             | PositionTarget.IGNORE_VY
             | PositionTarget.IGNORE_VZ
         )
-        msg.position.x = pos.x + dx
-        msg.position.y = pos.y + dy
-        msg.position.z = pos.z + dz
-        msg.yaw = current_yaw + np.radians(yaw) if yaw else current_yaw
+        msg.position.x = float(pos.x + dx)
+        msg.position.y = float(pos.y + dy)
+        msg.position.z = float(pos.z + dz)
+        msg.yaw = float(current_yaw + np.radians(yaw) if yaw else current_yaw)
         return msg
 
     def _compute_gps_target(
@@ -997,7 +1195,7 @@ class MavrosDrone(BaseDrone):
                 self._gps.altitude,
                 hdg,
             )
-        elif reference == MoveReference.TAKEOFF:
+        else:
             hdg = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position))
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
                 x or 0,
@@ -1008,24 +1206,37 @@ class MavrosDrone(BaseDrone):
                 self._takeoff_position.pose.position.altitude,
                 hdg,
             )
-        else:
-            lat = self._gps.latitude
-            lon = self._gps.longitude
-            alt = self._gps.altitude
-            hdg = self.heading
 
         target_yaw = hdg + (yaw or 0)
         quat = quaternion_from_euler(0, 0, np.radians(target_yaw))
 
         msg = GeoPoseStamped()
-        msg.pose.position.latitude = lat
-        msg.pose.position.longitude = lon
-        msg.pose.position.altitude = alt
-        msg.pose.orientation.x = quat[0]
-        msg.pose.orientation.y = quat[1]
-        msg.pose.orientation.z = quat[2]
-        msg.pose.orientation.w = quat[3]
+        msg.pose.position.latitude = float(lat)
+        msg.pose.position.longitude = float(lon)
+        msg.pose.position.altitude = float(alt)
+        msg.pose.orientation.x = float(quat[0])
+        msg.pose.orientation.y = float(quat[1])
+        msg.pose.orientation.z = float(quat[2])
+        msg.pose.orientation.w = float(quat[3])
         return msg
+
+    def _validate_position_sensors(self) -> None:
+        """
+        Validate that position sensors are available for navigation.
+
+        Raises
+        ------
+        SensorNotAvailableError
+            If required position sensor data is missing.
+        """
+        if self.is_indoor:
+            if self._vision_pos is None:
+                raise SensorNotAvailableError(
+                    "Vision pose", "navigation requires sensor data"
+                )
+        else:
+            if self._gps is None:
+                raise SensorNotAvailableError("GPS", "navigation requires sensor data")
 
     def _compute_errors(self, target, yaw: Optional[float]):
         if self.is_indoor:
@@ -1050,6 +1261,7 @@ class MavrosDrone(BaseDrone):
 
     def emergency_stop(self) -> None:
         """Execute emergency stop via force disarm."""
+        self._node.get_logger().warn("Emergency stop triggered")
         self.disarm()
 
     def set_home(self) -> bool:
@@ -1059,12 +1271,18 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if home position set successfully.
+            True if home position set successfully, False on failure or timeout.
         """
-        req = CommandHome.Request()
-        req.current_gps = True
-        self._call_service(self._home_srv, req, "Home set", "Set home failed")
-        return True
+        try:
+            req = CommandHome.Request()
+            req.current_gps = True
+            res = self._call_service(
+                self._home_srv, req, "Home set", "Set home failed", sync=True
+            )
+            return bool(res)
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set home failed: {e}")
+            return False
 
     def rtl(
         self,
@@ -1105,22 +1323,29 @@ class MavrosDrone(BaseDrone):
         return self._rtl_pid(altitude, precision, land)
 
     def _rtl_ardupilot(self, altitude: Optional[float], land: bool) -> bool:
-        if altitude is not None:
-            param = Parameter()
-            param.name = "RTL_ALT"
-            param.value.integer_value = int(altitude * 100)
+        try:
+            if altitude is not None:
+                param = Parameter()
+                param.name = "RTL_ALT"
+                param.value.integer_value = int(altitude * 100)
 
-            req = SetParameters.Request()
-            req.parameters.append(param)
-            self._call_service(self._param_srv, req, "RTL_ALT set", "RTL_ALT failed")
-            self.delay(1.0)
+                req = SetParameters.Request()
+                req.parameters.append(param)
+                self._call_service(
+                    self._param_srv, req, "RTL_ALT set", "RTL_ALT failed", sync=True
+                )
+                self.delay(1.0)
 
-        self.set_mode("RTL")
+            if not self.set_mode("RTL"):
+                return False
 
-        if not land:
-            self.delay(5.0)
+            if not land:
+                self.delay(5.0)
 
-        return True
+            return True
+        except TimeoutError as e:
+            self._node.get_logger().error(f"RTL ArduPilot failed: {e}")
+            return False
 
     def _rtl_pid(self, altitude: Optional[float], precision: float, land: bool) -> bool:
         if self._takeoff_position is None:
@@ -1142,7 +1367,7 @@ class MavrosDrone(BaseDrone):
 
         return True
 
-    def set_mode(self, mode: str) -> None:
+    def set_mode(self, mode: str) -> bool:
         """
         Set FCU flight mode.
 
@@ -1150,12 +1375,28 @@ class MavrosDrone(BaseDrone):
         ----------
         mode : str
             Flight mode name (e.g., 'GUIDED', 'STABILIZE', 'LOITER', 'RTL', 'LAND').
-        """
-        req = SetMode.Request()
-        req.custom_mode = mode
-        self._call_service(self._mode_srv, req, f"Mode: {mode}", f"Mode {mode} failed")
 
-    def set_param(self, param_id: str, param_value: int) -> None:
+        Returns
+        -------
+        bool
+            True if mode set successfully, False on failure or timeout.
+
+        See Also
+        --------
+        https://ardupilot.org/copter/docs/flight-modes.html
+        """
+        try:
+            req = SetMode.Request()
+            req.custom_mode = mode
+            res = self._call_service(
+                self._mode_srv, req, f"Mode: {mode}", f"Mode {mode} failed", sync=True
+            )
+            return bool(res)
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set mode failed: {e}")
+            return False
+
+    def set_param(self, param_id: str, param_value: int) -> bool:
         """
         Set ArduPilot parameter.
 
@@ -1165,18 +1406,28 @@ class MavrosDrone(BaseDrone):
             Parameter name (e.g., 'RTL_ALT').
         param_value : int
             Integer parameter value.
+
+        Returns
+        -------
+        bool
+            True if parameter set successfully, False on failure or timeout.
         """
-        param = Parameter()
-        param.name = param_id
-        param.value.integer_value = param_value
+        try:
+            param = Parameter()
+            param.name = param_id
+            param.value.integer_value = param_value
 
-        req = SetParameters.Request()
-        req.parameters.append(param)
-        self._call_service(
-            self._param_srv, req, f"{param_id} set", f"{param_id} failed"
-        )
+            req = SetParameters.Request()
+            req.parameters.append(param)
+            res = self._call_service(
+                self._param_srv, req, f"{param_id} set", f"{param_id} failed", sync=True
+            )
+            return bool(res)
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set param {param_id} failed: {e}")
+            return False
 
-    def do_servo(self, aux_out: int, pwm_value: int) -> None:
+    def do_servo(self, aux_out: int, pwm_value: int) -> bool:
         """
         Control auxiliary servo output.
 
@@ -1186,19 +1437,51 @@ class MavrosDrone(BaseDrone):
             Servo channel (0-7 maps to AUX outputs 1-8, FCU channels 9-16).
         pwm_value : int
             PWM value (typically 1000-2000 µs).
-        """
-        cmd = CommandLong.Request()
-        cmd.command = 183
-        cmd.param1 = float(aux_out + 8)
-        cmd.param2 = float(pwm_value)
-        self._call_service(
-            self._command_srv, cmd, f"Servo {aux_out} set", "Servo failed"
-        )
 
-    def _set_takeoff_position(self) -> None:
-        """Store current position as takeoff reference."""
-        self._takeoff_position = self.position_as_target
-        self._node.get_logger().info("Takeoff position set")
+        Returns
+        -------
+        bool
+            True if servo command sent successfully, False on failure or timeout.
+        """
+        try:
+            cmd = CommandLong.Request()
+            cmd.command = 183
+            cmd.param1 = float(aux_out + 8)
+            cmd.param2 = float(pwm_value)
+            res = self._call_service(
+                self._command_srv,
+                cmd,
+                f"Servo {aux_out} set",
+                "Servo failed",
+                sync=True,
+            )
+            return bool(res)
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Servo command failed: {e}")
+            return False
+
+    def _set_takeoff_position(self) -> bool:
+        """
+        Store current position as takeoff reference.
+
+        Returns
+        -------
+        bool
+            True if position set successfully, False if sensor data missing.
+        """
+        try:
+            pos = self.position_as_target
+            if pos is None:
+                self._node.get_logger().error(
+                    "Cannot set takeoff position: No position data"
+                )
+                return False
+            self._takeoff_position = pos
+            self._node.get_logger().info("Takeoff position set")
+            return True
+        except (SensorNotAvailableError, ValueError, AttributeError) as e:
+            self._node.get_logger().error(f"Cannot set takeoff position: {e}")
+            return False
 
     def set_takeoff_position(self, pose=None, heading: Optional[float] = None) -> None:
         """
@@ -1208,6 +1491,15 @@ class MavrosDrone(BaseDrone):
         ----------
         pose : PoseWithCovarianceStamped | NavSatFix | PositionTarget | GeoPoseStamped, optional
             Position to use as takeoff reference. If None, uses current position.
+
+            - PoseWithCovarianceStamped: See:
+              https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+            - NavSatFix: See:
+              https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
+            - PositionTarget: See:
+              https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
+            - GeoPoseStamped: See:
+              https://docs.ros.org/en/humble/p/geographic_msgs/msg/GeoPoseStamped.html
         heading : float, optional
             Heading in degrees for NavSatFix. Required if pose is NavSatFix.
 
@@ -1265,25 +1557,198 @@ class MavrosDrone(BaseDrone):
             raise TypeError(f"Invalid config type: {type(config)}")
         self._node.get_logger().info("PID configuration updated")
 
+    def _validate_service_response(self, response, service_name: str) -> bool:
+        """
+        Validate service response based on message type.
+
+        Checks MAVROS-specific fields (mode_sent, success, result) and
+        rcl_interfaces SetParameters results.
+
+        Note: MAVLink commands may return ACCEPTED (result=0) while execution
+        is asynchronous. The service response indicates command acceptance, not
+        completion. See: https://mavlink.io/en/messages/common.html#MAV_RESULT
+
+        Parameters
+        ----------
+        response : Any
+            Service response object.
+        service_name : str
+            Service name for logging (e.g., "/mavros/cmd/arming").
+
+        Returns
+        -------
+        bool
+            True if response indicates success, False otherwise.
+        """
+        # MAV_RESULT
+        mav_results = {
+            0: "ACCEPTED",
+            1: "TEMPORARILY_REJECTED",
+            2: "DENIED",
+            3: "UNSUPPORTED",
+            4: "FAILED",
+            5: "IN_PROGRESS",
+        }
+
+        # SetMode response
+        if hasattr(response, "mode_sent"):
+            if response.mode_sent:
+                self._node.get_logger().info(f"{service_name}: Mode sent")
+            else:
+                self._node.get_logger().warn(f"{service_name}: Mode not sent")
+            return response.mode_sent
+
+        # MAVROS Commands (CommandBool, CommandTOL, CommandLong, CommandHome)
+        if hasattr(response, "success") and hasattr(response, "result"):
+            res_str = mav_results.get(response.result, f"UNKNOWN={response.result}")
+            if response.success:
+                self._node.get_logger().info(
+                    f"{service_name}: Success (Result: {res_str})"
+                )
+            else:
+                self._node.get_logger().warn(
+                    f"{service_name}: Failed (Result: {res_str})"
+                )
+            return response.success
+
+        # Generic success check
+        if hasattr(response, "success"):
+            if response.success:
+                self._node.get_logger().info(f"{service_name}: Success")
+            else:
+                self._node.get_logger().warn(f"{service_name}: Failed")
+            return response.success
+
+        # SetParameters (rcl_interfaces)
+        if hasattr(response, "results"):
+            all_success = all(r.successful for r in response.results)
+            if all_success:
+                param_names = [r.name for r in response.results]
+                self._node.get_logger().info(
+                    f"{service_name}: Parameters set: {', '.join(param_names)}"
+                )
+            else:
+                failed = [r.name for r in response.results if not r.successful]
+                reasons = [
+                    f"{r.name}: {r.reason}"
+                    for r in response.results
+                    if not r.successful
+                ]
+                self._node.get_logger().warn(
+                    f"{service_name}: Parameters failed: {', '.join(reasons)}"
+                )
+            return all_success
+
+        # Unknown response type - log and assume success
+        self._node.get_logger().debug(
+            f"{service_name}: Unknown response type, assuming success"
+        )
+        return True
+
     def _call_service(
-        self, service, request, success_msg: str, fail_msg: str, sync: bool = True
+        self,
+        service,
+        request,
+        success_msg: str,
+        fail_msg: str,
+        sync: bool = False,
+        timeout: float = 10.0,
     ):
-        while not service.wait_for_service(timeout_sec=1.0):
-            self._node.get_logger().info(f"Waiting for {service.srv_name}...")
+        """
+        Call a ROS2 service with timeout and optional async execution.
+
+        Parameters
+        ----------
+        service : Client
+            ROS2 service client.
+        request : SrvTypeRequest
+            Service request message.
+        success_msg : str
+            Message to log on success.
+        fail_msg : str
+            Message to log on failure.
+        sync : bool, default=False
+            If True, blocks (spins) until service completes.
+            If False, returns immediately (non-blocking).
+        timeout : float, default=10.0
+            Maximum time in seconds to wait for service availability.
+
+        Returns
+        -------
+        Any or None
+            Service response if sync=True, None if async or on failure.
+
+        Raises
+        ------
+        TimeoutError
+            If service not available within timeout.
+        """
+        elapsed = 0.0
+        wait_interval = 1.0
+
+        while not service.wait_for_service(timeout_sec=wait_interval):
+            elapsed += wait_interval
+            self._node.get_logger().info(
+                f"Service {service.srv_name} not available, waiting... ({elapsed:.0f}s)"
+            )
+            if elapsed >= timeout:
+                self._node.get_logger().error(
+                    f"\033[31;1m{fail_msg} - Service {service.srv_name} not available after {timeout}s\033[0m"
+                )
+                raise TimeoutError(
+                    f"Service {service.srv_name} not available after {timeout}s"
+                )
+
+        self._node.get_logger().debug(
+            f"Calling service {service.srv_name} | sync={sync}"
+        )
 
         if sync:
-            result = service.call(request)
-            if result:
-                self._node.get_logger().info(success_msg)
-            else:
-                self._node.get_logger().error(fail_msg)
+            # Use call_async + spin loop to avoid deadlocks
+            future = service.call_async(request)
+            start_time = self._node.get_clock().now()
+
+            while not future.done():
+                rclpy.spin_once(self._node, timeout_sec=0.05)
+                if (
+                    self._node.get_clock().now() - start_time
+                ).nanoseconds / 1e9 > timeout:
+                    self._node.get_logger().error(
+                        f"\033[31;1m{fail_msg}: Timeout waiting for response\033[0m"
+                    )
+                    return None
+
+            try:
+                result = future.result()
+                if result is not None:
+                    self._validate_service_response(
+                        result, service.srv_name
+                    )  # TODO: test the responses from mavros to include in the verification of service
+                    self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
+                    return result
+                else:
+                    self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
+                    return None
+            except Exception as e:
+                self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
+                return None
         else:
             future = service.call_async(request)
-            future.add_done_callback(
-                lambda f: self._node.get_logger().info(
-                    success_msg if f.result() else fail_msg
-                )
-            )
+
+            def _handle_response(future):
+                try:
+                    result = future.result()
+                    if result is not None and self._validate_service_response(
+                        result, service.srv_name
+                    ):
+                        self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
+                    else:
+                        self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
+                except Exception as e:
+                    self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
+
+            future.add_done_callback(_handle_response)
+            return None
 
 
 DroneFactory.register("mavros", MavrosDrone.from_config)

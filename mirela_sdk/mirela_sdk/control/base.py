@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List
-from time import sleep, time
+from typing import Optional, List, Callable, Union
 
 import rclpy
 from rclpy.duration import Duration
@@ -24,6 +23,7 @@ from mirela_sdk.control.exceptions import (
 from mirela_sdk.control.obstacles.handler import ObstacleManager, ObstacleHandler
 from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
 from mirela_sdk.control.protocols import ObstacleDetector
+from mirela_sdk.utils.process import ProcessUtils
 
 
 class BaseDrone(ABC):
@@ -36,6 +36,7 @@ class BaseDrone(ABC):
         Drone configuration dataclass.
     node : Node
         ROS2 node for communication.
+
     """
 
     def __init__(self, config: DroneConfig, node: Node) -> None:
@@ -66,6 +67,52 @@ class BaseDrone(ABC):
     def is_ready(self) -> bool:
         """Check if drone is ready for operation (connected and driver running)."""
         return self._connected and self._driver_running
+
+    @property
+    def driver_running(self) -> bool:
+        """Whether the driver process is currently running."""
+        return self._driver_running
+
+    @property
+    def is_armed(self) -> Optional[bool]:
+        """
+        Check if motors are armed.
+
+        Returns
+        -------
+        Optional[bool]
+            True if armed, False if disarmed, None if not supported.
+        """
+        return None
+
+    @property
+    def flight_mode(self) -> Optional[str]:
+        """
+        Current flight mode.
+
+        Returns
+        -------
+        Optional[str]
+            Flight mode name, or None if not available.
+        """
+        return None
+
+    @property
+    def is_fcu_connected(self) -> Optional[bool]:
+        """
+        Check if FCU/autopilot is connected.
+
+        Returns
+        -------
+        Optional[bool]
+            True if connected, False otherwise, None if not applicable.
+        """
+        return None
+
+    @property
+    def driver_session_name(self) -> str:
+        """Tmux session name used for the driver process."""
+        return self._get_driver_name()
 
     @property
     def obstacle_manager(self) -> ObstacleManager:
@@ -255,10 +302,9 @@ class BaseDrone(ABC):
         duration : float (s), optional
             Execution time. If None, command is continuous.
         reference : MoveReference (enum), default=BODY
-            BODY: relative to current orientation (body-fixed frame)
-            WORLD: relative to world frame (NED frame)
-
-            Note: TAKEOFF reference is not applicable for velocity control.
+            - BODY: relative to current orientation
+            - WORLD: relative to world frame (NED frame)
+            - TAKEOFF: relative to takeoff position
         """
         pass
 
@@ -443,6 +489,18 @@ class BaseDrone(ABC):
         """
         pass
 
+    @abstractmethod
+    def _get_driver_command(self) -> str:
+        """
+        Return command to start the driver process.
+
+        Returns
+        -------
+        str
+            Shell command to start the driver.
+        """
+        pass
+
     def _init_driver(self) -> None:
         """
         Initialize driver lifecycle.
@@ -458,7 +516,7 @@ class BaseDrone(ABC):
         driver_name = self._get_driver_name()
         self._node.get_logger().info(f"Initializing driver: {driver_name}")
 
-        if self._check_driver_running():
+        if self.check_driver_status():
             self._node.get_logger().info(f"Driver {driver_name} already running")
             self._driver_running = True
             return
@@ -466,17 +524,14 @@ class BaseDrone(ABC):
         if not self._start_driver():
             raise DriverNotFoundError(driver_name)
 
-        self._wait_for_driver(timeout=5.0)
+        self._wait_for_driver(timeout=10.0)
         self._driver_running = True
 
-    def _check_driver_running(self, timeout: float = 0.0) -> bool:
+    def check_driver_status(self) -> bool:
         """
         Check if driver node is running in ROS2 graph.
 
-        Parameters
-        ----------
-        timeout : float, default=0.0
-            Maximum time to wait in seconds. 0 for immediate check.
+        Uses ProcessUtils for efficient node checking without blocking.
 
         Returns
         -------
@@ -484,23 +539,17 @@ class BaseDrone(ABC):
             True if driver node found in ROS2 graph.
         """
         driver_name = self._get_driver_name()
-        start = time()
+        is_running = ProcessUtils.is_node_running(driver_name, timeout=2.0)
+        self._driver_running = is_running
+        return is_running
 
-        while True:
-            node_names = self._node.get_node_names()
-            if driver_name in node_names:
-                return True
-            if timeout <= 0 or (time() - start) >= timeout:
-                return False
-            sleep(0.1)
-
-    def _wait_for_driver(self, timeout: float = 5.0) -> bool:
+    def _wait_for_driver(self, timeout: float = 10.0) -> bool:
         """
         Wait for driver node to appear in ROS2 graph.
 
         Parameters
         ----------
-        timeout : float, default=5.0
+        timeout : float, default=10.0
             Maximum wait time in seconds.
 
         Returns
@@ -509,23 +558,58 @@ class BaseDrone(ABC):
             True if driver found within timeout.
         """
         driver_name = self._get_driver_name()
-        start = time()
-
-        while (time() - start) < timeout:
-            if self._check_driver_running():
-                self._node.get_logger().info(f"Driver {driver_name} started")
-                return True
-            sleep(0.2)
+        if ProcessUtils.wait_for_node(driver_name, timeout=timeout, poll_interval=0.5):
+            self._node.get_logger().info(f"Driver {driver_name} started")
+            self._driver_running = True
+            return True
 
         self._node.get_logger().warn(f"Timeout waiting for driver {driver_name}")
+        self._driver_running = False
         return False
+
+    def start_driver_process(self) -> bool:
+        """
+        Start the driver process.
+
+        Convenience method that starts the driver and waits for it to be ready.
+
+        Returns
+        -------
+        bool
+            True if driver started successfully.
+        """
+        if self.check_driver_status():
+            self._node.get_logger().info("Driver already running")
+            return True
+
+        if self._start_driver():
+            return self._wait_for_driver(timeout=15.0)
+        return False
+
+    def stop_driver_process(self) -> bool:
+        """
+        Stop the driver process.
+
+        Kills the tmux session running the driver.
+
+        Returns
+        -------
+        bool
+            True if driver stopped successfully.
+        """
+        driver_name = self._get_driver_name()
+        success = ProcessUtils.kill_process(driver_name)
+        if success:
+            self._driver_running = False
+            self._node.get_logger().info(f"Driver {driver_name} stopped")
+        return success
 
     def _create_subscriber(
         self,
         msg_type: type,
         topic: str,
-        callback: callable,
-        qos: QoSProfile | int,
+        callback: Callable,
+        qos: Union[QoSProfile, int],
     ) -> Subscription:
         """
         Create ROS2 subscriber with reentrant callback group.
@@ -560,7 +644,7 @@ class BaseDrone(ABC):
         self,
         msg_type: type,
         topic: str,
-        qos: QoSProfile | int,
+        qos: Union[QoSProfile, int],
     ) -> Publisher:
         """
         Create ROS2 publisher with reentrant callback group.
@@ -648,6 +732,7 @@ class BaseDrone(ABC):
         self._subscribers.clear()
         self._publishers.clear()
         self._clients.clear()
+        self._node.get_logger().debug("Drone resources cleaned up")
 
     def __del__(self) -> None:
         self.cleanup()

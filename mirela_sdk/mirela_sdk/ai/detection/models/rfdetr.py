@@ -24,9 +24,17 @@ try:
     from rfdetr.util.coco_classes import COCO_CLASSES
 
     RFDETR_AVAILABLE = True
+    RFDETR_MODELS = {
+        "rfdetr-nano": RFDETRNano,
+        "rfdetr-small": RFDETRSmall,
+        "rfdetr-base": RFDETRBase,
+        "rfdetr-medium": RFDETRMedium,
+        "rfdetr-large": RFDETRLarge,
+    }
 except ImportError:
     RFDETR_AVAILABLE = False
     COCO_CLASSES = []
+    RFDETR_MODELS = {}
 
 from PIL import Image
 
@@ -37,14 +45,6 @@ from mirela_sdk.ai.detection.core.exceptions import ModelNotLoadedError, Trainin
 from mirela_sdk.ai.detection.utils.device import get_device
 
 logger = logging.getLogger(__name__)
-
-RFDETR_MODELS = {
-    "rfdetr-nano": RFDETRNano if RFDETR_AVAILABLE else None,
-    "rfdetr-small": RFDETRSmall if RFDETR_AVAILABLE else None,
-    "rfdetr-base": RFDETRBase if RFDETR_AVAILABLE else None,
-    "rfdetr-medium": RFDETRMedium if RFDETR_AVAILABLE else None,
-    "rfdetr-large": RFDETRLarge if RFDETR_AVAILABLE else None,
-}
 
 
 class RFDETRModel(BaseDetectionModel):

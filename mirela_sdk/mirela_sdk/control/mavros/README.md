@@ -38,7 +38,7 @@ classDiagram
         +disconnect()
         +arm() bool
         +disarm() bool
-        +takeoff(altitude, max_retries) bool
+        +takeoff(altitude, max_retries, adjust_altitude, precision, timeout) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
         +move_to(x, y, z, yaw, reference, timeout, precision, strategy) bool
@@ -64,6 +64,7 @@ classDiagram
         -_compute_target(x, y, z, yaw, reference) tuple
         -_compute_errors(target_x, target_y, target_z, target_yaw) tuple
         -_create_pid(axis) PIDController
+        -_call_service(service, request, success_msg, fail_msg, sync, timeout) Any
         -_get_driver_name() str
         -_start_driver() bool
     }
@@ -187,6 +188,35 @@ drone.height                   # float: Best available altitude source
 drone.position                 # Union[PoseWithCovarianceStamped, NavSatFix]
 ```
 
+### Takeoff
+
+The `takeoff()` method executes a takeoff sequence with retry logic and optional altitude adjustment.
+
+**Basic Usage**:
+```python
+drone.takeoff(altitude=1.5)  # Default: adjust_altitude=True, precision=0.12m, timeout=25s
+```
+
+**With Custom Adjustment**:
+```python
+# Disable altitude adjustment
+drone.takeoff(altitude=2.0, adjust_altitude=False)
+
+# Custom precision and timeout
+drone.takeoff(altitude=1.5, precision=0.15, timeout=30.0)
+```
+
+**Sequence**:
+1. Arms drone in GUIDED mode
+2. Sets takeoff position (first attempt only)
+3. Sends takeoff command to FCU
+4. Waits for altitude gain (verifies height change >= 0.1m)
+5. If `adjust_altitude=True`: Uses `move_to()` to fine-tune altitude to target
+6. Retries up to `max_retries` times if altitude doesn't change
+
+**Altitude Adjustment**:
+After successful takeoff, if `adjust_altitude=True` and current altitude differs from target by more than `precision`, the method calls `move_to(z=altitude_diff)` to reach the exact target altitude. This ensures precise altitude control using PID navigation.
+
 ## Navigation Implementation
 
 ### PID Navigation
@@ -224,6 +254,19 @@ local_pub.publish(msg)
 
 **Dead Zone**: Velocity commands zeroed when within `precision / 2` meters to prevent oscillation.
 
+### Velocity Control
+
+Direct velocity command publishing to flight controller.
+
+**Method**: `move_velocity(vx, vy, vz, vyaw, duration, reference)`
+
+**Reference Frames**:
+- **BODY** (default): Uses `FRAME_BODY_NED`. Velocities relative to current orientation.
+- **WORLD**: Uses `FRAME_LOCAL_NED`. Velocities relative to world NED frame.
+- **TAKEOFF**: Transforms velocities from takeoff frame to body frame before publishing.
+
+**Duration**: If `duration` is specified, command is published at 30 Hz for the specified time. If `None`, command is published once (continuous until next command).
+
 ### Setpoint Navigation
 
 Direct position setpoint publishing to flight controller.
@@ -254,10 +297,22 @@ gps_pub.publish(msg)
 
 ## Reference Frame Transformations
 
+### Supported References by Method
+
+| Method | BODY | WORLD | TAKEOFF |
+|--------|------|-------|---------|
+| `move_velocity()` | ✅ | ✅ | ✅ |
+| `move_to()` | ✅ | ❌ | ✅ |
+
+**Note**: `move_to()` does not support `WORLD` reference and will raise `CapabilityNotSupportedError` if used.
+
 ### BODY Frame
 
 Relative to current orientation.
 
+**move_velocity**: Uses `FRAME_BODY_NED` coordinate frame.
+
+**move_to**: Transforms relative offsets to world coordinates:
 ```python
 # Transform to world coordinates
 dx = x * cos(current_yaw) - y * sin(current_yaw)
@@ -269,10 +324,21 @@ target_y = current_y + dy
 target_z = current_z + dz
 ```
 
+### WORLD Frame
+
+Relative to world/local NED frame.
+
+**move_velocity only**: Uses `FRAME_LOCAL_NED` coordinate frame. Velocities are interpreted in world frame.
+
+**Not supported in move_to**: Use `BODY` or `TAKEOFF` reference instead.
+
 ### TAKEOFF Frame
 
-Relative to takeoff position.
+Relative to takeoff position and orientation.
 
+**move_velocity**: Transforms velocities from takeoff frame to body frame before publishing.
+
+**move_to**: Direct offset from takeoff position:
 ```python
 # Direct offset from takeoff position
 target_x = takeoff_x + x
@@ -554,12 +620,110 @@ drone.takeoff(1.5)
 # Move 2m forward in body frame
 drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.BODY)
 
-# Move to absolute world position
-drone.move_to(x=5.0, y=3.0, z=2.0, reference=MoveReference.WORLD)
+# Velocity control in world frame
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
 
 # Return to takeoff position
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 ```
+
+### Velocity Control Examples
+
+```python
+from mirela_sdk.control.types import MoveReference
+
+# Body-frame velocity (relative to current orientation)
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.BODY)
+
+# World-frame velocity (relative to world NED frame)
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
+
+# Takeoff-frame velocity (relative to takeoff orientation)
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.TAKEOFF)
+
+# Velocity for specific duration
+drone.move_velocity(vx=1.0, duration=2.0, reference=MoveReference.BODY)
+```
+
+## Service Call Behavior
+
+All MAVROS service calls use `_call_service` with automatic response validation and deadlock-safe execution.
+
+### Async Pattern with Spin Loop
+
+Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), synchronous `client.call()` causes deadlock when called from callbacks or the same thread as the executor. We use `call_async()` with a spin loop:
+
+```python
+future = service.call_async(request)
+while not future.done():
+    rclpy.spin_once(self._node, timeout_sec=0.05)
+    if elapsed > timeout:
+        raise TimeoutError(...)
+result = future.result()
+```
+
+This pattern:
+- Avoids deadlock (no blocking on executor thread)
+- Maintains ROS2 communication during wait
+- Allows timeout handling
+- Provides synchronous-like behavior when needed
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sync` | `True` | If True, waits for response using spin loop. If False, returns immediately. |
+| `timeout` | `10.0` | Maximum seconds to wait for service availability and response. |
+
+### Response Validation
+
+Responses are validated based on message type:
+
+| Service Type | Field Checked | Failure Condition |
+|--------------|---------------|-------------------|
+| `SetMode` | `mode_sent` | `False` |
+| `CommandBool`, `CommandTOL`, `CommandLong` | `success`, `result` | `success=False` or `result != ACCEPTED` |
+| `SetParameters` | `results[].successful` | Any `False` |
+
+### MAV_RESULT Codes
+
+MAVROS command services return [MAVLink MAV_RESULT](https://mavlink.io/en/messages/common.html#MAV_RESULT) codes in the `result` field:
+
+| Code | Name | Description |
+|------|------|-------------|
+| 0 | `ACCEPTED` | Command executed successfully |
+| 1 | `TEMPORARILY_REJECTED` | Command valid but cannot execute now |
+| 2 | `DENIED` | Command invalid or not permitted |
+| 3 | `UNSUPPORTED` | Command not supported by autopilot |
+| 4 | `FAILED` | Command failed to execute |
+| 5 | `IN_PROGRESS` | Command being executed |
+
+Failed commands log the result code:
+```
+[WARN] /mavros/cmd/arming: Failed (Result: DENIED)
+```
+
+### Usage Examples
+
+**Flight actions** (arm, disarm, takeoff, land) use `sync=True`:
+
+```python
+def arm(self) -> bool:
+    req = CommandBool.Request()
+    req.value = True
+    res = self._call_service(
+        self._arm_srv, req, "Armed", "Arm failed", sync=True
+    )
+    return bool(res)
+```
+
+**Timeout handling**:
+
+```python
+try:
+    drone.arm()
+except TimeoutError as e:
+    drone.node.get_logger().error(f"Service timeout: {e}")
 
 ## Error Handling
 
@@ -583,14 +747,32 @@ try:
         heading = drone.heading  # Raises SensorNotAvailableError
 except SensorNotAvailableError as e:
     drone.node.get_logger().warn(f"Sensor unavailable: {e}")
+
+try:
+    # Service timeout
+    drone.arm()
+except TimeoutError as e:
+    drone.node.get_logger().error(f"Service not available: {e}")
 ```
 
 ---
 
 ## References
 
-- [ArduPilot Copter Documentation](https://ardupilot.org/copter/)
-- [MAVROS Documentation](https://github.com/mavlink/mavros)
-- [ArduPilot Altitude Understanding](https://ardupilot.org/copter/docs/common-understanding-altitude.html)
+### MAVLink & MAVROS
 - [MAVLink Protocol](https://mavlink.io/en/)
+- [MAV_RESULT Enum](https://mavlink.io/en/messages/common.html#MAV_RESULT)
+- [MAV_CMD Commands](https://mavlink.io/en/messages/common.html#mav_commands)
+- [MAVROS GitHub](https://github.com/mavlink/mavros)
+- [MAVROS ROS2 API](https://docs.ros.org/en/humble/p/mavros/)
+
+### ArduPilot
+- [ArduPilot Copter Documentation](https://ardupilot.org/copter/)
+- [Flight Modes](https://ardupilot.org/copter/docs/flight-modes.html)
+- [Understanding Altitude](https://ardupilot.org/copter/docs/common-understanding-altitude.html)
+
+### ROS2
+- [Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html)
+- [ROS2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
+- [Callback Groups](https://docs.ros.org/en/humble/How-To-Guides/Using-callback-groups.html)
 

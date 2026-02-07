@@ -27,6 +27,16 @@ RUN echo "⬆️  Atualizando e instalando pacotes essenciais..." && \
     v4l-utils \
     libssl-dev \
     libusb-1.0-0-dev \
+    # Qt6/PySide6 GUI dependencies
+    libxcb-cursor0 \
+    libxcb-shape0 \
+    libxcb-icccm4 \
+    libxcb-image0 \
+    libxcb-keysyms1 \
+    libxcb-render-util0 \
+    libxkbcommon-x11-0 \
+    libegl1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN usermod -a -G video root

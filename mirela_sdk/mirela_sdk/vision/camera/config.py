@@ -1,7 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional, Tuple
+
+
+class QoSReliability(Enum):
+    BEST_EFFORT = "best_effort"
+    RELIABLE = "reliable"
+
+
+class QoSDurability(Enum):
+    VOLATILE = "volatile"
+    TRANSIENT_LOCAL = "transient_local"
 
 
 @dataclass(frozen=True)
@@ -13,6 +24,18 @@ class CameraConfig:
 class ROSConfig(CameraConfig):
     topic: str = "/image_raw"
     compressed: bool = False
+    reliability: QoSReliability = QoSReliability.BEST_EFFORT
+    durability: QoSDurability = QoSDurability.VOLATILE
+    history_depth: int = 1
+    encoding: str = "bgr8"
+
+
+@dataclass(frozen=True)
+class ROSDepthConfig(ROSConfig):
+    depth_topic: str = "/camera/depth/image_rect_raw"
+    depth_compressed: bool = False
+    depth_encoding: str = "passthrough"
+    enable_depth: bool = True
 
 
 @dataclass(frozen=True)

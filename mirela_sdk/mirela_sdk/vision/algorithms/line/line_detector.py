@@ -607,8 +607,9 @@ class LineDetector:
 
     Parameters
     ----------
-    color : str, default="blue"
+    color : str, optional
         Color name to detect (must exist in calibration file).
+        If None, uses external_mask for detection.
     estimation_method : ILineEstimationMethod, default=HoughLinesP
         Strategy class for line estimation.
     color_space : ColorSpace, optional
@@ -622,6 +623,8 @@ class LineDetector:
         Active estimation strategy.
     prev_angle : float
         Previous angle for exponential smoothing.
+    external_mask : np.ndarray
+        External binary mask to use instead of color detection.
     """
 
     def __init__(
@@ -633,18 +636,33 @@ class LineDetector:
         if color_space is None:
             color_space = ColorSpace.HSV
 
-        self.color_detector = ColorDetector(
-            mode="preset", color=color, color_space=color_space
-        )
-        self.estimation_method = estimation_method
         self.color = color
         self.color_space = color_space
+        self._external_mask = None
+
+        if color is not None:
+            self.color_detector = ColorDetector(
+                mode="preset", color=color, color_space=color_space
+            )
+        else:
+            self.color_detector = None
+
+        self.estimation_method = estimation_method
         self.text_positions = {
             "color": (10, 90),
             "angle": (10, 30),
             "center_x": (10, 60),
         }
         self.prev_angle = float("nan")
+
+    @property
+    def external_mask(self) -> np.ndarray:
+        """External binary mask for line detection."""
+        return self._external_mask
+
+    @external_mask.setter
+    def external_mask(self, mask: np.ndarray) -> None:
+        self._external_mask = mask
 
     def set_text_positions(self, positions_dict):
         """
@@ -691,25 +709,29 @@ class LineDetector:
             - angle: Line angle in degrees
             - width, height: Line dimensions in pixels
         """
-
-        self.color_detector.filterColor(img)
+        if self._external_mask is not None:
+            mask = self._external_mask
+        elif self.color_detector is not None:
+            self.color_detector.filterColor(img)
+            mask = self.color_detector.mask
+        else:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            _, mask = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
 
         if region == (0, 0):
             region = (img.shape[1], img.shape[0])
 
         region_size = region
         region_center = (
-            self.color_detector.mask.shape[1] // 2,
-            self.color_detector.mask.shape[0] // 2,
+            mask.shape[1] // 2,
+            mask.shape[0] // 2,
         )
         offset = (
             region_center[0] - region_size[0] // 2,
             region_center[1] - region_size[1] // 2,
         )
 
-        unique_values = np.unique(self.color_detector.mask)
-
-        region = cv2.getRectSubPix(self.color_detector.mask, region_size, region_center)
+        region = cv2.getRectSubPix(mask, region_size, region_center)
         _, region = cv2.threshold(region, 128, 255, cv2.THRESH_BINARY)
 
         center_x = center_y = angle = float("nan")

@@ -1,5 +1,4 @@
 from typing import Optional
-from time import sleep
 
 from rclpy.node import Node
 from rclpy.duration import Duration
@@ -82,35 +81,107 @@ class BebopDrone(BaseDrone):
     def _get_driver_name(self) -> str:
         return "bebop_driver"
 
-    def _start_driver(self) -> bool:
+    def _get_driver_command(self) -> str:
         config: BebopConfig = self._config
-        cmd = f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={config.ip}"
-        return ProcessUtils.start_process(cmd, "bebop_driver")
+        return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={config.ip}"
+
+    def _start_driver(self) -> bool:
+        """
+        Launch Bebop driver process.
+
+        Checks if driver node is already running before starting. If node exists,
+        assumes driver was started manually and returns True.
+
+        Returns
+        -------
+        bool
+            True if driver started or already running, False otherwise.
+        """
+        driver_name = self._get_driver_name()
+        if ProcessUtils.is_node_running(driver_name, timeout=2.0):
+            self._node.get_logger().info(f"Driver node {driver_name} already running")
+            return True
+
+        cmd = self._get_driver_command()
+        return ProcessUtils.start_process(cmd, driver_name)
 
     def connect(self) -> bool:
+        """
+        Check Bebop driver connection status.
+
+        Returns
+        -------
+        bool
+            True if driver is running.
+        """
         self._connected = self._driver_running
         return self._connected
 
     def disconnect(self) -> None:
+        """Disconnect and cleanup resources."""
         self.cleanup()
 
     def arm(self) -> bool:
+        """
+        Arm motors (no-op for Bebop).
+
+        Bebop arms automatically on takeoff.
+
+        Returns
+        -------
+        bool
+            Always True.
+        """
         return True
 
     def disarm(self) -> bool:
-        """Force disarm motors via emergency stop."""
+        """
+        Force disarm motors via emergency stop.
+
+        Returns
+        -------
+        bool
+            True if command sent.
+        """
         self._emergency_pub.publish(Empty())
+        self._node.get_logger().debug("Disarm (emergency stop) sent")
         return True
 
     def takeoff(self, altitude: float) -> bool:
+        """
+        Execute takeoff.
+
+        Parameters
+        ----------
+        altitude : float
+            Target altitude in meters (ignored by Bebop, uses default hover altitude).
+
+        Returns
+        -------
+        bool
+            True if takeoff command sent.
+        """
         self._takeoff_pub.publish(Empty())
-        self._node.get_logger().info("Takeoff")
+        self._node.get_logger().info(f"Takeoff (requested alt={altitude}m)")
         self.delay(3.0)
         return True
 
     def land(self, timeout: float = 30.0) -> bool:
+        """
+        Execute landing at current position.
+
+        Parameters
+        ----------
+        timeout : float, default=30.0
+            Maximum time for operation (unused, Bebop lands asynchronously).
+
+        Returns
+        -------
+        bool
+            True if land command sent.
+        """
         self._land_pub.publish(Empty())
-        self._node.get_logger().info("Land")
+        self._node.get_logger().info("Landing")
         return True
 
     def move_velocity(
@@ -125,7 +196,26 @@ class BebopDrone(BaseDrone):
         """
         Command velocity-based movement.
 
-        Note: Bebop only supports BODY frame. WORLD and TAKEOFF references are ignored.
+        Bebop uses normalized velocities (-1.0 to 1.0). Values are clamped.
+
+        Parameters
+        ----------
+        vx : float, default=0.0
+            Forward/backward velocity (-1.0 to 1.0).
+        vy : float, default=0.0
+            Left/right velocity (-1.0 to 1.0).
+        vz : float, default=0.0
+            Up/down velocity (-1.0 to 1.0).
+        vyaw : float, default=0.0
+            Yaw rotation velocity (-1.0 to 1.0).
+        duration : float, optional
+            If specified, sends command for this duration.
+        reference : MoveReference, default=BODY
+            Reference frame (only BODY supported, others ignored).
+
+        Notes
+        -----
+        Bebop only supports BODY frame. WORLD and TAKEOFF references are ignored.
         """
         msg = Twist()
         msg.linear.x = max(-1.0, min(1.0, vx))
@@ -142,7 +232,7 @@ class BebopDrone(BaseDrone):
 
             while self._node.get_clock().now() - start < dur:
                 self._vel_pub.publish(msg)
-                sleep(rate)
+                self.delay(rate)
 
     def move_to(
         self,
@@ -158,8 +248,9 @@ class BebopDrone(BaseDrone):
         raise CapabilityNotSupportedError("Position control", "Bebop")
 
     def emergency_stop(self) -> None:
+        """Execute emergency stop (immediate motor shutdown)."""
         self._emergency_pub.publish(Empty())
-        self._node.get_logger().info("Emergency stop")
+        self._node.get_logger().warn("Emergency stop executed")
 
     def rtl(
         self,
@@ -208,7 +299,7 @@ class BebopDrone(BaseDrone):
     def snapshot(self) -> None:
         """Capture photo with onboard camera."""
         self._photo_pub.publish(Bool(data=True))
-        self._node.get_logger().info("Snapshot")
+        self._node.get_logger().debug("Snapshot captured")
 
     def flat_trim(self) -> None:
         """

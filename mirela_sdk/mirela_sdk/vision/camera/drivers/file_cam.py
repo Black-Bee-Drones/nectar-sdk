@@ -10,8 +10,8 @@ class FileImageCam(AbstractCam):
     """
     Camera driver for static image files.
 
-    Loads an image from disk and returns it on every get_frame() call.
-    Useful for testing and offline processing.
+    Loads an image from disk once and returns the same frame on every
+    get_frame() call.
 
     Parameters
     ----------
@@ -27,9 +27,13 @@ class FileImageCam(AbstractCam):
     def start(self) -> None:
         """Load image from configured path."""
         self._frame = cv2.imread(self._config.path)
+        if self._frame is None:
+            raise FileNotFoundError(f"Could not load image: {self._config.path}")
         self._is_running = True
 
-    def get_frame(self) -> Optional[np.ndarray]:
+    def get_frame(
+        self, wait_for_new: bool = False, timeout: float = 1.0
+    ) -> Optional[np.ndarray]:
         """
         Return the loaded image.
 
@@ -40,6 +44,22 @@ class FileImageCam(AbstractCam):
         """
         return self._frame
 
+    def reload(self) -> bool:
+        """
+        Reload image from disk.
+
+        Returns
+        -------
+        bool
+            True if reload succeeded, False otherwise.
+        """
+        frame = cv2.imread(self._config.path)
+        if frame is None:
+            return False
+        self._frame = frame
+        return True
+
     def close(self) -> None:
         """Mark camera as stopped."""
         self._is_running = False
+        self._frame = None
