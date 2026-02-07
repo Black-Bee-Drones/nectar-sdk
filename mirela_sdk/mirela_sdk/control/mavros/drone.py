@@ -533,12 +533,20 @@ class MavrosDrone(BaseDrone):
             self._node.get_logger().error(f"Disarm failed: {e}")
             return False
 
-    def takeoff(self, altitude: float, max_retries: int = 2) -> bool:
+    def takeoff(
+        self,
+        altitude: float,
+        max_retries: int = 2,
+        adjust_altitude: bool = True,
+        precision: float = 0.12,
+        timeout: float = 25.0,
+    ) -> bool:
         """
-        Execute takeoff sequence with retry logic.
+        Execute takeoff sequence with retry logic and optional altitude adjustment.
 
         Arms drone, stores takeoff position, sends takeoff command, and verifies altitude gain.
         If altitude doesn't change significantly, disarms and retries up to max_retries times.
+        Optionally fine-tunes altitude using move_to to reach target precisely.
 
         Parameters
         ----------
@@ -546,6 +554,12 @@ class MavrosDrone(BaseDrone):
             Target altitude in meters.
         max_retries : int, default=2
             Maximum number of takeoff attempts.
+        adjust_altitude : bool, default=True
+            If True, fine-tune altitude using move_to after takeoff command.
+        precision : float, default=0.12
+            Altitude precision in meters for adjustment.
+        timeout : float, default=25.0
+            Maximum time in seconds for altitude adjustment.
 
         Returns
         -------
@@ -592,6 +606,29 @@ class MavrosDrone(BaseDrone):
                 self._node.get_logger().info(
                     f"Takeoff successful (gained {height_gain:.2f}m)"
                 )
+
+                if adjust_altitude:
+                    current_height = self.height
+                    altitude_diff = altitude - current_height
+
+                    if abs(altitude_diff) > precision:
+                        self._node.get_logger().info(
+                            f"Adjusting altitude from {current_height:.2f}m to {altitude:.2f}m"
+                        )
+                        adjustment_success = self.move_to(
+                            z=altitude_diff,
+                            precision=precision,
+                            timeout=timeout,
+                        )
+                        if adjustment_success:
+                            self._node.get_logger().info(
+                                f"Altitude adjusted to {self.height:.2f}m"
+                            )
+                        else:
+                            self._node.get_logger().warn(
+                                f"Altitude adjustment incomplete, current: {self.height:.2f}m"
+                            )
+
                 return True
 
             if attempt < max_retries - 1:

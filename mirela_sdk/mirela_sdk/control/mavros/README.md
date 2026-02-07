@@ -38,7 +38,7 @@ classDiagram
         +disconnect()
         +arm() bool
         +disarm() bool
-        +takeoff(altitude, max_retries) bool
+        +takeoff(altitude, max_retries, adjust_altitude, precision, timeout) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
         +move_to(x, y, z, yaw, reference, timeout, precision, strategy) bool
@@ -187,6 +187,35 @@ drone.lidar_alt                # Optional[float]: Lidar rangefinder altitude
 drone.height                   # float: Best available altitude source
 drone.position                 # Union[PoseWithCovarianceStamped, NavSatFix]
 ```
+
+### Takeoff
+
+The `takeoff()` method executes a takeoff sequence with retry logic and optional altitude adjustment.
+
+**Basic Usage**:
+```python
+drone.takeoff(altitude=1.5)  # Default: adjust_altitude=True, precision=0.12m, timeout=25s
+```
+
+**With Custom Adjustment**:
+```python
+# Disable altitude adjustment
+drone.takeoff(altitude=2.0, adjust_altitude=False)
+
+# Custom precision and timeout
+drone.takeoff(altitude=1.5, precision=0.15, timeout=30.0)
+```
+
+**Sequence**:
+1. Arms drone in GUIDED mode
+2. Sets takeoff position (first attempt only)
+3. Sends takeoff command to FCU
+4. Waits for altitude gain (verifies height change >= 0.1m)
+5. If `adjust_altitude=True`: Uses `move_to()` to fine-tune altitude to target
+6. Retries up to `max_retries` times if altitude doesn't change
+
+**Altitude Adjustment**:
+After successful takeoff, if `adjust_altitude=True` and current altitude differs from target by more than `precision`, the method calls `move_to(z=altitude_diff)` to reach the exact target altitude. This ensures precise altitude control using PID navigation.
 
 ## Navigation Implementation
 
