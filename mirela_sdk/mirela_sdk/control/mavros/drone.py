@@ -639,8 +639,7 @@ class MavrosDrone(BaseDrone):
         reference : MoveReference (enum), default=BODY
             BODY: relative to current orientation (FRAME_BODY_NED)
             WORLD: relative to world frame (FRAME_LOCAL_NED)
-
-            Note: TAKEOFF reference is ignored for velocity control.
+            TAKEOFF: relative to takeoff orientation.
         """
         msg = PositionTarget()
         msg.coordinate_frame = (
@@ -649,9 +648,26 @@ class MavrosDrone(BaseDrone):
             else PositionTarget.FRAME_BODY_NED
         )
         msg.type_mask = 1479
-        msg.velocity.x = float(vx)
-        msg.velocity.y = float(vy)
-        msg.velocity.z = float(vz)
+        
+        if reference == MoveReference.TAKEOFF:
+            if self.is_indoor:
+                current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
+            else:
+                current_yaw = np.radians(self.heading)
+            
+            takeoff_yaw = PositionUtils.get_yaw_from_pose(self._takeoff_position)
+            
+            vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
+                vx, vy, vz, current_yaw, takeoff_yaw
+            )
+            msg.velocity.x = float(vx_body)
+            msg.velocity.y = float(vy_body)
+            msg.velocity.z = float(vz_body)
+        else:
+            msg.velocity.x = float(vx)
+            msg.velocity.y = float(vy)
+            msg.velocity.z = float(vz)
+        
         msg.yaw_rate = float(vyaw)
 
         self._node.get_logger().debug(
@@ -699,8 +715,9 @@ class MavrosDrone(BaseDrone):
             Target yaw in degrees (GPS) or radians (vision). None disables yaw control.
         reference : MoveReference, default=BODY
             BODY: relative to current orientation,
-            WORLD: relative to world frame,
             TAKEOFF: relative to takeoff position.
+            
+            Note: WORLD reference is not supported in move_to.
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds. None for no timeout.
         precision : float, default=0.2
@@ -727,6 +744,9 @@ class MavrosDrone(BaseDrone):
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
             f"strategy={strategy.name} precision={precision}m"
         )
+
+        if reference == MoveReference.WORLD:
+            raise CapabilityNotSupportedError("WORLD reference", "move_to method")
 
         self.delay(0.05)
         target = self._compute_target(x, y, z, yaw, reference)
@@ -1030,12 +1050,9 @@ class MavrosDrone(BaseDrone):
         if reference == MoveReference.BODY:
             pos = self._vision_pos.pose.pose.position
             current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
-        elif reference == MoveReference.TAKEOFF:
+        else:
             pos = self._takeoff_position.position
             current_yaw = self._takeoff_position.yaw
-        else:
-            pos = self._vision_pos.pose.pose.position
-            current_yaw = 0.0
 
         dx = (x or 0) * np.cos(current_yaw) - (y or 0) * np.sin(current_yaw)
         dy = (x or 0) * np.sin(current_yaw) + (y or 0) * np.cos(current_yaw)
@@ -1078,7 +1095,7 @@ class MavrosDrone(BaseDrone):
                 self._gps.altitude,
                 hdg,
             )
-        elif reference == MoveReference.TAKEOFF:
+        else:
             hdg = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position))
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
                 x or 0,
@@ -1089,11 +1106,6 @@ class MavrosDrone(BaseDrone):
                 self._takeoff_position.pose.position.altitude,
                 hdg,
             )
-        else:
-            lat = self._gps.latitude
-            lon = self._gps.longitude
-            alt = self._gps.altitude
-            hdg = self.heading
 
         target_yaw = hdg + (yaw or 0)
         quat = quaternion_from_euler(0, 0, np.radians(target_yaw))

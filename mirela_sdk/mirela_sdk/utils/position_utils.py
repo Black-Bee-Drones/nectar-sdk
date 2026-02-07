@@ -176,3 +176,40 @@ class PositionUtils:
         
         else:
             raise ValueError("pose parameter must be of type PoseWithCovarianceStamped or NavSatFix")
+        
+    @staticmethod
+    def transform_takeoff_to_body_velocities(vx: float, vy: float, vz: float, current_yaw: float, takeoff_yaw: float) -> tuple[float, float, float]:
+        """
+        Transform velocities from takeoff frame to body frame coordinates.
+
+        Transforms velocity commands from the takeoff reference frame (fixed at takeoff orientation)
+        to the current body frame based on the drone's rotation since takeoff.
+
+        Parameters
+        ----------
+        vx : float
+            Forward velocity in m/s (takeoff frame).
+        vy : float
+            Leftward velocity in m/s (takeoff frame).
+        vz : float
+            Upward velocity in m/s (takeoff frame).
+        current_yaw : float
+            Current yaw angle in radians.
+        takeoff_yaw : float
+            Yaw angle at takeoff in radians.
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Body frame velocities (vx_body, vy_body, vz_body) in m/s.
+        """
+
+        relative_yaw = takeoff_yaw - current_yaw
+        cos_yaw = np.cos(relative_yaw)
+        sin_yaw = np.sin(relative_yaw)
+        
+        # Apply 2D rotation matrix transformation
+        vx_body = cos_yaw * vx + sin_yaw * vy
+        vy_body = -sin_yaw * vx + cos_yaw * vy
+
+        return vx_body, vy_body, vz
