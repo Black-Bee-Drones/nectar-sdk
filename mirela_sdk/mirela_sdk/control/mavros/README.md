@@ -225,6 +225,19 @@ local_pub.publish(msg)
 
 **Dead Zone**: Velocity commands zeroed when within `precision / 2` meters to prevent oscillation.
 
+### Velocity Control
+
+Direct velocity command publishing to flight controller.
+
+**Method**: `move_velocity(vx, vy, vz, vyaw, duration, reference)`
+
+**Reference Frames**:
+- **BODY** (default): Uses `FRAME_BODY_NED`. Velocities relative to current orientation.
+- **WORLD**: Uses `FRAME_LOCAL_NED`. Velocities relative to world NED frame.
+- **TAKEOFF**: Transforms velocities from takeoff frame to body frame before publishing.
+
+**Duration**: If `duration` is specified, command is published at 30 Hz for the specified time. If `None`, command is published once (continuous until next command).
+
 ### Setpoint Navigation
 
 Direct position setpoint publishing to flight controller.
@@ -255,10 +268,22 @@ gps_pub.publish(msg)
 
 ## Reference Frame Transformations
 
+### Supported References by Method
+
+| Method | BODY | WORLD | TAKEOFF |
+|--------|------|-------|---------|
+| `move_velocity()` | ✅ | ✅ | ✅ |
+| `move_to()` | ✅ | ❌ | ✅ |
+
+**Note**: `move_to()` does not support `WORLD` reference and will raise `CapabilityNotSupportedError` if used.
+
 ### BODY Frame
 
 Relative to current orientation.
 
+**move_velocity**: Uses `FRAME_BODY_NED` coordinate frame.
+
+**move_to**: Transforms relative offsets to world coordinates:
 ```python
 # Transform to world coordinates
 dx = x * cos(current_yaw) - y * sin(current_yaw)
@@ -270,10 +295,21 @@ target_y = current_y + dy
 target_z = current_z + dz
 ```
 
+### WORLD Frame
+
+Relative to world/local NED frame.
+
+**move_velocity only**: Uses `FRAME_LOCAL_NED` coordinate frame. Velocities are interpreted in world frame.
+
+**Not supported in move_to**: Use `BODY` or `TAKEOFF` reference instead.
+
 ### TAKEOFF Frame
 
-Relative to takeoff position.
+Relative to takeoff position and orientation.
 
+**move_velocity**: Transforms velocities from takeoff frame to body frame before publishing.
+
+**move_to**: Direct offset from takeoff position:
 ```python
 # Direct offset from takeoff position
 target_x = takeoff_x + x
@@ -555,11 +591,29 @@ drone.takeoff(1.5)
 # Move 2m forward in body frame
 drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.BODY)
 
-# Move to absolute world position
-drone.move_to(x=5.0, y=3.0, z=2.0, reference=MoveReference.WORLD)
+# Velocity control in world frame
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
 
 # Return to takeoff position
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
+```
+
+### Velocity Control Examples
+
+```python
+from mirela_sdk.control.types import MoveReference
+
+# Body-frame velocity (relative to current orientation)
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.BODY)
+
+# World-frame velocity (relative to world NED frame)
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
+
+# Takeoff-frame velocity (relative to takeoff orientation)
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.TAKEOFF)
+
+# Velocity for specific duration
+drone.move_velocity(vx=1.0, duration=2.0, reference=MoveReference.BODY)
 ```
 
 ## Service Call Behavior
