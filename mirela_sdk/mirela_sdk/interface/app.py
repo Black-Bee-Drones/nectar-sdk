@@ -1,5 +1,6 @@
 import sys
 import pathlib
+import signal
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -192,11 +193,16 @@ class MirelaApp(QMainWindow):
         self._status_message.setText(f"Error: {error}")
 
     def closeEvent(self, event) -> None:
+        """Handle window close event with proper cleanup."""
+        self._cleanup()
+        event.accept()
+
+    def _cleanup(self) -> None:
+        """Perform cleanup of all resources."""
         self._control_tab.cleanup()
         self._vision_tab.cleanup()
         self._ros_tab.cleanup()
         self._ros_executor.shutdown()
-        event.accept()
 
 
 def main() -> None:
@@ -204,7 +210,6 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # Use JetBrains Mono for monospace feel, fallback to system fonts
     font = QFont("JetBrains Mono", 10)
     if not font.exactMatch():
         font = QFont("SF Mono", 10)
@@ -217,7 +222,18 @@ def main() -> None:
     window = MirelaApp()
     window.show()
 
-    sys.exit(app.exec())
+    def _handle_sigint(signum, frame):
+        """Handle SIGINT (Ctrl+C) by closing window and quitting app."""
+        window.close()
+        app.quit()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+
+    try:
+        sys.exit(app.exec())
+    except KeyboardInterrupt:
+        window._cleanup()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
