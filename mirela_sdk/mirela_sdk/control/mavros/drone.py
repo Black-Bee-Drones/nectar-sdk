@@ -1547,48 +1547,87 @@ class MavrosDrone(BaseDrone):
         Validate service response based on message type.
 
         Checks MAVROS-specific fields (mode_sent, success, result) and
-        rcl_interfaces SetParameters results. Logs MAVLink result codes on failure.
+        rcl_interfaces SetParameters results.
+
+        Note: MAVLink commands may return ACCEPTED (result=0) while execution
+        is asynchronous. The service response indicates command acceptance, not
+        completion. See: https://mavlink.io/en/messages/common.html#MAV_RESULT
+
+        Parameters
+        ----------
+        response : Any
+            Service response object.
+        service_name : str
+            Service name for logging (e.g., "/mavros/cmd/arming").
+
+        Returns
+        -------
+        bool
+            True if response indicates success, False otherwise.
         """
-        # SetMode
+        # MAV_RESULT
+        mav_results = {
+            0: "ACCEPTED",
+            1: "TEMPORARILY_REJECTED",
+            2: "DENIED",
+            3: "UNSUPPORTED",
+            4: "FAILED",
+            5: "IN_PROGRESS",
+        }
+
+        # SetMode response
         if hasattr(response, "mode_sent"):
-            if not response.mode_sent:
+            if response.mode_sent:
+                self._node.get_logger().info(f"{service_name}: Mode sent")
+            else:
                 self._node.get_logger().warn(f"{service_name}: Mode not sent")
             return response.mode_sent
 
         # MAVROS Commands (CommandBool, CommandTOL, CommandLong, CommandHome)
         if hasattr(response, "success") and hasattr(response, "result"):
+            res_str = mav_results.get(response.result, f"UNKNOWN={response.result}")
             if response.success:
-                return True
-
-            # MAV_RESULT enum codes
-            results = {
-                0: "ACCEPTED",
-                1: "TEMPORARILY_REJECTED",
-                2: "DENIED",
-                3: "UNSUPPORTED",
-                4: "FAILED",
-                5: "IN_PROGRESS",
-            }
-            res_str = results.get(response.result, f"UNKNOWN={response.result}")
-            self._node.get_logger().warn(f"{service_name}: Failed (Result: {res_str})")
-            return False
+                self._node.get_logger().info(
+                    f"{service_name}: Success (Result: {res_str})"
+                )
+            else:
+                self._node.get_logger().warn(
+                    f"{service_name}: Failed (Result: {res_str})"
+                )
+            return response.success
 
         # Generic success check
         if hasattr(response, "success"):
-            if not response.success:
+            if response.success:
+                self._node.get_logger().info(f"{service_name}: Success")
+            else:
                 self._node.get_logger().warn(f"{service_name}: Failed")
             return response.success
 
         # SetParameters (rcl_interfaces)
         if hasattr(response, "results"):
-            for res in response.results:
-                if not res.successful:
-                    self._node.get_logger().warn(
-                        f"{service_name}: Param set failed: {res.reason}"
-                    )
-                    return False
-            return True
+            all_success = all(r.successful for r in response.results)
+            if all_success:
+                param_names = [r.name for r in response.results]
+                self._node.get_logger().info(
+                    f"{service_name}: Parameters set: {', '.join(param_names)}"
+                )
+            else:
+                failed = [r.name for r in response.results if not r.successful]
+                reasons = [
+                    f"{r.name}: {r.reason}"
+                    for r in response.results
+                    if not r.successful
+                ]
+                self._node.get_logger().warn(
+                    f"{service_name}: Parameters failed: {', '.join(reasons)}"
+                )
+            return all_success
 
+        # Unknown response type - log and assume success
+        self._node.get_logger().debug(
+            f"{service_name}: Unknown response type, assuming success"
+        )
         return True
 
     def _call_service(
@@ -1666,9 +1705,8 @@ class MavrosDrone(BaseDrone):
 
             try:
                 result = future.result()
-                if result is not None and self._validate_service_response(
-                    result, service.srv_name
-                ):
+                if result is not None:
+                    self._validate_service_response(result, service.srv_name) # TODO: test the responses from mavros to include in the verification of service
                     self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
                     return result
                 else:
