@@ -1,5 +1,10 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Callable
+from collections import deque
+import time
+import json
 import yaml
+import csv
+from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -15,11 +20,17 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QSplitter,
     QSpinBox,
+    QDoubleSpinBox,
     QHeaderView,
     QStackedWidget,
+    QFileDialog,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont, QTextCursor
+
+import pyqtgraph as pg
+from pyqtgraph import PlotWidget, PlotDataItem
 
 from rclpy.node import Node
 from rclpy.qos import (
@@ -76,6 +87,14 @@ class ROSTab(QWidget):
         self._current_pub_msg_class = None
         self._current_srv_class = None
         self._service_clients: Dict[str, Any] = {}
+        self._plot_subscriptions: Dict[str, Any] = {}
+        self._plot_data: Dict[str, Any] = {}
+        self._plot_items: Dict[str, Any] = {}
+        self._plot_available_topics: Dict[str, str] = {}
+        self._plot_is_paused = False
+        self._plot_time_window = 30.0
+        self._plot_start_time: Optional[float] = None
+        self._plot_colors: Dict[str, str] = {}
 
         self._setup_ui()
         self._setup_timers()
@@ -90,6 +109,7 @@ class ROSTab(QWidget):
         self._tab_widget.addTab(self._create_topics_tab(), "Topics")
         self._tab_widget.addTab(self._create_services_tab(), "Services")
         self._tab_widget.addTab(self._create_parameters_tab(), "Parameters")
+        self._tab_widget.addTab(self._create_plot_tab(), "Plot")
 
         layout.addWidget(self._tab_widget)
 
@@ -445,6 +465,40 @@ class ROSTab(QWidget):
         self._param_reconfigure.errorOccurred.connect(self._on_param_error)
 
         layout.addWidget(self._param_reconfigure)
+        return widget
+
+    def _create_plot_tab(self) -> QWidget:
+        """Create the plot tab for real-time topic visualization."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+
+        pg.setConfigOptions(antialias=True)
+        pg.setConfigOption("background", COLORS.background)
+        pg.setConfigOption("foreground", COLORS.text_primary)
+
+        controls = self._create_plot_controls()
+        layout.addWidget(controls)
+
+        splitter = QSplitter(Qt.Horizontal)
+        left_panel = self._create_plot_topic_panel()
+        right_panel = self._create_plot_display_panel()
+
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setSizes([350, 650])
+
+        layout.addWidget(splitter, 1)
+
+        self._plot_update_timer = QTimer()
+        self._plot_update_timer.timeout.connect(self._update_plot_curves)
+        self._plot_update_timer.start(50)
+
+        self._plot_topic_refresh_timer = QTimer()
+        self._plot_topic_refresh_timer.timeout.connect(self._refresh_plot_topics)
+        self._plot_topic_refresh_timer.start(5000)
+
         return widget
 
     @Slot(str, str, object)
@@ -993,31 +1047,475 @@ class ROSTab(QWidget):
         self._refresh_topics()
         self._refresh_services()
         self._param_reconfigure.set_node(node)
+        if hasattr(self, "_plot_topic_combo"):
+            self._refresh_plot_topics()
+
+    # Plot Tab Methods
+    def _create_plot_controls(self) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        time_window_layout = QHBoxLayout()
+        time_window_layout.addWidget(QLabel("Time Window (s):"))
+        self._plot_time_window_spin = QDoubleSpinBox()
+        self._plot_time_window_spin.setRange(1.0, 300.0)
+        self._plot_time_window_spin.setValue(30.0)
+        self._plot_time_window_spin.setSuffix(" s")
+        self._plot_time_window_spin.setDecimals(1)
+        self._plot_time_window_spin.valueChanged.connect(
+            lambda v: setattr(self, "_plot_time_window", v)
+        )
+        time_window_layout.addWidget(self._plot_time_window_spin)
+
+        max_points_layout = QHBoxLayout()
+        max_points_layout.addWidget(QLabel("Max Points:"))
+        self._plot_max_points_spin = QSpinBox()
+        self._plot_max_points_spin.setRange(100, 100000)
+        self._plot_max_points_spin.setValue(10000)
+        max_points_layout.addWidget(self._plot_max_points_spin)
+
+        self._plot_pause_btn = QPushButton("Pause")
+        self._plot_pause_btn.setCheckable(True)
+        self._plot_pause_btn.toggled.connect(
+            lambda p: setattr(self, "_plot_is_paused", p) or self._plot_pause_btn.setText("Resume" if p else "Pause")
+        )
+
+        self._plot_clear_btn = QPushButton("Clear All")
+        self._plot_clear_btn.clicked.connect(self._clear_all_plots)
+
+        self._plot_export_btn = QPushButton("Export Data")
+        self._plot_export_btn.clicked.connect(self._export_plot_data)
+
+        layout.addLayout(time_window_layout)
+        layout.addLayout(max_points_layout)
+        layout.addStretch()
+        layout.addWidget(self._plot_pause_btn)
+        layout.addWidget(self._plot_clear_btn)
+        layout.addWidget(self._plot_export_btn)
+
+        return widget
+
+    def _create_plot_topic_panel(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        topic_group = QGroupBox("Add Plot")
+        topic_layout = QVBoxLayout(topic_group)
+
+        topic_row = QHBoxLayout()
+        topic_row.addWidget(QLabel("Topic:"))
+        self._plot_topic_combo = QComboBox()
+        self._plot_topic_combo.setEditable(True)
+        self._plot_topic_combo.setMinimumWidth(200)
+        self._plot_topic_combo.currentTextChanged.connect(self._on_plot_topic_changed)
+        self._plot_refresh_topics_btn = QPushButton("Refresh")
+        self._plot_refresh_topics_btn.clicked.connect(self._refresh_plot_topics)
+        topic_row.addWidget(self._plot_topic_combo, 1)
+        topic_row.addWidget(self._plot_refresh_topics_btn)
+        topic_layout.addLayout(topic_row)
+
+        field_row = QHBoxLayout()
+        field_row.addWidget(QLabel("Field:"))
+        self._plot_field_combo = QComboBox()
+        self._plot_field_combo.setEditable(True)
+        self._plot_load_fields_btn = QPushButton("Load Fields")
+        self._plot_load_fields_btn.clicked.connect(self._load_plot_fields)
+        field_row.addWidget(self._plot_field_combo, 1)
+        field_row.addWidget(self._plot_load_fields_btn)
+        topic_layout.addLayout(field_row)
+
+        qos_row = QHBoxLayout()
+        qos_row.addWidget(QLabel("QoS:"))
+        self._plot_qos_combo = QComboBox()
+        self._plot_qos_combo.addItems(list(QOS_PROFILES.keys()))
+        self._plot_qos_combo.setCurrentText("Default (Reliable)")
+        self._plot_auto_qos_btn = QPushButton("Auto")
+        self._plot_auto_qos_btn.setToolTip("Auto-detect QoS from publisher")
+        self._plot_auto_qos_btn.clicked.connect(self._auto_detect_plot_qos)
+        qos_row.addWidget(self._plot_qos_combo, 1)
+        qos_row.addWidget(self._plot_auto_qos_btn)
+        topic_layout.addLayout(qos_row)
+
+        self._plot_add_btn = QPushButton("Add Plot")
+        self._plot_add_btn.clicked.connect(self._add_plot)
+        topic_layout.addWidget(self._plot_add_btn)
+
+        layout.addWidget(topic_group)
+
+        plots_group = QGroupBox("Active Plots")
+        plots_layout = QVBoxLayout(plots_group)
+
+        self._plots_tree = QTreeWidget()
+        self._plots_tree.setHeaderLabels(["Color", "Plot", "Topic", "Field", ""])
+        self._plots_tree.setRootIsDecorated(False)
+        self._plots_tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._plots_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self._plots_tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self._plots_tree.header().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._plots_tree.header().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+
+        plots_layout.addWidget(self._plots_tree)
+
+        layout.addWidget(plots_group, 1)
+
+        return widget
+
+    def _create_plot_display_panel(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._plot_widget = PlotWidget()
+        self._plot_widget.setLabel("left", "Value")
+        self._plot_widget.setLabel("bottom", "Time (s)")
+        self._plot_widget.setTitle("Real-time Topic Data")
+        self._plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self._plot_widget.setBackground(COLORS.background)
+
+        self._plot_color_index = 0
+        self._plot_color_palette = [
+            COLORS.accent,
+            COLORS.info,
+            COLORS.success,
+            COLORS.warning,
+            COLORS.error,
+            "#FF6B9D",
+            "#C44569",
+            "#6C5CE7",
+        ]
+
+        layout.addWidget(self._plot_widget)
+        return widget
+
+    def _refresh_plot_topics(self) -> None:
+        if not self._node:
+            return
+        try:
+            topic_names_and_types = self._node.get_topic_names_and_types()
+            self._plot_available_topics = {
+                name: types[0] for name, types in topic_names_and_types
+            }
+            current_text = self._plot_topic_combo.currentText()
+            self._plot_topic_combo.clear()
+            self._plot_topic_combo.addItems(sorted(self._plot_available_topics.keys()))
+            if current_text in self._plot_available_topics:
+                self._plot_topic_combo.setCurrentText(current_text)
+        except Exception as e:
+            if self._node:
+                self._node.get_logger().warn(f"Failed to refresh plot topics: {e}")
+
+    def _on_plot_topic_changed(self, topic: str) -> None:
+        if topic in self._plot_available_topics:
+            self._load_plot_fields()
+            self._auto_detect_plot_qos()
+
+    def _load_plot_fields(self) -> None:
+        topic = self._plot_topic_combo.currentText()
+        if not topic or topic not in self._plot_available_topics:
+            return
+        try:
+            msg_type_str = self._plot_available_topics[topic]
+            msg_class = self._get_message_class(msg_type_str)
+            if msg_class:
+                sample_msg = msg_class()
+                fields = self._get_numeric_fields(sample_msg)
+                self._plot_field_combo.clear()
+                if fields:
+                    self._plot_field_combo.addItems(fields)
+                    self._plot_field_combo.setCurrentIndex(0)
+                else:
+                    self._plot_field_combo.addItem("(No numeric fields found)")
+        except Exception as e:
+            if self._node:
+                self._node.get_logger().warn(f"Failed to load plot fields: {e}")
+
+    def _get_numeric_fields(self, msg: Any, prefix: str = "") -> List[str]:
+        fields = []
+        if hasattr(msg, "__slots__"):
+            for slot in msg.__slots__:
+                field_path = f"{prefix}.{slot}" if prefix else slot
+                value = getattr(msg, slot, None)
+                if value is None:
+                    continue
+                if isinstance(value, (int, float)):
+                    fields.append(field_path)
+                elif hasattr(value, "__slots__"):
+                    fields.extend(self._get_numeric_fields(value, field_path))
+                elif isinstance(value, (list, tuple)) and len(value) > 0:
+                    if isinstance(value[0], (int, float)):
+                        for i in range(len(value)):
+                            fields.append(f"{field_path}[{i}]")
+        return fields
+
+    def _extract_plot_value(self, msg: Any, field_path: str) -> Optional[float]:
+        try:
+            parts = field_path.split(".")
+            value = msg
+            for part in parts:
+                value = getattr(value, part, None)
+                if value is None:
+                    return None
+            return float(value)
+        except (AttributeError, ValueError, TypeError):
+            return None
+
+    def _auto_detect_plot_qos(self) -> None:
+        if not self._node:
+            return
+        topic = self._plot_topic_combo.currentText()
+        if not topic:
+            return
+        try:
+            endpoint_info_list = self._node.get_publishers_info_by_topic(topic)
+            if not endpoint_info_list:
+                return
+            endpoint_info = endpoint_info_list[0]
+            qos = endpoint_info.qos_profile
+            if qos.reliability == QoSReliabilityPolicy.BEST_EFFORT:
+                if qos.durability == QoSDurabilityPolicy.VOLATILE:
+                    self._plot_qos_combo.setCurrentText("Best Effort")
+                else:
+                    self._plot_qos_combo.setCurrentText("Sensor Data (Best Effort)")
+            else:
+                if qos.durability == QoSDurabilityPolicy.TRANSIENT_LOCAL:
+                    self._plot_qos_combo.setCurrentText("Reliable + Transient Local")
+                else:
+                    self._plot_qos_combo.setCurrentText("Default (Reliable)")
+        except Exception:
+            pass
+
+    def _add_plot(self) -> None:
+        topic = self._plot_topic_combo.currentText()
+        field = self._plot_field_combo.currentText()
+        if not topic or not field or field == "(No numeric fields found)":
+            return
+        plot_id = f"{topic}::{field}"
+        if plot_id in self._plot_data:
+            if self._node:
+                self._node.get_logger().warn(f"Plot already exists: {plot_id}")
+            return
+        if not self._node:
+            return
+        try:
+            msg_type_str = self._plot_available_topics.get(topic)
+            if not msg_type_str:
+                return
+            msg_class = self._get_message_class(msg_type_str)
+            if not msg_class:
+                return
+            qos_name = self._plot_qos_combo.currentText()
+            qos_profile = QOS_PROFILES.get(qos_name, QOS_PROFILES["Default (Reliable)"])
+            max_points = self._plot_max_points_spin.value()
+
+            if self._plot_start_time is None:
+                self._plot_start_time = time.time()
+
+            class PlotData:
+                def __init__(self, max_points: int, shared_start_time: float):
+                    self.max_points = max_points
+                    self.times = deque(maxlen=max_points)
+                    self.values = deque(maxlen=max_points)
+                    self.shared_start_time = shared_start_time
+
+                def add_point(self, value: float):
+                    elapsed = time.time() - self.shared_start_time
+                    self.times.append(elapsed)
+                    self.values.append(value)
+
+                def clear(self):
+                    self.times.clear()
+                    self.values.clear()
+
+                def reset_start_time(self, new_start_time: float):
+                    self.shared_start_time = new_start_time
+
+                def get_arrays(self):
+                    if len(self.times) == 0:
+                        return [], []
+                    return list(self.times), list(self.values)
+
+            def callback(msg):
+                if not self._plot_is_paused:
+                    value = self._extract_plot_value(msg, field)
+                    if value is not None and plot_id in self._plot_data:
+                        self._plot_data[plot_id].add_point(value)
+
+            subscription = self._node.create_subscription(
+                msg_class, topic, callback, qos_profile
+            )
+            self._plot_subscriptions[plot_id] = subscription
+            self._plot_data[plot_id] = PlotData(max_points, self._plot_start_time)
+
+            color = self._plot_color_palette[self._plot_color_index % len(self._plot_color_palette)]
+            self._plot_colors[plot_id] = color
+            self._plot_color_index += 1
+            pen = pg.mkPen(color, width=2)
+            plot_item = self._plot_widget.plot([], [], pen=pen, name=plot_id)
+            self._plot_items[plot_id] = plot_item
+
+            item = QTreeWidgetItem(self._plots_tree)
+            color_label = QLabel()
+            color_label.setFixedSize(20, 20)
+            color_label.setStyleSheet(f"background-color: {color}; border: 1px solid {COLORS.border}; border-radius: 3px;")
+            color_label.setToolTip(f"Color: {color}")
+            item.setText(1, plot_id)
+            item.setText(2, topic)
+            item.setText(3, field)
+            self._plots_tree.setItemWidget(item, 0, color_label)
+            remove_btn = QPushButton("Remove")
+            remove_btn.clicked.connect(lambda: self._remove_plot(plot_id))
+            self._plots_tree.setItemWidget(item, 4, remove_btn)
+
+            if self._node:
+                self._node.get_logger().info(f"Added plot: {plot_id}")
+        except Exception as e:
+            if self._node:
+                self._node.get_logger().error(f"Failed to add plot: {e}")
+
+    def _remove_plot(self, plot_id: str) -> None:
+        if plot_id in self._plot_subscriptions:
+            self._node.destroy_subscription(self._plot_subscriptions[plot_id])
+            del self._plot_subscriptions[plot_id]
+        if plot_id in self._plot_data:
+            del self._plot_data[plot_id]
+        if plot_id in self._plot_items:
+            self._plot_widget.removeItem(self._plot_items[plot_id])
+            del self._plot_items[plot_id]
+        if plot_id in self._plot_colors:
+            del self._plot_colors[plot_id]
+        for i in range(self._plots_tree.topLevelItemCount()):
+            item = self._plots_tree.topLevelItem(i)
+            if item and item.text(1) == plot_id:
+                self._plots_tree.takeTopLevelItem(i)
+                break
+        if len(self._plot_data) == 0:
+            self._plot_start_time = None
+        if self._node:
+            self._node.get_logger().info(f"Removed plot: {plot_id}")
+
+    def _update_plot_curves(self) -> None:
+        if not self._plot_items or self._plot_start_time is None:
+            return
+        time_window = self._plot_time_window
+        min_time = float("inf")
+        max_time = float("-inf")
+        
+        for plot_id, plot_item in self._plot_items.items():
+            if plot_id not in self._plot_data:
+                continue
+            data = self._plot_data[plot_id]
+            times, values = data.get_arrays()
+            if len(times) == 0:
+                continue
+            
+            if not self._plot_is_paused and time_window > 0:
+                current_relative_time = time.time() - self._plot_start_time
+                cutoff_time = current_relative_time - time_window
+                filtered_times = [t for t in times if t >= cutoff_time]
+                if len(filtered_times) < len(values):
+                    filtered_values = list(values)[-len(filtered_times):]
+                else:
+                    filtered_values = list(values)
+                times = filtered_times
+                values = filtered_values
+            
+            if len(times) > 0:
+                plot_item.setData(times, values)
+                min_time = min(min_time, min(times))
+                max_time = max(max_time, max(times))
+        
+        if min_time != float("inf") and max_time != float("-inf"):
+            self._plot_widget.setXRange(min_time, max_time, padding=0.05)
+
+    def _clear_all_plots(self) -> None:
+        for plot_data in self._plot_data.values():
+            plot_data.clear()
+        for plot_item in self._plot_items.values():
+            plot_item.setData([], [])
+        
+        if self._plot_start_time is not None:
+            self._plot_start_time = time.time()
+            for plot_data in self._plot_data.values():
+                plot_data.reset_start_time(self._plot_start_time)
+        
+        if self._node:
+            self._node.get_logger().info("Cleared all plot data, restarting capture")
+
+    def _export_plot_data(self) -> None:
+        if not self._plot_data:
+            QMessageBox.warning(self, "Export", "No data to export")
+            return
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"plot_data_{timestamp}.csv"
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Plot Data", default_filename, "CSV Files (*.csv)"
+        )
+        if not filename:
+            return
+        
+        try:
+            with open(filename, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Time (s)"] + [plot_id for plot_id in self._plot_data.keys()])
+                
+                all_times = set()
+                for plot_data in self._plot_data.values():
+                    times, _ = plot_data.get_arrays()
+                    all_times.update(times)
+                
+                sorted_times = sorted(all_times)
+                
+                for t in sorted_times:
+                    row = [t]
+                    for plot_id in self._plot_data.keys():
+                        times, values = self._plot_data[plot_id].get_arrays()
+                        if t in times:
+                            idx = times.index(t)
+                            row.append(values[idx])
+                        else:
+                            row.append("")
+                    writer.writerow(row)
+            
+            QMessageBox.information(self, "Export", f"Data exported to {filename}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
     def cleanup(self) -> None:
         self._refresh_timer.stop()
         self._publish_timer.stop()
+
+        if hasattr(self, "_plot_update_timer"):
+            self._plot_update_timer.stop()
+        if hasattr(self, "_plot_topic_refresh_timer"):
+            self._plot_topic_refresh_timer.stop()
 
         if self._node:
             for sub in self._subscriptions.values():
                 try:
                     self._node.destroy_subscription(sub)
                 except Exception:
-                    # Subscription may already be destroyed
+                    pass
+
+            for sub in self._plot_subscriptions.values():
+                try:
+                    self._node.destroy_subscription(sub)
+                except Exception:
                     pass
 
             if self._publisher:
                 try:
                     self._node.destroy_publisher(self._publisher)
                 except Exception:
-                    # Publisher may already be destroyed
                     pass
 
             for client in self._service_clients.values():
                 try:
                     self._node.destroy_client(client)
                 except Exception:
-                    # Client may already be destroyed
                     pass
 
         self._subscriptions.clear()
