@@ -200,16 +200,6 @@ class FlightActionWorker(QObject):
                 self.progress.emit("Landing...")
                 success = self._drone.land()
                 self.finished.emit(success, "" if success else "Land failed")
-            elif self._action == "arm_takeoff":
-                self.progress.emit("Arm + Takeoff: arming...")
-                if not self._drone.arm():
-                    self.finished.emit(False, "Arm rejected by FCU")
-                    return
-                self.progress.emit(
-                    f"Arm + Takeoff: takeoff to {self._altitude:.1f}m..."
-                )
-                success = self._drone.takeoff(self._altitude)
-                self.finished.emit(success, "" if success else "Takeoff failed")
             else:
                 self.finished.emit(False, f"Unknown action: {self._action}")
         except TimeoutError as e:
@@ -536,15 +526,12 @@ class ControlTab(QWidget):
         sliders_container = QWidget()
         sliders_layout = QVBoxLayout(sliders_container)
         sliders_layout.setContentsMargins(0, 0, 0, 0)
-        sliders_layout.setSpacing(8)
+        sliders_layout.setSpacing(6)
 
-        sliders_grid = QGridLayout()
-        sliders_grid.setSpacing(8)
-
-        self._vx_slider = LabeledSlider("Vx", 0.0, 1.0, 0.2)
-        self._vy_slider = LabeledSlider("Vy", 0.0, 1.0, 0.2)
-        self._vz_slider = LabeledSlider("Vz", 0.0, 1.0, 0.2)
-        self._vyaw_slider = LabeledSlider("Vψ", 0.0, 1.0, 0.2)
+        self._vx_slider = LabeledSlider("Vx", 0.0, 1.0, 0.2, orientation=Qt.Horizontal)
+        self._vy_slider = LabeledSlider("Vy", 0.0, 1.0, 0.2, orientation=Qt.Horizontal)
+        self._vz_slider = LabeledSlider("Vz", 0.0, 1.0, 0.2, orientation=Qt.Horizontal)
+        self._vyaw_slider = LabeledSlider("Vψ", 0.0, 1.0, 0.2, orientation=Qt.Horizontal)
 
         self._velocity_sliders = [
             self._vx_slider,
@@ -555,20 +542,14 @@ class ControlTab(QWidget):
 
         for slider in self._velocity_sliders:
             slider.setEnabled(False)
-
-        sliders_grid.addWidget(self._vx_slider, 0, 0)
-        sliders_grid.addWidget(self._vy_slider, 0, 1)
-        sliders_grid.addWidget(self._vz_slider, 1, 0)
-        sliders_grid.addWidget(self._vyaw_slider, 1, 1)
-
-        sliders_layout.addLayout(sliders_grid, 1)
+            sliders_layout.addWidget(slider)
 
         ref_layout = QHBoxLayout()
         ref_layout.setSpacing(6)
         ref_lbl = QLabel("Ref:")
         ref_lbl.setProperty("secondary", True)
         self._vel_reference_combo = QComboBox()
-        self._vel_reference_combo.addItems(["Body", "World"])
+        self._vel_reference_combo.addItems(["Body", "World", "Takeoff"])
         self._vel_reference_combo.setCurrentIndex(0)
         self._vel_reference_combo.setFixedWidth(80)
         ref_layout.addWidget(ref_lbl)
@@ -591,9 +572,10 @@ class ControlTab(QWidget):
 
     def _create_position_control_panel(self) -> QGroupBox:
         self._position_group = QGroupBox("Position Control")
-        self._position_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._position_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         layout = QVBoxLayout(self._position_group)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
+        layout.setContentsMargins(12, 12, 12, 12)
 
         grid = QGridLayout()
         grid.setSpacing(6)
@@ -656,7 +638,7 @@ class ControlTab(QWidget):
         ref_lbl = QLabel("Ref:")
         ref_lbl.setProperty("secondary", True)
         self._pos_reference_combo = QComboBox()
-        self._pos_reference_combo.addItems(["Body", "World", "Takeoff"])
+        self._pos_reference_combo.addItems(["Body", "Takeoff"])
         self._pos_reference_combo.setCurrentIndex(0)
         self._pos_reference_combo.setFixedWidth(90)
 
@@ -777,19 +759,12 @@ class ControlTab(QWidget):
         self._land_btn.setMinimumWidth(60)
         self._land_btn.clicked.connect(self._land)
 
-        self._arm_takeoff_btn = QPushButton("Arm + Takeoff")
-        self._arm_takeoff_btn.setProperty("accent", True)
-        self._arm_takeoff_btn.setEnabled(False)
-        self._arm_takeoff_btn.setMinimumWidth(115)
-        self._arm_takeoff_btn.clicked.connect(self._arm_takeoff)
-
         mavros_layout.addWidget(self._arm_btn)
         mavros_layout.addWidget(self._disarm_btn)
         mavros_layout.addWidget(alt_lbl)
         mavros_layout.addWidget(self._altitude_spin)
         mavros_layout.addWidget(self._takeoff_btn)
         mavros_layout.addWidget(self._land_btn)
-        mavros_layout.addWidget(self._arm_takeoff_btn)
 
         layout.addWidget(self._mavros_actions)
 
@@ -965,7 +940,6 @@ class ControlTab(QWidget):
         self._altitude_spin.setEnabled(enabled)
         self._takeoff_btn.setEnabled(enabled)
         self._land_btn.setEnabled(enabled)
-        self._arm_takeoff_btn.setEnabled(enabled)
 
     def _set_bebop_controls_enabled(self, enabled: bool) -> None:
         self._bebop_takeoff_btn.setEnabled(enabled)
@@ -1242,7 +1216,7 @@ class ControlTab(QWidget):
             return
 
         if self._node:
-            if action in ("takeoff", "arm_takeoff"):
+            if action == "takeoff":
                 self._node.get_logger().info(
                     f"Flight action: {action} (alt={altitude:.1f}m)"
                 )
@@ -1276,7 +1250,6 @@ class ControlTab(QWidget):
             self._disarm_btn.setEnabled(actual_enabled)
             self._takeoff_btn.setEnabled(actual_enabled)
             self._land_btn.setEnabled(actual_enabled)
-            self._arm_takeoff_btn.setEnabled(actual_enabled)
         else:
             self._bebop_takeoff_btn.setEnabled(actual_enabled)
             self._bebop_land_btn.setEnabled(actual_enabled)
@@ -1311,9 +1284,6 @@ class ControlTab(QWidget):
     def _land(self) -> None:
         self._execute_flight_action("land")
 
-    @Slot()
-    def _arm_takeoff(self) -> None:
-        self._execute_flight_action("arm_takeoff", self._altitude_spin.value())
 
     @Slot()
     def _execute_move_to(self) -> None:
@@ -1324,7 +1294,6 @@ class ControlTab(QWidget):
 
         reference_map = {
             "Body": MoveReference.BODY,
-            "World": MoveReference.WORLD,
             "Takeoff": MoveReference.TAKEOFF,
         }
         ref_name = self._pos_reference_combo.currentText()
@@ -1617,7 +1586,11 @@ class ControlTab(QWidget):
         try:
             from mirela_sdk.control import MoveReference
 
-            reference_map = {"Body": MoveReference.BODY, "World": MoveReference.WORLD}
+            reference_map = {
+                "Body": MoveReference.BODY,
+                "World": MoveReference.WORLD,
+                "Takeoff": MoveReference.TAKEOFF,
+            }
             reference = reference_map.get(
                 self._vel_reference_combo.currentText(), MoveReference.BODY
             )

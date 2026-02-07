@@ -254,7 +254,7 @@ Combined keyboard controls and velocity sliders in one compact panel.
 
 **Velocity Sliders**: Adjust maximum velocity for each axis (Vx, Vy, Vz, Vyaw).
 
-**Reference Frame**: Body or World frame selection.
+**Reference Frame**: Body, World, or Takeoff frame selection.
 
 #### Position Control (Mavros only)
 
@@ -281,8 +281,9 @@ At least one of X, Y, or Z must be enabled to execute.
 
 **Reference Frames**:
 - **Body**: Relative to current drone orientation
-- **World**: Relative to world frame (NED)
 - **Takeoff**: Relative to takeoff position
+
+**Note**: World frame is not supported in position control. Use Body or Takeoff reference.
 
 The operation runs in a background thread. Cancel button stops navigation immediately.
 

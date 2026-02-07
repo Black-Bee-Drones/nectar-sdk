@@ -94,7 +94,7 @@ class StatusIndicator(QWidget):
 
 
 class LabeledSlider(QWidget):
-    """Compact vertical slider with label and value display."""
+    """Compact slider with label and value display. Supports vertical and horizontal orientations."""
 
     valueChanged = Signal(float)
 
@@ -105,6 +105,7 @@ class LabeledSlider(QWidget):
         max_val: float = 1.0,
         default: float = 0.0,
         decimals: int = 2,
+        orientation: Qt.Orientation = Qt.Vertical,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -112,36 +113,67 @@ class LabeledSlider(QWidget):
         self._max_val = max_val
         self._decimals = decimals
         self._scale = 10**decimals
+        self._orientation = orientation
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-        layout.setAlignment(Qt.AlignCenter)
+        if orientation == Qt.Horizontal:
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(4, 4, 4, 4)
+            layout.setSpacing(4)
+            layout.setAlignment(Qt.AlignCenter)
 
-        self._label = QLabel(label)
-        self._label.setAlignment(Qt.AlignCenter)
-        self._label.setProperty("muted", True)
+            self._label = QLabel(label)
+            self._label.setAlignment(Qt.AlignCenter)
+            self._label.setProperty("muted", True)
 
-        self._value_label = QLabel(f"{default:.{decimals}f}")
-        self._value_label.setAlignment(Qt.AlignCenter)
-        self._value_label.setStyleSheet(
-            f"color: {COLORS.accent}; font-weight: 600; font-size: 12px;"
-        )
+            self._value_label = QLabel(f"{default:.{decimals}f}")
+            self._value_label.setAlignment(Qt.AlignCenter)
+            self._value_label.setStyleSheet(
+                f"color: {COLORS.accent}; font-weight: 600; font-size: 12px;"
+            )
 
-        self._slider = QSlider(Qt.Vertical)
-        self._slider.setMinimum(int(min_val * self._scale))
-        self._slider.setMaximum(int(max_val * self._scale))
-        self._slider.setValue(int(default * self._scale))
-        self._slider.setMinimumHeight(100)
-        self._slider.setFixedWidth(20)
-        self._slider.valueChanged.connect(self._on_value_changed)
+            self._slider = QSlider(Qt.Horizontal)
+            self._slider.setMinimum(int(min_val * self._scale))
+            self._slider.setMaximum(int(max_val * self._scale))
+            self._slider.setValue(int(default * self._scale))
+            self._slider.setMinimumWidth(100)
+            self._slider.setFixedHeight(20)
+            self._slider.valueChanged.connect(self._on_value_changed)
 
-        layout.addWidget(self._label, 0, Qt.AlignHCenter)
-        layout.addWidget(self._slider, 1, Qt.AlignHCenter)
-        layout.addWidget(self._value_label, 0, Qt.AlignHCenter)
+            layout.addWidget(self._label, 0, Qt.AlignHCenter)
+            layout.addWidget(self._slider, 0, Qt.AlignHCenter)
+            layout.addWidget(self._value_label, 0, Qt.AlignHCenter)
 
-        self.setMinimumWidth(50)
-        self.setMaximumWidth(70)
+            self.setMinimumHeight(60)
+        else:
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(4, 4, 4, 4)
+            layout.setSpacing(4)
+            layout.setAlignment(Qt.AlignCenter)
+
+            self._label = QLabel(label)
+            self._label.setAlignment(Qt.AlignCenter)
+            self._label.setProperty("muted", True)
+
+            self._value_label = QLabel(f"{default:.{decimals}f}")
+            self._value_label.setAlignment(Qt.AlignCenter)
+            self._value_label.setStyleSheet(
+                f"color: {COLORS.accent}; font-weight: 600; font-size: 12px;"
+            )
+
+            self._slider = QSlider(Qt.Vertical)
+            self._slider.setMinimum(int(min_val * self._scale))
+            self._slider.setMaximum(int(max_val * self._scale))
+            self._slider.setValue(int(default * self._scale))
+            self._slider.setMinimumHeight(100)
+            self._slider.setFixedWidth(20)
+            self._slider.valueChanged.connect(self._on_value_changed)
+
+            layout.addWidget(self._label, 0, Qt.AlignHCenter)
+            layout.addWidget(self._slider, 1, Qt.AlignHCenter)
+            layout.addWidget(self._value_label, 0, Qt.AlignHCenter)
+
+            self.setMinimumWidth(50)
+            self.setMaximumWidth(70)
 
     def _on_value_changed(self, value: int) -> None:
         real_value = value / self._scale
