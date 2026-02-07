@@ -103,7 +103,15 @@ class MavrosDrone(BaseDrone):
 
     @property
     def mavros_state(self) -> State:
-        """MAVROS state message (connected, armed, mode)."""
+        """
+        MAVROS state message (connected, armed, mode).
+
+        Returns
+        -------
+        State
+            MAVROS state message. See:
+            https://docs.ros.org/en/humble/p/mavros_msgs/msg/State.html
+        """
         return self._mavros_state
 
     @property
@@ -129,7 +137,8 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         NavSatFix
-            GPS message with latitude, longitude, altitude.
+            GPS message with latitude, longitude, altitude. See:
+            https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
 
         Raises
         ------
@@ -148,7 +157,8 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         float
-            Heading in degrees.
+            Heading in degrees from Float64 message. See:
+            https://docs.ros.org/en/humble/p/std_msgs/msg/Float64.html
 
         Raises
         ------
@@ -167,7 +177,8 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         float
-            Altitude in meters.
+            Altitude in meters from Float64 message. See:
+            https://docs.ros.org/en/humble/p/std_msgs/msg/Float64.html
 
         Raises
         ------
@@ -180,12 +191,28 @@ class MavrosDrone(BaseDrone):
 
     @property
     def vision_pos(self) -> Optional[PoseWithCovarianceStamped]:
-        """Vision-based pose estimate from external source (T265, VICON, etc.)."""
+        """
+        Vision-based pose estimate from external source (T265, d435i, etc.).
+
+        Returns
+        -------
+        Optional[PoseWithCovarianceStamped]
+            Vision pose message. See:
+            https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+        """
         return self._vision_pos
 
     @property
     def lidar_alt(self) -> Optional[float]:
-        """Lidar rangefinder altitude in meters, None if unavailable."""
+        """
+        Lidar rangefinder altitude in meters, None if unavailable.
+
+        Returns
+        -------
+        Optional[float]
+            Range value from Range message. See:
+            https://docs.ros.org/en/humble/p/sensor_msgs/msg/Range.html
+        """
         return self._rng_alt.range if self._rng_alt else None
 
     @property
@@ -210,7 +237,17 @@ class MavrosDrone(BaseDrone):
 
     @property
     def position(self) -> Union[PoseWithCovarianceStamped, NavSatFix]:
-        """Current position as vision pose (indoor) or GPS (outdoor)."""
+        """
+        Current position as vision pose (indoor) or GPS (outdoor).
+
+        Returns
+        -------
+        Union[PoseWithCovarianceStamped, NavSatFix]
+            - Indoor: PoseWithCovarianceStamped. See:
+              https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+            - Outdoor: NavSatFix. See:
+              https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
+        """
         if self.is_indoor:
             return self._vision_pos
         return self._gps
@@ -223,7 +260,11 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         Optional[Union[PositionTarget, GeoPoseStamped]]
-            PositionTarget for indoor, GeoPoseStamped for outdoor, None if no position data.
+            - Indoor: PositionTarget. See:
+              https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
+            - Outdoor: GeoPoseStamped. See:
+              https://docs.ros.org/en/humble/p/geographic_msgs/msg/GeoPoseStamped.html
+            - None if no position data.
         """
         if self.is_indoor:
             if self._vision_pos is None:
@@ -619,6 +660,7 @@ class MavrosDrone(BaseDrone):
         Command velocity-based movement.
 
         Publishes PositionTarget message with velocity setpoints to /mavros/setpoint_raw/local.
+        See: https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
 
         Parameters
         ----------
@@ -648,17 +690,19 @@ class MavrosDrone(BaseDrone):
             else PositionTarget.FRAME_BODY_NED
         )
         msg.type_mask = 1479
-        
+
         if reference == MoveReference.TAKEOFF:
             if self.is_indoor:
                 current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
             else:
                 current_yaw = np.radians(self.heading)
-            
+
             takeoff_yaw = PositionUtils.get_yaw_from_pose(self._takeoff_position)
-            
-            vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
-                vx, vy, vz, current_yaw, takeoff_yaw
+
+            vx_body, vy_body, vz_body = (
+                PositionUtils.transform_takeoff_to_body_velocities(
+                    vx, vy, vz, current_yaw, takeoff_yaw
+                )
             )
             msg.velocity.x = float(vx_body)
             msg.velocity.y = float(vy_body)
@@ -667,7 +711,7 @@ class MavrosDrone(BaseDrone):
             msg.velocity.x = float(vx)
             msg.velocity.y = float(vy)
             msg.velocity.z = float(vz)
-        
+
         msg.yaw_rate = float(vyaw)
 
         self._node.get_logger().debug(
@@ -716,7 +760,7 @@ class MavrosDrone(BaseDrone):
         reference : MoveReference, default=BODY
             BODY: relative to current orientation,
             TAKEOFF: relative to takeoff position.
-            
+
             Note: WORLD reference is not supported in move_to.
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds. None for no timeout.
@@ -741,7 +785,9 @@ class MavrosDrone(BaseDrone):
             raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
 
         if reference == MoveReference.WORLD:
-            raise CapabilityNotSupportedError("WORLD reference in position control", self._config.name)
+            raise CapabilityNotSupportedError(
+                "WORLD reference in position control", self._config.name
+            )
 
         self._validate_position_sensors()
 
@@ -1393,6 +1439,15 @@ class MavrosDrone(BaseDrone):
         ----------
         pose : PoseWithCovarianceStamped | NavSatFix | PositionTarget | GeoPoseStamped, optional
             Position to use as takeoff reference. If None, uses current position.
+
+            - PoseWithCovarianceStamped: See:
+              https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+            - NavSatFix: See:
+              https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
+            - PositionTarget: See:
+              https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
+            - GeoPoseStamped: See:
+              https://docs.ros.org/en/humble/p/geographic_msgs/msg/GeoPoseStamped.html
         heading : float, optional
             Heading in degrees for NavSatFix. Required if pose is NavSatFix.
 
