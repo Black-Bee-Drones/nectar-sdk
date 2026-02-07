@@ -1,31 +1,44 @@
+import logging
 import shlex
 import subprocess
+import sys
 from typing import List
 from time import sleep
 
+_logger = logging.getLogger("mirela_sdk.utils.process")
+
+if not _logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+    _logger.addHandler(handler)
+    _logger.setLevel(logging.INFO)
+
 
 class ProcessUtils:
+    """
+    Utility class for process management using tmux or gnome-terminal.
+    """
+
     @staticmethod
     def is_gui_available() -> bool:
         """
-        Check if the GUI is available.
+        Check if GUI terminal (gnome-terminal) is available.
 
         Returns
         -------
         bool
-            True if gnome-terminal is available.
+            True if gnome-terminal is available, False otherwise.
         """
         try:
-            return bool(
-                subprocess.run(
-                    ["which", "gnome-terminal"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                ).returncode
-                == 0
+            result = subprocess.run(
+                ["which", "gnome-terminal"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=2.0,
+                check=False,
             )
+            return result.returncode == 0
         except Exception:
-            print("\033[94mGUI is not available\033[94m")
             return False
 
     @staticmethod
@@ -36,12 +49,12 @@ class ProcessUtils:
         Parameters
         ----------
         timeout : float, default=5.0
-            Maximum time to wait for ros2 node list command.
+            Maximum time to wait for ros2 node list command in seconds.
 
         Returns
         -------
         List[str]
-            List of fully qualified node names.
+            List of fully qualified node names. Empty list on error or timeout.
         """
         try:
             result = subprocess.run(
@@ -49,6 +62,7 @@ class ProcessUtils:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                check=False,
             )
             if result.returncode == 0:
                 return [
@@ -70,14 +84,14 @@ class ProcessUtils:
         Parameters
         ----------
         node_pattern : str
-            Node name or pattern to search for.
+            Node name or pattern to search for (substring match).
         timeout : float, default=5.0
-            Maximum time to wait for ros2 node list command.
+            Maximum time to wait for ros2 node list command in seconds.
 
         Returns
         -------
         bool
-            True if a matching node is found.
+            True if a matching node is found, False otherwise.
         """
         nodes = ProcessUtils.get_ros2_nodes(timeout)
         return any(node_pattern in node for node in nodes)
@@ -94,16 +108,16 @@ class ProcessUtils:
         Parameters
         ----------
         node_pattern : str
-            Node name or pattern to search for.
+            Node name or pattern to search for (substring match).
         timeout : float, default=10.0
-            Maximum time to wait.
+            Maximum time to wait in seconds.
         poll_interval : float, default=0.5
-            Time between status checks.
+            Time between status checks in seconds.
 
         Returns
         -------
         bool
-            True if node appeared within timeout.
+            True if node appeared within timeout, False otherwise.
         """
         elapsed = 0.0
         while elapsed < timeout:
@@ -118,129 +132,175 @@ class ProcessUtils:
         command: str, name: str = "my_session", gui: bool = False
     ) -> bool:
         """
-        Start a process with gnome-terminal if GUI is available,
-        otherwise start it in a tmux session.
+        Start a process in a tmux session or gnome-terminal.
 
-        :param command: The command to start the process
-        :param name: The representation name of the process
-        :param gui: Whether to use GUI (gnome-terminal) if available
+        If a tmux session with the same name exists, it is killed first.
 
-        :return: True if the process started successfully, False otherwise
+        Parameters
+        ----------
+        command : str
+            Command to execute.
+        name : str, default="my_session"
+            Session name for tmux or process identifier.
+        gui : bool, default=False
+            If True and gnome-terminal is available, use GUI terminal instead of tmux.
+
+        Returns
+        -------
+        bool
+            True if process started successfully, False otherwise.
         """
-        print(f"-- Starting process: {command}")
+        _logger.info("Starting process: %s", name)
 
         if gui and ProcessUtils.is_gui_available():
-            print("\033[94mGUI is available\033[0m")
-            print(f"\033[94mInitializing {name} in a new terminal\033[0m")
+            _logger.info("Initializing %s in gnome-terminal", name)
             try:
                 process = subprocess.Popen(
                     shlex.split(f"gnome-terminal -- {command}"),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-                stdout, stderr = process.communicate()
+                _, stderr = process.communicate()
 
                 if process.returncode != 0:
-                    print(
-                        f"\033[91m-- Error starting {name} in GUI: {stderr.decode()}\033[0m"
-                    )
+                    error_msg = stderr.decode() if stderr else "Unknown error"
+                    _logger.error("Failed to start %s in GUI: %s", name, error_msg)
                     return False
-                else:
-                    print(f"\033[92m-- Started {name} in GUI successfully\033[0m")
-                    return True
+                _logger.info("\033[32mStarted %s in GUI successfully\033[0m", name)
+                return True
             except Exception as e:
-                print(f"\033[91m-- Exception starting {name} in GUI: {str(e)}\033[0m")
-                return False
-        else:
-            # First kill any existing tmux session with this name
-            ProcessUtils.kill_process(name)
-
-            # Create a new tmux session
-            print("\033[94mInitializing process in a tmux session\033[0m")
-            print(
-                f"\033[95mFor access session, use the command: tmux attach -t {name}\033[0m"
-            )
-
-            try:
-                # Create the tmux session with the command
-                process = subprocess.Popen(
-                    shlex.split(f'tmux new-session -d -s {name} "{command}"'),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                stdout, stderr = process.communicate()
-
-                # Give tmux a moment to start the session
-                sleep(1.5)
-
-                # Verify the session was actually created
-                if not ProcessUtils.has_process(name):
-                    print(f"\033[91m-- Failed to create tmux session {name}\033[0m")
-                    if stderr:
-                        print(f"\033[91m-- Error: {stderr.decode()}\033[0m")
-                    return False
-
-                # Check process return code
-                if process.returncode != 0:
-                    print(f"\033[91m-- Error starting {name}: {stderr.decode()}\033[0m")
-                    return False
-                else:
-                    print(f"\033[92m-- Started {name} successfully\033[0m")
-                    return True
-
-            except Exception as e:
-                print(f"\033[91m-- Exception starting {name}: {str(e)}\033[0m")
+                _logger.error("Exception starting %s in GUI: %s", name, e)
                 return False
 
-    @staticmethod
-    def has_process(name: str = "my_session") -> bool:
-        """
-        Check if a process started in a tmux session exists
+        if ProcessUtils._has_tmux_session(name):
+            _logger.debug("Killing existing tmux session: %s", name)
+            ProcessUtils._kill_tmux_session(name)
 
-        :param name: The name of the tmux session
-        """
-        print(f"-- Checking process: {name}")
+        _logger.info("Initializing %s in tmux session", name)
+        _logger.debug("Access session with: tmux attach -t %s", name)
 
-        # Check if the tmux session exists
-        check_session = subprocess.Popen(
-            shlex.split(f"tmux has-session -t {name}"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        _, stderr = check_session.communicate()
-
-        if check_session.returncode == 0:
-            print(f"\033[93m-- Session {name} exists.\033[0m")
-            return True
-        else:
-            print(f"\033[91m-- Session {name} does not exist.\033[0m")
-            return False
-
-    @staticmethod
-    def kill_process(name: str = "my_session") -> bool:
-        """
-        Kill a process started in a tmux session
-
-        :param name: The name of the tmux session
-        """
-        print(f"-- Killing process: {name}")
-
-        # Check if the tmux session exists
-        if ProcessUtils.has_process(name):
-            print(f"\033[93mKilling session {name}\033[0m")
+        try:
             process = subprocess.Popen(
-                shlex.split(f"tmux kill-session -t {name}"),
+                shlex.split(f'tmux new-session -d -s {name} "{command}"'),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
             _, stderr = process.communicate()
 
-            if process.returncode != 0:
-                print(f"\033[91m-- Error killing {name}: {process.returncode}\033[0m")
+            sleep(1.5)
+
+            if not ProcessUtils._has_tmux_session(name):
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                _logger.error("Failed to create tmux session %s: %s", name, error_msg)
                 return False
-            else:
-                print(f"\033[92m-- Killed {name} successfully\033[0m")
-                return True
-        else:
-            print(f"\033[91m-- Session {name} does not exist.\033[0m")
+
+            if process.returncode != 0:
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                _logger.error("Error starting %s: %s", name, error_msg)
+                return False
+
+            _logger.info("\033[32mStarted %s successfully\033[0m", name)
             return True
+
+        except Exception as e:
+            _logger.error("Exception starting %s: %s", name, e)
+            return False
+
+    @staticmethod
+    def has_process(name: str = "my_session") -> bool:
+        """
+        Check if a tmux session exists.
+
+        Parameters
+        ----------
+        name : str, default="my_session"
+            Tmux session name.
+
+        Returns
+        -------
+        bool
+            True if session exists, False otherwise.
+        """
+        return ProcessUtils._has_tmux_session(name)
+
+    @staticmethod
+    def _has_tmux_session(name: str) -> bool:
+        """
+        Internal method to check tmux session existence without logging.
+
+        Parameters
+        ----------
+        name : str
+            Tmux session name.
+
+        Returns
+        -------
+        bool
+            True if session exists, False otherwise.
+        """
+        try:
+            result = subprocess.run(
+                shlex.split(f"tmux has-session -t {name}"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=2.0,
+                check=False,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def kill_process(name: str = "my_session") -> bool:
+        """
+        Kill a tmux session.
+
+        Parameters
+        ----------
+        name : str, default="my_session"
+            Tmux session name.
+
+        Returns
+        -------
+        bool
+            True if session was killed or did not exist, False on error.
+        """
+        if not ProcessUtils._has_tmux_session(name):
+            _logger.debug("Session %s does not exist", name)
+            return True
+
+        _logger.info("Killing tmux session: %s", name)
+        return ProcessUtils._kill_tmux_session(name)
+
+    @staticmethod
+    def _kill_tmux_session(name: str) -> bool:
+        """
+        Internal method to kill tmux session without logging.
+
+        Parameters
+        ----------
+        name : str
+            Tmux session name.
+
+        Returns
+        -------
+        bool
+            True if session was killed, False on error.
+        """
+        try:
+            result = subprocess.run(
+                shlex.split(f"tmux kill-session -t {name}"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5.0,
+                check=False,
+            )
+            if result.returncode != 0:
+                error_msg = result.stderr.decode() if result.stderr else "Unknown error"
+                _logger.error("Error killing %s: %s", name, error_msg)
+                return False
+            _logger.info("\033[32mKilled session %s successfully\033[0m", name)
+            return True
+        except Exception as e:
+            _logger.error("Exception killing %s: %s", name, e)
+            return False

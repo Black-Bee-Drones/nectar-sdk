@@ -86,8 +86,24 @@ class BebopDrone(BaseDrone):
         return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={config.ip}"
 
     def _start_driver(self) -> bool:
+        """
+        Launch Bebop driver process.
+
+        Checks if driver node is already running before starting. If node exists,
+        assumes driver was started manually and returns True.
+
+        Returns
+        -------
+        bool
+            True if driver started or already running, False otherwise.
+        """
+        driver_name = self._get_driver_name()
+        if ProcessUtils.is_node_running(driver_name, timeout=2.0):
+            self._node.get_logger().info(f"Driver node {driver_name} already running")
+            return True
+
         cmd = self._get_driver_command()
-        return ProcessUtils.start_process(cmd, self._get_driver_name())
+        return ProcessUtils.start_process(cmd, driver_name)
 
     def connect(self) -> bool:
         """

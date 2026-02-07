@@ -455,9 +455,24 @@ class MavrosDrone(BaseDrone):
         return f"ros2 launch mavros apm.launch fcu_url:={config.connection_string}"
 
     def _start_driver(self) -> bool:
-        """Launch MAVROS driver process."""
+        """
+        Launch MAVROS driver process.
+
+        Checks if driver node is already running before starting. If node exists,
+        assumes driver was started manually and returns True.
+
+        Returns
+        -------
+        bool
+            True if driver started or already running, False otherwise.
+        """
+        driver_name = self._get_driver_name()
+        if ProcessUtils.is_node_running(driver_name, timeout=2.0):
+            self._node.get_logger().info(f"Driver node {driver_name} already running")
+            return True
+
         cmd = self._get_driver_command()
-        return ProcessUtils.start_process(cmd, self._get_driver_name())
+        return ProcessUtils.start_process(cmd, driver_name)
 
     def connect(self) -> bool:
         """
@@ -1706,7 +1721,9 @@ class MavrosDrone(BaseDrone):
             try:
                 result = future.result()
                 if result is not None:
-                    self._validate_service_response(result, service.srv_name) # TODO: test the responses from mavros to include in the verification of service
+                    self._validate_service_response(
+                        result, service.srv_name
+                    )  # TODO: test the responses from mavros to include in the verification of service
                     self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
                     return result
                 else:
