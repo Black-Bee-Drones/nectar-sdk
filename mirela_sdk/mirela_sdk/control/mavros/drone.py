@@ -734,9 +734,14 @@ class MavrosDrone(BaseDrone):
         ------
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
+        CapabilityNotSupportedError
+            If reference=WORLD in position control.
         """
         if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
             raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
+
+        if reference == MoveReference.WORLD:
+            raise CapabilityNotSupportedError("WORLD reference in position control", self._config.name)
 
         self._validate_position_sensors()
 
@@ -744,9 +749,6 @@ class MavrosDrone(BaseDrone):
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
             f"strategy={strategy.name} precision={precision}m"
         )
-
-        if reference == MoveReference.WORLD:
-            raise CapabilityNotSupportedError("WORLD reference", "move_to method")
 
         self.delay(0.05)
         target = self._compute_target(x, y, z, yaw, reference)

@@ -302,10 +302,9 @@ class BaseDrone(ABC):
         duration : float (s), optional
             Execution time. If None, command is continuous.
         reference : MoveReference (enum), default=BODY
-            BODY: relative to current orientation (body-fixed frame)
-            WORLD: relative to world frame (NED frame)
-
-            Note: TAKEOFF reference is not applicable for velocity control.
+            - BODY: relative to current orientation
+            - WORLD: relative to world frame (NED frame)
+            - TAKEOFF: relative to takeoff position
         """
         pass
 
