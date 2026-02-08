@@ -966,7 +966,7 @@ class MavrosDrone(BaseDrone):
             return self._navigate_gps_setpoint(
                 target, latitude, longitude, alt, timeout, precision
             )
-        return self._navigate_gps_pid(target, timeout, precision)
+        return self._navigate_pid(target, 0.0, 0.0, 0.0, None, timeout, precision)
 
     def _navigate_setpoint(
         self,
@@ -974,6 +974,11 @@ class MavrosDrone(BaseDrone):
         timeout: Optional[float],
         precision: float,
     ) -> bool:
+        tp = target.position
+        self._node.get_logger().info(
+            f"Setpoint nav → target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
+        )
+
         start = self._node.get_clock().now()
         timeout_dur = Duration(seconds=timeout) if timeout else None
 
@@ -988,13 +993,20 @@ class MavrosDrone(BaseDrone):
             dz = target.position.z - current.z
             distance = math.sqrt(dx**2 + dy**2 + dz**2)
 
+            self._node.get_logger().info(
+                f"Distance: {distance:.2f}m | dx={dx:.2f}, dy={dy:.2f}, dz={dz:.2f}",
+                throttle_duration_sec=0.5,
+            )
+
             if distance <= precision:
-                self._node.get_logger().info(f"Setpoint reached: {distance:.2f}m")
+                self._node.get_logger().info(
+                    f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m"
+                )
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
                 self._node.get_logger().warn(
-                    f"Setpoint timeout. Distance: {distance:.2f}m"
+                    f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m"
                 )
                 return False
 
@@ -1007,6 +1019,10 @@ class MavrosDrone(BaseDrone):
         timeout: Optional[float],
         precision: float,
     ) -> bool:
+        self._node.get_logger().info(
+            f"GPS setpoint nav → target: lat={lat:.6f}, lon={lon:.6f}, alt={alt:.1f}m"
+        )
+
         start = self._node.get_clock().now()
         timeout_dur = Duration(seconds=timeout) if timeout else None
 
@@ -1025,12 +1041,21 @@ class MavrosDrone(BaseDrone):
                 precision,
             )
 
+            self._node.get_logger().info(
+                f"Distance: {dist:.2f}m",
+                throttle_duration_sec=0.5,
+            )
+
             if reached:
-                self._node.get_logger().info(f"GPS target reached: {dist:.2f}m")
+                self._node.get_logger().info(
+                    f"\033[32;1mGPS target reached! Distance: {dist:.2f}m\033[0m"
+                )
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self._node.get_logger().warn(f"GPS timeout. Distance: {dist:.2f}m")
+                self._node.get_logger().warn(
+                    f"\033[33;1mGPS timeout. Distance: {dist:.2f}m\033[0m"
+                )
                 return False
 
     def _navigate_pid(
@@ -1048,6 +1073,18 @@ class MavrosDrone(BaseDrone):
         pid_z = self._create_pid("z")
         pid_yaw = self._create_pid("yaw")
 
+        if isinstance(target, GeoPoseStamped):
+            tp = target.pose.position
+            self._node.get_logger().info(
+                f"PID nav → GPS target: lat={tp.latitude:.6f}, "
+                f"lon={tp.longitude:.6f}, alt={tp.altitude:.1f}m"
+            )
+        else:
+            tp = target.position
+            self._node.get_logger().info(
+                f"PID nav → local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
+            )
+
         start = self._node.get_clock().now()
         timeout_dur = Duration(seconds=timeout) if timeout else None
         self._obstacle_manager.reset_all()
@@ -1062,104 +1099,54 @@ class MavrosDrone(BaseDrone):
 
             dx, dy, dz, dyaw = self._compute_errors(target, yaw)
 
-            control_x = x is not None and not disable_x
-            control_y = y is not None and not disable_y
-            control_z = z is not None and not disable_z
-
-            vx = pid_x.update(-dx) if control_x else 0.0
-            vy = pid_y.update(-dy) if control_y else 0.0
-            vz = pid_z.update(-dz) if control_z else 0.0
-            vyaw = (
-                pid_yaw.update(-dyaw)
-                if yaw is not None and abs(dyaw) > np.radians(3)
-                else 0.0
-            )
+            axes = {
+                "x": (x is not None and not disable_x, dx, pid_x),
+                "y": (y is not None and not disable_y, dy, pid_y),
+                "z": (z is not None and not disable_z, dz, pid_z),
+            }
 
             dead_zone = precision / 2
-            if abs(dx) < dead_zone:
-                vx = 0.0
-            if abs(dy) < dead_zone:
-                vy = 0.0
-            if abs(dz) < dead_zone:
-                vz = 0.0
+            vel = {}
+            error_parts = []
+            dist_sq = 0.0
 
-            components = []
-            if control_x:
-                components.append(dx**2)
-            if control_y:
-                components.append(dy**2)
-            if control_z:
-                components.append(dz**2)
+            for name, (active, err, pid) in axes.items():
+                v = pid.update(-err) if active else 0.0
+                if abs(err) < dead_zone:
+                    v = 0.0
+                vel[name] = v
+                if active:
+                    error_parts.append(f"d{name}={err:.2f}")
+                    dist_sq += err**2
 
-            distance = np.sqrt(sum(components)) if components else 0.0
-            self.move_velocity(vx, vy, vz, vyaw)
+            vyaw = pid_yaw.update(-dyaw) if yaw is not None else 0.0
+            if yaw is not None:
+                error_parts.append(f"dyaw={np.degrees(dyaw):.1f}°")
+
+            distance = np.sqrt(dist_sq)
+
+            self._node.get_logger().info(
+                f"Distance: {distance:.2f}m | Error: {', '.join(error_parts)} | "
+                f"Vel: vx={vel['x']:.2f}, vy={vel['y']:.2f}, vz={vel['z']:.2f}, vyaw={vyaw:.2f}",
+                throttle_duration_sec=0.5,
+            )
+
+            self.move_velocity(vel["x"], vel["y"], vel["z"], vyaw)
 
             if distance <= precision:
                 if yaw is not None and abs(dyaw) > np.radians(3):
                     continue
                 self.move_velocity(0.0, 0.0, 0.0, 0.0)
-                self._node.get_logger().info(f"Target reached: {distance:.2f}m")
+                self._node.get_logger().info(
+                    f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m"
+                )
                 return True
 
             if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
                 self.move_velocity(0.0, 0.0, 0.0, 0.0)
-                self._node.get_logger().warn(f"Timeout. Distance: {distance:.2f}m")
-                return False
-
-    def _navigate_gps_pid(
-        self,
-        target: GeoPoseStamped,
-        timeout: Optional[float],
-        precision: float,
-    ) -> bool:
-        pid_x = self._create_pid("x")
-        pid_y = self._create_pid("y")
-        pid_z = self._create_pid("z")
-
-        start = self._node.get_clock().now()
-        timeout_dur = Duration(seconds=timeout) if timeout else None
-        self._obstacle_manager.reset_all()
-
-        while True:
-            self.delay(0.01)
-
-            if not self._obstacle_manager.should_continue_navigation(self):
-                continue
-
-            disable_x, disable_y, disable_z = self._obstacle_manager.get_axis_control()
-
-            dx, dy, dz = PositionUtils.get_body_distance(
-                target, self._gps, self.heading
-            )
-
-            control_x = not disable_x
-            control_y = not disable_y
-            control_z = not disable_z
-
-            vx = pid_x.update(-dx) if control_x else 0.0
-            vy = pid_y.update(-dy) if control_y else 0.0
-            vz = pid_z.update(-dz) if control_z else 0.0
-
-            distance = np.sqrt(dx**2 + dy**2 + dz**2)
-
-            dead_zone = precision / 2
-            if abs(dx) < dead_zone:
-                vx = 0.0
-            if abs(dy) < dead_zone:
-                vy = 0.0
-            if abs(dz) < dead_zone:
-                vz = 0.0
-
-            self.move_velocity(vx, vy, vz, 0.0)
-
-            if distance <= precision:
-                self.move_velocity(0.0, 0.0, 0.0, 0.0)
-                self._node.get_logger().info(f"GPS target reached: {distance:.2f}m")
-                return True
-
-            if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self.move_velocity(0.0, 0.0, 0.0, 0.0)
-                self._node.get_logger().warn(f"GPS timeout. Distance: {distance:.2f}m")
+                self._node.get_logger().warn(
+                    f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m"
+                )
                 return False
 
     def _create_pid(self, axis: str) -> PIDController:
@@ -1301,6 +1288,8 @@ class MavrosDrone(BaseDrone):
             target_yaw = PositionUtils.get_yaw_from_pose(target)
             dyaw = target_yaw - curr_yaw
             dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
+            if abs(dyaw) < np.radians(3):
+                dyaw = 0.0
         else:
             dyaw = 0.0
 
