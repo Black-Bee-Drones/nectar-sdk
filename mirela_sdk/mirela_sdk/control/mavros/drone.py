@@ -709,31 +709,40 @@ class MavrosDrone(BaseDrone):
         reference: MoveReference = MoveReference.BODY,
     ) -> None:
         """
-        Command velocity-based movement.
-
-        Publishes PositionTarget message with velocity setpoints to /mavros/setpoint_raw/local.
-        See: https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
+        Move the drone by sending velocity commands.
 
         Parameters
         ----------
         vx : float (m/s), default=0.0
-            (+) Move forward
-            (-) Move backward
+            (+) Move forward, (-) Move backward.
+
         vy : float (m/s), default=0.0
-            (+) Move left
-            (-) Move right
+            (+) Move left, (-) Move right.
+
         vz : float (m/s), default=0.0
-            (+) Move up
-            (-) Move down
+            (+) Move up, (-) Move down.
+
         vyaw : float (rad/s), default=0.0
-            (+) Rotate counter clockwise
-            (-) Rotate clockwise
+            (+) Rotate counter-clockwise, (-) Rotate clockwise.
+
         duration : float (s), optional
-            Execution time. If None, command is continuous.
-        reference : MoveReference (enum), default=BODY
-            BODY: relative to current orientation (FRAME_BODY_NED)
-            WORLD: relative to world frame (FRAME_LOCAL_NED)
-            TAKEOFF: relative to takeoff orientation.
+            Movement time duration. If None, publishes a single command
+            (continuous mode, caller must re-publish).
+
+        reference : MoveReference, default=BODY
+            Velocity reference frame:
+
+            - BODY: velocities relative to the drone's current heading.
+            - WORLD: velocities relative to the world/local NED frame.
+            - TAKEOFF: velocities relative to the takeoff heading.
+              Requires takeoff position to be set.
+
+        Raises
+        ------
+        TakeoffPositionNotSetError
+            If reference=TAKEOFF but takeoff position not set.
+        SensorNotAvailableError
+            If required position sensors are not available.
         """
         msg = PositionTarget()
         msg.coordinate_frame = (
@@ -744,6 +753,11 @@ class MavrosDrone(BaseDrone):
         msg.type_mask = 1479
 
         if reference == MoveReference.TAKEOFF:
+            if self._takeoff_position is None:
+                raise TakeoffPositionNotSetError("move_velocity with TAKEOFF reference")
+
+            self._validate_position_sensors()
+
             if self.is_indoor:
                 current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
             else:
@@ -794,32 +808,55 @@ class MavrosDrone(BaseDrone):
         strategy: NavigationStrategy = NavigationStrategy.PID,
     ) -> bool:
         """
-        Navigate to target position.
+        Move the drone to a position relative to its current location and heading.
 
-        Supports PID velocity control (default) or direct setpoint publishing.
-        Obstacle detectors are checked during navigation if enabled.
+        The movement is relative to the drone's current orientation (BODY) or
+        the takeoff position and heading (TAKEOFF).
 
         Parameters
         ----------
         x : float, optional
-            Forward offset in meters. None disables X control.
+            Distance to move forward (+) or backward (-) in meters,
+            relative to the reference heading.
+
+            If None, disables control in the X axis.
+
         y : float, optional
-            Lateral offset in meters (positive = left). None disables Y control.
+            Distance to move left (+) or right (-) in meters,
+            relative to the reference heading.
+
+            If None, disables control in the Y axis.
+
         z : float, optional
-            Vertical offset in meters (positive = up). None disables Z control.
+            Distance to move up (+) or down (-) in meters,
+            relative to the reference altitude.
+
+            If None, disables altitude control.
+
         yaw : float, optional
-            Target yaw in degrees (GPS) or radians (vision). None disables yaw control.
+            Desired yaw angle in degrees.
+
+            If None, maintains current yaw.
+
         reference : MoveReference, default=BODY
-            BODY: relative to current orientation,
-            TAKEOFF: relative to takeoff position.
+            Movement reference frame:
+
+            - BODY: x, y, z are relative distances from the current position
+              and heading.
+            - TAKEOFF: x, y, z are absolute coordinates from the takeoff
+              position and heading. Requires takeoff position to be set.
 
             Note: WORLD reference is not supported in move_to.
+
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds. None for no timeout.
+
         precision : float, default=0.2
-            Arrival threshold in meters.
+            Acceptable radius in meters for reaching the target position.
+
         strategy : NavigationStrategy, default=PID
-            PID for velocity-based control, SETPOINT for position publishing.
+            PID: closed-loop velocity control to reach the target.
+            SETPOINT: direct position setpoint publishing (indoor only).
 
         Returns
         -------
@@ -866,37 +903,47 @@ class MavrosDrone(BaseDrone):
         strategy: NavigationStrategy = NavigationStrategy.PID,
     ) -> bool:
         """
-        Navigate to GPS waypoint.
-
-        Uses EGM96 geoid height correction for AMSL altitude conversion.
-        Supports PID velocity control or direct GPS setpoint publishing.
+        Move the drone to a specified GPS coordinate.
 
         Parameters
         ----------
         latitude : float
             Target latitude in degrees (WGS84).
+
         longitude : float
             Target longitude in degrees (WGS84).
+
         altitude : float, optional
-            Target altitude above ground in meters. None uses current altitude.
+            Target altitude above ground in meters (relative, not AMSL).
+
+            If None, maintains current altitude.
+
         heading : float, optional
-            Target heading in degrees (0=North, clockwise). None uses current heading.
+            Desired heading in degrees (0 = North, clockwise positive).
+
+            If None, maintains current heading.
+
         timeout : float, optional, default=60.0
-            Maximum navigation time in seconds.
+            Maximum time allowed in seconds to reach the target.
+
+            If None, no timeout is applied.
+
         precision : float, default=0.5
-            Arrival threshold in meters (horizontal distance).
+            Acceptable radius in meters for reaching the target position.
+
         strategy : NavigationStrategy, default=PID
-            PID for velocity-based control, SETPOINT for GPS position publishing.
+            PID: closed-loop velocity control to reach the target.
+            SETPOINT: direct GPS position setpoint publishing.
 
         Returns
         -------
         bool
-            True if waypoint reached within precision.
+            True if target reached within precision, False on timeout.
 
         Raises
         ------
         CapabilityNotSupportedError
-            If pose_source is VISION (indoor mode).
+            If called in indoor mode (pose_source=VISION).
         """
         if self.is_indoor:
             raise CapabilityNotSupportedError("GPS navigation", "indoor mode")
