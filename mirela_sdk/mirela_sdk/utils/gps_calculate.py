@@ -7,16 +7,25 @@ class GPSCalculate:
     @staticmethod
     def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
-        Calculates the great-circle distance between two GPS coordinates using the Haversine formula.
+        Calculate the great-circle distance between two GPS coordinates using the Haversine formula.
 
-        This method assumes the Earth is a perfect sphere and returns the distance in meters.
+        Assumes the Earth is a perfect sphere.
 
-        :param lat1 (float): Latitude of the first point in degrees.
-        :param lon1 (float): Longitude of the first point in degrees.
-        :param lat2 (float): Latitude of the second point in degrees.
-        :param lon2 (float): Longitude of the second point in degrees.
+        Parameters
+        ----------
+        lat1 : float
+            Latitude of the first point in degrees.
+        lon1 : float
+            Longitude of the first point in degrees.
+        lat2 : float
+            Latitude of the second point in degrees.
+        lon2 : float
+            Longitude of the second point in degrees.
 
-        :return: Distance between the two points in meters (float).
+        Returns
+        -------
+        float
+            Distance between the two points in meters.
         """
 
         # Convert degrees to radians
@@ -32,26 +41,32 @@ class GPSCalculate:
 
         return c * 6371000  # Earth's radius in meters
 
-
     @staticmethod
     def bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
-        Calculates the initial bearing (also known as forward azimuth) from the first GPS coordinate 
-        (lat1, lon1) to the second (lat2, lon2). The result is the angle in degrees between north 
-        and the direction from the first point to the second.
+        Calculate the initial bearing (forward azimuth) between two GPS coordinates.
 
-        Args:
-            lat1 (float): Latitude of the starting point (in degrees).
-            lon1 (float): Longitude of the starting point (in degrees).
-            lat2 (float): Latitude of the destination point (in degrees).
-            lon2 (float): Longitude of the destination point (in degrees).
+        The result is the angle in degrees between north and the direction
+        from the first point to the second.
 
-        Returns:
-            float: Initial bearing from the first point to the second, in degrees (0° to 360°).
+        Parameters
+        ----------
+        lat1 : float
+            Latitude of the starting point in degrees.
+        lon1 : float
+            Longitude of the starting point in degrees.
+        lat2 : float
+            Latitude of the destination point in degrees.
+        lon2 : float
+            Longitude of the destination point in degrees.
+
+        Returns
+        -------
+        float
+            Initial bearing in degrees (0° to 360°).
         """
 
         lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
-
 
         dlon = lon2 - lon1
 
@@ -78,14 +93,27 @@ class GPSCalculate:
         """
         Calculate new GPS coordinates given an initial GPS point and offsets in meters.
 
-        :param x (float): Offset in meters along the East-West axis (positive eastward).
-        :param y (float): Offset in meters along the North-South axis (positive northward).
-        :param z (float): Offset in meters along the vertical axis (positive upward).
-        :param latitude (float): Initial latitude in degrees.
-        :param longitude (float): Initial longitude in degrees.
-        :param altitude (float): Initial altitude in meters.
-        :param heading (float): Initial heading in degrees.
-        :return: Tuple containing new latitude, longitude, and altitude.
+        Parameters
+        ----------
+        x : float
+            Offset in meters along the East-West axis (positive eastward).
+        y : float
+            Offset in meters along the North-South axis (positive northward).
+        z : float
+            Offset in meters along the vertical axis (positive upward).
+        latitude : float
+            Initial latitude in degrees.
+        longitude : float
+            Initial longitude in degrees.
+        altitude : float
+            Initial altitude in meters.
+        heading : float
+            Initial heading in degrees.
+
+        Returns
+        -------
+        tuple of (float, float, float)
+            New latitude, longitude, and altitude.
         """
         geod = Geodesic.WGS84
         # Calculate the distance and bearing from the offsets
@@ -95,66 +123,75 @@ class GPSCalculate:
         # Compute the new GPS coordinates using the geodesic direct method
         g = geod.Direct(latitude, longitude, bearing, horizontal_distance)
 
-        new_latitude = g['lat2']
-        new_longitude = g['lon2']
+        new_latitude = g["lat2"]
+        new_longitude = g["lon2"]
         new_altitude = altitude + z  # Adjust altitude by vertical offset
 
         return new_latitude, new_longitude, new_altitude
-    
+
     @staticmethod
     def interp_geo(
-        start: Tuple[float, float],
-        end: Tuple[float, float],
-        frac: float
+        start: Tuple[float, float], end: Tuple[float, float], frac: float
     ) -> Tuple[float, float]:
         """
-        Computes geodesic interpolation between two GPS coordinates.
+        Compute geodesic interpolation between two GPS coordinates.
 
-        Args:
-            start (Tuple[float, float]): Starting GPS coordinate (lat, lon).
-            end (Tuple[float, float]): Ending GPS coordinate (lat, lon).
-            frac (float): Interpolation factor between 0.0 and 1.0.
+        Parameters
+        ----------
+        start : tuple of (float, float)
+            Starting GPS coordinate (lat, lon).
+        end : tuple of (float, float)
+            Ending GPS coordinate (lat, lon).
+        frac : float
+            Interpolation factor between 0.0 and 1.0.
 
-        Returns:
-            Tuple[float, float]: Interpolated GPS coordinate (lat, lon).
+        Returns
+        -------
+        tuple of (float, float)
+            Interpolated GPS coordinate (lat, lon).
         """
         line = Geodesic.WGS84.InverseLine(start[0], start[1], end[0], end[1])
         position = line.Position(line.s13 * frac)
-        return (position['lat2'], position['lon2'])
-
+        return (position["lat2"], position["lon2"])
 
     @staticmethod
     def generate_point_grid(
-        vertices: Tuple[Tuple[float, float]],
-        grid_shape: tuple[int, int]
+        vertices: Tuple[Tuple[float, float]], grid_shape: tuple[int, int]
     ) -> list[list[Tuple[float, float]]]:
         """
         Generate a 2D grid of geodesic-interpolated GPS coordinates within a quadrilateral area.
 
-        This method creates a grid of points that fills the area defined by 4 GPS vertices, ordered as:
-            - vertices[0]: top-left
-            - vertices[1]: top-right
-            - vertices[2]: bottom-right
-            - vertices[3]: bottom-left
+        Creates a grid of points filling the area defined by 4 GPS vertices, ordered as:
 
-        The number of points along each dimension is defined by `grid_shape`, as (cols, rows).
+        - vertices[0]: top-left
+        - vertices[1]: top-right
+        - vertices[2]: bottom-right
+        - vertices[3]: bottom-left
 
-        Args:
-            vertices (Tuple[Tuple[float, float]]): 
-                A tuple containing four (lat, lon) tuples defining the corners of the area.
-            grid_shape (tuple[int, int]): 
-                A tuple (cols, rows) defining the number of points per row and per column.
+        Parameters
+        ----------
+        vertices : tuple of tuple of (float, float)
+            Four (lat, lon) tuples defining the corners of the area.
+        grid_shape : tuple of (int, int)
+            Number of points as (cols, rows).
 
-        Returns:
-            list[list[Tuple[float, float]]]: 
-                A 2D list (grid) of interpolated GPS points.
+        Returns
+        -------
+        list of list of tuple of (float, float)
+            2D grid of interpolated GPS coordinates.
         """
 
         cols, rows = grid_shape
 
         # Interpolates points along the left and right edges (top to bottom)
-        left_edge = [GPSCalculate.interp_geo(vertices[0], vertices[3], i / (rows - 1)) for i in range(rows)]
-        right_edge = [GPSCalculate.interp_geo(vertices[1], vertices[2], i / (rows - 1)) for i in range(rows)]
+        left_edge = [
+            GPSCalculate.interp_geo(vertices[0], vertices[3], i / (rows - 1))
+            for i in range(rows)
+        ]
+        right_edge = [
+            GPSCalculate.interp_geo(vertices[1], vertices[2], i / (rows - 1))
+            for i in range(rows)
+        ]
 
         grid = []
 
