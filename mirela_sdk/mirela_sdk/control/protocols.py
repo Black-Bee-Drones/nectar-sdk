@@ -6,6 +6,7 @@ from mirela_sdk.control.types import (
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
+    AltitudeSource,
 )
 
 
@@ -62,6 +63,7 @@ class Drone(Protocol):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool: ...
 
     def move_to_gps(

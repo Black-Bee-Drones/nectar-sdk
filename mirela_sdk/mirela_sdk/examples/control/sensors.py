@@ -3,7 +3,7 @@ import argparse
 import rclpy
 from rclpy.node import Node
 
-from mirela_sdk.control import DroneFactory, MavrosConfig, PoseSource
+from mirela_sdk.control import DroneFactory, MavrosConfig, PoseSource, AltitudeSource
 
 
 class SensorsExample(Node):
@@ -33,8 +33,8 @@ class SensorsExample(Node):
 
     def _log_data(self):
         """Log current sensor data."""
-        height = self.drone.height
-        lidar = self.drone.lidar_alt
+        altitude = self.drone.get_altitude()
+        lidar = self.drone.get_altitude(AltitudeSource.LIDAR)
 
         if self.source == "gps":
             gps = self.drone.gps
@@ -44,7 +44,7 @@ class SensorsExample(Node):
             self.get_logger().info(
                 f"GPS: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, "
                 f"alt={gps.altitude:.1f}m | heading={heading:.1f}° | "
-                f"rel_alt={rel_alt:.2f}m | height={height:.2f}m | lidar={lidar}"
+                f"rel_alt={rel_alt:.2f}m | altitude={altitude} | lidar={lidar}"
             )
         else:
             vision = self.drone.vision_pos
@@ -52,7 +52,7 @@ class SensorsExample(Node):
                 pos = vision.pose.pose.position
                 self.get_logger().info(
                     f"Vision: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f} | "
-                    f"height={height:.2f}m | lidar={lidar}"
+                    f"altitude={altitude} | lidar={lidar}"
                 )
             else:
                 self.get_logger().warn("No vision data")
