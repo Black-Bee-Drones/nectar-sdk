@@ -531,7 +531,7 @@ disable_x, disable_y, disable_z = manager.get_axis_control()
 
 **Navigation Integration**:
 ```python
-# In MavrosDrone._navigate_pid()
+# In MavrosNavigator.navigate_pid()
 while True:
     if not self._obstacle_manager.should_continue_navigation(self):
         continue  # Pause or sequence executing

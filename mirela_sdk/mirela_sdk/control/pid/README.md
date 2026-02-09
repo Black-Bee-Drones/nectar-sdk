@@ -203,7 +203,7 @@ config = PositionPIDConfig.from_yaml("position_config.yaml")
 PID controllers created per-axis from configuration:
 
 ```python
-# In MavrosDrone._navigate_pid()
+# In MavrosNavigator.navigate_pid()
 pid_x = self._create_pid("x")      # Creates from self._pid_config.x
 pid_y = self._create_pid("y")
 pid_z = self._create_pid("z")
