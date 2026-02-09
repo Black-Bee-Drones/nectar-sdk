@@ -99,20 +99,17 @@ classDiagram
         +set_param(param_id, value)
         +do_servo(aux_out, pwm_value)
         +set_home() bool
-        +set_takeoff_position(position)
+        +set_takeoff_position(pose, heading)
         +set_pid_config(config)
+        -_navigator MavrosNavigator
         -_setup_subscribers()
         -_setup_publishers()
         -_setup_services()
         -_load_pid_config()
         -_startup_sensors()
-        -_navigate_pid()
-        -_navigate_setpoint()
-        -_navigate_gps_pid()
-        -_navigate_gps_setpoint()
         -_compute_target()
-        -_compute_errors()
-        -_create_pid(axis) PIDController
+        -_compute_setpoint_target()
+        -_validate_position_sensors()
     }
     
     class BebopDrone {
@@ -136,7 +133,8 @@ classDiagram
         +start_driver bool
         +pose_source PoseSource
         +default_nav_strategy NavigationStrategy
-        +use_lidar bool
+        +expect_lidar bool
+        +sensor_timeout float
         +connection_string str
         +pid_config_file Optional~str~
         +state_topic str
@@ -251,13 +249,11 @@ Type-safe dataclass hierarchy.
 ```python
 MavrosConfig(
     pose_source: PoseSource = PoseSource.GPS,     # GPS or VISION
-    navigation: NavigationStrategy = NavigationStrategy.PID,  # PID, SETPOINT
+    default_nav_strategy: NavigationStrategy = NavigationStrategy.PID,
+    expect_lidar: bool = True,
     connection_string: str = "serial:///dev/ttyUSB0:921600",
     pid_config_file: Optional[str] = None,
-    state_topic: str = "/mavros/state",
-    gps_topic: str = "/mavros/global_position/global",
-    vision_topic: str = "/mavros/vision_pose/pose_cov",
-    # ... additional topic configurations
+    # ... topic configurations with sensible defaults
 )
 ```
 
@@ -300,17 +296,23 @@ drone.move_to(
     x: Optional[float] = None,
     y: Optional[float] = None,
     z: Optional[float] = None,
-    yaw: Optional[float] = None,  # degrees for GPS, radians for vision
+    yaw: Optional[float] = None,           # degrees
     reference: MoveReference = MoveReference.BODY,
     timeout: Optional[float] = 60.0,
     precision: float = 0.2,
-    strategy: NavigationStrategy = NavigationStrategy.PID
+    strategy: NavigationStrategy = NavigationStrategy.PID,
+    altitude_source: AltitudeSource = AltitudeSource.AUTO,
 ) -> bool
 ```
 
 **Navigation Strategies**:
 - `PID`: Velocity-based control with feedback loop (precise, configurable)
-- `SETPOINT`: Direct position setpoint publishing (simpler, less precise)
+- `SETPOINT`: Direct position setpoint publishing (FCU handles control)
+
+**Altitude Sources** (PID only):
+- `AUTO`: Position-based altitude (vision Z indoor, GPS altitude outdoor)
+- `LIDAR`: Ground-relative altitude via rangefinder (terrain following)
+- `REL_ALT`: GPS-based relative altitude above home
 
 ### GPS Navigation
 
@@ -529,14 +531,17 @@ from mirela_sdk.control.types import MoveReference
 
 drone.takeoff(1.5)
 
-# Body-relative
+# Body-relative: 1m forward and 0.5m left from current position
 drone.move_to(x=1.0, y=0.5, z=0.0, reference=MoveReference.BODY)
 
-# World-frame
-drone.move_to(x=5.0, y=3.0, z=2.0, reference=MoveReference.WORLD)
+# Takeoff-relative: go to position 2m forward of takeoff point
+drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 
-# Takeoff-relative
+# Return to takeoff position
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
+
+# World-frame velocity 
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
 ```
 
 ### Obstacle-Aware Navigation
@@ -569,9 +574,7 @@ See individual module READMEs for detailed documentation.
 - `MoveReference`: BODY, WORLD, TAKEOFF
 - `NavigationStrategy`: PID, SETPOINT
 - `RTLStrategy`: PID, ARDUPILOT
+- `AltitudeSource`: AUTO, LIDAR, VISION, REL_ALT
 - `ObstacleDirection`: FRONT, BACK, LEFT, RIGHT, UP, DOWN
-- `DroneState`: Current state snapshot
-- `Position`, `Velocity`, `GPSCoordinate`: Spatial data
-- `Pose`: Position + Orientation
 - `ObstacleInfo`: Detection result
 
