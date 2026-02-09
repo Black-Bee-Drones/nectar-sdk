@@ -3,6 +3,7 @@ from mirela_sdk.control.types import (
     PoseSource,
     NavigationStrategy,
     RTLStrategy,
+    AltitudeSource,
 )
 
 from mirela_sdk.control.config import (
@@ -54,6 +55,7 @@ __all__ = [
     "PoseSource",
     "NavigationStrategy",
     "RTLStrategy",
+    "AltitudeSource",
     "DroneConfig",
     "MavrosConfig",
     "BebopConfig",

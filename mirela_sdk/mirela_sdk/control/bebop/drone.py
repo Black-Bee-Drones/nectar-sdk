@@ -10,6 +10,7 @@ from mirela_sdk.control.types import (
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
+    AltitudeSource,
 )
 from mirela_sdk.control.config import BebopConfig, DroneConfig
 from mirela_sdk.control.factory import DroneFactory
@@ -244,6 +245,7 @@ class BebopDrone(BaseDrone):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         raise CapabilityNotSupportedError("Position control", "Bebop")
 

@@ -15,7 +15,8 @@ class MavrosConfig(DroneConfig):
     name: str = "mavros_drone"
     pose_source: PoseSource = PoseSource.GPS
     default_nav_strategy: NavigationStrategy = NavigationStrategy.PID
-    use_lidar: bool = True
+    expect_lidar: bool = True
+    sensor_timeout: float = 10.0
     lidar_topic: str = "/mavros/rangefinder/rangefinder"
     vision_topic: str = "/mavros/vision_pose/pose_cov"
     gps_topic: str = "/mavros/global_position/global"

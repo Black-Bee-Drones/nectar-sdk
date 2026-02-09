@@ -20,3 +20,10 @@ class NavigationStrategy(Enum):
 class RTLStrategy(Enum):
     PID = auto()
     ARDUPILOT = auto()
+
+
+class AltitudeSource(Enum):
+    AUTO = auto()
+    LIDAR = auto()
+    VISION = auto()
+    REL_ALT = auto()

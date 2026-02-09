@@ -14,6 +14,7 @@ from mirela_sdk.control.types import (
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
+    AltitudeSource,
 )
 from mirela_sdk.control.config import DroneConfig
 from mirela_sdk.control.exceptions import (
@@ -319,6 +320,7 @@ class BaseDrone(ABC):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
         Navigate to target position.
@@ -367,6 +369,14 @@ class BaseDrone(ABC):
             - PID: velocity-based control with feedback loop
             - SETPOINT: direct position setpoint publishing
 
+        altitude_source : AltitudeSource (enum), default=AUTO
+            Altitude sensor source for PID navigation:
+
+            - AUTO: best available (lidar > vision Z > relative altitude).
+            - LIDAR: lidar rangefinder for ground-relative altitude control.
+            - VISION: vision pose Z component.
+            - REL_ALT: GPS-based relative altitude.
+
         Returns
         -------
         bool
@@ -376,6 +386,8 @@ class BaseDrone(ABC):
         ------
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
+        SensorNotAvailableError
+            If altitude_source=LIDAR but lidar is not available.
         """
         pass
 

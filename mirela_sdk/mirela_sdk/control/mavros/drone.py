@@ -1,6 +1,5 @@
 from typing import Optional, Union
 from pathlib import Path
-import math
 
 import numpy as np
 import rclpy
@@ -24,6 +23,7 @@ from mirela_sdk.control.types import (
     PoseSource,
     NavigationStrategy,
     RTLStrategy,
+    AltitudeSource,
 )
 from mirela_sdk.control.config import MavrosConfig, DroneConfig
 from mirela_sdk.control.factory import DroneFactory
@@ -36,7 +36,8 @@ from mirela_sdk.utils.process import ProcessUtils
 from mirela_sdk.utils.position_utils import PositionUtils
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 from mirela_sdk.control.mavros.gps_utils import GPSUtils
-from mirela_sdk.control.pid import PIDController, PositionPIDConfig, PIDConfig
+from mirela_sdk.control.mavros.navigator import MavrosNavigator
+from mirela_sdk.control.pid import PositionPIDConfig, PIDConfig
 
 
 class MavrosDrone(BaseDrone):
@@ -63,7 +64,6 @@ class MavrosDrone(BaseDrone):
         self._takeoff_position = None
         self._initial_altitude: float = 0.0
         self._initial_heading: float = 0.0
-        self._lidar_available = False
         self._pose_source = config.pose_source
 
         super().__init__(config, node)
@@ -72,6 +72,7 @@ class MavrosDrone(BaseDrone):
         self._setup_services()
         self._startup_sensors()
         self._load_pid_config()
+        self._navigator = MavrosNavigator(self)
 
         self._node.get_logger().info("MavrosDrone initialized")
 
@@ -203,37 +204,54 @@ class MavrosDrone(BaseDrone):
         return self._vision_pos
 
     @property
-    def lidar_alt(self) -> Optional[float]:
-        """
-        Lidar rangefinder altitude in meters, None if unavailable.
-
-        Returns
-        -------
-        Optional[float]
-            Range value from Range message. See:
-            https://docs.ros.org/en/humble/p/sensor_msgs/msg/Range.html
-        """
-        return self._rng_alt.range if self._rng_alt else None
+    def lidar_available(self) -> bool:
+        """Whether lidar data has been received."""
+        return self._rng_alt is not None
 
     @property
-    def height(self) -> float:
-        """
-        Best available altitude source.
+    def pid_config(self) -> Optional[PositionPIDConfig]:
+        """Current PID configuration for position control."""
+        return self._pid_config
 
-        Priority: lidar > vision.z > relative altitude.
+    def get_altitude(
+        self, source: AltitudeSource = AltitudeSource.AUTO
+    ) -> Optional[float]:
+        """
+        Get altitude from a specific sensor source.
+
+        Parameters
+        ----------
+        source : AltitudeSource, default=AUTO
+            Sensor source to read altitude from:
+
+            - AUTO: best available (lidar > vision Z > relative altitude).
+            - LIDAR: lidar rangefinder reading.
+            - VISION: vision pose Z component.
+            - REL_ALT: GPS-based relative altitude.
 
         Returns
         -------
-        float
-            Altitude above ground in meters.
+        float or None
+            Altitude in meters, or None if the requested source is unavailable.
         """
-        if self._lidar_available and self._rng_alt:
+        if source == AltitudeSource.LIDAR:
+            return self._rng_alt.range if self._rng_alt else None
+        if source == AltitudeSource.VISION:
+            if self._vision_pos is not None:
+                return self._vision_pos.pose.pose.position.z
+            return None
+        if source == AltitudeSource.REL_ALT:
+            if not self.is_indoor and self._rel_alt is not None:
+                return self._rel_alt.data
+            return None
+        # AUTO: lidar > vision Z > relative altitude
+        if self._rng_alt is not None:
             return self._rng_alt.range
-        elif self.is_indoor and self._vision_pos:
+        if self._vision_pos is not None:
             return self._vision_pos.pose.pose.position.z
-        elif not self.is_indoor and self._rel_alt:
+        if self._rel_alt is not None:
             return self._rel_alt.data
-        return 0.0
+        return None
 
     @property
     def position(self) -> Union[PoseWithCovarianceStamped, NavSatFix]:
@@ -270,7 +288,7 @@ class MavrosDrone(BaseDrone):
             if self._vision_pos is None:
                 self._node.get_logger().debug("position_as_target: No vision data")
                 return None
-            lidar = self.lidar_alt if self._lidar_available else None
+            lidar = self._rng_alt.range if self._rng_alt else None
             return PositionUtils.convert_position_to_target(
                 self._vision_pos, lidar=lidar
             )
@@ -345,6 +363,21 @@ class MavrosDrone(BaseDrone):
                 GlobalPositionTarget, "/mavros/setpoint_raw/global", 1
             )
 
+    def publish_setpoint(self, target: Union[PositionTarget, GeoPoseStamped]) -> None:
+        """
+        Publish navigation target to the appropriate MAVROS setpoint topic.
+
+        Parameters
+        ----------
+        target : PositionTarget | GeoPoseStamped
+            PositionTarget publishes to local setpoint topic.
+            GeoPoseStamped publishes to GPS setpoint topic.
+        """
+        if isinstance(target, GeoPoseStamped):
+            self._gps_pub.publish(target)
+        else:
+            self._local_pub.publish(target)
+
     def _setup_services(self) -> None:
         """Initialize ROS2 service clients for MAVROS commands."""
         self._mode_srv = self._create_client(SetMode, "/mavros/set_mode")
@@ -359,24 +392,30 @@ class MavrosDrone(BaseDrone):
 
     def _startup_sensors(self) -> None:
         """
-        Wait for required sensors to become available.
+        Wait for expected sensors to become available.
 
-        Waits up to 10 seconds for lidar and pose source (GPS or vision) to publish data.
+        When ``expect_lidar`` is False the lidar wait is skipped. The
+        subscriber remains active, so lidar data is still captured if
+        it becomes available later.
+
         Stores initial altitude and heading for GPS offset calculations.
         """
+        config: MavrosConfig = self._config
+        timeout = Duration(seconds=config.sensor_timeout)
+
         self._node.get_logger().info("Starting sensor initialization...")
-        timeout = Duration(seconds=10.0)
-        start = self._node.get_clock().now()
 
-        while self._node.get_clock().now() - start < timeout:
-            rclpy.spin_once(self._node, timeout_sec=0.1)
-            if self._rng_alt is not None:
-                self._lidar_available = True
-                self._node.get_logger().info("LiDAR available")
-                break
-
-        if not self._lidar_available:
-            self._node.get_logger().warn("LiDAR not available")
+        if config.expect_lidar:
+            start = self._node.get_clock().now()
+            while self._node.get_clock().now() - start < timeout:
+                rclpy.spin_once(self._node, timeout_sec=0.1)
+                if self._rng_alt is not None:
+                    self._node.get_logger().info("LiDAR available")
+                    break
+            if self._rng_alt is None:
+                self._node.get_logger().warn("LiDAR not available")
+        else:
+            self._node.get_logger().info("LiDAR not checked")
 
         start = self._node.get_clock().now()
         sensors_ok = False
@@ -433,16 +472,66 @@ class MavrosDrone(BaseDrone):
         """
         if self.is_indoor:
             return PositionPIDConfig(
-                x=PIDConfig(kp=0.5, output_min=-0.42, output_max=0.42),
-                y=PIDConfig(kp=0.5, output_min=-0.42, output_max=0.42),
-                z=PIDConfig(kp=0.22, output_min=-0.15, output_max=0.1),
-                yaw=PIDConfig(kp=0.5, ki=0.1, output_min=-0.2, output_max=0.2),
+                x=PIDConfig(
+                    kp=0.5,
+                    output_min=-0.42,
+                    output_max=0.42,
+                    integral_min=-0.5,
+                    integral_max=0.5,
+                ),
+                y=PIDConfig(
+                    kp=0.5,
+                    output_min=-0.42,
+                    output_max=0.42,
+                    integral_min=-0.5,
+                    integral_max=0.5,
+                ),
+                z=PIDConfig(
+                    kp=0.22,
+                    output_min=-0.15,
+                    output_max=0.1,
+                    integral_min=-0.3,
+                    integral_max=0.3,
+                ),
+                yaw=PIDConfig(
+                    kp=0.5,
+                    ki=0.1,
+                    output_min=-0.2,
+                    output_max=0.2,
+                    integral_min=-0.5,
+                    integral_max=0.5,
+                ),
             )
         return PositionPIDConfig(
-            x=PIDConfig(kp=0.8, output_min=-1.0, output_max=1.0),
-            y=PIDConfig(kp=0.8, output_min=-1.0, output_max=1.0),
-            z=PIDConfig(kp=0.5, output_min=-0.8, output_max=0.8),
-            yaw=PIDConfig(kp=0.5, ki=0.1, output_min=-0.3, output_max=0.3),
+            x=PIDConfig(
+                kp=0.8,
+                output_min=-1.0,
+                output_max=1.0,
+                integral_min=-1.0,
+                integral_max=1.0,
+            ),
+            y=PIDConfig(
+                kp=0.8,
+                output_min=-1.0,
+                output_max=1.0,
+                integral_min=-1.0,
+                integral_max=1.0,
+            ),
+            z=PIDConfig(
+                kp=0.5,
+                output_min=-0.8,
+                output_max=0.8,
+                integral_min=-1.0,
+                integral_max=1.0,
+            ),
+            yaw=PIDConfig(
+                kp=0.5,
+                ki=0.1,
+                output_min=-0.3,
+                output_max=0.3,
+                integral_min=-0.5,
+                integral_max=0.5,
+            ),
         )
 
     def _get_driver_name(self) -> str:
@@ -598,7 +687,7 @@ class MavrosDrone(BaseDrone):
                     self._node.get_logger().error("Failed to set takeoff position")
                     return False
 
-            takeoff_height = self.height
+            takeoff_height = self.get_altitude() or 0.0
 
             try:
                 res = self._call_service(
@@ -616,32 +705,33 @@ class MavrosDrone(BaseDrone):
 
             self.delay(altitude * 3)
 
-            height_gain = abs(self.height - takeoff_height)
+            current_alt = self.get_altitude() or 0.0
+            height_gain = abs(current_alt - takeoff_height)
             if height_gain >= 0.1:
                 self._node.get_logger().info(
                     f"Takeoff successful (gained {height_gain:.2f}m)"
                 )
 
                 if adjust_altitude:
-                    current_height = self.height
-                    altitude_diff = altitude - current_height
+                    altitude_diff = altitude - current_alt
 
                     if abs(altitude_diff) > precision:
                         self._node.get_logger().info(
-                            f"Adjusting altitude from {current_height:.2f}m to {altitude:.2f}m"
+                            f"Adjusting altitude from {current_alt:.2f}m to {altitude:.2f}m"
                         )
                         adjustment_success = self.move_to(
                             z=altitude_diff,
                             precision=precision,
                             timeout=timeout,
                         )
+                        final_alt = self.get_altitude() or 0.0
                         if adjustment_success:
                             self._node.get_logger().info(
-                                f"Altitude adjusted to {self.height:.2f}m"
+                                f"Altitude adjusted to {final_alt:.2f}m"
                             )
                         else:
                             self._node.get_logger().warn(
-                                f"Altitude adjustment incomplete, current: {self.height:.2f}m"
+                                f"Altitude adjustment incomplete, current: {final_alt:.2f}m"
                             )
 
                 return True
@@ -806,6 +896,7 @@ class MavrosDrone(BaseDrone):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
         Move the drone to a position relative to its current location and heading.
@@ -858,6 +949,14 @@ class MavrosDrone(BaseDrone):
             PID: closed-loop velocity control to reach the target.
             SETPOINT: direct position setpoint publishing (indoor only).
 
+        altitude_source : AltitudeSource, default=AUTO
+            Altitude sensor source for PID navigation:
+
+            - AUTO: best available (lidar > vision Z > relative altitude).
+            - LIDAR: lidar rangefinder for ground-relative altitude control.
+              With BODY reference, z is relative offset from current lidar reading.
+              With TAKEOFF reference, z is absolute altitude above ground.
+
         Returns
         -------
         bool
@@ -869,6 +968,8 @@ class MavrosDrone(BaseDrone):
             If reference=TAKEOFF but takeoff position not set.
         CapabilityNotSupportedError
             If reference=WORLD in position control.
+        SensorNotAvailableError
+            If altitude_source=LIDAR but lidar is not available.
         """
         if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
             raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
@@ -882,15 +983,37 @@ class MavrosDrone(BaseDrone):
 
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
-            f"strategy={strategy.name} precision={precision}m"
+            f"strategy={strategy.name} precision={precision}m "
+            f"alt_source={altitude_source.name}"
         )
 
         self.delay(0.05)
-        target = self._compute_target(x, y, z, yaw, reference)
 
         if strategy == NavigationStrategy.SETPOINT:
-            return self._navigate_setpoint(target, timeout, precision)
-        return self._navigate_pid(target, x, y, z, yaw, timeout, precision)
+            target = self._compute_setpoint_target(x, y, z, yaw, reference)
+            check_alt = None
+            if isinstance(target, GeoPoseStamped):
+                check_alt = self._compute_target_rel_alt(z, reference)
+            return self._navigator.navigate_setpoint(
+                target, timeout, precision, check_alt
+            )
+
+        # PID navigation
+        target = self._compute_target(x, y, z, yaw, reference)
+        active_axes = (x is not None, y is not None, z is not None)
+        alt_target = self._navigator.resolve_altitude_target(
+            z, reference, altitude_source
+        )
+
+        return self._navigator.navigate_pid(
+            target=target,
+            active_axes=active_axes,
+            yaw=yaw,
+            timeout=timeout,
+            precision=precision,
+            altitude_source=altitude_source,
+            altitude_target=alt_target,
+        )
 
     def move_to_gps(
         self,
@@ -955,7 +1078,7 @@ class MavrosDrone(BaseDrone):
 
         self._node.get_logger().info(
             f"move_to_gps: lat={latitude:.6f} lon={longitude:.6f} alt={alt:.1f}m "
-            f"hdg={hdg:.1f}° strategy={strategy.name} precision={precision}m"
+            f"hdg={hdg:.1f}\u00b0 strategy={strategy.name} precision={precision}m"
         )
 
         target = GPSUtils.create_gps_setpoint(
@@ -963,202 +1086,18 @@ class MavrosDrone(BaseDrone):
         )
 
         if strategy == NavigationStrategy.SETPOINT:
-            return self._navigate_gps_setpoint(
-                target, latitude, longitude, alt, timeout, precision
-            )
-        return self._navigate_pid(target, 0.0, 0.0, 0.0, None, timeout, precision)
-
-    def _navigate_setpoint(
-        self,
-        target: PositionTarget,
-        timeout: Optional[float],
-        precision: float,
-    ) -> bool:
-        tp = target.position
-        self._node.get_logger().info(
-            f"Setpoint nav → target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
-        )
-
-        start = self._node.get_clock().now()
-        timeout_dur = Duration(seconds=timeout) if timeout else None
-
-        while True:
-            target.header.stamp = self._node.get_clock().now().to_msg()
-            self._local_pub.publish(target)
-            self.delay(0.02)
-
-            current = self._vision_pos.pose.pose.position
-            dx = target.position.x - current.x
-            dy = target.position.y - current.y
-            dz = target.position.z - current.z
-            distance = math.sqrt(dx**2 + dy**2 + dz**2)
-
-            self._node.get_logger().info(
-                f"Distance: {distance:.2f}m | dx={dx:.2f}, dy={dy:.2f}, dz={dz:.2f}",
-                throttle_duration_sec=0.5,
+            return self._navigator.navigate_setpoint(
+                target, timeout, precision, check_alt=alt
             )
 
-            if distance <= precision:
-                self._node.get_logger().info(
-                    f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m"
-                )
-                return True
-
-            if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self._node.get_logger().warn(
-                    f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m"
-                )
-                return False
-
-    def _navigate_gps_setpoint(
-        self,
-        target: GeoPoseStamped,
-        lat: float,
-        lon: float,
-        alt: float,
-        timeout: Optional[float],
-        precision: float,
-    ) -> bool:
-        self._node.get_logger().info(
-            f"GPS setpoint nav → target: lat={lat:.6f}, lon={lon:.6f}, alt={alt:.1f}m"
-        )
-
-        start = self._node.get_clock().now()
-        timeout_dur = Duration(seconds=timeout) if timeout else None
-
-        while True:
-            target.header.stamp = self._node.get_clock().now().to_msg()
-            self._gps_pub.publish(target)
-            self.delay(0.02)
-
-            reached, dist, _ = GPSUtils.check_reached(
-                self._gps.latitude,
-                self._gps.longitude,
-                self.rel_alt,
-                lat,
-                lon,
-                alt,
-                precision,
-            )
-
-            self._node.get_logger().info(
-                f"Distance: {dist:.2f}m",
-                throttle_duration_sec=0.5,
-            )
-
-            if reached:
-                self._node.get_logger().info(
-                    f"\033[32;1mGPS target reached! Distance: {dist:.2f}m\033[0m"
-                )
-                return True
-
-            if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self._node.get_logger().warn(
-                    f"\033[33;1mGPS timeout. Distance: {dist:.2f}m\033[0m"
-                )
-                return False
-
-    def _navigate_pid(
-        self,
-        target: Union[PositionTarget, GeoPoseStamped],
-        x: Optional[float],
-        y: Optional[float],
-        z: Optional[float],
-        yaw: Optional[float],
-        timeout: Optional[float],
-        precision: float,
-    ) -> bool:
-        pid_x = self._create_pid("x")
-        pid_y = self._create_pid("y")
-        pid_z = self._create_pid("z")
-        pid_yaw = self._create_pid("yaw")
-
-        if isinstance(target, GeoPoseStamped):
-            tp = target.pose.position
-            self._node.get_logger().info(
-                f"PID nav → GPS target: lat={tp.latitude:.6f}, "
-                f"lon={tp.longitude:.6f}, alt={tp.altitude:.1f}m"
-            )
-        else:
-            tp = target.position
-            self._node.get_logger().info(
-                f"PID nav → local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
-            )
-
-        start = self._node.get_clock().now()
-        timeout_dur = Duration(seconds=timeout) if timeout else None
-        self._obstacle_manager.reset_all()
-
-        while True:
-            self.delay(0.01)
-
-            if not self._obstacle_manager.should_continue_navigation(self):
-                continue
-
-            disable_x, disable_y, disable_z = self._obstacle_manager.get_axis_control()
-
-            dx, dy, dz, dyaw = self._compute_errors(target, yaw)
-
-            axes = {
-                "x": (x is not None and not disable_x, dx, pid_x),
-                "y": (y is not None and not disable_y, dy, pid_y),
-                "z": (z is not None and not disable_z, dz, pid_z),
-            }
-
-            dead_zone = precision / 2
-            vel = {}
-            error_parts = []
-            dist_sq = 0.0
-
-            for name, (active, err, pid) in axes.items():
-                v = pid.update(-err) if active else 0.0
-                if abs(err) < dead_zone:
-                    v = 0.0
-                vel[name] = v
-                if active:
-                    error_parts.append(f"d{name}={err:.2f}")
-                    dist_sq += err**2
-
-            vyaw = pid_yaw.update(-dyaw) if yaw is not None else 0.0
-            if yaw is not None:
-                error_parts.append(f"dyaw={np.degrees(dyaw):.1f}°")
-
-            distance = np.sqrt(dist_sq)
-
-            self._node.get_logger().info(
-                f"Distance: {distance:.2f}m | Error: {', '.join(error_parts)} | "
-                f"Vel: vx={vel['x']:.2f}, vy={vel['y']:.2f}, vz={vel['z']:.2f}, vyaw={vyaw:.2f}",
-                throttle_duration_sec=0.5,
-            )
-
-            self.move_velocity(vel["x"], vel["y"], vel["z"], vyaw)
-
-            if distance <= precision:
-                if yaw is not None and abs(dyaw) > np.radians(3):
-                    continue
-                self.move_velocity(0.0, 0.0, 0.0, 0.0)
-                self._node.get_logger().info(
-                    f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m"
-                )
-                return True
-
-            if timeout_dur and (self._node.get_clock().now() - start) > timeout_dur:
-                self.move_velocity(0.0, 0.0, 0.0, 0.0)
-                self._node.get_logger().warn(
-                    f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m"
-                )
-                return False
-
-    def _create_pid(self, axis: str) -> PIDController:
-        cfg = getattr(self._pid_config, axis, None)
-        if cfg is None:
-            return PIDController(kp=0.5, ki=0.1, output_limits=(-0.2, 0.2))
-        return PIDController(
-            kp=cfg.kp,
-            ki=cfg.ki,
-            kd=cfg.kd,
-            output_limits=cfg.get_output_limits(),
-            integral_limits=cfg.get_integral_limits(),
+        return self._navigator.navigate_pid(
+            target=target,
+            active_axes=(True, True, True),
+            yaw=None,
+            timeout=timeout,
+            precision=precision,
+            altitude_source=AltitudeSource.REL_ALT,
+            altitude_target=alt,
         )
 
     def _compute_target(
@@ -1207,7 +1146,9 @@ class MavrosDrone(BaseDrone):
         msg.position.x = float(pos.x + dx)
         msg.position.y = float(pos.y + dy)
         msg.position.z = float(pos.z + dz)
-        msg.yaw = float(current_yaw + np.radians(yaw) if yaw else current_yaw)
+        msg.yaw = float(
+            current_yaw + np.radians(yaw) if yaw is not None else current_yaw
+        )
         return msg
 
     def _compute_gps_target(
@@ -1241,7 +1182,7 @@ class MavrosDrone(BaseDrone):
                 hdg,
             )
 
-        target_yaw = hdg + (yaw or 0)
+        target_yaw = hdg + (yaw if yaw is not None else 0)
         quat = quaternion_from_euler(0, 0, np.radians(target_yaw))
 
         msg = GeoPoseStamped()
@@ -1253,6 +1194,107 @@ class MavrosDrone(BaseDrone):
         msg.pose.orientation.z = float(quat[2])
         msg.pose.orientation.w = float(quat[3])
         return msg
+
+    def _compute_setpoint_target(
+        self,
+        x: Optional[float],
+        y: Optional[float],
+        z: Optional[float],
+        yaw: Optional[float],
+        reference: MoveReference,
+    ) -> Union[PositionTarget, GeoPoseStamped]:
+        """
+        Compute target for SETPOINT navigation.
+
+        Parameters
+        ----------
+        x, y, z, yaw, reference
+            Same as ``_compute_target``.
+
+        Returns
+        -------
+        PositionTarget | GeoPoseStamped
+            Setpoint-ready target message.
+        """
+        if self.is_indoor:
+            return self._compute_local_target(x, y, z, yaw, reference)
+        return self._compute_gps_setpoint_target(x, y, z, yaw, reference)
+
+    def _compute_gps_setpoint_target(
+        self,
+        x: Optional[float],
+        y: Optional[float],
+        z: Optional[float],
+        yaw: Optional[float],
+        reference: MoveReference,
+    ) -> GeoPoseStamped:
+        """
+        Compute GPS target with AMSL altitude correction for SETPOINT publishing.
+
+        Uses ``GPSUtils.create_gps_setpoint`` to apply EGM96 geoid correction
+        so the altitude published to MAVROS is in AMSL as required.
+
+        Parameters
+        ----------
+        x, y, z, yaw, reference
+            Same as ``_compute_gps_target``.
+
+        Returns
+        -------
+        GeoPoseStamped
+            GPS target with AMSL-corrected altitude.
+        """
+        if reference == MoveReference.BODY:
+            hdg = self.heading
+            lat, lon, _ = GPSCalculate.calculate_gps_offset(
+                x or 0,
+                -(y or 0),
+                0,
+                self._gps.latitude,
+                self._gps.longitude,
+                self._gps.altitude,
+                hdg,
+            )
+        else:
+            hdg = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position))
+            lat, lon, _ = GPSCalculate.calculate_gps_offset(
+                x or 0,
+                -(y or 0),
+                0,
+                self._takeoff_position.pose.position.latitude,
+                self._takeoff_position.pose.position.longitude,
+                self._takeoff_position.pose.position.altitude,
+                hdg,
+            )
+
+        target_rel_alt = self._compute_target_rel_alt(z, reference)
+        target_hdg = hdg + (yaw if yaw is not None else 0)
+
+        return GPSUtils.create_gps_setpoint(
+            lat, lon, target_rel_alt, target_hdg, self._initial_altitude
+        )
+
+    def _compute_target_rel_alt(
+        self, z: Optional[float], reference: MoveReference
+    ) -> float:
+        """
+        Compute target relative altitude for GPS setpoint navigation.
+
+        Parameters
+        ----------
+        z : float, optional
+            Altitude offset in meters. None treated as 0.
+        reference : MoveReference
+            BODY: offset from current rel_alt. TAKEOFF: absolute rel_alt.
+
+        Returns
+        -------
+        float
+            Target relative altitude in meters.
+        """
+        if reference == MoveReference.TAKEOFF:
+            return z or 0
+        return self.rel_alt + (z or 0)
 
     def _validate_position_sensors(self) -> None:
         """
@@ -1271,29 +1313,6 @@ class MavrosDrone(BaseDrone):
         else:
             if self._gps is None:
                 raise SensorNotAvailableError("GPS", "navigation requires sensor data")
-
-    def _compute_errors(self, target, yaw: Optional[float]):
-        if self.is_indoor:
-            hdg = None
-        else:
-            hdg = self.heading
-
-        dx, dy, dz = PositionUtils.get_body_distance(target, self.position, hdg)
-
-        if yaw is not None:
-            if self.is_indoor:
-                curr_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
-            else:
-                curr_yaw = np.radians(hdg)
-            target_yaw = PositionUtils.get_yaw_from_pose(target)
-            dyaw = target_yaw - curr_yaw
-            dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
-            if abs(dyaw) < np.radians(3):
-                dyaw = 0.0
-        else:
-            dyaw = 0.0
-
-        return dx, dy, dz, dyaw
 
     def emergency_stop(self) -> None:
         """Execute emergency stop via force disarm."""
@@ -1388,7 +1407,7 @@ class MavrosDrone(BaseDrone):
             raise TakeoffPositionNotSetError("RTL")
 
         if altitude is not None:
-            target_z = altitude - self.height
+            target_z = altitude - (self.get_altitude() or 0.0)
             self._node.get_logger().info(f"Moving to RTL altitude: {altitude}m")
             self.move_to(x=0, y=0, z=target_z, precision=precision)
 
