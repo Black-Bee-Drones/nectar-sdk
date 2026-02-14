@@ -1,65 +1,44 @@
-FROM osrf/ros:humble-desktop-full
+# syntax=docker/dockerfile:1
+ARG ROS_DISTRO=humble
+FROM osrf/ros:${ROS_DISTRO}-desktop-full AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG ROS_DISTRO
+ENV NON_INTERACTIVE=true
+ENV ROS2_WORKSPACE=/home/ros2_ws
+ENV ROS_DISTRO=${ROS_DISTRO}
 
-# Atualização e instalação de pacotes essenciais
-RUN echo "⬆️  Atualizando e instalando pacotes essenciais..." && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    nano \
-    git \
-    python3-pip \
-    python3-colcon-common-extensions \
-    tmux \
-    ros-humble-mavros \
-    ros-humble-mavros-extras \
-    ros-humble-tf-transformations \
-    ros-humble-ament-cmake \
-    libboost-python-dev \
-    wget \
-    fswebcam \
-    v4l-utils \
-    && rm -rf /var/lib/apt/lists/*
+COPY scripts/ /tmp/setup/scripts/
 
-RUN usermod -a -G video root
+RUN /tmp/setup/scripts/setup.sh system
+RUN /tmp/setup/scripts/setup.sh geographiclib
+RUN apt-get remove -y python3-sympy 2>/dev/null || true
+RUN python3 -m pip install --upgrade pip
+RUN rm -rf /var/lib/apt/lists/*
 
-# Configuração do GeographicLib
-RUN echo "🌍 Configurando GeographicLib para MAVROS..." && \
-    wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh && \
-    chmod +x install_geographiclib_datasets.sh && \
-    ./install_geographiclib_datasets.sh && \
-    rm install_geographiclib_datasets.sh
-
-# Criar workspace ROS2
 WORKDIR /home/ros2_ws/src
+RUN /tmp/setup/scripts/setup.sh ros2-env
 
-# Clonar repositórios públicos
-RUN echo "📦 Clonando repositório vision_opencv para suporte a visão computacional..." && \
-    git clone -b humble https://github.com/ros-perception/vision_opencv.git
+FROM base AS sdk
 
-# Copiar o repositório local para dentro do container
 COPY . /home/ros2_ws/src/mirela-sdk
-# Instalar dependências Python
-RUN echo "🐍 Instalando dependências Python do mirela-sdk..." && \
-    cd /home/ros2_ws/src/mirela-sdk && pip install -r requirements.txt
 
-# Configurar ambiente ROS2
-RUN echo "🔧 Configurando ambiente ROS2 no bashrc..." && \
-    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
-    echo "source /home/ros2_ws/install/local_setup.bash" >> ~/.bashrc && \
-    echo "source /usr/share/colcon_cd/function/colcon_cd.sh" >> ~/.bashrc && \
-    echo "export ROS_DOMAIN_ID=14" >> ~/.bashrc && \
-    echo "export _colcon_cd_root=/opt/ros/humble/" >> ~/.bashrc
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python all
+RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh rosdep-init
+RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh ros2-deps
+RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh build
 
-# Build do workspace
-RUN echo "🔨 Construindo o workspace ROS2..." && \
-    /bin/bash -c "source /opt/ros/humble/setup.bash && \
-    cd /home/ros2_ws && \
-    rosdep fix-permissions && \
-    rosdep update && \
-    rosdep install -i --from-path src --rosdistro humble -r -y && \
-    colcon build --symlink-install && \
-    source /home/ros2_ws/install/local_setup.bash"
+CMD ["/bin/bash"]
 
-RUN echo "🚀🐝 AVANTE! Ambiente ROS2 Humble com MAVROS, Parrot Bebop e SDK pronto!"
+FROM sdk AS sdk-full
+
+ARG TORCH_VARIANT=cpu
+ENV TORCH_VARIANT=${TORCH_VARIANT}
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh pytorch ${TORCH_VARIANT}
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python ai
 
 CMD ["/bin/bash"]
