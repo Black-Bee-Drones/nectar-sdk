@@ -8,9 +8,13 @@ from typing import List, Optional, Tuple
 import cv2
 import mediapipe as mp
 import numpy as np
-from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from mediapipe.tasks.python.vision import (
+    drawing_utils as mp_drawing,
+    drawing_styles as mp_styles,
+    HandLandmarksConnections,
+)
 
 
 class HandLandmark(IntEnum):
@@ -156,9 +160,12 @@ class HandTracker:
     )
 
     # Depth estimation calibration data (pixel distance → cm)
-    _DEPTH_CALIB_X = np.array(
-        [300, 245, 200, 170, 145, 130, 112, 103, 93, 87, 80, 75, 70, 67, 62, 59, 57]
-    ) / 1.5
+    _DEPTH_CALIB_X = (
+        np.array(
+            [300, 245, 200, 170, 145, 130, 112, 103, 93, 87, 80, 75, 70, 67, 62, 59, 57]
+        )
+        / 1.5
+    )
     _DEPTH_CALIB_Y = np.array(
         [20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
     )
@@ -169,10 +176,8 @@ class HandTracker:
         self._detection_result: Optional[vision.HandLandmarkerResult] = None
         self._is_running = False
 
-        # drawing utilities
-        self._mp_hands = mp.solutions.hands
-        self._mp_drawing = mp.solutions.drawing_utils
-        self._mp_drawing_styles = mp.solutions.drawing_styles
+        # drawing utilities (Tasks API)
+        self._hand_connections = HandLandmarksConnections.HAND_CONNECTIONS
 
         self._depth_coeffs = np.polyfit(self._DEPTH_CALIB_X, self._DEPTH_CALIB_Y, 2)
 
@@ -300,24 +305,13 @@ class HandTracker:
         for idx, hand_landmarks in enumerate(self._detection_result.hand_landmarks):
             handedness = self._detection_result.handedness[idx]
 
-            # Convert to proto format for drawing
-            landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-            landmarks_proto.landmark.extend(
-                [
-                    landmark_pb2.NormalizedLandmark(
-                        x=lm.x, y=lm.y, z=lm.z
-                    )
-                    for lm in hand_landmarks
-                ]
-            )
-
-            # Draw landmarks and connections
-            self._mp_drawing.draw_landmarks(
+            # Draw landmarks and connections (Tasks API)
+            mp_drawing.draw_landmarks(
                 image,
-                landmarks_proto,
-                self._mp_hands.HAND_CONNECTIONS,
-                self._mp_drawing_styles.get_default_hand_landmarks_style(),
-                self._mp_drawing_styles.get_default_hand_connections_style(),
+                hand_landmarks,
+                self._hand_connections,
+                mp_styles.get_default_hand_landmarks_style(),
+                mp_styles.get_default_hand_connections_style(),
             )
 
             # Draw handedness label
