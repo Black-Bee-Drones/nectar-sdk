@@ -1,4 +1,3 @@
-import depthai as dai
 import cv2
 
 from typing import Optional, Tuple
@@ -11,6 +10,14 @@ import numpy as np
 from mirela_sdk.vision.camera.abstract import DepthCam
 from mirela_sdk.vision.camera.config import OakDConfig
 
+try:
+    import depthai as dai
+
+    DEPTHAI_AVAILABLE = True
+except ImportError:
+    dai = None
+    DEPTHAI_AVAILABLE = False
+
 
 class OakdCameraResolution(Enum):
     """
@@ -19,8 +26,16 @@ class OakdCameraResolution(Enum):
     """
 
     THE_540_P = "THE_540_P"
-    THE_1080_P = dai.ColorCameraProperties.SensorResolution.THE_1080_P
-    THE_4K = dai.ColorCameraProperties.SensorResolution.THE_4_K
+    THE_1080_P = (
+        dai.ColorCameraProperties.SensorResolution.THE_1080_P
+        if DEPTHAI_AVAILABLE
+        else "THE_1080_P"
+    )
+    THE_4K = (
+        dai.ColorCameraProperties.SensorResolution.THE_4_K
+        if DEPTHAI_AVAILABLE
+        else "THE_4_K"
+    )
 
 
 class PipelineOrderingError(Exception): ...
@@ -64,6 +79,10 @@ class OakdCam(DepthCam):
 
         :param config: OakDConfig instance with camera configuration
         """
+        if not DEPTHAI_AVAILABLE:
+            raise ImportError(
+                "depthai is required for OakdCam. Install with: pip install depthai"
+            )
 
         super().__init__("oakd")
 
