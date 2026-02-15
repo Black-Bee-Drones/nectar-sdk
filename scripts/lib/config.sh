@@ -10,10 +10,13 @@ DOCKER_IMAGE_PREFIX="mirela-sdk"
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_DOMAIN_ID="14"
 
-# PyTorch (env vars override defaults)
-PYTORCH_VERSION="${PYTORCH_VERSION:-2.7.1}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.22.1}"
-TORCH_VARIANT="${TORCH_VARIANT:-cpu}"
+# PyTorch
+TORCH_VARIANT="${TORCH_VARIANT:-auto}"
+TORCH_VERSION="${TORCH_VERSION:-}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
+
+TORCH_CONSTRAINTS_FILE="/tmp/mirela-torch-constraints.txt"
+TORCH_INDEX_FILE="/tmp/mirela-torch-index.txt"
 
 # RealSense 
 LIBREALSENSE_VERSION="v2.55.1"
@@ -78,7 +81,6 @@ detect_workspace() {
         echo "$candidate"
         return
     fi
-    # Fallback: environment variable or default
     echo "${ROS2_WORKSPACE:-$HOME/ros2_ws}"
 }
 

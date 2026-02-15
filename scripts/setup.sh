@@ -53,7 +53,7 @@ show_help() {
     echo "  ./setup.sh python interface   Install core + GUI module"
     echo "  ./setup.sh python all         Install all modules (no AI)"
     echo "  ./setup.sh python full        Install everything (all + AI)"
-    echo "  ./setup.sh pytorch            Install PyTorch (auto-detect GPU)"
+    echo "  ./setup.sh pytorch            Install PyTorch (auto-detect CUDA)"
     echo "  ./setup.sh pytorch cpu        Install PyTorch CPU"
     echo "  ./setup.sh pytorch cu124      Install PyTorch CUDA 12.4"
     echo ""
@@ -79,6 +79,8 @@ show_help() {
     echo -e "${BLUE}Docker env vars:${NC}"
     echo "  ROS_DISTRO=jazzy              Build for different ROS distro"
     echo "  TORCH_VARIANT=cu124           Build full with CUDA PyTorch"
+    echo "  TORCH_VARIANT=auto            Auto-detect CUDA from nvidia-smi"
+    echo "  TORCH_VERSION=2.7.1           Pin specific torch version"
     echo ""
     echo -e "${BLUE}Info:${NC}"
     echo "  Workspace:  ${WORKSPACE_DIR}"
@@ -91,28 +93,55 @@ show_help() {
 
 cmd_docker_build() {
     local target="${1:-sdk}"
-    local tag="${DOCKER_IMAGE_PREFIX}:latest"
-    if [[ "$target" == "sdk-full" ]]; then
-        tag="${DOCKER_IMAGE_PREFIX}:full-${TORCH_VARIANT}"
+    local variant="${TORCH_VARIANT}"
+
+    if [[ "$target" == "sdk-full" && "$variant" == "auto" ]]; then
+        local cuda_ver
+        cuda_ver=$(_detect_cuda_version)
+        if [[ -n "$cuda_ver" ]]; then
+            variant=$(_cuda_to_torch_variant "$cuda_ver")
+            log_info "Auto-detected CUDA ${cuda_ver} → ${variant}"
+        else
+            variant="cpu"
+            log_info "No GPU detected → cpu"
+        fi
     fi
 
-    log_info "Building $tag (target=$target, distro=$ROS_DISTRO, torch=$TORCH_VARIANT)..."
+    local tag="${DOCKER_IMAGE_PREFIX}:latest"
+    if [[ "$target" == "sdk-full" ]]; then
+        tag="${DOCKER_IMAGE_PREFIX}:full-${variant}"
+    fi
+
+    log_info "Building $tag (target=$target, distro=$ROS_DISTRO, torch=$variant)..."
     docker build --network=host \
         --build-arg ROS_DISTRO="${ROS_DISTRO}" \
-        --build-arg TORCH_VARIANT="${TORCH_VARIANT}" \
+        --build-arg TORCH_VARIANT="${variant}" \
         --target "$target" \
         -t "$tag" \
         -f "${PROJECT_DIR}/docker/Dockerfile" "$PROJECT_DIR"
     log_success "Docker image $tag built"
 }
 
-DOCKER_CONTAINER="${ROS2_PKG_NAME}"
+DOCKER_CONTAINER_PREFIX="${ROS2_PKG_NAME}"
 
 # Find all SDK images available locally
 _docker_images() {
     docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
         | grep "^${DOCKER_IMAGE_PREFIX}:" \
         | sort
+}
+
+# Find all running SDK containers
+_docker_running() {
+    docker ps --format '{{.Names}}' 2>/dev/null \
+        | grep "^${DOCKER_CONTAINER_PREFIX}" \
+        | sort
+}
+
+_container_name() {
+    local tag="$1"
+    local suffix="${tag#*:}"  
+    echo "${DOCKER_CONTAINER_PREFIX}_${suffix}"
 }
 
 cmd_docker_run() {
@@ -141,7 +170,8 @@ cmd_docker_run() {
         tag="${images[$((choice-1))]}"
     fi
 
-    local name="$DOCKER_CONTAINER"
+    local name
+    name=$(_container_name "$tag")
     docker rm -f "$name" >/dev/null 2>&1 || true
     xhost +local:root 2>/dev/null || true
 
@@ -185,17 +215,39 @@ cmd_docker_run() {
 }
 
 cmd_docker_exec() {
-    if ! docker ps --format '{{.Names}}' | grep -q "^${DOCKER_CONTAINER}$"; then
+    local containers
+    mapfile -t containers < <(_docker_running)
+
+    if [ ${#containers[@]} -eq 0 ]; then
         log_error "No running container. Start first: make docker-run"
         exit 1
+    fi
+
+    local name
+    if [ ${#containers[@]} -eq 1 ]; then
+        name="${containers[0]}"
+    elif [[ "${NON_INTERACTIVE:-}" == "true" ]]; then
+        name="${containers[0]}"
+    else
+        echo ""
+        echo "Running containers:"
+        for i in "${!containers[@]}"; do
+            local img
+            img=$(docker inspect --format '{{.Config.Image}}' "${containers[$i]}" 2>/dev/null)
+            echo "  $((i+1))) ${containers[$i]}  (${img})"
+        done
+        echo ""
+        read -p "Select [1]: " choice
+        choice="${choice:-1}"
+        name="${containers[$((choice-1))]}"
     fi
 
     local tty_flag="-i"
     [ -t 0 ] && tty_flag="-it"
 
-    docker exec $tty_flag "$DOCKER_CONTAINER" bash
+    log_info "Attaching to $name..."
+    docker exec $tty_flag "$name" bash
 }
-
 
 # Full installation (from zero)
 
@@ -341,7 +393,6 @@ main() {
         docker-build-full)  cmd_docker_build "sdk-full" ;;
         docker-run)         cmd_docker_run ;;
         docker-exec)        cmd_docker_exec ;;
-
         # Full
         full-install)       cmd_full_install ;;
 
