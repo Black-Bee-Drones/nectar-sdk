@@ -12,8 +12,8 @@ COPY scripts/ /tmp/setup/scripts/
 
 RUN /tmp/setup/scripts/setup.sh system
 RUN /tmp/setup/scripts/setup.sh geographiclib
-RUN apt-get remove -y python3-sympy 2>/dev/null || true
-RUN python3 -m pip install --upgrade pip
+RUN rm -f /usr/lib/python*/EXTERNALLY-MANAGED
+RUN python3 -m pip install --ignore-installed pip
 RUN rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/ros2_ws/src
@@ -25,6 +25,12 @@ COPY . /home/ros2_ws/src/mirela-sdk
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python all
+# Python 3.12+ (Jazzy): system numpy 1.26.4 == pip numpy → dual install causes
+# RecursionError in sklearn/supervision. Remove the pip copy.
+# Python 3.10 (Humble): system numpy 1.21.5 is too old, pip copy must stay.
+RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
+    && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
+    || true
 RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh rosdep-init
 RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh ros2-deps
 RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh build
@@ -40,5 +46,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     /home/ros2_ws/src/mirela-sdk/scripts/setup.sh pytorch ${TORCH_VARIANT}
 RUN --mount=type=cache,target=/root/.cache/pip \
     /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python ai
+RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
+    && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
+    || true
 
 CMD ["/bin/bash"]
