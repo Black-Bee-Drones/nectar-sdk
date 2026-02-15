@@ -50,4 +50,19 @@ RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
     && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
     || true
 
+# RealSense: udev rules + hotplug for runtime device access
+COPY docker/realsense/ /opt/realsense/
+RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
+RUN mkdir -p /etc/udev/rules.d && \
+    cp /opt/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/99-realsense-libusb.rules 2>/dev/null || true
+
+# RealSense: build librealsense from source + realsense-ros + vision_to_mavros
+# Opt-in via INSTALL_REALSENSE=true. REALSENSE_CUDA controls CUDA in librealsense build.
+ARG INSTALL_REALSENSE=false
+ARG REALSENSE_CUDA=false
+ENV REALSENSE_CUDA=${REALSENSE_CUDA}
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense; \
+    fi
+
 CMD ["/bin/bash"]

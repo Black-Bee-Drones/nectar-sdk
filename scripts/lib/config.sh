@@ -18,9 +18,22 @@ TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
 TORCH_CONSTRAINTS_FILE="/tmp/mirela-torch-constraints.txt"
 TORCH_INDEX_FILE="/tmp/mirela-torch-index.txt"
 
-# RealSense 
-LIBREALSENSE_VERSION="v2.55.1"
-REALSENSE_ROS_TAG="4.55.1"
+# RealSense — versions depend on ROS distro and camera target.
+# Override with env vars: LIBREALSENSE_VERSION, REALSENSE_ROS_TAG
+# T265 requires: LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1
+if [[ "$ROS_DISTRO" == "humble" || "$ROS_DISTRO" == "iron" ]]; then
+    LIBREALSENSE_VERSION="${LIBREALSENSE_VERSION:-v2.55.1}"
+    REALSENSE_ROS_TAG="${REALSENSE_ROS_TAG:-4.55.1}"
+elif [[ "$ROS_DISTRO" == "jazzy" ]]; then
+    LIBREALSENSE_VERSION="${LIBREALSENSE_VERSION:-v2.56.5}"
+    REALSENSE_ROS_TAG="${REALSENSE_ROS_TAG:-4.56.4}"
+elif [[ "$ROS_DISTRO" == "kilted" ]]; then
+    LIBREALSENSE_VERSION="${LIBREALSENSE_VERSION:-v2.56.5}"
+    REALSENSE_ROS_TAG="${REALSENSE_ROS_TAG:-4.57.2}"
+else
+    LIBREALSENSE_VERSION="${LIBREALSENSE_VERSION:-v2.55.1}"
+    REALSENSE_ROS_TAG="${REALSENSE_ROS_TAG:-4.55.1}"
+fi
 
 # System apt packages 
 SYSTEM_PACKAGES=(

@@ -1,143 +1,163 @@
-# Mirela SDK - Installation Guide 🦥
+# Installation Guide
 
-## Quick Install 🚀
+## Quick Install (from zero)
 
-```bash
-wget https://raw.githubusercontent.com/Black-Bee-Drones/mirela-sdk/main/scripts/install_env.sh
-chmod +x install_env.sh
-./install_env.sh
-```
-
-The script automatically installs:
-- System packages (git, cmake, build-essential)
-- [ROS2 Humble](https://docs.ros.org/en/humble/) + [MAVROS](https://github.com/mavlink/mavros)
-- [GeographicLib](https://geographiclib.sourceforge.io/) datasets (EGM96 geoid)
-- mirela-sdk repository
-- Python dependencies
-
-## Manual Installation 👨🏻‍💻
-
-### 1. ROS2 Humble
-
-Follow the [official ROS2 Humble installation](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html) or use:
+For a fresh Ubuntu/Debian machine without ROS2:
 
 ```bash
-# Add ROS2 repository
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-    -o /usr/share/keyrings/ros-archive-keyring.gpg
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | \
-    sudo tee /etc/apt/sources.list.d/ros2.list
-
-# Install ROS2 + MAVROS
-sudo apt update
-sudo apt install -y ros-humble-desktop-full \
-    ros-humble-mavros ros-humble-mavros-extras \
-    ros-humble-vision-opencv \
-    python3-colcon-common-extensions python3-rosdep
-
-# Initialize rosdep
-sudo rosdep init
-rosdep update
-```
-
-### 2. GeographicLib (for MAVROS)
-
-Required for GPS coordinate transformations:
-
-```bash
-sudo /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
-```
-
-### 3. Clone Repository
-
-```bash
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws/src
 git clone git@github.com:Black-Bee-Drones/mirela-sdk.git
+cd mirela-sdk
+./scripts/setup.sh full-install
 ```
 
-### 4. Python Dependencies
+Or use the interactive menu:
 
-**Core** (vision, control, cameras):
 ```bash
-pip install -r mirela-sdk/requirements.txt
+./scripts/setup.sh
 ```
 
-**AI/Detection** (optional):
+The full install covers: system packages, ROS2 Humble, MAVROS, GeographicLib, Python dependencies, workspace build, and bashrc configuration.
+
+## Already Have ROS2 + Workspace
+
+If you already cloned the repo inside a ROS2 workspace (`<workspace>/src/mirela-sdk`):
+
 ```bash
-# PyTorch - select based on your hardware
-# CPU only:
-pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
+# Install Python dependencies (all modules)
+./scripts/setup.sh python all
 
-# CUDA 12.4 (NVIDIA GPU):
-pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu124
+# Build
+./scripts/setup.sh build
+```
 
-# AI module dependencies
-pip install -r mirela-sdk/requirements-ai.txt
+Or via Make:
+
+```bash
+make install-all
+make build
+```
+
+## Module-Specific Installation
+
+Install only the modules you need (dependencies defined in `mirela_sdk/pyproject.toml`):
+
+```bash
+./scripts/setup.sh python              # Core only (numpy, opencv, scipy)
+./scripts/setup.sh python control      # + GPS, PID, navigation
+./scripts/setup.sh python vision       # + ArUco, color, line detection
+./scripts/setup.sh python ai           # + YOLO, Transformers, RF-DETR
+./scripts/setup.sh python interface    # + PySide6 GUI
+./scripts/setup.sh python all          # All modules
+./scripts/setup.sh python full         # All + camera hardware drivers
+```
+
+## PyTorch (required for AI module)
+
+```bash
+# Auto-detect GPU:
+./scripts/setup.sh pytorch
+
+# Or explicitly:
+./scripts/setup.sh pytorch-cpu         # CPU only
+./scripts/setup.sh pytorch-cuda        # CUDA 12.4
 ```
 
 See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for other configurations.
 
-### 5. Build Workspace
+## RealSense
+
+Builds librealsense from source with optional CUDA, installs realsense-ros and vision_to_mavros:
 
 ```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-rosdep install -i --from-path src --rosdistro humble -r -y
-colcon build --symlink-install
+./scripts/setup.sh realsense
 ```
 
-### 6. Environment Setup
+Interactive menu with custom steps, CUDA auto-detection, and verification.
 
-Add to `~/.bashrc`:
-```bash
-source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/local_setup.bash
-```
+### Version compatibility
 
-Then reload:
-```bash
-source ~/.bashrc
-```
+Versions are auto-selected per ROS distro (defined in `scripts/lib/config.sh`):
 
-## Optional Hardware 📷
+| ROS 2 Distro | realsense-ros | librealsense | Cameras |
+|---|---|---|---|
+| Humble / Iron | 4.55.1 | v2.55.1 | D435, D435i, D455 |
+| Jazzy | [4.56.4](https://github.com/realsenseai/realsense-ros/releases/tag/4.56.4) | [v2.56.5](https://github.com/realsenseai/librealsense/releases/tag/v2.56.5) | D435, D435i, D455 |
+| Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | v2.56.5 | D435, D435i, D455 |
 
-### Intel RealSense D435i
-
-For depth camera support (indoor navigation, obstacle detection):
+Override for specific cameras:
 
 ```bash
-cd ~/ros2_ws/src/mirela-sdk
-./scripts/install_realsense.sh
+# T265 tracking camera (last supported: Humble/Foxy only)
+LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 ./scripts/setup.sh realsense
 ```
 
-Or install manually following the [librealsense installation guide](https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md).
+### CUDA build
 
-### Luxonis OAK-D
-
-DepthAI is included in `requirements.txt`. For troubleshooting, see [DepthAI installation](https://docs.luxonis.com/software/depthai/manual-install/).
-
-## Verify Installation ✅
+On systems with NVIDIA GPU, librealsense is built with CUDA automatically (detected via `nvcc`). Disable with:
 
 ```bash
-source ~/.bashrc
-
-# Check ROS2
-ros2 pkg list | grep mirela
-
-# Should output:
-# mirela_interfaces
-# mirela_sdk
-
-# Test GUI
-ros2 run mirela_sdk gui
-
-# Test camera
-ros2 run mirela_sdk camera_example
+REALSENSE_CUDA=false ./scripts/setup.sh realsense
 ```
 
-## Troubleshooting 🔧
+### D435i + Isaac ROS Visual SLAM
+
+For indoor navigation with D435i on Jetson Orin, the SDK includes [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros) which bridges NVIDIA Isaac ROS Visual SLAM with MAVROS. See the [VSLAM setup guide](https://www.andrewbernas.com/docs/tutorials/robots/vslam/setup) for the full workflow.
+
+## System Setup (individual steps)
+
+```bash
+./scripts/setup.sh system          # apt packages
+./scripts/setup.sh ros2            # ROS2 Humble + MAVROS
+./scripts/setup.sh geographiclib   # GeographicLib datasets
+./scripts/setup.sh ros2-env        # Configure ~/.bashrc
+./scripts/setup.sh rosdep-init     # Initialize rosdep
+```
+
+## Build & Verify
+
+```bash
+./scripts/setup.sh build           # Build entire workspace
+./scripts/setup.sh build-pkg       # Build SDK packages only
+./scripts/setup.sh verify          # Check installation
+./scripts/setup.sh clean           # Remove build artifacts
+```
+
+## Docker
+
+| Tag | Command | What's included |
+|-----|---------|----------------|
+| `:latest` | `make docker-build` | All modules except AI/torch (fast, ~5 min) |
+| `:full` | `make docker-build-full` | Everything + PyTorch CPU + AI (~15 min) |
+
+```bash
+# Build
+make docker-build           # SDK (no AI)
+make docker-build-full      # Full (+ AI)
+
+# Run (X11, cameras, USB auto-mounted)
+make docker-run
+make docker-run-full
+```
+
+See [`docker/README.md`](../docker/README.md) for Jetson, CUDA, Docker Hub.
+
+## All Commands
+
+```bash
+./scripts/setup.sh help
+```
+
+## Changing Versions
+
+All versions and package lists are defined in a single file:
+
+```
+scripts/lib/config.sh
+```
+
+Edit this file to update ROS distro, PyTorch version, librealsense version, apt package lists, etc. All scripts, Makefile, and Dockerfile read from this file.
+
+## Troubleshooting
 
 ### ROS2 not found
 
@@ -145,66 +165,22 @@ ros2 run mirela_sdk camera_example
 source /opt/ros/humble/setup.bash
 ```
 
-### mirela_sdk package not found
+### Package not found after build
 
 ```bash
-cd ~/ros2_ws
-colcon build --symlink-install
-source install/local_setup.bash
-```
-
-### Python packages missing
-
-```bash
-pip install -r ~/ros2_ws/src/mirela-sdk/requirements.txt
+source ~/ros2_ws/install/local_setup.bash
 ```
 
 ### Camera permission denied
 
 ```bash
 sudo usermod -a -G video $USER
-# Logout and login required
-```
-
-### OpenCV headless error
-
-If using SSH or headless environment:
-```bash
-pip uninstall opencv-python-headless
-pip install opencv-python
+# Logout and login
 ```
 
 ### MAVROS connection issues
 
-Check serial permissions:
 ```bash
 sudo usermod -a -G dialout $USER
-# Logout and login required
-```
-
-Verify MAVROS connection:
-```bash
-ros2 run mavros mavros_node --ros-args -p fcu_url:=serial:///dev/ttyUSB0:921600
-```
-
-## Update 🔄
-
-```bash
-cd ~/ros2_ws/src/mirela-sdk
-git pull origin main
-cd ~/ros2_ws
-colcon build --symlink-install
-source install/local_setup.bash
-```
-
-## Docker Alternative 🐳
-
-For a pre-configured environment, see [`docker/README.md`](../docker/README.md):
-
-```bash
-# Linux
-./docker/run_docker_linux.sh
-
-# Windows (PowerShell)
-.\docker\run_docker_win.ps1
+# Logout and login
 ```

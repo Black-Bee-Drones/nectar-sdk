@@ -8,6 +8,11 @@ _check_cuda() {
     USE_CUDA=false
     NVCC_PATH=""
 
+    if [[ "${REALSENSE_CUDA:-}" == "false" ]]; then
+        log_info "REALSENSE_CUDA=false — building without CUDA"
+        return
+    fi
+
     if has_command nvcc; then
         USE_CUDA=true
         NVCC_PATH=$(which nvcc)
@@ -203,10 +208,11 @@ _build_librealsense() {
         log_success "PYTHONPATH added to ~/.bashrc"
     fi
 
-    # udev rules
+    # udev rules 
     cd "$rs_dir"
-    SUDO cp config/99-realsense-libusb.rules /etc/udev/rules.d/
-    SUDO udevadm control --reload-rules && SUDO udevadm trigger
+    SUDO mkdir -p /etc/udev/rules.d/ 2>/dev/null || true
+    SUDO cp config/99-realsense-libusb.rules /etc/udev/rules.d/ 2>/dev/null || true
+    SUDO udevadm control --reload-rules 2>/dev/null && SUDO udevadm trigger 2>/dev/null || true
 
     log_success "librealsense ${LIBREALSENSE_VERSION} installed"
 }

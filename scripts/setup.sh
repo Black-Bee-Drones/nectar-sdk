@@ -116,6 +116,8 @@ cmd_docker_build() {
     docker build --network=host \
         --build-arg ROS_DISTRO="${ROS_DISTRO}" \
         --build-arg TORCH_VARIANT="${variant}" \
+        --build-arg INSTALL_REALSENSE="${INSTALL_REALSENSE:-false}" \
+        --build-arg REALSENSE_CUDA="${REALSENSE_CUDA:-false}" \
         --target "$target" \
         -t "$tag" \
         -f "${PROJECT_DIR}/docker/Dockerfile" "$PROJECT_DIR"
