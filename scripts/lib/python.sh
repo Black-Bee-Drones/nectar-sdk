@@ -22,13 +22,13 @@ _detect_cuda_version() {
 }
 
 _cuda_to_torch_variant() {
-    local cuda_ver="$1"           
+    local cuda_ver="$1"
     local major minor
     major="${cuda_ver%%.*}"
     minor="${cuda_ver#*.}"
 
     if [[ "$major" -lt 11 ]]; then
-        echo "cpu" 
+        echo "cpu"
     elif [[ "$major" -eq 11 ]]; then
         echo "cu118"
     elif [[ "$major" -eq 12 ]]; then

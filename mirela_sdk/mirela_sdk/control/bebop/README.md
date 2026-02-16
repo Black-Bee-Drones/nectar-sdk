@@ -40,7 +40,7 @@ classDiagram
         -_get_driver_name() str
         -_start_driver() bool
     }
-    
+
     class BebopConfig {
         <<dataclass>>
         +name str
@@ -48,14 +48,14 @@ classDiagram
         +ip str
         +namespace str
     }
-    
+
     class BaseDrone {
         <<abstract>>
         +add_obstacle_detector()
         +enable_obstacle_detector()
         +cleanup()
     }
-    
+
     BaseDrone <|-- BebopDrone
     BebopDrone o-- BebopConfig
 ```
@@ -387,11 +387,11 @@ except DriverNotFoundError:
 def simple_position_control(drone, target_x, target_y, current_pose):
     error_x = target_x - current_pose.x
     error_y = target_y - current_pose.y
-    
+
     kp = 0.5
     vx = max(-1.0, min(1.0, kp * error_x))
     vy = max(-1.0, min(1.0, kp * error_y))
-    
+
     drone.move_velocity(vx=vx, vy=vy)
 ```
 
@@ -468,10 +468,10 @@ drone.move_velocity(vz=0.3, duration=3.0)  # Climb ~3 seconds
 **Solution**:
 ```python
 drone.takeoff(1.5)
-drone.delay(3.0)  
-drone.move_velocity(0, 0, 0, 0, duration=0.5)  
+drone.delay(3.0)
+drone.move_velocity(0, 0, 0, 0, duration=0.5)
 drone.delay(1.0)
-drone.flip(0) 
+drone.flip(0)
 ```
 
 ---
@@ -483,5 +483,3 @@ drone.flip(0)
 - [Parrot Bebop 2 Specifications](https://www.parrot.com/en/support/documentation/bebop-range) - Official docs page
 - [Bebop 2 Commands and Events](https://developer.parrot.com/docs/bebop/index.html?c#commands-and-events) - Official docs page
 - [ARSDK Documentation](https://developer.parrot.com/docs/SDK3/) - Parrot SDK version 3
-
-

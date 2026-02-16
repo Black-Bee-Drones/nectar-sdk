@@ -51,7 +51,7 @@ _check_cuda() {
     fi
 }
 
-# installation checks 
+# installation checks
 
 _check_existing_realsense() {
     EXISTING_LIBREALSENSE=false
@@ -88,7 +88,7 @@ _check_existing_realsense() {
     fi
 }
 
-# Remove conflicting installations 
+# Remove conflicting installations
 
 _remove_conflicting_realsense() {
     log_section "REMOVING CONFLICTING INSTALLATIONS"
@@ -123,7 +123,7 @@ _remove_conflicting_realsense() {
     fi
 }
 
-# system dependencies 
+# system dependencies
 
 _install_realsense_deps() {
     log_section "INSTALLING REALSENSE SYSTEM DEPENDENCIES"
@@ -138,7 +138,7 @@ _install_realsense_deps() {
     log_success "RealSense dependencies installed"
 }
 
-# Build librealsense from source 
+# Build librealsense from source
 
 _build_librealsense() {
     log_section "BUILDING LIBREALSENSE ${LIBREALSENSE_VERSION}"
@@ -218,7 +218,7 @@ _build_librealsense() {
         log_success "PYTHONPATH added to ~/.bashrc"
     fi
 
-    # udev rules 
+    # udev rules
     cd "$rs_dir"
     SUDO mkdir -p /etc/udev/rules.d/ 2>/dev/null || true
     SUDO cp config/99-realsense-libusb.rules /etc/udev/rules.d/ 2>/dev/null || true
@@ -227,7 +227,7 @@ _build_librealsense() {
     log_success "librealsense ${LIBREALSENSE_VERSION} installed"
 }
 
-# Install realsense-ros 
+# Install realsense-ros
 
 _install_realsense_ros() {
     log_section "INSTALLING REALSENSE-ROS (tag: ${REALSENSE_ROS_TAG})"
@@ -264,7 +264,7 @@ _install_realsense_ros() {
     fi
 }
 
-# Install vision_to_mavros 
+# Install vision_to_mavros
 
 _install_vision_to_mavros() {
     log_section "INSTALLING VISION_TO_MAVROS"
@@ -278,7 +278,7 @@ _install_vision_to_mavros() {
     log_success "vision_to_mavros ready"
 }
 
-# Rebuild workspace with RealSense 
+# Rebuild workspace with RealSense
 
 _rebuild_workspace_realsense() {
     log_section "REBUILDING WORKSPACE"
@@ -291,7 +291,7 @@ _rebuild_workspace_realsense() {
     log_success "Workspace rebuilt"
 }
 
-# Verify installation 
+# Verify installation
 
 _verify_realsense() {
     log_section "VERIFYING REALSENSE INSTALLATION"
@@ -336,7 +336,7 @@ _verify_realsense() {
     log_success "RealSense verification complete"
 }
 
-# Public commands 
+# Public commands
 
 cmd_realsense() {
     check_not_root

@@ -20,7 +20,7 @@ classDiagram
         -_ros_tab ROSTab
         +main()$
     }
-    
+
     class ROSExecutor {
         -_node Node
         -_executor MultiThreadedExecutor
@@ -126,7 +126,7 @@ classDiagram
         +setValue(value)
         +setEnabled(enabled)
     }
-    
+
     class CollapsibleSection {
         -_toggle QPushButton
         -_content QFrame
@@ -174,18 +174,18 @@ stateDiagram-v2
     DriverConnected --> Ready: Initialize Instance
     Ready --> DriverConnected: Cleanup Instance
     Ready --> Disconnected: Disconnect Driver
-    
+
     note right of Disconnected
         Controls: Disabled
         Config: Editable
     end note
-    
+
     note right of DriverConnected
         Controls: Disabled
         Config: Editable
         Instance Button: Enabled
     end note
-    
+
     note right of Ready
         Controls: Enabled
         Config: Locked

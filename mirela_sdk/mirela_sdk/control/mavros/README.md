@@ -720,4 +720,3 @@ Failed commands log the result code:
 - [Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html)
 - [ROS2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
 - [Callback Groups](https://docs.ros.org/en/humble/How-To-Guides/Using-callback-groups.html)
-

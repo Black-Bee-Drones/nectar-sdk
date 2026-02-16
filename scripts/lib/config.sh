@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Project 
+# Project
 PROJECT_REPO="git@github.com:Black-Bee-Drones/mirela-sdk.git"
-PROJECT_DIR_NAME="mirela-sdk"     
-ROS2_PKG_NAME="mirela_sdk"         
+PROJECT_DIR_NAME="mirela-sdk"
+ROS2_PKG_NAME="mirela_sdk"
 INTERFACES_PKG_NAME="mirela_interfaces"
-DOCKER_IMAGE_PREFIX="mirela-sdk"    
+DOCKER_IMAGE_PREFIX="mirela-sdk"
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_DOMAIN_ID="14"
@@ -35,7 +35,7 @@ else
     REALSENSE_ROS_TAG="${REALSENSE_ROS_TAG:-4.55.1}"
 fi
 
-# System apt packages 
+# System apt packages
 SYSTEM_PACKAGES=(
     git curl wget software-properties-common
     python3-pip python3-dev python3-venv
@@ -47,7 +47,7 @@ SYSTEM_PACKAGES=(
     libssl-dev libusb-1.0-0-dev
 )
 
-# ROS2 apt packages 
+# ROS2 apt packages
 ROS2_PACKAGES=(
     "ros-${ROS_DISTRO}-desktop-full"
     "ros-${ROS_DISTRO}-mavros"
@@ -66,7 +66,7 @@ GUI_SYSTEM_PACKAGES=(
     libegl1 libgl1
 )
 
-# RealSense system dependencies 
+# RealSense system dependencies
 REALSENSE_SYSTEM_PACKAGES=(
     libssl-dev libusb-1.0-0-dev pkg-config
     libgtk-3-dev libglfw3-dev
@@ -78,7 +78,7 @@ REALSENSE_CUDA_PACKAGES=(
     libgles2-mesa-dev libegl1-mesa-dev
 )
 
-# Path detection 
+# Path detection
 if [[ -n "${BASH_SOURCE[0]}" ]]; then
     _CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     _SCRIPTS_DIR="$(dirname "$_CONFIG_DIR")"

@@ -142,7 +142,7 @@ _docker_running() {
 
 _container_name() {
     local tag="$1"
-    local suffix="${tag#*:}"  
+    local suffix="${tag#*:}"
     echo "${DOCKER_CONTAINER_PREFIX}_${suffix}"
 }
 

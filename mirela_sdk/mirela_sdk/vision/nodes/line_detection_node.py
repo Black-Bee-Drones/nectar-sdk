@@ -81,17 +81,11 @@ class LineDetectionNode(Node):
         self.declare_parameter("spaces", "hsv")
         self.declare_parameter("cap", 0)
 
-        colors_param = (
-            self.get_parameter("line_colors").get_parameter_value().string_value
-        )
+        colors_param = self.get_parameter("line_colors").get_parameter_value().string_value
         self.line_colors = [color.strip() for color in colors_param.split(",")]
 
-        self.image_source = (
-            self.get_parameter("image_source").get_parameter_value().string_value
-        )
-        estimation_method_name = (
-            self.get_parameter("method").get_parameter_value().string_value
-        )
+        self.image_source = self.get_parameter("image_source").get_parameter_value().string_value
+        estimation_method_name = self.get_parameter("method").get_parameter_value().string_value
         self.show_visualization = (
             self.get_parameter("show_visualization").get_parameter_value().bool_value
         )
@@ -104,9 +98,7 @@ class LineDetectionNode(Node):
         # If there are fewer color spaces than colors, use the first color space for additional colors
         if len(self.color_spaces) < len(self.line_colors):
             default_space = self.color_spaces[0] if self.color_spaces else "hsv"
-            additional_spaces = [default_space] * (
-                len(self.line_colors) - len(self.color_spaces)
-            )
+            additional_spaces = [default_space] * (len(self.line_colors) - len(self.color_spaces))
             self.color_spaces.extend(additional_spaces)
             self.get_logger().warning(
                 f"Fewer color spaces ({len(self.color_spaces) - len(additional_spaces)}) "
@@ -168,9 +160,7 @@ class LineDetectionNode(Node):
                     color=color,
                     estimation_method=self.estimation_class,
                     color_space=(
-                        ColorSpace.HSV
-                        if color_space.upper() == "HSV"
-                        else ColorSpace.LAB
+                        ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
                     ),
                 )
 
@@ -194,42 +184,30 @@ class LineDetectionNode(Node):
                         f"Color '{color}' not found in color calibration file for {color_space} color space"
                     )
                 else:
-                    self.get_logger().info(
-                        f"Color '{color}' {color_space} range: {color_values}"
-                    )
+                    self.get_logger().info(f"Color '{color}' {color_space} range: {color_values}")
 
             except Exception as e:
-                self.get_logger().error(
-                    f"Failed to create LineDetector for color '{color}': {e}"
-                )
+                self.get_logger().error(f"Failed to create LineDetector for color '{color}': {e}")
                 return
 
             line_detected_topic = f"{self.LINE_DETECTED_TOPIC_BASE}/{color}"
             line_state_topic = f"{self.LINE_STATE_TOPIC_BASE}/{color}"
 
             self.line_detected_msgs[color] = Bool()
-            self.line_detected_pubs[color] = self.create_publisher(
-                Bool, line_detected_topic, 10
-            )
+            self.line_detected_pubs[color] = self.create_publisher(Bool, line_detected_topic, 10)
 
             self.line_state_msgs[color] = LineInfo()
-            self.state_pubs[color] = self.create_publisher(
-                LineInfo, line_state_topic, 10
-            )
+            self.state_pubs[color] = self.create_publisher(LineInfo, line_state_topic, 10)
 
             self.center_x_values[color] = float("nan")
             self.center_y_values[color] = float("nan")
             self.angle_values[color] = float("nan")
 
             self.get_logger().info(f"Initialized detector for color: {color}")
-            self.get_logger().info(
-                f"Publishing to: {line_detected_topic} and {line_state_topic}"
-            )
+            self.get_logger().info(f"Publishing to: {line_detected_topic} and {line_state_topic}")
 
         except Exception as e:
-            self.get_logger().error(
-                f"Failed to initialize detector for color {color}: {e}"
-            )
+            self.get_logger().error(f"Failed to initialize detector for color {color}: {e}")
 
     def parameters_callback(self, params):
         """
@@ -271,21 +249,15 @@ class LineDetectionNode(Node):
                 for i, color in enumerate(new_colors):
                     if color not in self.line_detectors:
                         color_space_idx = (
-                            min(i, len(self.color_spaces) - 1)
-                            if self.color_spaces
-                            else 0
+                            min(i, len(self.color_spaces) - 1) if self.color_spaces else 0
                         )
                         color_space = (
-                            self.color_spaces[color_space_idx]
-                            if self.color_spaces
-                            else "hsv"
+                            self.color_spaces[color_space_idx] if self.color_spaces else "hsv"
                         )
                         self.initialize_color_detector(color, color_space)
 
                 self.line_colors = new_colors
-                self.get_logger().info(
-                    f"Updated colors to: {', '.join(self.line_colors)}"
-                )
+                self.get_logger().info(f"Updated colors to: {', '.join(self.line_colors)}")
 
             elif param.name == "method":
                 if param.value in self.estimation_methods:
@@ -320,15 +292,11 @@ class LineDetectionNode(Node):
 
                 for i, color in enumerate(self.line_colors):
                     color_space = (
-                        self.color_spaces[i]
-                        if i < len(self.color_spaces)
-                        else self.color_spaces[0]
+                        self.color_spaces[i] if i < len(self.color_spaces) else self.color_spaces[0]
                     )
                     try:
                         color_space_enum = (
-                            ColorSpace.HSV
-                            if color_space.upper() == "HSV"
-                            else ColorSpace.LAB
+                            ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
                         )
                         self.line_detectors[color] = LineDetector(
                             color=color,
@@ -346,9 +314,7 @@ class LineDetectionNode(Node):
                         self.get_logger().error(
                             f"Failed to update detector for color '{color}' to {color_space}: {e}"
                         )
-                self.get_logger().info(
-                    f"Changed color spaces to {', '.join(self.color_spaces)}"
-                )
+                self.get_logger().info(f"Changed color spaces to {', '.join(self.color_spaces)}")
 
         return result
 
@@ -375,9 +341,7 @@ class LineDetectionNode(Node):
                     try:
                         bgr_color = self._get_color_bgr(color)
                     except Exception as e:
-                        self.get_logger().warning(
-                            f"Error getting color for {color}: {e}"
-                        )
+                        self.get_logger().warning(f"Error getting color for {color}: {e}")
                         bgr_color = (255, 255, 255)
 
                     img_copy = display_img if self.show_visualization else img.copy()
@@ -415,9 +379,7 @@ class LineDetectionNode(Node):
                             draw=self.show_visualization,
                         )
                     except Exception as e:
-                        self.get_logger().error(
-                            f"Error in line detection for {color}: {e}"
-                        )
+                        self.get_logger().error(f"Error in line detection for {color}: {e}")
                         center_x = center_y = angle = width = height = float("nan")
 
                     self.center_x_values[color] = center_x
@@ -435,9 +397,7 @@ class LineDetectionNode(Node):
                     else:
                         self.line_detected_msgs[color].data = False
 
-                    self.line_detected_pubs[color].publish(
-                        self.line_detected_msgs[color]
-                    )
+                    self.line_detected_pubs[color].publish(self.line_detected_msgs[color])
 
                 except Exception as e:
                     self.get_logger().error(f"Error processing color {color}: {e}")
@@ -464,9 +424,7 @@ class LineDetectionNode(Node):
                 zone_y1 = center_y - zone_height // 2
                 zone_x2 = center_x + zone_width // 2
                 zone_y2 = center_y + zone_height // 2
-                cv2.rectangle(
-                    display_img, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 255, 0), 1
-                )
+                cv2.rectangle(display_img, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 255, 0), 1)
 
                 if self.show_visualization:
                     cv2.imshow(self.visualization_name, display_img)
@@ -498,11 +456,7 @@ class LineDetectionNode(Node):
             if color_values is None or len(color_values) == 0:
                 return (255, 255, 255)
 
-            if (
-                len(color_values) == 2
-                and len(color_values[0]) == 3
-                and len(color_values[1]) == 3
-            ):
+            if len(color_values) == 2 and len(color_values[0]) == 3 and len(color_values[1]) == 3:
                 min_vals = color_values[0]
                 max_vals = color_values[1]
 
@@ -524,9 +478,7 @@ class LineDetectionNode(Node):
 
                 return (int(bgr_color[0]), int(bgr_color[1]), int(bgr_color[2]))
             else:
-                self.get_logger().warning(
-                    f"Unexpected color values format: {color_values}"
-                )
+                self.get_logger().warning(f"Unexpected color values format: {color_values}")
                 return (255, 255, 255)
         except Exception as e:
             self.get_logger().warning(f"Error converting color values to BGR: {e}")
@@ -567,9 +519,7 @@ class LineDetectionNode(Node):
             return color_map.get(color_name.lower(), (255, 255, 255))
 
         except Exception as e:
-            self.get_logger().warning(
-                f"Error converting color {color_name} to BGR: {e}"
-            )
+            self.get_logger().warning(f"Error converting color {color_name} to BGR: {e}")
             return (255, 255, 255)
 
     def run(self):
@@ -588,8 +538,7 @@ class LineDetectionNode(Node):
                 for color, space in zip(
                     self.line_colors,
                     self.color_spaces[: len(self.line_colors)]
-                    + [self.color_spaces[0]]
-                    * (len(self.line_colors) - len(self.color_spaces)),
+                    + [self.color_spaces[0]] * (len(self.line_colors) - len(self.color_spaces)),
                 )
             ]
         )

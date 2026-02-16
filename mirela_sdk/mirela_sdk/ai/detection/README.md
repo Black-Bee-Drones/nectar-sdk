@@ -430,7 +430,7 @@ classDiagram
     }
 
     class NMMStrategy
-    
+
     BaseMergingStrategy <|-- NMSStrategy
     BaseMergingStrategy <|-- SoftNMSStrategy
     BaseMergingStrategy <|-- WBFStrategy

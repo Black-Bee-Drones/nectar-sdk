@@ -34,4 +34,3 @@ python3 mavros_navigation.py --mode indoor --no-takeoff --test takeoff-ref
 # Navigation — custom distance and specific tests
 python3 mavros_navigation.py --mode outdoor --test body gps --distance 3.0
 ```
-

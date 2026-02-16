@@ -121,9 +121,7 @@ class ColorDetector:
             config = self.color_space_config[self.color_space]
             values = np.clip(values, config["ranges"][0], config["ranges"][1])
         except Exception:
-            raise ValueError(
-                "Invalid attribute format. Expected [[x, x, x], [x, x, x]]"
-            )
+            raise ValueError("Invalid attribute format. Expected [[x, x, x], [x, x, x]]")
         else:
             self._color_values = values
 
@@ -147,17 +145,11 @@ class ColorDetector:
         cv2.resizeWindow(window_name, 640, 480)
 
         cv2.createTrackbar(tb_names[0], window_name, 0, tb_maxes[0], self.empty)
-        cv2.createTrackbar(
-            tb_names[1], window_name, tb_maxes[1], tb_maxes[1], self.empty
-        )
+        cv2.createTrackbar(tb_names[1], window_name, tb_maxes[1], tb_maxes[1], self.empty)
         cv2.createTrackbar(tb_names[2], window_name, 0, tb_maxes[2], self.empty)
-        cv2.createTrackbar(
-            tb_names[3], window_name, tb_maxes[3], tb_maxes[3], self.empty
-        )
+        cv2.createTrackbar(tb_names[3], window_name, tb_maxes[3], tb_maxes[3], self.empty)
         cv2.createTrackbar(tb_names[4], window_name, 0, tb_maxes[4], self.empty)
-        cv2.createTrackbar(
-            tb_names[5], window_name, tb_maxes[5], tb_maxes[5], self.empty
-        )
+        cv2.createTrackbar(tb_names[5], window_name, tb_maxes[5], tb_maxes[5], self.empty)
 
     def getTrackValues(self) -> list:
         """
@@ -197,9 +189,7 @@ class ColorDetector:
         -----
         Updates self.mask and self.result attributes.
         """
-        converted_img = cv2.cvtColor(
-            img, self.color_space_config[self.color_space]["convert_func"]
-        )
+        converted_img = cv2.cvtColor(img, self.color_space_config[self.color_space]["convert_func"])
 
         if self.mode == "track":
             self.color_values = self.getTrackValues()
@@ -245,9 +235,7 @@ class ColorDetector:
                 colors_data = json.load(file)
 
             if color_name not in colors_data:
-                raise ValueError(
-                    f"Color '{color_name}' not defined in calibration file"
-                )
+                raise ValueError(f"Color '{color_name}' not defined in calibration file")
 
             if self.color_space.name not in colors_data[color_name]:
                 raise ValueError(

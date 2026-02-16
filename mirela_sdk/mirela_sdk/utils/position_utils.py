@@ -50,9 +50,7 @@ class PositionUtils:
         ValueError
             If invalid combination of target and current position types is provided.
         """
-        if isinstance(target, PositionTarget) and isinstance(
-            current, PoseWithCovarianceStamped
-        ):
+        if isinstance(target, PositionTarget) and isinstance(current, PoseWithCovarianceStamped):
             cx, cy, cz = (
                 current.pose.pose.position.x,
                 current.pose.pose.position.y,
@@ -108,9 +106,7 @@ class PositionUtils:
             return dx_body, dy_body, dz_body
 
         else:
-            raise ValueError(
-                "Invalid combination of target and current position types."
-            )
+            raise ValueError("Invalid combination of target and current position types.")
 
     @staticmethod
     def get_yaw_from_pose(

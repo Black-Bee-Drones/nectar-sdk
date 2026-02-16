@@ -125,33 +125,33 @@ except Exception:
 # If config file provided, use it directly with Python CLI
 if [ -n "$CONFIG" ]; then
     echo "Using config file: $CONFIG"
-    
+
     # Extract multi_gpu from config
     CONFIG_MULTI_GPU=$(get_config_value multi_gpu train)
     CONFIG_DEVICE=$(get_config_value device train)
-    
+
     [ "$CONFIG_MULTI_GPU" = "True" ] && MULTI_GPU=true
     [ -n "$CONFIG_DEVICE" ] && DEVICE="$CONFIG_DEVICE"
-    
+
     # Build command with config
     TRAIN_CMD="mirela_sdk.ai.detection.cli.train --config $CONFIG"
-    
+
     if [ "$MULTI_GPU" = true ]; then
         echo "Multi-GPU training enabled"
         export NCCL_P2P_DISABLE="1"
         export NCCL_IB_DISABLE="1"
         export TORCH_NCCL_BLOCKING_WAIT="1"
-        
+
         GPU_COUNT=$(python3 -c "import torch; print(torch.cuda.device_count())" 2>/dev/null || echo "1")
         echo "Using $GPU_COUNT GPUs"
-        
+
         ACCEL_ARGS=""
         if [ -n "$ACCELERATE_CONFIG" ]; then
             ACCEL_ARGS="--config_file $ACCELERATE_CONFIG"
         else
             ACCEL_ARGS="--num_processes=$GPU_COUNT --mixed_precision=$MIXED_PRECISION"
         fi
-        
+
         accelerate launch $ACCEL_ARGS -m $TRAIN_CMD
     else
         # Single GPU
@@ -160,10 +160,10 @@ if [ -n "$CONFIG" ]; then
         else
             export CUDA_VISIBLE_DEVICES="0"
         fi
-        
+
         python -m $TRAIN_CMD
     fi
-    
+
     exit $?
 fi
 
@@ -215,17 +215,17 @@ if [ "$MULTI_GPU" = true ]; then
     export NCCL_P2P_DISABLE="1"
     export NCCL_IB_DISABLE="1"
     export TORCH_NCCL_BLOCKING_WAIT="1"
-    
+
     GPU_COUNT=$(python3 -c "import torch; print(torch.cuda.device_count())" 2>/dev/null || echo "1")
     echo "Using $GPU_COUNT GPUs with accelerate"
-    
+
     ACCEL_ARGS=""
     if [ -n "$ACCELERATE_CONFIG" ]; then
         ACCEL_ARGS="--config_file $ACCELERATE_CONFIG"
     else
         ACCEL_ARGS="--num_processes=$GPU_COUNT --mixed_precision=$MIXED_PRECISION"
     fi
-    
+
     accelerate launch $ACCEL_ARGS -m $TRAIN_CMD
 else
     # Single GPU
@@ -234,7 +234,7 @@ else
     else
         export CUDA_VISIBLE_DEVICES="0"
     fi
-    
+
     python -m $TRAIN_CMD
 fi
 

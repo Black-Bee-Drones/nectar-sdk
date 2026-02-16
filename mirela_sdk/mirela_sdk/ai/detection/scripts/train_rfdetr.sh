@@ -125,17 +125,17 @@ except Exception:
 # If config file provided, use it directly with Python CLI
 if [ -n "$CONFIG" ]; then
     echo "Using config file: $CONFIG"
-    
+
     # Extract multi_gpu from config
     CONFIG_MULTI_GPU=$(get_config_value multi_gpu train)
     CONFIG_DEVICE=$(get_config_value device train)
-    
+
     [ "$CONFIG_MULTI_GPU" = "True" ] && MULTI_GPU=true
     [ -n "$CONFIG_DEVICE" ] && DEVICE="$CONFIG_DEVICE"
-    
+
     # Build command with config
     TRAIN_CMD="mirela_sdk.ai.detection.cli.train --config $CONFIG"
-    
+
     if [ "$MULTI_GPU" = true ]; then
         echo "Multi-GPU training enabled"
         GPU_COUNT=$(python3 -c "import torch; print(torch.cuda.device_count())" 2>/dev/null || echo "1")
@@ -148,10 +148,10 @@ if [ -n "$CONFIG" ]; then
         else
             export CUDA_VISIBLE_DEVICES="0"
         fi
-        
+
         python -m $TRAIN_CMD
     fi
-    
+
     exit $?
 fi
 
@@ -215,7 +215,7 @@ else
     else
         export CUDA_VISIBLE_DEVICES="0"
     fi
-    
+
     python -m $TRAIN_CMD
 fi
 

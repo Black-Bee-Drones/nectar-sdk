@@ -52,7 +52,7 @@ def aruco_callback(msg: ArucoTransforms):
     marker_id = msg.id
     x, y, z = msg.translation.x, msg.translation.y, msg.translation.z
     yaw_degrees = msg.yaw.data
-    
+
     print(f"Marker {marker_id} at ({x:.2f}, {y:.2f}, {z:.2f})m, yaw={yaw_degrees:.1f}°")
 
 node.create_subscription(ArucoTransforms, '/aruco/pose_estimate', aruco_callback, 10)

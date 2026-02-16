@@ -14,7 +14,7 @@ classDiagram
         +available_types() list
         +is_registered(type) bool
     }
-    
+
     %% Protocols (Interfaces)
     class Drone {
         <<protocol>>
@@ -32,7 +32,7 @@ classDiagram
         +set_home() bool
         +rtl(altitude, precision, strategy, land) bool
     }
-    
+
     class ObstacleDetector {
         <<protocol>>
         +is_enabled bool
@@ -41,7 +41,7 @@ classDiagram
         +enable()
         +disable()
     }
-    
+
     %% Base Classes
     class BaseDrone {
         <<abstract>>
@@ -63,7 +63,7 @@ classDiagram
         #_start_driver() bool
         #_get_driver_name() str
     }
-    
+
     class BaseObstacleDetector {
         <<abstract>>
         -_enabled bool
@@ -74,7 +74,7 @@ classDiagram
         +reset()
         +update() ObstacleInfo*
     }
-    
+
     %% Implementations
     class MavrosDrone {
         -_mavros_state State
@@ -99,28 +99,28 @@ classDiagram
         +set_takeoff_position(pose, heading)
         +set_pid_config(config)
     }
-    
+
     class BebopDrone {
         +flip(direction)
         +camera_control(tilt, pan)
         +snapshot()
         +flat_trim()
     }
-    
+
     class DepthObstacleDetector {
         -_depth_handler ImageHandler
         -_threshold float
         -_roi tuple
         +update() ObstacleInfo
     }
-    
+
     %% Configuration
     class DroneConfig {
         <<dataclass>>
         +name str
         +start_driver bool
     }
-    
+
     class MavrosConfig {
         <<dataclass>>
         +pose_source PoseSource
@@ -133,13 +133,13 @@ classDiagram
         +vision_topic str
         +lidar_topic str
     }
-    
+
     class BebopConfig {
         <<dataclass>>
         +ip str
         +namespace str
     }
-    
+
     %% Obstacle System
     class ObstacleManager {
         -_handlers dict
@@ -154,7 +154,7 @@ classDiagram
         +reset_all()
         +cleanup()
     }
-    
+
     class ObstacleHandler {
         -_detector ObstacleDetector
         -_strategy AvoidanceStrategy
@@ -166,18 +166,18 @@ classDiagram
         +disable()
         +cleanup()
     }
-    
+
     class AvoidanceStrategy {
         <<abstract>>
         +execute(drone, info) bool*
         +reset()*
     }
-    
+
     class PauseStrategy {
         +execute(drone, info) bool
         +reset()
     }
-    
+
     class DisableAxisStrategy {
         -_disable_x bool
         -_disable_y bool
@@ -185,14 +185,14 @@ classDiagram
         +execute(drone, info) bool
         +reset()
     }
-    
+
     class SequenceStrategy {
         -_sequence_func Callable
         -_state dict
         +execute(drone, info) bool
         +reset()
     }
-    
+
     %% PID System
     class PIDController {
         -_kp float
@@ -205,7 +205,7 @@ classDiagram
         +set_setpoint(value)
         +reset()
     }
-    
+
     class PIDConfig {
         <<dataclass>>
         +kp float
@@ -214,7 +214,7 @@ classDiagram
         +output_min float
         +output_max float
     }
-    
+
     class PositionPIDConfig {
         <<dataclass>>
         +x PIDConfig
@@ -222,7 +222,7 @@ classDiagram
         +z PIDConfig
         +yaw PIDConfig
     }
-    
+
     %% Relationships
     DroneFactory --> Drone : creates
     Drone <|.. BaseDrone : implements
@@ -230,25 +230,25 @@ classDiagram
     BaseDrone <|-- BebopDrone : inherits
     BaseDrone *-- ObstacleManager : contains
     BaseDrone o-- DroneConfig : uses
-    
+
     MavrosDrone o-- MavrosConfig : uses
     MavrosDrone o-- PositionPIDConfig : uses
     BebopDrone o-- BebopConfig : uses
-    
+
     DroneConfig <|-- MavrosConfig : inherits
     DroneConfig <|-- BebopConfig : inherits
-    
+
     ObstacleDetector <|.. BaseObstacleDetector : implements
     BaseObstacleDetector <|-- DepthObstacleDetector : inherits
-    
+
     ObstacleManager o-- ObstacleHandler : manages
     ObstacleHandler o-- ObstacleDetector : uses
     ObstacleHandler o-- AvoidanceStrategy : uses
-    
+
     AvoidanceStrategy <|-- PauseStrategy : inherits
     AvoidanceStrategy <|-- DisableAxisStrategy : inherits
     AvoidanceStrategy <|-- SequenceStrategy : inherits
-    
+
     MavrosDrone ..> PIDController : creates
     PositionPIDConfig *-- PIDConfig : contains
 ```
@@ -747,7 +747,7 @@ def reset(self) -> None
 ```python
 @abstractmethod
 def execute(self, drone: BaseDrone, info: ObstacleInfo) -> bool
-    
+
 @abstractmethod
 def reset(self) -> None
 ```
@@ -906,13 +906,13 @@ drone.enable_obstacle_detector("depth")
 try:
     drone.connect()
     drone.takeoff(altitude=2.0)
-    
+
     drone.move_to(x=3.0, y=2.0, z=0.5, reference=MoveReference.BODY, precision=0.2)
     drone.move_to(x=5.0, y=5.0, z=2.0, reference=MoveReference.WORLD, precision=0.3)
     drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
-    
+
     drone.rtl(altitude=3.0, strategy=RTLStrategy.PID, land=True)
-    
+
 except Exception as e:
     node.get_logger().error(f"Mission failed: {e}")
     drone.emergency_stop()
@@ -920,5 +920,3 @@ finally:
     drone.disconnect()
     rclpy.shutdown()
 ```
-
-

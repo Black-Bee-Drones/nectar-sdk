@@ -130,7 +130,7 @@ def move_to(
 ) -> bool:
     """
     Navigate to a position in the world frame.
-    
+
     Parameters
     ----------
     x : float
@@ -141,12 +141,12 @@ def move_to(
         Target Z position (altitude) in meters.
     precision : float, optional
         Position tolerance in meters. Default is 0.2.
-    
+
     Returns
     -------
     bool
         True if target reached within timeout, False otherwise.
-    
+
     Examples
     --------
     >>> drone.move_to(x=2.0, y=1.0, z=1.5, precision=0.3)
@@ -165,7 +165,7 @@ def move_to(
 When adding new components:
 
 1. **Control Module**: Extend `BaseDrone` or implement `Drone` protocol
-2. **Vision Module**: 
+2. **Vision Module**:
    - Cameras: Add to `camera/drivers/`, register in `CameraFactory`
    - Algorithms: Add to `algorithms/<category>/`
 3. **AI Module**: Extend `BaseDetectionModel`, register in `Detector`

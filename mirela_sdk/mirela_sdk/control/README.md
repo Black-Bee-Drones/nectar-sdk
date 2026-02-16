@@ -23,7 +23,7 @@ classDiagram
         +available_types() list~str~
         +is_registered(type) bool
     }
-    
+
     class Drone {
         <<protocol>>
         +is_ready bool
@@ -40,7 +40,7 @@ classDiagram
         +set_home() bool
         +rtl(altitude, precision, strategy, land) bool
     }
-    
+
     class BaseDrone {
         <<abstract>>
         -_config DroneConfig
@@ -73,7 +73,7 @@ classDiagram
         #_get_driver_name()* str
         #_start_driver()* bool
     }
-    
+
     class MavrosDrone {
         -_mavros_state State
         -_gps NavSatFix
@@ -111,7 +111,7 @@ classDiagram
         -_compute_setpoint_target()
         -_validate_position_sensors()
     }
-    
+
     class BebopDrone {
         +from_config(config, node)$ BebopDrone
         +flip(direction)
@@ -120,13 +120,13 @@ classDiagram
         +navigate_home()
         -_setup_publishers()
     }
-    
+
     class DroneConfig {
         <<dataclass>>
         +name str
         +start_driver bool
     }
-    
+
     class MavrosConfig {
         <<dataclass>>
         +name str
@@ -145,7 +145,7 @@ classDiagram
         +lidar_topic str
         +imu_topic str
     }
-    
+
     class BebopConfig {
         <<dataclass>>
         +name str
@@ -153,7 +153,7 @@ classDiagram
         +ip str
         +namespace str
     }
-    
+
     class ObstacleManager {
         -_handlers dict~str,ObstacleHandler~
         +handlers dict~str,ObstacleHandler~
@@ -169,7 +169,7 @@ classDiagram
         +reset_all()
         +cleanup()
     }
-    
+
     DroneFactory --> BaseDrone : creates
     Drone <|.. BaseDrone : implements
     BaseDrone <|-- MavrosDrone
@@ -320,7 +320,7 @@ drone.move_to(
 drone.move_to_gps(
     latitude: float,
     longitude: float,
-    altitude: Optional[float] = None,  
+    altitude: Optional[float] = None,
     heading: Optional[float] = None,   # degrees
     timeout: Optional[float] = 60.0,
     precision: float = 0.5,            # meters
@@ -362,13 +362,13 @@ classDiagram
         +update() ObstacleInfo
         +reset()
     }
-    
+
     class AvoidanceStrategy {
         <<abstract>>
         +execute(drone, info) bool
         +reset()
     }
-    
+
     class ObstacleHandler {
         -_detector ObstacleDetector
         -_strategy AvoidanceStrategy
@@ -376,30 +376,30 @@ classDiagram
         +should_continue(drone) bool
         +get_axis_modifiers() tuple
     }
-    
+
     class ObstacleManager {
         -_handlers dict
         +add(name, handler)
         +should_continue_navigation(drone) bool
         +get_axis_control() tuple
     }
-    
+
     class PauseStrategy {
         +execute(drone, info) bool
     }
-    
+
     class DisableAxisStrategy {
         +disable_x bool
         +disable_y bool
         +disable_z bool
         +execute(drone, info) bool
     }
-    
+
     class SequenceStrategy {
         -_sequence_func Callable
         +execute(drone, info) bool
     }
-    
+
     ObstacleHandler *-- ObstacleDetector
     ObstacleHandler *-- AvoidanceStrategy
     ObstacleManager o-- ObstacleHandler
@@ -540,7 +540,7 @@ drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 # Return to takeoff position
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 
-# World-frame velocity 
+# World-frame velocity
 drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
 ```
 
@@ -577,4 +577,3 @@ See individual module READMEs for detailed documentation.
 - `AltitudeSource`: AUTO, LIDAR, VISION, REL_ALT
 - `ObstacleDirection`: FRONT, BACK, LEFT, RIGHT, UP, DOWN
 - `ObstacleInfo`: Detection result
-

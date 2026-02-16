@@ -128,7 +128,7 @@ CMD="python -m mirela_sdk.ai.detection.cli.train \
 [ -n "$EARLY_STOPPING_PATIENCE" ] && CMD="$CMD --early-stopping-patience $EARLY_STOPPING_PATIENCE"
 [ "$FROM_SCRATCH" = true ] && CMD="$CMD --from-scratch"
 
-echo "=" 
+echo "="
 echo "Training Ultralytics YOLO"
 echo "  Model: $MODEL"
 echo "  Dataset: $DATASET"

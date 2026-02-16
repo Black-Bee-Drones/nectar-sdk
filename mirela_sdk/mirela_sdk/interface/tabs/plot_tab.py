@@ -132,9 +132,7 @@ class FieldExtractor:
 class PlotTab(QWidget):
     """Real-time ROS2 topic plotting with pyqtgraph."""
 
-    def __init__(
-        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
-    ) -> None:
+    def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
         self._subscriptions: Dict[str, Any] = {}
@@ -326,9 +324,7 @@ class PlotTab(QWidget):
 
         try:
             topic_names_and_types = self._node.get_topic_names_and_types()
-            self._available_topics = {
-                name: types[0] for name, types in topic_names_and_types
-            }
+            self._available_topics = {name: types[0] for name, types in topic_names_and_types}
 
             current_text = self._topic_combo.currentText()
             self._topic_combo.clear()
@@ -406,14 +402,10 @@ class PlotTab(QWidget):
                     if value is not None and plot_id in self._plot_data:
                         self._plot_data[plot_id].add_point(value)
 
-            subscription = self._node.create_subscription(
-                msg_class, topic, callback, qos_profile
-            )
+            subscription = self._node.create_subscription(msg_class, topic, callback, qos_profile)
 
             self._subscriptions[plot_id] = subscription
-            self._plot_data[plot_id] = PlotData(
-                max_points=self._max_points_spin.value()
-            )
+            self._plot_data[plot_id] = PlotData(max_points=self._max_points_spin.value())
 
             color = self._color_palette[self._color_index % len(self._color_palette)]
             self._color_index += 1
