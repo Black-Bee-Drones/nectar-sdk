@@ -107,9 +107,9 @@ cmd_docker_build() {
         fi
     fi
 
-    local tag="${DOCKER_IMAGE_PREFIX}:latest"
+    local tag="${DOCKER_IMAGE_PREFIX}:${ROS_DISTRO}"
     if [[ "$target" == "sdk-full" ]]; then
-        tag="${DOCKER_IMAGE_PREFIX}:full-${variant}"
+        tag="${DOCKER_IMAGE_PREFIX}:${ROS_DISTRO}-full-${variant}"
     fi
 
     log_info "Building $tag (target=$target, distro=$ROS_DISTRO, torch=$variant)..."
