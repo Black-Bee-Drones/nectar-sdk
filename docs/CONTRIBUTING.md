@@ -32,19 +32,33 @@ pip install pre-commit
 pre-commit install
 ```
 
-Hooks run automatically on `git commit`. To check all files manually:
+After `pre-commit install`, hooks run **automatically on every `git commit`** — they check only staged files, auto-fix what they can, and abort the commit if changes were made. Just `git add` the fixes and commit again.
+
+### Before Pushing
+
+Always run the full check before pushing (same command CI runs):
 
 ```bash
-pre-commit run --all-files
+make check
+# or equivalently: pre-commit run --all-files
 ```
 
-You can also run linting and formatting directly via Make:
+This validates **all files** (Python, Markdown, YAML, shell scripts) for:
+- Trailing whitespace and missing end-of-file newlines
+- Python lint errors (unused imports, undefined names)
+- Import sorting
+- Code formatting
+
+### Quick Commands
 
 ```bash
-make lint        # check for issues
-make lint-fix    # auto-fix safe issues
-make format      # format all code
+make check       # run all checks (same as CI)
+make lint        # Python lint only (ruff check)
+make lint-fix    # Python lint + auto-fix (ruff check --fix)
+make format      # Python format only (ruff format)
 ```
+
+Use `make lint` / `make format` during development for fast feedback on Python files. Use `make check` before pushing to ensure CI will pass.
 
 ## Pull Request Process 🔄
 

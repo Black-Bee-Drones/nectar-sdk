@@ -7,7 +7,7 @@
         realsense realsense-verify \
         docker-build docker-build-full docker-run docker-exec \
         full-install \
-        lint lint-fix format
+        lint lint-fix format check
 
 SETUP := ./scripts/setup.sh
 
@@ -54,6 +54,7 @@ docker-run:         ; @$(SETUP) docker-run
 docker-exec:        ; @$(SETUP) docker-exec
 
 # Code quality
+check:              ; @pre-commit run --all-files
 lint:               ; @cd mirela_sdk && ruff check .
 lint-fix:           ; @cd mirela_sdk && ruff check --fix .
 format:             ; @cd mirela_sdk && ruff format .
