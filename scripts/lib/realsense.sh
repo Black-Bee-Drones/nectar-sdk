@@ -193,8 +193,18 @@ _build_librealsense() {
 
     cmake ../ "${cmake_args[@]}"
 
-    log_info "Building librealsense (this may take a while)..."
-    if ! make -j"$(nproc)"; then
+    # Cap parallel jobs: nproc-1, max 4, or 1 on low-memory systems
+    local num_procs=1
+    local total_mem
+    total_mem=$(free | awk '/Mem:/ { print $2 }')
+    if [ "$total_mem" -gt 4051048 ] 2>/dev/null; then
+        num_procs=$(( $(nproc) - 1 ))
+        [ "$num_procs" -gt 4 ] && num_procs=4
+        [ "$num_procs" -lt 1 ] && num_procs=1
+    fi
+
+    log_info "Building librealsense (${num_procs} jobs)..."
+    if ! make -j"$num_procs"; then
         log_warning "Parallel build failed, retrying single-threaded..."
         make || { log_error "Build failed!"; exit 1; }
     fi
