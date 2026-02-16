@@ -1,19 +1,20 @@
-from typing import Optional, Dict, Any, List, Type
+from typing import Any, Dict, List, Optional, Type
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QSpinBox,
-    QDoubleSpinBox,
-    QCheckBox,
-    QFrame,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal
 
 from mirela_sdk.interface.theme import COLORS
 
@@ -423,9 +424,7 @@ class _ArrayFieldEditor(QWidget):
 
     def _add_item(self) -> None:
         base = (
-            self._element_type.split("/")[-1]
-            if "/" in self._element_type
-            else self._element_type
+            self._element_type.split("/")[-1] if "/" in self._element_type else self._element_type
         )
 
         row = QWidget()
@@ -508,9 +507,7 @@ class _ArrayFieldEditor(QWidget):
     def get_values(self) -> List[Any]:
         result = []
         base = (
-            self._element_type.split("/")[-1]
-            if "/" in self._element_type
-            else self._element_type
+            self._element_type.split("/")[-1] if "/" in self._element_type else self._element_type
         )
         mapped = MessageFieldEditor.ROS_TYPE_MAP.get(base, "string")
 

@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any
 from enum import Enum, auto
+from typing import Any, Dict
+
 import numpy as np
 
 
@@ -490,9 +491,7 @@ MODEL_REGISTRY: Dict[ModelType, type] = {
 }
 
 
-def create_model(
-    model_type: ModelType, params: Dict[str, Any] = None
-) -> EstimationModel:
+def create_model(model_type: ModelType, params: Dict[str, Any] = None) -> EstimationModel:
     """
     Factory function to create estimation model instances.
 

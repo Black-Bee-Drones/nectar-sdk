@@ -10,8 +10,8 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import numpy as np
 
 from mirela_sdk.ai.detection.core.base import BaseDetectionModel
+from mirela_sdk.ai.detection.core.configs import EvaluationConfig, TrainingConfig
 from mirela_sdk.ai.detection.core.types import DetectionResult
-from mirela_sdk.ai.detection.core.configs import TrainingConfig, EvaluationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,7 @@ class Detector:
         return Framework.ULTRALYTICS
 
     @classmethod
-    def _create_model(
-        cls, framework: Framework, model_name: str, **kwargs
-    ) -> BaseDetectionModel:
+    def _create_model(cls, framework: Framework, model_name: str, **kwargs) -> BaseDetectionModel:
         """Create model instance using registered builder."""
         key = framework.value
         builder = cls._builders.get(key)
@@ -173,9 +171,7 @@ class Detector:
                 if "/" in self.model_source and ":" in self.model_source:
                     from mirela_sdk.ai.detection.models.model_loader import ModelLoader
 
-                    model_path = ModelLoader.load(
-                        self.model_source, token=self._hf_token
-                    )
+                    model_path = ModelLoader.load(self.model_source, token=self._hf_token)
 
             self._model.load_model(model_path)
             self._loaded = True

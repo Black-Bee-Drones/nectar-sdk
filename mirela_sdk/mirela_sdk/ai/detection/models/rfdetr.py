@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -40,9 +40,8 @@ from PIL import Image
 
 from mirela_sdk.ai.detection.core.base import BaseDetectionModel
 from mirela_sdk.ai.detection.core.configs import TrainingConfig
-from mirela_sdk.ai.detection.core.types import DetectionInput, Prediction
 from mirela_sdk.ai.detection.core.exceptions import ModelNotLoadedError, TrainingError
-from mirela_sdk.ai.detection.utils.device import get_device
+from mirela_sdk.ai.detection.core.types import DetectionInput, Prediction
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +106,7 @@ class RFDETRModel(BaseDetectionModel):
     def _infer_model_size(self, path: str) -> str:
         """Infer model size from checkpoint path."""
         path = Path(path)
-        candidates = [str(path.name).lower()] + [
-            str(p.name).lower() for p in path.parents
-        ]
+        candidates = [str(path.name).lower()] + [str(p.name).lower() for p in path.parents]
         for candidate in candidates:
             for size in RFDETR_MODELS.keys():
                 size_short = size.replace("rfdetr-", "")
@@ -136,9 +133,7 @@ class RFDETRModel(BaseDetectionModel):
 
         if checkpoint_path and Path(checkpoint_path).exists():
             self.logger.info(f"Loading from checkpoint: {checkpoint_path}")
-            self.rfdetr_wrapper = self.model_class(
-                pretrain_weights=checkpoint_path, **model_kwargs
-            )
+            self.rfdetr_wrapper = self.model_class(pretrain_weights=checkpoint_path, **model_kwargs)
         else:
             self.logger.info(f"Loading pretrained: {self.base_model_name}")
             self.rfdetr_wrapper = self.model_class(**model_kwargs)
@@ -155,12 +150,9 @@ class RFDETRModel(BaseDetectionModel):
                 categories = data.get("categories", [])
                 if categories:
                     self.class_names = {
-                        cat["id"]: cat["name"]
-                        for cat in sorted(categories, key=lambda x: x["id"])
+                        cat["id"]: cat["name"] for cat in sorted(categories, key=lambda x: x["id"])
                     }
-                    self.logger.info(
-                        f"Loaded {len(self.class_names)} classes from dataset"
-                    )
+                    self.logger.info(f"Loaded {len(self.class_names)} classes from dataset")
                     return
         self.logger.warning("Could not load class names from dataset")
 
@@ -247,9 +239,7 @@ class RFDETRModel(BaseDetectionModel):
         self.logger.info("Starting RF-DETR training")
 
         try:
-            self.rfdetr_wrapper.train(
-                **{k: v for k, v in train_args.items() if v is not None}
-            )
+            self.rfdetr_wrapper.train(**{k: v for k, v in train_args.items() if v is not None})
         except RuntimeError as e:
             if "DistributedDataParallel" in str(e):
                 self.logger.warning("DDP error at end of training, ignoring")
@@ -330,11 +320,7 @@ class RFDETRModel(BaseDetectionModel):
             if not source_split.is_dir():
                 continue
 
-            max_samples = (
-                config.max_train_samples
-                if split == "train"
-                else config.max_eval_samples
-            )
+            max_samples = config.max_train_samples if split == "train" else config.max_eval_samples
             if not max_samples:
                 continue
 

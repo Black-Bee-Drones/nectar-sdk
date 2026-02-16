@@ -23,6 +23,29 @@ Create bug reports that are:
 
 Check [Discussions](https://github.com/Black-Bee-Drones/mirela-sdk/discussions) for ongoing conversations before opening a new request.
 
+## Development Setup
+
+Install [pre-commit](https://pre-commit.com/) hooks (one-time setup):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Hooks run automatically on `git commit`. To check all files manually:
+
+```bash
+pre-commit run --all-files
+```
+
+You can also run linting and formatting directly via Make:
+
+```bash
+make lint        # check for issues
+make lint-fix    # auto-fix safe issues
+make format      # format all code
+```
+
 ## Pull Request Process 🔄
 
 ### 1. Fork and Clone

@@ -7,8 +7,8 @@ try:
 except ImportError:
     sv = None
 
+from .configs import EvaluationConfig, EvaluationMetrics, TrainingConfig, TrainingResult
 from .types import DetectionResult
-from .configs import TrainingConfig, EvaluationConfig, TrainingResult, EvaluationMetrics
 
 
 @runtime_checkable

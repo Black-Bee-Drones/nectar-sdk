@@ -1,17 +1,18 @@
-from typing import Optional
-import numpy as np
 import threading
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from sensor_msgs.msg import Image as RosImage
-from sensor_msgs.msg import CompressedImage as RosCompressedImage
+from typing import Optional
+
+import numpy as np
 from cv_bridge import CvBridge
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import CompressedImage as RosCompressedImage
+from sensor_msgs.msg import Image as RosImage
 
 from mirela_sdk.vision.camera.abstract import DepthCam
 from mirela_sdk.vision.camera.config import (
-    ROSDepthConfig,
-    QoSReliability,
     QoSDurability,
+    QoSReliability,
+    ROSDepthConfig,
 )
 from mirela_sdk.vision.camera.drivers.ros_cam import ROSCam
 
@@ -123,9 +124,7 @@ class ROSDepthCam(DepthCam):
             self._depth_event.set()
 
         except Exception as e:
-            self._node.get_logger().error(
-                f"ROSDepthCam: failed to convert depth image: {e}"
-            )
+            self._node.get_logger().error(f"ROSDepthCam: failed to convert depth image: {e}")
 
     def _decode_compressed_depth(self, msg) -> Optional[np.ndarray]:
         """
@@ -177,9 +176,7 @@ class ROSDepthCam(DepthCam):
 
         self._is_running = True
 
-    def get_frame(
-        self, wait_for_new: bool = False, timeout: float = 1.0
-    ) -> Optional[np.ndarray]:
+    def get_frame(self, wait_for_new: bool = False, timeout: float = 1.0) -> Optional[np.ndarray]:
         """
         Return the most recently received color frame.
 
@@ -223,10 +220,7 @@ class ROSDepthCam(DepthCam):
 
         if wait_for_new:
             with self._depth_lock:
-                if (
-                    self._depth_count > self._last_depth_count
-                    and self._depth is not None
-                ):
+                if self._depth_count > self._last_depth_count and self._depth is not None:
                     self._last_depth_count = self._depth_count
                     return self._depth.copy()
 
@@ -244,9 +238,7 @@ class ROSDepthCam(DepthCam):
             self._last_depth_count = self._depth_count
             return self._depth.copy()
 
-    def get_distance(
-        self, u: int, v: int, color_shape: Optional[tuple] = None
-    ) -> Optional[float]:
+    def get_distance(self, u: int, v: int, color_shape: Optional[tuple] = None) -> Optional[float]:
         """
         Get distance at pixel coordinates.
 

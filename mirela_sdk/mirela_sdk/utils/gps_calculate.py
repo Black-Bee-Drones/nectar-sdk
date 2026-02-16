@@ -1,6 +1,7 @@
 from typing import Tuple
-from geographiclib.geodesic import Geodesic
+
 import numpy as np
+from geographiclib.geodesic import Geodesic
 
 
 class GPSCalculate:
@@ -185,12 +186,10 @@ class GPSCalculate:
 
         # Interpolates points along the left and right edges (top to bottom)
         left_edge = [
-            GPSCalculate.interp_geo(vertices[0], vertices[3], i / (rows - 1))
-            for i in range(rows)
+            GPSCalculate.interp_geo(vertices[0], vertices[3], i / (rows - 1)) for i in range(rows)
         ]
         right_edge = [
-            GPSCalculate.interp_geo(vertices[1], vertices[2], i / (rows - 1))
-            for i in range(rows)
+            GPSCalculate.interp_geo(vertices[1], vertices[2], i / (rows - 1)) for i in range(rows)
         ]
 
         grid = []

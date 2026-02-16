@@ -4,7 +4,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import yaml
 
@@ -27,52 +27,32 @@ def parse_args():
     )
 
     # Training parameters
-    parser.add_argument(
-        "--output-dir", type=str, default="outputs", help="Output directory"
-    )
+    parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
-    parser.add_argument(
-        "--learning-rate", type=float, default=0.001, help="Learning rate"
-    )
+    parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--device", type=str, default="auto", help="Device")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--imgsz", type=int, default=640, help="Image size")
 
     # Training options
     parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard")
-    parser.add_argument(
-        "--push-to-hub", action="store_true", help="Push to HuggingFace Hub"
-    )
+    parser.add_argument("--push-to-hub", action="store_true", help="Push to HuggingFace Hub")
     parser.add_argument("--hub-model-id", type=str, help="HuggingFace model ID")
     parser.add_argument("--multi-gpu", action="store_true", help="Enable multi-GPU")
-    parser.add_argument(
-        "--mixed-precision", type=str, default="no", choices=["no", "fp16", "bf16"]
-    )
+    parser.add_argument("--mixed-precision", type=str, default="no", choices=["no", "fp16", "bf16"])
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument(
-        "--early-stopping-patience", type=int, help="Early stopping patience"
-    )
-    parser.add_argument(
-        "--from-scratch", action="store_true", help="Train from scratch"
-    )
+    parser.add_argument("--early-stopping-patience", type=int, help="Early stopping patience")
+    parser.add_argument("--from-scratch", action="store_true", help="Train from scratch")
 
     # Optimizer
-    parser.add_argument(
-        "--weight-decay", type=float, default=0.0001, help="Weight decay"
-    )
+    parser.add_argument("--weight-decay", type=float, default=0.0001, help="Weight decay")
     parser.add_argument("--warmup-ratio", type=float, default=0.1, help="Warmup ratio")
-    parser.add_argument(
-        "--lr-scheduler-type", type=str, default="linear", help="LR scheduler"
-    )
+    parser.add_argument("--lr-scheduler-type", type=str, default="linear", help="LR scheduler")
 
     # Evaluation
-    parser.add_argument(
-        "--evaluate", action="store_true", help="Evaluate after training"
-    )
-    parser.add_argument(
-        "--eval-split", type=str, default="test", help="Evaluation split"
-    )
+    parser.add_argument("--evaluate", action="store_true", help="Evaluate after training")
+    parser.add_argument("--eval-split", type=str, default="test", help="Evaluation split")
     parser.add_argument("--conf-threshold", type=float, default=0.25)
     parser.add_argument("--iou-threshold", type=float, default=0.5)
 
@@ -119,9 +99,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return flat
 
 
-def merge_config_with_args(
-    config: Dict[str, Any], args: argparse.Namespace
-) -> Dict[str, Any]:
+def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
     """
     Merge config file with CLI arguments.
 
@@ -167,9 +145,7 @@ def merge_config_with_args(
         config_key = arg_to_config.get(arg_name, arg_name)
 
         # CLI overrides config
-        if arg_name in vars(args) and value != getattr(
-            parse_args.__defaults__, arg_name, None
-        ):
+        if arg_name in vars(args) and value != getattr(parse_args.__defaults__, arg_name, None):
             result[config_key] = value
         elif config_key not in result:
             result[config_key] = value
@@ -225,12 +201,12 @@ def main():
     # Import framework-specific config and model
     from mirela_sdk.ai.detection import Detector
     from mirela_sdk.ai.detection.core.configs import EvaluationConfig
-    from mirela_sdk.ai.detection.training.config import (
-        UltralyticsTrainingConfig,
-        TransformersTrainingConfig,
-        RFDETRTrainingConfig,
-    )
     from mirela_sdk.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
+    from mirela_sdk.ai.detection.training.config import (
+        RFDETRTrainingConfig,
+        TransformersTrainingConfig,
+        UltralyticsTrainingConfig,
+    )
 
     # Build training config
     common_args = {

@@ -1,43 +1,42 @@
-from typing import Optional, Union
 from pathlib import Path
+from typing import Optional, Union
 
 import numpy as np
 import rclpy
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from rclpy.duration import Duration
-
-from mavros_msgs.msg import State, PositionTarget, GlobalPositionTarget
-from mavros_msgs.srv import SetMode, CommandBool, CommandTOL, CommandHome, CommandLong
-from std_msgs.msg import Float64
-from geometry_msgs.msg import PoseWithCovarianceStamped
 from geographic_msgs.msg import GeoPoseStamped
-from sensor_msgs.msg import NavSatFix, Range, Imu
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from mavros_msgs.msg import GlobalPositionTarget, PositionTarget, State
+from mavros_msgs.srv import CommandBool, CommandHome, CommandLong, CommandTOL, SetMode
 from rcl_interfaces.msg import Parameter
 from rcl_interfaces.srv import SetParameters
+from rclpy.duration import Duration
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Imu, NavSatFix, Range
+from std_msgs.msg import Float64
 from tf_transformations import quaternion_from_euler
 
 from mirela_sdk.control.base import BaseDrone
-from mirela_sdk.control.types import (
-    MoveReference,
-    PoseSource,
-    NavigationStrategy,
-    RTLStrategy,
-    AltitudeSource,
-)
-from mirela_sdk.control.config import MavrosConfig, DroneConfig
-from mirela_sdk.control.factory import DroneFactory
+from mirela_sdk.control.config import DroneConfig, MavrosConfig
 from mirela_sdk.control.exceptions import (
-    TakeoffPositionNotSetError,
-    SensorNotAvailableError,
     CapabilityNotSupportedError,
+    SensorNotAvailableError,
+    TakeoffPositionNotSetError,
 )
-from mirela_sdk.utils.process import ProcessUtils
-from mirela_sdk.utils.position_utils import PositionUtils
-from mirela_sdk.utils.gps_calculate import GPSCalculate
+from mirela_sdk.control.factory import DroneFactory
 from mirela_sdk.control.mavros.gps_utils import GPSUtils
 from mirela_sdk.control.mavros.navigator import MavrosNavigator
-from mirela_sdk.control.pid import PositionPIDConfig, PIDConfig
+from mirela_sdk.control.pid import PIDConfig, PositionPIDConfig
+from mirela_sdk.control.types import (
+    AltitudeSource,
+    MoveReference,
+    NavigationStrategy,
+    PoseSource,
+    RTLStrategy,
+)
+from mirela_sdk.utils.gps_calculate import GPSCalculate
+from mirela_sdk.utils.position_utils import PositionUtils
+from mirela_sdk.utils.process import ProcessUtils
 
 
 class MavrosDrone(BaseDrone):
@@ -1683,7 +1682,6 @@ class MavrosDrone(BaseDrone):
                     f"{service_name}: Parameters set: {', '.join(param_names)}"
                 )
             else:
-                failed = [r.name for r in response.results if not r.successful]
                 reasons = [
                     f"{r.name}: {r.reason}"
                     for r in response.results

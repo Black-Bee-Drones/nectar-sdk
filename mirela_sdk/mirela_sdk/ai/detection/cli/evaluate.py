@@ -25,12 +25,8 @@ def parse_args():
         "--dataset-type", type=str, default="auto", choices=["coco", "yolo", "auto"]
     )
     parser.add_argument("--split", type=str, default="test", help="Dataset split")
-    parser.add_argument(
-        "--conf-threshold", type=float, default=0.25, help="Confidence threshold"
-    )
-    parser.add_argument(
-        "--iou-threshold", type=float, default=0.5, help="IoU threshold"
-    )
+    parser.add_argument("--conf-threshold", type=float, default=0.25, help="Confidence threshold")
+    parser.add_argument("--iou-threshold", type=float, default=0.5, help="IoU threshold")
     parser.add_argument("--device", type=str, default="auto", help="Device")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     parser.add_argument("--num-samples", type=int, help="Number of samples to evaluate")
@@ -38,9 +34,7 @@ def parse_args():
     parser.add_argument("--resolution", type=int, help="Resolution for RF-DETR")
 
     # Slicing options
-    parser.add_argument(
-        "--use-slicing", action="store_true", help="Enable slicing inference"
-    )
+    parser.add_argument("--use-slicing", action="store_true", help="Enable slicing inference")
     parser.add_argument(
         "--slicing-strategy",
         type=str,
@@ -66,10 +60,10 @@ def main():
 
     # Import model classes
     from mirela_sdk.ai.detection.core.configs import EvaluationConfig
-    from mirela_sdk.ai.detection.models.ultralytics import UltralyticsModel
-    from mirela_sdk.ai.detection.models.transformers import TransformersModel
-    from mirela_sdk.ai.detection.models.rfdetr import RFDETRModel
     from mirela_sdk.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
+    from mirela_sdk.ai.detection.models.rfdetr import RFDETRModel
+    from mirela_sdk.ai.detection.models.transformers import TransformersModel
+    from mirela_sdk.ai.detection.models.ultralytics import UltralyticsModel
 
     logger.info(f"Loading {args.framework} model from {args.model_path}")
 

@@ -1,53 +1,46 @@
-from mirela_sdk.control.types import (
-    MoveReference,
-    PoseSource,
-    NavigationStrategy,
-    RTLStrategy,
-    AltitudeSource,
-)
-
+from mirela_sdk.control.base import BaseDrone
+from mirela_sdk.control.bebop import BebopDrone
 from mirela_sdk.control.config import (
+    BebopConfig,
     DroneConfig,
     MavrosConfig,
-    BebopConfig,
 )
-
-from mirela_sdk.control.factory import DroneFactory
-
 from mirela_sdk.control.driver_monitor import (
+    DRIVER_INFO,
+    DriverInfo,
     DriverMonitor,
     DriverStatus,
-    DriverInfo,
-    DRIVER_INFO,
 )
-
 from mirela_sdk.control.exceptions import (
-    DroneError,
-    DriverNotFoundError,
-    TakeoffPositionNotSetError,
-    SensorNotAvailableError,
     CapabilityNotSupportedError,
+    DriverNotFoundError,
+    DroneError,
+    SensorNotAvailableError,
+    TakeoffPositionNotSetError,
 )
-
-from mirela_sdk.control.pid import (
-    PIDController,
-    PIDConfig,
-    PositionPIDConfig,
-)
-
-from mirela_sdk.control.base import BaseDrone
-from mirela_sdk.control.mavros import MavrosDrone, GPSUtils
-from mirela_sdk.control.bebop import BebopDrone
-
+from mirela_sdk.control.factory import DroneFactory
+from mirela_sdk.control.mavros import GPSUtils, MavrosDrone
 from mirela_sdk.control.obstacles import (
     BaseObstacleDetector,
     DepthObstacleDetector,
-    ObstacleInfo,
     ObstacleDirection,
-    ObstacleHandlerConfig,
     ObstacleHandler,
+    ObstacleHandlerConfig,
+    ObstacleInfo,
     ObstacleManager,
     strategies,
+)
+from mirela_sdk.control.pid import (
+    PIDConfig,
+    PIDController,
+    PositionPIDConfig,
+)
+from mirela_sdk.control.types import (
+    AltitudeSource,
+    MoveReference,
+    NavigationStrategy,
+    PoseSource,
+    RTLStrategy,
 )
 
 __all__ = [

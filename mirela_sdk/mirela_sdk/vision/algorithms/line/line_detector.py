@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+import math
 from abc import ABC, abstractmethod
 from typing import Tuple
-import math
 
 import cv2
 import numpy as np
@@ -370,7 +370,7 @@ class FitEllipse(ILineEstimationMethod):
         )
 
         angle = center_x = center_y = float("nan")
-        direction = curvature = None
+        _direction = _curvature = None
 
         if len(contours) > 0:
             rope_contour = max(contours, key=cv2.contourArea)
@@ -388,8 +388,8 @@ class FitEllipse(ILineEstimationMethod):
                     yc += offset[1]
                     center_x = xc
                     center_y = yc
-                    direction = np.sign(d2 - d1)
-                    curvature = np.abs(d1 - d2) / max(d1, d2)
+                    _direction = np.sign(d2 - d1)
+                    _curvature = np.abs(d1 - d2) / max(d1, d2)
 
                 if draw:
                     cv2.ellipse(img_out, ((xc, yc), (d1, d2), angle), (0, 255, 0), 2)

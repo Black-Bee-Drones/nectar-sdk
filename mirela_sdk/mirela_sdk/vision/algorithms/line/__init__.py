@@ -20,13 +20,13 @@ RansacLine
 """
 
 from mirela_sdk.vision.algorithms.line.line_detector import (
-    LineDetector,
-    ILineEstimationMethod,
-    HoughLinesP,
-    RotatedRect,
-    FitEllipse,
     AdaptiveHoughLinesP,
+    FitEllipse,
+    HoughLinesP,
+    ILineEstimationMethod,
+    LineDetector,
     RansacLine,
+    RotatedRect,
 )
 
 __all__ = [

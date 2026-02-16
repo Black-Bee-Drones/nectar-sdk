@@ -1,11 +1,11 @@
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple, Dict, Any, Optional
-import numpy as np
-import yaml
-import warnings
+from typing import Any, Dict, List, Tuple
 
 import matplotlib
+import numpy as np
+import yaml
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -126,11 +126,7 @@ class ModelCalibrator:
         ss_tot = np.sum((self.distances - np.mean(self.distances)) ** 2)
         r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
         n_params = len(params)
-        aic = (
-            float(len(self.distances) * np.log(mse) + 2 * n_params)
-            if mse > 0
-            else float("inf")
-        )
+        aic = float(len(self.distances) * np.log(mse) + 2 * n_params) if mse > 0 else float("inf")
 
         result = CalibrationResult(
             model_type=model_type,
@@ -245,9 +241,7 @@ class ModelCalibrator:
 
         sorted_results = sorted(self.results.values(), key=lambda r: r.aic)
         for r in sorted_results:
-            print(
-                f"{r.name:<20} {r.r2:<10.4f} {r.rmse:<10.2f} {r.mae:<10.2f} {r.aic:<10.1f}"
-            )
+            print(f"{r.name:<20} {r.r2:<10.4f} {r.rmse:<10.2f} {r.mae:<10.2f} {r.aic:<10.1f}")
 
         best = self.best_model()
         print("=" * 80)
@@ -329,11 +323,7 @@ class ModelCalibrator:
         r2_vals = [r.r2 for r in sorted_results]
 
         bar_colors = [
-            (
-                "green"
-                if r2 > 0.95
-                else "steelblue" if r2 > 0.9 else "orange" if r2 > 0 else "red"
-            )
+            ("green" if r2 > 0.95 else "steelblue" if r2 > 0.9 else "orange" if r2 > 0 else "red")
             for r2 in r2_vals
         ]
         bars = ax3.barh(names, rmse_vals, color=bar_colors)
@@ -388,9 +378,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Calibrate distance estimation models")
     parser.add_argument("--data", type=str, help="Path to CSV file (distance,pixels)")
-    parser.add_argument(
-        "--output", type=str, default="parameters.yaml", help="Output YAML"
-    )
+    parser.add_argument("--output", type=str, default="parameters.yaml", help="Output YAML")
     parser.add_argument(
         "--plot", type=str, nargs="?", const="model_comparison.png", help="Save plot"
     )

@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -20,7 +20,8 @@ except ImportError:
     sv = None
 
 try:
-    from ultralytics import YOLO, settings as ultralytics_settings
+    from ultralytics import YOLO
+    from ultralytics import settings as ultralytics_settings
 except ImportError:
     YOLO = None
     ultralytics_settings = None
@@ -29,8 +30,8 @@ from PIL import Image
 
 from mirela_sdk.ai.detection.core.base import BaseDetectionModel
 from mirela_sdk.ai.detection.core.configs import TrainingConfig
-from mirela_sdk.ai.detection.core.types import DetectionInput, Prediction
 from mirela_sdk.ai.detection.core.exceptions import ModelNotLoadedError, TrainingError
+from mirela_sdk.ai.detection.core.types import DetectionInput, Prediction
 from mirela_sdk.ai.detection.utils.device import get_device
 
 logger = logging.getLogger(__name__)
@@ -60,9 +61,7 @@ class UltralyticsModel(BaseDetectionModel):
     def __init__(self, model_name: str = "yolov8n.pt", from_scratch: bool = False):
         super().__init__(model_name, "ultralytics")
         if YOLO is None:
-            raise ImportError(
-                "ultralytics is required. Install: pip install ultralytics"
-            )
+            raise ImportError("ultralytics is required. Install: pip install ultralytics")
 
         self.model: Optional[YOLO] = None
         self.from_scratch = from_scratch
@@ -85,9 +84,7 @@ class UltralyticsModel(BaseDetectionModel):
             self.model = YOLO(path)
 
         if hasattr(self.model, "names"):
-            self.class_names = {
-                i: name for i, name in enumerate(self.model.names.values())
-            }
+            self.class_names = {i: name for i, name in enumerate(self.model.names.values())}
             self.logger.info(f"Loaded {len(self.class_names)} classes")
 
     def _download_from_huggingface(self, model_path: str) -> str:
@@ -96,9 +93,7 @@ class UltralyticsModel(BaseDetectionModel):
             from huggingface_hub import hf_hub_download
 
             repo_id = model_path.split(":")[0] if ":" in model_path else model_path
-            filename = (
-                model_path.split(":")[-1] if ":" in model_path else "weights/best.pt"
-            )
+            filename = model_path.split(":")[-1] if ":" in model_path else "weights/best.pt"
 
             local_dir = Path(f"outputs/hf_models/{repo_id.replace('/', '_')}")
             local_dir.mkdir(parents=True, exist_ok=True)
@@ -298,11 +293,7 @@ class UltralyticsModel(BaseDetectionModel):
     def _find_best_model(self, output_dir: Path) -> Path:
         """Find best model checkpoint."""
         runs = sorted(
-            [
-                d
-                for d in output_dir.iterdir()
-                if d.is_dir() and d.name.startswith("train")
-            ],
+            [d for d in output_dir.iterdir() if d.is_dir() and d.name.startswith("train")],
             key=os.path.getmtime,
         )
         if runs:

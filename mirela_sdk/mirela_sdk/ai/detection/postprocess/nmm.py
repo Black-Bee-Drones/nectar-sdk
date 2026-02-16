@@ -76,16 +76,8 @@ class NMMStrategy(BaseMergingStrategy):
             return detections, [], 0
 
         boxes = detections.xyxy
-        scores = (
-            detections.confidence
-            if detections.confidence is not None
-            else np.ones(len(boxes))
-        )
-        class_ids = (
-            detections.class_id
-            if detections.class_id is not None
-            else np.zeros(len(boxes))
-        )
+        scores = detections.confidence if detections.confidence is not None else np.ones(len(boxes))
+        class_ids = detections.class_id if detections.class_id is not None else np.zeros(len(boxes))
 
         used = set()
         merged_groups = []

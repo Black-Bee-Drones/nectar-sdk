@@ -1,6 +1,7 @@
+import json
 import os
 from enum import Enum, auto
-import json
+
 import cv2
 import numpy as np
 
@@ -119,7 +120,7 @@ class ColorDetector:
         try:
             config = self.color_space_config[self.color_space]
             values = np.clip(values, config["ranges"][0], config["ranges"][1])
-        except:
+        except Exception:
             raise ValueError(
                 "Invalid attribute format. Expected [[x, x, x], [x, x, x]]"
             )

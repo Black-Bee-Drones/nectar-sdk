@@ -2,9 +2,8 @@ from typing import Callable, Dict
 
 from rclpy.node import Node
 
-from mirela_sdk.control.protocols import Drone
 from mirela_sdk.control.config import DroneConfig
-
+from mirela_sdk.control.protocols import Drone
 
 BuilderFunc = Callable[[DroneConfig, Node], Drone]
 
@@ -62,9 +61,7 @@ class DroneFactory:
         builder = cls._builders.get(drone_type.lower())
         if not builder:
             available = ", ".join(cls._builders.keys())
-            raise ValueError(
-                f"Unknown drone type: '{drone_type}'. Available types: {available}"
-            )
+            raise ValueError(f"Unknown drone type: '{drone_type}'. Available types: {available}")
         return builder(config, node)
 
     @classmethod

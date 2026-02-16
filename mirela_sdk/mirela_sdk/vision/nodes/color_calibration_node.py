@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import sys
-import rclpy
-from rclpy.node import Node
+
 import cv2
 import numpy as np
+import rclpy
+from rclpy.node import Node
 
-from mirela_sdk.vision.camera import ImageHandler
 from mirela_sdk.vision.algorithms.color import ColorDetector, ColorSpace
+from mirela_sdk.vision.camera import ImageHandler
 
 
 class ColorCalibrationNode(Node):
@@ -30,9 +31,7 @@ class ColorCalibrationNode(Node):
     - 'c': Switch between HSV and LAB color spaces
     """
 
-    def __init__(
-        self, image_source: str = None, color_space: str = "hsv", cap: int = 0
-    ):
+    def __init__(self, image_source: str = None, color_space: str = "hsv", cap: int = 0):
         super().__init__("color_calibration_node")
 
         if image_source is None:
@@ -51,9 +50,7 @@ class ColorCalibrationNode(Node):
         if cap is None:
             cap = cap_param
 
-        self.color_space = (
-            ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
-        )
+        self.color_space = ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
 
         self.image_source = image_source
         self.cap = cap
@@ -95,7 +92,6 @@ class ColorCalibrationNode(Node):
         """
         try:
             if img is not None:
-
                 if not self.initialized:
                     self.color_detector.initTrackbars()
                     self.initialized = True
@@ -110,9 +106,7 @@ class ColorCalibrationNode(Node):
                 hStack = np.hstack([img, mask_bgr, self.color_detector.result])
                 hStack = cv2.resize(hStack, None, fx=0.7, fy=0.7)
 
-                window_title = (
-                    f"Color Calibration - {self.color_detector.color_space.name} Mode"
-                )
+                window_title = f"Color Calibration - {self.color_detector.color_space.name} Mode"
                 cv2.imshow(window_title, hStack)
 
                 key = cv2.waitKey(1)
@@ -136,13 +130,9 @@ class ColorCalibrationNode(Node):
                     else:
                         new_color_space = ColorSpace.HSV
 
-                    self.get_logger().info(
-                        f"Switching to {new_color_space.name} color space"
-                    )
+                    self.get_logger().info(f"Switching to {new_color_space.name} color space")
 
-                    self.color_detector = ColorDetector(
-                        "track", color_space=new_color_space
-                    )
+                    self.color_detector = ColorDetector("track", color_space=new_color_space)
                     self.color_detector.initTrackbars()
 
         except Exception as e:
@@ -180,9 +170,7 @@ def main(args=None):
         choices=["hsv", "lab"],
         help="Color space to use (hsv or lab)",
     )
-    parser.add_argument(
-        "--cap", type=int, default=None, help="Webcam index to use with OpenCV"
-    )
+    parser.add_argument("--cap", type=int, default=None, help="Webcam index to use with OpenCV")
     parsed_args, remaining_args = parser.parse_known_args(args=args)
 
     node = ColorCalibrationNode(

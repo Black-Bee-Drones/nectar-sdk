@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-import os
 import glob
+import os
 from typing import Optional, Tuple
 
 import cv2
 import numpy as np
-
 import rclpy
 from rclpy.node import Node
 
@@ -74,9 +73,7 @@ class Calibration(Node):
             self._photos_taken += 1
             filepath = f"{Calibration.PATH}/dataset/chessboard{self._photos_taken}.jpg"
             cv2.imwrite(filepath, img)
-            self.get_logger().info(
-                f"Captured photo {self._photos_taken}/{self._num_photos}"
-            )
+            self.get_logger().info(f"Captured photo {self._photos_taken}/{self._num_photos}")
             self._frame_count = 0
 
         if self._photos_taken >= self._num_photos:
@@ -135,17 +132,13 @@ class Calibration(Node):
 
             self.gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            ret, corners = cv2.findChessboardCorners(
-                self.gray, self.chessboard_size, None
-            )
+            ret, corners = cv2.findChessboardCorners(self.gray, self.chessboard_size, None)
 
             if ret:
                 self.object_points.append(self.objp)
                 self.image_points.append(corners)
                 detected_count += 1
-                self.get_logger().info(
-                    f"Corners found: {detected_count}/{len(image_files)}"
-                )
+                self.get_logger().info(f"Corners found: {detected_count}/{len(image_files)}")
 
                 if show_result:
                     cv2.drawChessboardCorners(image, self.chessboard_size, corners, ret)
@@ -240,9 +233,7 @@ class Calibration(Node):
         distortion_path = f"{cls.PATH}/camera_distortion.txt"
 
         if not os.path.exists(matrix_path) or not os.path.exists(distortion_path):
-            raise FileNotFoundError(
-                "Calibration files not found. Run calibration first."
-            )
+            raise FileNotFoundError("Calibration files not found. Run calibration first.")
 
         camera_matrix = np.loadtxt(matrix_path, delimiter=",")
         distortion = np.loadtxt(distortion_path, delimiter=",")

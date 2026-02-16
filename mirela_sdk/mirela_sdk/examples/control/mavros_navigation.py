@@ -7,8 +7,8 @@ from rclpy.node import Node
 from mirela_sdk.control import (
     DroneFactory,
     MavrosConfig,
-    PoseSource,
     MoveReference,
+    PoseSource,
 )
 from mirela_sdk.utils.gps_calculate import GPSCalculate
 
@@ -218,8 +218,7 @@ class NavigationTest(Node):
         hdg = self.drone.heading
 
         self.get_logger().info(
-            f"  Current: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, "
-            f"hdg={hdg:.1f}°"
+            f"  Current: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, hdg={hdg:.1f}°"
         )
 
         lat, lon, _ = GPSCalculate.calculate_gps_offset(
@@ -248,9 +247,9 @@ class NavigationTest(Node):
         return reached
 
     def _log_test_header(self, name: str, detail: str) -> None:
-        self.get_logger().info(f"\n{'─'*50}")
+        self.get_logger().info(f"\n{'─' * 50}")
         self.get_logger().info(f"  TEST: {name} ({detail})")
-        self.get_logger().info(f"{'─'*50}")
+        self.get_logger().info(f"{'─' * 50}")
 
     def _log_test_result(self, name: str, passed: bool) -> None:
         if passed:
@@ -275,10 +274,10 @@ class NavigationTest(Node):
             tests_to_run = list(test_map.keys())
 
         self.get_logger().info(
-            f"\n{'═'*50}\n"
+            f"\n{'═' * 50}\n"
             f"  MAVROS Navigation Test\n"
             f"  Mode: {self.args.mode} | Tests: {', '.join(tests_to_run)}\n"
-            f"{'═'*50}"
+            f"{'═' * 50}"
         )
 
         if not self.setup():
@@ -293,13 +292,11 @@ class NavigationTest(Node):
             results[name] = test_map[name]()
             self.drone.delay(2.0)
 
-        self.get_logger().info(f"\n{'═'*50}")
+        self.get_logger().info(f"\n{'═' * 50}")
         self.get_logger().info("  RESULTS")
-        self.get_logger().info(f"{'═'*50}")
+        self.get_logger().info(f"{'═' * 50}")
         for name, passed in results.items():
-            status = (
-                "\033[32;1mPASSED\033[0m" if passed else "\033[33;1mINCOMPLETE\033[0m"
-            )
+            status = "\033[32;1mPASSED\033[0m" if passed else "\033[33;1mINCOMPLETE\033[0m"
             self.get_logger().info(f"  {name:15s} {status}")
 
         self.teardown()
@@ -343,9 +340,7 @@ def parse_args() -> argparse.Namespace:
         default=["all"],
         choices=["all"] + AVAILABLE_TESTS,
         metavar="TEST",
-        help=(
-            f"Tests to run. Choices: all, {', '.join(AVAILABLE_TESTS)}. " "Default: all"
-        ),
+        help=(f"Tests to run. Choices: all, {', '.join(AVAILABLE_TESTS)}. Default: all"),
     )
     parser.add_argument(
         "--distance",

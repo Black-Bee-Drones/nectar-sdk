@@ -1,16 +1,16 @@
 """MediaPipe tracking solutions for hands and faces."""
 
-from .hand_tracker import (
-    HandTracker,
-    HandTrackerConfig,
-    HandResult,
-    HandLandmark,
-)
 from .face_tracker import (
+    FaceLandmarkRegion,
     FaceMeshTracker,
     FaceMeshTrackerConfig,
     FaceResult,
-    FaceLandmarkRegion,
+)
+from .hand_tracker import (
+    HandLandmark,
+    HandResult,
+    HandTracker,
+    HandTrackerConfig,
 )
 
 __all__ = [

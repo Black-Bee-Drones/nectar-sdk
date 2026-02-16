@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
 
 import sys
-from typing import Dict, List, Any
+from math import isnan
+from typing import Any, Dict
 
+import cv2
+import numpy as np
 import rclpy
+from mirela_interfaces.msg import LineInfo
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
-import cv2
-from math import isnan
-import numpy as np
-
-from mirela_sdk.vision.camera import ImageHandler
-from mirela_sdk.vision.algorithms.color import ColorDetector, ColorSpace
+from mirela_sdk.vision.algorithms.color import ColorSpace
 from mirela_sdk.vision.algorithms.line import (
-    LineDetector,
-    ILineEstimationMethod,
-    RotatedRect,
-    HoughLinesP,
-    FitEllipse,
-    RansacLine,
     AdaptiveHoughLinesP,
+    FitEllipse,
+    HoughLinesP,
+    ILineEstimationMethod,
+    LineDetector,
+    RansacLine,
+    RotatedRect,
 )
-from mirela_interfaces.msg import LineInfo
+from mirela_sdk.vision.camera import ImageHandler
 
 
 class LineDetectionNode(Node):
@@ -583,7 +582,7 @@ class LineDetectionNode(Node):
 
         colors_str = ", ".join(self.line_colors)
         spaces_str = ", ".join(self.color_spaces)
-        color_space_info = ", ".join(
+        _color_space_info = ", ".join(
             [
                 f"{color}: {space}"
                 for color, space in zip(

@@ -1,16 +1,16 @@
 from mirela_sdk.interface.app import MirelaApp, main
 from mirela_sdk.interface.ros_executor import ROSExecutor
+from mirela_sdk.interface.tabs import ControlTab, ROSTab, VisionTab
 from mirela_sdk.interface.theme import COLORS, get_stylesheet
-from mirela_sdk.interface.tabs import ControlTab, VisionTab, ROSTab
 from mirela_sdk.interface.widgets import (
     Card,
-    StatusIndicator,
-    LabeledSlider,
     CollapsibleSection,
-    KeyButton,
-    VideoDisplay,
-    ImageViewer,
     DroneConfigPanel,
+    ImageViewer,
+    KeyButton,
+    LabeledSlider,
+    StatusIndicator,
+    VideoDisplay,
 )
 
 __all__ = [

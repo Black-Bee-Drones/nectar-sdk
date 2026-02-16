@@ -2,19 +2,19 @@
 import argparse
 from typing import Optional, Tuple
 
-import rclpy
-from rclpy.node import Node
 import cv2
 import numpy as np
+import rclpy
+from rclpy.node import Node
 
 from mirela_sdk.vision.camera import (
-    ImageHandler,
     DepthCam,
-    RealsenseCam,
+    ImageHandler,
     OakdCam,
-    ROSDepthCam,
-    RealSenseConfig,
     OakDConfig,
+    RealsenseCam,
+    RealSenseConfig,
+    ROSDepthCam,
     ROSDepthConfig,
 )
 
@@ -45,9 +45,7 @@ class DepthDemoNode(Node):
             cam = ROSDepthCam(self, config)
             cam.start()
             source_key = "ros_depth"
-            self.get_logger().info(
-                f"Using ROS topics: {config.topic}, {cam.depth_topic}"
-            )
+            self.get_logger().info(f"Using ROS topics: {config.topic}, {cam.depth_topic}")
         else:
             config = RealSenseConfig(
                 color_res=(1280, 720),
@@ -147,8 +145,7 @@ def main():
         "--camera",
         choices=["realsense", "realsense_ros", "oakd"],
         default="realsense",
-        help="Camera type: 'realsense' (pyrealsense2), 'realsense_ros' (ROSDepthCam), "
-        "or 'oakd'",
+        help="Camera type: 'realsense' (pyrealsense2), 'realsense_ros' (ROSDepthCam), or 'oakd'",
     )
     args, _ = parser.parse_known_args()
 

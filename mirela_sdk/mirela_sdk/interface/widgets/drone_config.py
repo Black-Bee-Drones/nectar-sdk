@@ -1,16 +1,16 @@
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLineEdit,
-    QComboBox,
-    QCheckBox,
-    QLabel,
-    QFrame,
-)
 from PySide6.QtCore import Signal
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from mirela_sdk.interface.theme import COLORS
 
@@ -50,9 +50,7 @@ class DroneConfigPanel(QWidget):
 
         self._bebop_panel.setVisible(False)
 
-    def _create_config_row(
-        self, label: str, widget: QWidget, tooltip: str = ""
-    ) -> QHBoxLayout:
+    def _create_config_row(self, label: str, widget: QWidget, tooltip: str = "") -> QHBoxLayout:
         """Create a compact horizontal config row."""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
@@ -98,9 +96,7 @@ class DroneConfigPanel(QWidget):
         self._mavros_pose_source.addItems(["GPS (Outdoor)", "Vision (Indoor)"])
         self._mavros_pose_source.currentIndexChanged.connect(self._on_config_changed)
         layout.addLayout(
-            self._create_config_row(
-                "Pose:", self._mavros_pose_source, "Position estimation source"
-            )
+            self._create_config_row("Pose:", self._mavros_pose_source, "Position estimation source")
         )
 
         # Navigation strategy
@@ -129,9 +125,7 @@ class DroneConfigPanel(QWidget):
         self._mavros_connection.setPlaceholderText("serial:///dev/ttyUSB0:921600")
         self._mavros_connection.textChanged.connect(self._on_config_changed)
         layout.addLayout(
-            self._create_config_row(
-                "Connection:", self._mavros_connection, "FCU connection string"
-            )
+            self._create_config_row("Connection:", self._mavros_connection, "FCU connection string")
         )
 
         return panel
@@ -165,9 +159,7 @@ class DroneConfigPanel(QWidget):
         self._bebop_ip.setText("192.168.42.1")
         self._bebop_ip.setPlaceholderText("192.168.42.1")
         self._bebop_ip.textChanged.connect(self._on_config_changed)
-        layout.addLayout(
-            self._create_config_row("IP:", self._bebop_ip, "Bebop drone IP address")
-        )
+        layout.addLayout(self._create_config_row("IP:", self._bebop_ip, "Bebop drone IP address"))
 
         # Namespace
         self._bebop_namespace = QLineEdit()
@@ -175,9 +167,7 @@ class DroneConfigPanel(QWidget):
         self._bebop_namespace.setPlaceholderText("bebop")
         self._bebop_namespace.textChanged.connect(self._on_config_changed)
         layout.addLayout(
-            self._create_config_row(
-                "Namespace:", self._bebop_namespace, "ROS namespace for topics"
-            )
+            self._create_config_row("Namespace:", self._bebop_namespace, "ROS namespace for topics")
         )
 
         return panel
@@ -213,7 +203,7 @@ class DroneConfigPanel(QWidget):
         return self._get_bebop_config()
 
     def _get_mavros_config(self) -> Dict[str, Any]:
-        from mirela_sdk.control import PoseSource, NavigationStrategy
+        from mirela_sdk.control import NavigationStrategy, PoseSource
 
         pose_source_map = {
             0: PoseSource.GPS,
@@ -257,7 +247,7 @@ class DroneConfigPanel(QWidget):
             self._set_bebop_config(config)
 
     def _set_mavros_config(self, config: Dict[str, Any]) -> None:
-        from mirela_sdk.control import PoseSource, NavigationStrategy
+        from mirela_sdk.control import NavigationStrategy, PoseSource
 
         if "pose_source" in config:
             pose_source = config["pose_source"]

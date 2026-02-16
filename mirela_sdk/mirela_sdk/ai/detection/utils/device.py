@@ -3,7 +3,7 @@ Device management utilities.
 """
 
 import logging
-from typing import Optional, Union
+from typing import Optional
 
 try:
     import torch

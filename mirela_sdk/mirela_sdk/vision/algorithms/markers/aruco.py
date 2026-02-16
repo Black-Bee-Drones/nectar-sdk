@@ -34,16 +34,12 @@ class Aruco:
 
     def __init__(self, marker_dict: int, tag_size: float):
         self._total_markers = 1000
-        self.camera_matrix, self.camera_distortion = (
-            Calibration.get_camera_matrix_distortion()
-        )
+        self.camera_matrix, self.camera_distortion = Calibration.get_camera_matrix_distortion()
 
         self._marker_dict = marker_dict
         self._tag_size = tag_size
 
-        self.key = getattr(
-            aruco, f"DICT_{marker_dict}X{marker_dict}_{self.total_markers}"
-        )
+        self.key = getattr(aruco, f"DICT_{marker_dict}X{marker_dict}_{self.total_markers}")
 
         self.aruco_detect = aruco.getPredefinedDictionary(self.key)
         self.aruco_param = aruco.DetectorParameters()
@@ -74,9 +70,7 @@ class Aruco:
         tag_size : float
             New physical marker size in meters.
         """
-        self.key = getattr(
-            aruco, f"DICT_{marker_dict}X{marker_dict}_{self.total_markers}"
-        )
+        self.key = getattr(aruco, f"DICT_{marker_dict}X{marker_dict}_{self.total_markers}")
         self.aruco_detect = aruco.getPredefinedDictionary(self.key)
         self.aruco_param = aruco.DetectorParameters()
         self._tag_size = tag_size
@@ -180,7 +174,7 @@ class Aruco:
                 )
 
             translation_vector = tvecs[0][0][0:3]
-            rotation_vector = rvecs[0][0][0:3]
+            _rotation_vector = rvecs[0][0][0:3]
 
             yaw = self.calculateYawFromCorners(bbox)
 
@@ -197,7 +191,6 @@ def main():
     cap = cv2.VideoCapture(0)
 
     while cv2.waitKey(1) & 0xFF != ord("q"):
-
         _, img = cap.read()
 
         id, t, r = aruco_detector.pose_estimate(img, True)

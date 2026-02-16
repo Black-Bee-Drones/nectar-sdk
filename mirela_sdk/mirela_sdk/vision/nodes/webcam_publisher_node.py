@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 import time
+
 import cv2
-from cv_bridge import CvBridge
-
 import rclpy
+from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from sensor_msgs.msg import Image, CompressedImage
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import CompressedImage, Image
 
-from mirela_sdk.vision.camera.handler import ImageHandler
 from mirela_sdk.vision.camera.config import OpenCVConfig
 from mirela_sdk.vision.camera.drivers.opencv_cam import OpenCVCam
+from mirela_sdk.vision.camera.handler import ImageHandler
 
 
 class WebcamPublisherNode(Node):
@@ -143,9 +143,7 @@ class WebcamPublisherNode(Node):
         self.image_handler.run()
 
         if self.log_fps_interval > 0:
-            self.fps_timer = self.create_timer(
-                self.log_fps_interval, self._log_fps_stats
-            )
+            self.fps_timer = self.create_timer(self.log_fps_interval, self._log_fps_stats)
 
         self.get_logger().info(
             f"Webcam publisher started - camera: {self.camera_index}, "

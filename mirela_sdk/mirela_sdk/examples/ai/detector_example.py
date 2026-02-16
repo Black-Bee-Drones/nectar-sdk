@@ -37,9 +37,9 @@ Run with RF-DETR:
 
 import os
 
+import cv2
 import rclpy
 from rclpy.node import Node
-import cv2
 
 from mirela_sdk.ai.detection import Detector, Framework
 from mirela_sdk.vision.camera import ImageHandler, OpenCVConfig
@@ -55,7 +55,7 @@ class DetectorStreamNode(Node):
 
         # Declare parameters
         self.declare_parameter("model_source", "yolov8n.pt")
-        self.declare_parameter("framework", "")  
+        self.declare_parameter("framework", "")
         self.declare_parameter("confidence", 0.25)
         self.declare_parameter("camera_source", "webcam")
         self.declare_parameter("show_result", True)
@@ -93,9 +93,7 @@ class DetectorStreamNode(Node):
                 framework = Framework(framework_str.lower())
                 self.get_logger().info(f"Using explicit framework: {framework.value}")
             except ValueError:
-                self.get_logger().warning(
-                    f"Unknown framework '{framework_str}', using auto-detect"
-                )
+                self.get_logger().warning(f"Unknown framework '{framework_str}', using auto-detect")
 
         self.get_logger().info(f"Loading model: {model_source}")
         self.get_logger().info(f"Device preference: {device}")
@@ -161,7 +159,7 @@ class DetectorStreamNode(Node):
         if num_detections > 0:
             self.get_logger().info(
                 f"Frame {self.frame_count}: {num_detections} detections | "
-                f"Inference: {result.inference_time*1000:.1f}ms",
+                f"Inference: {result.inference_time * 1000:.1f}ms",
                 throttle_duration_sec=2.0,
             )
 
@@ -202,9 +200,7 @@ class DetectorStreamNode(Node):
         for i, line in enumerate(overlay_lines):
             y_pos = y_offset + (i + 1) * 25
 
-            (text_width, text_height), _ = cv2.getTextSize(
-                line, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1
-            )
+            (text_width, text_height), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
 
             cv2.rectangle(
                 frame,
@@ -233,9 +229,7 @@ class DetectorStreamNode(Node):
 
         if self.frame_count > 0:
             avg_detections = self.total_detections / self.frame_count
-            self.get_logger().info(
-                f"Average detections per frame: {avg_detections:.2f}"
-            )
+            self.get_logger().info(f"Average detections per frame: {avg_detections:.2f}")
 
         self.image_handler.cleanup()
         super().destroy_node()

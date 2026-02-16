@@ -1,14 +1,15 @@
-from typing import Optional
-import numpy as np
 import threading
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from sensor_msgs.msg import Image as RosImage
-from sensor_msgs.msg import CompressedImage as RosCompressedImage
+from typing import Optional
+
+import numpy as np
 from cv_bridge import CvBridge
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import CompressedImage as RosCompressedImage
+from sensor_msgs.msg import Image as RosImage
 
 from mirela_sdk.vision.camera.abstract import AbstractCam
-from mirela_sdk.vision.camera.config import ROSConfig, QoSReliability, QoSDurability
+from mirela_sdk.vision.camera.config import QoSDurability, QoSReliability, ROSConfig
 
 
 class ROSCam(AbstractCam):
@@ -88,9 +89,7 @@ class ROSCam(AbstractCam):
                     msg, desired_encoding=self._config.encoding
                 )
             else:
-                frame = self._bridge.imgmsg_to_cv2(
-                    msg, desired_encoding=self._config.encoding
-                )
+                frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding=self._config.encoding)
 
             with self._lock:
                 self._frame = frame
@@ -123,9 +122,7 @@ class ROSCam(AbstractCam):
             )
         self._is_running = True
 
-    def get_frame(
-        self, wait_for_new: bool = False, timeout: float = 1.0
-    ) -> Optional[np.ndarray]:
+    def get_frame(self, wait_for_new: bool = False, timeout: float = 1.0) -> Optional[np.ndarray]:
         """
         Return the most recently received frame.
 
@@ -144,10 +141,7 @@ class ROSCam(AbstractCam):
         """
         if wait_for_new:
             with self._lock:
-                if (
-                    self._frame_count > self._last_frame_count
-                    and self._frame is not None
-                ):
+                if self._frame_count > self._last_frame_count and self._frame is not None:
                     self._last_frame_count = self._frame_count
                     return self._frame.copy()
 

@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import random
 import shutil
 from collections import Counter, defaultdict
@@ -52,9 +51,7 @@ class DatasetConverter:
         if self.verbose:
             print(message)
 
-    def coco_to_yolo(
-        self, splits: Optional[List[str]] = None, copy_images: bool = True
-    ) -> str:
+    def coco_to_yolo(self, splits: Optional[List[str]] = None, copy_images: bool = True) -> str:
         """
         Convert COCO format to YOLO format.
 
@@ -137,9 +134,7 @@ class DatasetConverter:
                     width = w / img_width
                     height = h / img_height
 
-                    yolo_annotations.append(
-                        f"{yolo_class} {x_center} {y_center} {width} {height}"
-                    )
+                    yolo_annotations.append(f"{yolo_class} {x_center} {y_center} {width} {height}")
 
                 if not yolo_annotations:
                     continue
@@ -214,9 +209,7 @@ class DatasetConverter:
             splits = [
                 d.name
                 for d in self.source_dir.iterdir()
-                if d.is_dir()
-                and (d / "labels").exists()
-                and (d / "images").exists()
+                if d.is_dir() and (d / "labels").exists() and (d / "images").exists()
             ]
 
         if not splits:
@@ -245,9 +238,7 @@ class DatasetConverter:
 
             annotation_id = 1
 
-            for img_idx, img_path in enumerate(
-                tqdm(image_paths, desc=f"Converting {split}")
-            ):
+            for img_idx, img_path in enumerate(tqdm(image_paths, desc=f"Converting {split}")):
                 img_id = img_idx + 1
 
                 try:
@@ -386,9 +377,7 @@ class DatasetConverter:
 
             split_data = {
                 "images": [i for i in coco_data["images"] if i["id"] in ids],
-                "annotations": [
-                    a for a in coco_data["annotations"] if a["image_id"] in ids
-                ],
+                "annotations": [a for a in coco_data["annotations"] if a["image_id"] in ids],
                 "categories": coco_data["categories"],
             }
 
@@ -431,9 +420,7 @@ class DatasetConverter:
                 category_images[primary].append(img_id)
 
         no_annotation = [
-            img["id"]
-            for img in coco_data["images"]
-            if img["id"] not in image_to_categories
+            img["id"] for img in coco_data["images"] if img["id"] not in image_to_categories
         ]
 
         train_ids, val_ids, test_ids = set(), set(), set()
@@ -494,7 +481,5 @@ class DatasetConverter:
             print(f"{name:<25} {t:>12} {v:>12} {te:>12}")
 
         print("-" * 70)
-        print(
-            f"{'IMAGES':<25} {len(train_ids):>12} {len(val_ids):>12} {len(test_ids):>12}"
-        )
+        print(f"{'IMAGES':<25} {len(train_ids):>12} {len(val_ids):>12} {len(test_ids):>12}")
         print("=" * 70 + "\n")

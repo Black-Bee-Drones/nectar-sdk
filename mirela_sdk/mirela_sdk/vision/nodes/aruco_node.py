@@ -2,11 +2,11 @@
 import sys
 
 import rclpy
+from mirela_interfaces.msg import ArucoTransforms
 from rclpy.node import Node
 
 from mirela_sdk.vision.algorithms.markers import Aruco
 from mirela_sdk.vision.camera import ImageHandler
-from mirela_interfaces.msg import ArucoTransforms
 
 
 class ArucoNode(Node):
@@ -45,9 +45,7 @@ class ArucoNode(Node):
 
         self.aruco_pose_estimate = ArucoTransforms()
 
-        self.pose_estime_pub = self.create_publisher(
-            ArucoTransforms, ArucoNode.POSE_TOPIC, 10
-        )
+        self.pose_estime_pub = self.create_publisher(ArucoTransforms, ArucoNode.POSE_TOPIC, 10)
 
         self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
 

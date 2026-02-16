@@ -66,29 +66,47 @@ Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competi
 
 ## Installation 🦥
 
-### 🚀 Automated Installation (Recommended)
+### 🚀 Full Setup (from zero)
 
 ```bash
-wget https://raw.githubusercontent.com/Black-Bee-Drones/mirela-sdk/main/scripts/install_env.sh
-chmod +x install_env.sh
-./install_env.sh
+git clone git@github.com:Black-Bee-Drones/mirela-sdk.git
+cd mirela-sdk
+./scripts/setup.sh full-install    # or: ./scripts/setup.sh (interactive menu)
 ```
 
-Installs: Git, ROS2 Humble, MAVROS, GeographicLib, Python dependencies, and builds the workspace.
+### Already have ROS2 + workspace
 
-See [`docs/INSTALL.md`](docs/INSTALL.md) for detailed manual installation instructions.
+```bash
+cd ~/ros2_ws/src/mirela-sdk
+./scripts/setup.sh python all      # Install Python dependencies
+./scripts/setup.sh build            # Build workspace
+# or: make install-all && make build
+```
+
+### Module-specific
+
+```bash
+./scripts/setup.sh python control   # GPS, PID, navigation
+./scripts/setup.sh python vision    # ArUco, color, line detection
+./scripts/setup.sh python ai        # YOLO, Transformers, RF-DETR
+./scripts/setup.sh python interface # PySide6 GUI
+```
+
+All versions and package lists are in [`scripts/lib/config.sh`](scripts/lib/config.sh) (single source of truth).
+
+See [`docs/INSTALL.md`](docs/INSTALL.md) for full installation guide.
 
 ### 🐳 Docker
 
 ```bash
-# Linux
-./docker/run_docker_linux.sh
+make docker-build       # SDK image (no AI, fast)
+make docker-run         # Run with X11 + cameras + USB
 
-# Windows (PowerShell)
-.\docker\run_docker_win.ps1
+make docker-build-full  # Full image (+ PyTorch + AI)
+make docker-run-full
 ```
 
-See [`docker/README.md`](docker/README.md) for container details.
+See [`docker/README.md`](docker/README.md) for Jetson, CUDA, details.
 
 ## Quick Start 🦓
 
@@ -125,7 +143,7 @@ from mirela_sdk.vision import ImageHandler, OpenCVConfig
 class CameraNode(Node):
     def __init__(self):
         super().__init__("camera_node")
-        
+
         config = OpenCVConfig(width=1280, height=720, fps=30)
         self.handler = ImageHandler(
             node=self,
@@ -135,7 +153,7 @@ class CameraNode(Node):
             show_result="Camera"
         )
         self.handler.run()
-    
+
     def process(self, frame):
         # Process each frame here
         pass
@@ -190,14 +208,14 @@ flowchart LR
         OAK[OakdCam]
         ROS[ROSCam]
     end
-    
+
     subgraph Algorithms["algorithms/"]
         Aruco[ArUco Detection]
         Color[Color Detector]
         Line[Line Detector]
         Distance[Distance Estimator]
     end
-    
+
     CamFactory --> OpenCV
     CamFactory --> RS
     CamFactory --> OAK
@@ -343,90 +361,69 @@ Pre-built nodes for common tasks:
 
 ```bash
 # GUI
-ros2 run mirela_sdk gui
+ros2 run mirela_sdk app.py
 
 # ArUco detection
-ros2 run mirela_sdk aruco_node --ros-args -p image_source:=webcam -p marker_dict:=5 -p tag_size:=0.05
+ros2 run mirela_sdk aruco_node.py --ros-args -p image_source:=webcam -p marker_dict:=5 -p tag_size:=0.05
 
 # Line detection
-ros2 run mirela_sdk line_detection_node --ros-args -p line_colors:="blue,red" -p method:=HoughLinesP
+ros2 run mirela_sdk line_detection_node.py --ros-args -p line_colors:="blue,red" -p method:=HoughLinesP
 
 # Color calibration
-ros2 run mirela_sdk color_calibration_node --ros-args -p image_source:=webcam
+ros2 run mirela_sdk color_calibration_node.py --ros-args -p image_source:=webcam
 
 # Camera calibration
-ros2 run mirela_sdk camera_calibration --ros-args -p chessboard_size:="9,7"
+ros2 run mirela_sdk calibration.py --ros-args -p chessboard_size:="9,7"
 
 # Webcam publisher
-ros2 run mirela_sdk webcam_publisher --ros-args -p width:=1280 -p height:=720
+ros2 run mirela_sdk webcam_publisher_node.py --ros-args -p width:=1280 -p height:=720
 
 # Object detection
-ros2 run mirela_sdk detector_example --ros-args -p model_source:=yolov8n.pt
+ros2 run mirela_sdk detector_example.py --ros-args -p model_source:=yolov8n.pt
 ```
 
 ## Directory Structure 📁
 
 ```
 mirela-sdk/
+├── scripts/                    # Setup & installation
+│   ├── setup.sh                # CLI + interactive menu
+│   └── lib/                    # Modular functions
+│       ├── config.sh           # Versions, packages (single source of truth)
+│       ├── common.sh           # Logging utilities
+│       ├── system.sh           # apt packages
+│       ├── ros2.sh             # ROS2 install + env
+│       ├── python.sh           # pip from pyproject.toml
+│       ├── realsense.sh        # Intel RealSense D435i
+│       ├── workspace.sh        # Build, clean, verify
+│       └── git.sh              # Git/SSH setup
 ├── docker/                     # Container setup
-│   ├── Dockerfile
-│   ├── run_docker_linux.sh
-│   └── run_docker_win.ps1
+│   ├── Dockerfile              # x86_64: sdk + sdk-full
+│   └── Dockerfile.jetson       # ARM64: Jetson Orin Nano
 ├── docs/                       # Project documentation
-│   ├── INSTALL.md              # Installation guide
+│   ├── INSTALL.md
 │   ├── CONTRIBUTING.md
 │   ├── CODE_OF_CONDUCT.md
 │   └── SECURITY.md
 ├── mirela_interfaces/          # ROS2 message definitions
-│   ├── README.md               # Interface documentation
+│   ├── CMakeLists.txt
+│   ├── package.xml
 │   └── msg/
-│       ├── ArucoTransforms.msg
-│       ├── LineInfo.msg
-│       └── PhotoInfo.msg
-├── mirela_sdk/                 # Main ROS2 package
-│   └── mirela_sdk/
+├── mirela_sdk/                 # Main ROS2 package (ament_cmake + ament_cmake_python)
+│   ├── CMakeLists.txt
+│   ├── package.xml
+│   ├── pyproject.toml          # Python dependencies (single source of truth)
+│   └── mirela_sdk/             # Python package
 │       ├── control/            # Drone control module
-│       │   ├── README.md
-│       │   ├── base.py         # BaseDrone abstract class
-│       │   ├── factory.py      # DroneFactory
-│       │   ├── mavros/         # MAVROS implementation
-│       │   ├── bebop/          # Bebop implementation
-│       │   ├── obstacles/      # Obstacle detection
-│       │   └── pid/            # PID controller
 │       ├── vision/             # Computer vision module
-│       │   ├── README.md       # Vision documentation
-│       │   ├── camera/         # Camera drivers
-│       │   │   ├── factory.py
-│       │   │   ├── handler.py
-│       │   │   └── drivers/
-│       │   ├── algorithms/     # Vision algorithms
-│       │   │   ├── markers/    # ArUco detection
-│       │   │   ├── color/      # Color detection
-│       │   │   ├── line/       # Line detection
-│       │   │   └── distance/   # Distance estimation
-│       │   └── nodes/          # ROS2 nodes
 │       ├── ai/                 # AI/Detection module
-│       │   ├── README.md
-│       │   ├── detection/
-│       │   │   ├── detector.py
-│       │   │   ├── models/
-│       │   │   ├── training/
-│       │   │   └── evaluation/
-│       │   └── utils/
-│       ├── interface/          # GUI module
-│       │   ├── README.md
-│       │   ├── gui.py
-│       │   └── *_component.py
+│       ├── interface/          # Qt6/PySide6 GUI
 │       ├── examples/           # Working examples
 │       │   ├── control/
 │       │   ├── vision/
 │       │   └── ai/
 │       └── utils/              # Shared utilities
-├── scripts/                    # Installation scripts
-│   ├── install_env.sh
-│   └── install_realsense.sh
-├── requirements.txt            # Core dependencies
-├── requirements-ai.txt         # AI module dependencies
+├── Makefile                    # Thin wrapper around setup.sh
 └── README.md
 ```
 
@@ -458,6 +455,6 @@ Thank you 🙏 to all our contributors!
 | Luxonis DepthAI | [docs.luxonis.com](https://docs.luxonis.com/en/latest/) |
 | PyTorch | [pytorch.org/docs](https://pytorch.org/docs/stable/index.html) |
 
-## License 
+## License
 
 This project is licensed under the Apache-2.0 License - see the [`LICENSE`](LICENSE) file for details.

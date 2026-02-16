@@ -1,6 +1,6 @@
 import logging
-from typing import Any, Callable, Dict, List, Optional, Type, TYPE_CHECKING
 import os
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 
 if TYPE_CHECKING:
     from .base import BaseDetectionModel
@@ -115,10 +115,7 @@ class ModelRegistry:
         """
         if name not in cls._models:
             available = cls.list_models()
-            raise ValueError(
-                f"Model '{name}' not found in registry. "
-                f"Available models: {available}"
-            )
+            raise ValueError(f"Model '{name}' not found in registry. Available models: {available}")
         return cls._models[name]
 
     @classmethod

@@ -1,24 +1,25 @@
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 import cv2
 import numpy as np
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QSlider,
-    QPushButton,
-    QFrame,
-    QSizePolicy,
-    QStackedWidget,
-    QLineEdit,
-    QSpinBox,
-    QCheckBox,
-    QComboBox,
-    QGridLayout,
-)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QSlider,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from mirela_sdk.interface.theme import COLORS
 

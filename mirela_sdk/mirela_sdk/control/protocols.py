@@ -1,12 +1,12 @@
-from typing import Protocol, Optional, runtime_checkable
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import Optional, Protocol, runtime_checkable
 
 from mirela_sdk.control.types import (
+    AltitudeSource,
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
-    AltitudeSource,
 )
 
 

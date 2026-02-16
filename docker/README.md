@@ -76,12 +76,16 @@ You can also install CUDA torch inside a running CPU container:
 ## RealSense
 
 RealSense support is opt-in (builds librealsense from source, adds ~15-20 min and ~500 MB).
+It is installed in the `sdk` stage, so both `:latest` and `:full` images include it.
 
 ```bash
-# With RealSense
+# SDK with RealSense (no AI)
+INSTALL_REALSENSE=true make docker-build
+
+# Full with RealSense + AI + GPU
 INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
 
-# With RealSense + CUDA-accelerated librealsense
+# With CUDA-accelerated librealsense
 INSTALL_REALSENSE=true REALSENSE_CUDA=true TORCH_VARIANT=cu124 make docker-build-full
 ```
 
@@ -97,7 +101,7 @@ Override versions for specific needs:
 ```bash
 # T265 tracking camera (Humble only, last supported versions)
 LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 \
-  INSTALL_REALSENSE=true make docker-build-full
+  INSTALL_REALSENSE=true make docker-build
 ```
 
 udev rules and hotplug scripts for D435/D435i/D455 are included for

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-import os
 import json
+import os
 import sys
-from typing import Optional, List
+from typing import List, Optional
 
 import cv2
 import numpy as np
-
 import rclpy
 from rclpy.node import Node
 
-from mirela_sdk.vision.camera import ImageHandler
 from mirela_sdk.vision.algorithms.color import ColorSpace
+from mirela_sdk.vision.camera import ImageHandler
 
 
 class ClickColorCalibrationNode(Node):
@@ -63,9 +62,7 @@ class ClickColorCalibrationNode(Node):
             color_space = cs_param
 
         self.flood_tolerance = self.get_parameter("flood_tolerance").value
-        self.color_space = (
-            ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
-        )
+        self.color_space = ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
         self.config = self.TRACKBAR_CONFIG[self.color_space]
 
         self.sampled_pixels: List[np.ndarray] = []
@@ -85,9 +82,7 @@ class ClickColorCalibrationNode(Node):
         )
 
         self.get_logger().info(f"Click calibration: {self.color_space.name} mode")
-        self.get_logger().info(
-            "Click to sample | r=reset z=undo s=save l=load c=switch q=quit"
-        )
+        self.get_logger().info("Click to sample | r=reset z=undo s=save l=load c=switch q=quit")
         self.image_handler.run()
 
     def _mouse_cb(self, event: int, x: int, y: int, flags: int, param) -> None:
@@ -99,15 +94,11 @@ class ClickColorCalibrationNode(Node):
         cv2.namedWindow("Calibration")
         cv2.setMouseCallback("Calibration", self._mouse_cb)
 
-        cv2.createTrackbar(
-            "Tolerance", "Calibration", self.flood_tolerance, 50, lambda x: None
-        )
+        cv2.createTrackbar("Tolerance", "Calibration", self.flood_tolerance, 50, lambda x: None)
 
         for i, name in enumerate(self.config["names"]):
             init_val = self.config["init"][i]
-            cv2.createTrackbar(
-                name, "Calibration", init_val, self.config["max"][i], lambda x: None
-            )
+            cv2.createTrackbar(name, "Calibration", init_val, self.config["max"][i], lambda x: None)
 
         self.window_initialized = True
 
@@ -143,9 +134,7 @@ class ClickColorCalibrationNode(Node):
         except cv2.error:
             pass
 
-    def _sample_region(
-        self, img_converted: np.ndarray, point: tuple
-    ) -> Optional[np.ndarray]:
+    def _sample_region(self, img_converted: np.ndarray, point: tuple) -> Optional[np.ndarray]:
         """Sample pixels around click point using flood fill."""
         h, w = img_converted.shape[:2]
         x, y = point
@@ -229,9 +218,7 @@ class ClickColorCalibrationNode(Node):
         display = np.hstack([img, mask_bgr, result])
 
         info = f"{self.color_space.name} | Samples: {len(self.sampled_pixels)}"
-        cv2.putText(
-            display, info, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
-        )
+        cv2.putText(display, info, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.putText(
             display,
             f"L: {self.lower.tolist()} U: {self.upper.tolist()}",
@@ -320,9 +307,7 @@ class ClickColorCalibrationNode(Node):
             return
 
         if color_name not in data or self.color_space.name not in data[color_name]:
-            self.get_logger().error(
-                f"'{color_name}' not found for {self.color_space.name}"
-            )
+            self.get_logger().error(f"'{color_name}' not found for {self.color_space.name}")
             return
 
         values = data[color_name][self.color_space.name]
@@ -340,9 +325,7 @@ class ClickColorCalibrationNode(Node):
         self.window_initialized = False
         self.sampled_pixels.clear()
 
-        self.color_space = (
-            ColorSpace.LAB if self.color_space == ColorSpace.HSV else ColorSpace.HSV
-        )
+        self.color_space = ColorSpace.LAB if self.color_space == ColorSpace.HSV else ColorSpace.HSV
         self.config = self.TRACKBAR_CONFIG[self.color_space]
         self.lower = np.array(self.config["init"][::2])
         self.upper = np.array(self.config["init"][1::2])
@@ -364,9 +347,7 @@ def main(args=None) -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--image-source", type=str, default=None)
-    parser.add_argument(
-        "--color-space", type=str, default="hsv", choices=["hsv", "lab"]
-    )
+    parser.add_argument("--color-space", type=str, default="hsv", choices=["hsv", "lab"])
     parsed, _ = parser.parse_known_args(args=args)
 
     node = ClickColorCalibrationNode(

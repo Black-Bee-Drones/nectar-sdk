@@ -3,7 +3,7 @@ Training configuration classes.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict
 
 from mirela_sdk.ai.detection.core.configs import TrainingConfig as BaseTrainingConfig
 

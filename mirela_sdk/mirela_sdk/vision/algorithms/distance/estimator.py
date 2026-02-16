@@ -1,11 +1,12 @@
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
-import yaml
+from typing import Any, Dict, Optional, Union
+
 import numpy as np
+import yaml
 
 from mirela_sdk.vision.algorithms.distance.models import (
-    ModelType,
     EstimationModel,
+    ModelType,
     create_model,
 )
 
@@ -223,9 +224,7 @@ class DistanceEstimator:
         """
         return self._models[self._parse_model_type(model_type)]
 
-    def set_model_params(
-        self, model_type: Union[ModelType, str], params: Dict[str, Any]
-    ) -> None:
+    def set_model_params(self, model_type: Union[ModelType, str], params: Dict[str, Any]) -> None:
         """
         Update parameters for a specific model.
 

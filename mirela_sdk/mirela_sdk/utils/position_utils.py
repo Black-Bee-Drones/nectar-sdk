@@ -1,14 +1,20 @@
 import numpy as np
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
-from mavros_msgs.msg import PositionTarget
-from geometry_msgs.msg import PoseWithCovarianceStamped
 from geographic_msgs.msg import GeoPoseStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from mavros_msgs.msg import PositionTarget
 from sensor_msgs.msg import NavSatFix
+from tf_transformations import euler_from_quaternion, quaternion_from_euler
+
 from mirela_sdk.utils.gps_calculate import GPSCalculate
+
 
 class PositionUtils:
     @staticmethod
-    def get_body_distance(target: PositionTarget|GeoPoseStamped, current: PoseWithCovarianceStamped|NavSatFix, heading: float|None=None) -> tuple[float, float, float]:
+    def get_body_distance(
+        target: PositionTarget | GeoPoseStamped,
+        current: PoseWithCovarianceStamped | NavSatFix,
+        heading: float | None = None,
+    ) -> tuple[float, float, float]:
         """
         Calculate the distance from current position to target position in body frame coordinates.
 
@@ -23,12 +29,12 @@ class PositionUtils:
             Target position to calculate distance to.
             - PositionTarget: for indoor/local coordinates
             - GeoPoseStamped: for outdoor/GPS coordinates
-        
+
         current : PoseWithCovarianceStamped | NavSatFix
             Current position of the drone.
             - PoseWithCovarianceStamped: for indoor/local coordinates
             - NavSatFix: for outdoor/GPS coordinates
-        
+
         heading : float, optional
             Current heading in degrees (0 = North, positive clockwise).
             Required when using GPS coordinates (GeoPoseStamped + NavSatFix).
@@ -44,8 +50,14 @@ class PositionUtils:
         ValueError
             If invalid combination of target and current position types is provided.
         """
-        if isinstance(target, PositionTarget) and isinstance(current, PoseWithCovarianceStamped):
-            cx, cy, cz = current.pose.pose.position.x, current.pose.pose.position.y, current.pose.pose.position.z
+        if isinstance(target, PositionTarget) and isinstance(
+            current, PoseWithCovarianceStamped
+        ):
+            cx, cy, cz = (
+                current.pose.pose.position.x,
+                current.pose.pose.position.y,
+                current.pose.pose.position.z,
+            )
             tx, ty, tz = target.position.x, target.position.y, target.position.z
 
             # Calculate difference in world frame
@@ -57,41 +69,53 @@ class PositionUtils:
             yaw = PositionUtils.get_yaw_from_pose(current)
 
             # Transform difference to body frame
-            dx_body =  np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
+            dx_body = np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
             dy_body = -np.sin(yaw) * dx_world + np.cos(yaw) * dy_world
-            dz_body =  dz  # No change in z axis
+            dz_body = dz  # No change in z axis
 
             return dx_body, dy_body, dz_body
-        
-        elif isinstance(target, GeoPoseStamped) and isinstance(current, NavSatFix) and heading is not None:
+
+        elif (
+            isinstance(target, GeoPoseStamped)
+            and isinstance(current, NavSatFix)
+            and heading is not None
+        ):
             c_lat, c_lon, c_alt = current.latitude, current.longitude, current.altitude
-            t_lat, t_lon, t_alt = target.pose.position.latitude, target.pose.position.longitude, target.pose.position.altitude
-            
+            t_lat, t_lon, t_alt = (
+                target.pose.position.latitude,
+                target.pose.position.longitude,
+                target.pose.position.altitude,
+            )
+
             # Calculate bearing from current position to target position (in degrees, 0 = North, positive clockwise)
             bearing_to_target = GPSCalculate.bearing(c_lat, c_lon, t_lat, t_lon)
-            
+
             # Calculate distance using Haversine formula
             dist = GPSCalculate.haversine(c_lat, c_lon, t_lat, t_lon)
-            
+
             # Convert from world frame (North-East) to body frame
             # The angle we need is: "where is the target relative to where I'm pointing?"
             relative_angle = bearing_to_target - heading
-            
+
             # Convert to radians for trigonometry
             relative_angle_rad = np.radians(relative_angle)
-            
+
             # In body frame: x = forward, y = right
             dx_body = dist * np.cos(relative_angle_rad)  # Forward distance
-            dy_body = -dist * np.sin(relative_angle_rad)  # Left distance  
-            dz_body = t_alt - c_alt                     # Altitude difference
-            
+            dy_body = -dist * np.sin(relative_angle_rad)  # Left distance
+            dz_body = t_alt - c_alt  # Altitude difference
+
             return dx_body, dy_body, dz_body
 
         else:
-            raise ValueError("Invalid combination of target and current position types.")
+            raise ValueError(
+                "Invalid combination of target and current position types."
+            )
 
     @staticmethod
-    def get_yaw_from_pose(pose: PoseWithCovarianceStamped|GeoPoseStamped|PositionTarget) -> float:
+    def get_yaw_from_pose(
+        pose: PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget,
+    ) -> float:
         """
         Extract yaw angle (rotation around z-axis) from a pose message.
 
@@ -112,13 +136,24 @@ class PositionUtils:
         elif isinstance(pose, PositionTarget):
             return pose.yaw
         else:
-            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget")
-        orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+            raise ValueError(
+                "pose parameter must be of type PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget"
+            )
+        orientation_list = [
+            orientation_q.x,
+            orientation_q.y,
+            orientation_q.z,
+            orientation_q.w,
+        ]
         (_, _, yaw) = euler_from_quaternion(orientation_list)
         return yaw
 
     @staticmethod
-    def convert_position_to_target(pose: PoseWithCovarianceStamped|NavSatFix, heading: float = None, lidar: float = None) -> PositionTarget|GeoPoseStamped:
+    def convert_position_to_target(
+        pose: PoseWithCovarianceStamped | NavSatFix,
+        heading: float = None,
+        lidar: float = None,
+    ) -> PositionTarget | GeoPoseStamped:
         """
         Convert position messages to their corresponding target message types.
 
@@ -160,7 +195,7 @@ class PositionUtils:
             yaw = PositionUtils.get_yaw_from_pose(pose)
             msg.yaw = yaw
             return msg
-            
+
         elif isinstance(pose, NavSatFix) and heading is not None:
             msg = GeoPoseStamped()
             msg.pose.position.latitude = pose.latitude
@@ -173,12 +208,16 @@ class PositionUtils:
             msg.pose.orientation.z = quaternion[2]
             msg.pose.orientation.w = quaternion[3]
             return msg
-        
+
         else:
-            raise ValueError("pose parameter must be of type PoseWithCovarianceStamped or NavSatFix")
-        
+            raise ValueError(
+                "pose parameter must be of type PoseWithCovarianceStamped or NavSatFix"
+            )
+
     @staticmethod
-    def transform_takeoff_to_body_velocities(vx: float, vy: float, vz: float, current_yaw: float, takeoff_yaw: float) -> tuple[float, float, float]:
+    def transform_takeoff_to_body_velocities(
+        vx: float, vy: float, vz: float, current_yaw: float, takeoff_yaw: float
+    ) -> tuple[float, float, float]:
         """
         Transform velocities from takeoff frame to body frame coordinates.
 
@@ -207,7 +246,7 @@ class PositionUtils:
         relative_yaw = takeoff_yaw - current_yaw
         cos_yaw = np.cos(relative_yaw)
         sin_yaw = np.sin(relative_yaw)
-        
+
         # Apply 2D rotation matrix transformation
         vx_body = cos_yaw * vx + sin_yaw * vy
         vy_body = -sin_yaw * vx + cos_yaw * vy

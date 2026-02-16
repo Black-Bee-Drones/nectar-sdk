@@ -123,9 +123,7 @@ class Detection:
             Dictionary with xyxy, confidence, class_id, and class_name.
         """
         return {
-            "xyxy": (
-                self.xyxy.tolist() if hasattr(self.xyxy, "tolist") else list(self.xyxy)
-            ),
+            "xyxy": (self.xyxy.tolist() if hasattr(self.xyxy, "tolist") else list(self.xyxy)),
             "confidence": float(self.confidence),
             "class_id": int(self.class_id),
             "class_name": self.class_name,
@@ -291,9 +289,7 @@ class DetectionResult:
             If supervision is not installed.
         """
         if sv is None:
-            raise ImportError(
-                "supervision is required. Install with: pip install supervision"
-            )
+            raise ImportError("supervision is required. Install with: pip install supervision")
 
         if not self.detections:
             return sv.Detections.empty()
@@ -342,9 +338,7 @@ class DetectionResult:
             for i in range(len(detections)):
                 xyxy = detections.xyxy[i]
                 confidence = (
-                    float(detections.confidence[i])
-                    if detections.confidence is not None
-                    else 1.0
+                    float(detections.confidence[i]) if detections.confidence is not None else 1.0
                 )
                 class_id = int(detections.class_id[i])
                 class_name = class_names.get(class_id, f"class_{class_id}")
@@ -500,9 +494,7 @@ class Prediction:
 
         if self.is_batch:
             result["image_paths"] = (
-                self.image_path
-                if isinstance(self.image_path, list)
-                else [self.image_path]
+                self.image_path if isinstance(self.image_path, list) else [self.image_path]
             )
             if self.results:
                 result["results"] = [r.to_dict() for r in self.results]

@@ -1,14 +1,15 @@
-from typing import TYPE_CHECKING, Tuple, Optional
 from threading import Event
-import numpy as np
+from typing import TYPE_CHECKING, Optional, Tuple
+
 import cv2
+import numpy as np
 from sklearn.cluster import DBSCAN
 
 from mirela_sdk.control.obstacles.base import BaseObstacleDetector
-from mirela_sdk.control.protocols import ObstacleInfo, ObstacleDirection
-from mirela_sdk.vision.camera.handler import ImageHandler
-from mirela_sdk.vision.camera.drivers.realsense_cam import RealsenseCam
+from mirela_sdk.control.protocols import ObstacleDirection, ObstacleInfo
 from mirela_sdk.vision.camera.config import RealSenseConfig
+from mirela_sdk.vision.camera.drivers.realsense_cam import RealsenseCam
+from mirela_sdk.vision.camera.handler import ImageHandler
 
 if TYPE_CHECKING:
     from rclpy.node import Node
@@ -164,13 +165,9 @@ class DepthObstacleDetector(BaseObstacleDetector):
             (detected, direction, distance_meters)
         """
         depth_mm = depth * 1000.0
-        depth_small = cv2.resize(
-            depth_mm, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_NEAREST
-        )
+        depth_small = cv2.resize(depth_mm, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_NEAREST)
 
-        mask = (depth_small > self._min_distance_mm) & (
-            depth_small < self._max_distance_mm
-        )
+        mask = (depth_small > self._min_distance_mm) & (depth_small < self._max_distance_mm)
         depth_small[~mask] = 0
 
         ys, xs = np.where(depth_small > 0)
@@ -181,9 +178,7 @@ class DepthObstacleDetector(BaseObstacleDetector):
         depths = depth_small[ys, xs]
         pts = np.column_stack((xs, ys, depths * 0.5))
 
-        clustering = DBSCAN(
-            eps=self._cluster_eps, min_samples=self._cluster_min_samples
-        ).fit(pts)
+        clustering = DBSCAN(eps=self._cluster_eps, min_samples=self._cluster_min_samples).fit(pts)
         labels = clustering.labels_
         unique_labels = set(labels)
         unique_labels.discard(-1)

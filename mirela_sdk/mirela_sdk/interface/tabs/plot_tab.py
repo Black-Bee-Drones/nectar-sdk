@@ -1,41 +1,38 @@
-from typing import Optional, Dict, List, Any, Callable
-from collections import deque
-import time
 import json
-
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QComboBox,
-    QGroupBox,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QSplitter,
-    QSpinBox,
-    QDoubleSpinBox,
-    QHeaderView,
-    QFileDialog,
-    QMessageBox,
-)
-from PySide6.QtCore import Qt, QTimer
+import time
+from collections import deque
+from typing import Any, Callable, Dict, List, Optional
 
 import pyqtgraph as pg
-from pyqtgraph import PlotWidget, PlotDataItem
-
+from pyqtgraph import PlotDataItem, PlotWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from rclpy.node import Node
 from rclpy.qos import (
-    QoSProfile,
-    QoSReliabilityPolicy,
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
     qos_profile_sensor_data,
 )
 
 from mirela_sdk.interface.theme import COLORS
-
 
 QOS_PROFILES = {
     "Default (Reliable)": QoSProfile(
@@ -521,7 +518,6 @@ class PlotTab(QWidget):
         """Handle double-click on plot item (focus plot)."""
         plot_id = item.text(0)
         if plot_id in self._plot_items:
-            plot_item = self._plot_items[plot_id]
             times, values = self._plot_data[plot_id].get_arrays()
             if len(times) > 0:
                 self._plot_widget.setXRange(min(times), max(times), padding=0.1)

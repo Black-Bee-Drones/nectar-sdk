@@ -1,29 +1,29 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List, Callable, Union
+from typing import Callable, List, Optional, Union
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.client import Client
 from rclpy.duration import Duration
 from rclpy.node import Node
-from rclpy.qos import QoSProfile
 from rclpy.publisher import Publisher
+from rclpy.qos import QoSProfile
 from rclpy.subscription import Subscription
-from rclpy.client import Client
-from rclpy.callback_groups import ReentrantCallbackGroup
 
+from mirela_sdk.control.config import DroneConfig
+from mirela_sdk.control.exceptions import (
+    CapabilityNotSupportedError,
+    DriverNotFoundError,
+)
+from mirela_sdk.control.obstacles.handler import ObstacleHandler, ObstacleManager
+from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
+from mirela_sdk.control.protocols import ObstacleDetector
 from mirela_sdk.control.types import (
+    AltitudeSource,
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
-    AltitudeSource,
 )
-from mirela_sdk.control.config import DroneConfig
-from mirela_sdk.control.exceptions import (
-    DriverNotFoundError,
-    CapabilityNotSupportedError,
-)
-from mirela_sdk.control.obstacles.handler import ObstacleManager, ObstacleHandler
-from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
-from mirela_sdk.control.protocols import ObstacleDetector
 from mirela_sdk.utils.process import ProcessUtils
 
 

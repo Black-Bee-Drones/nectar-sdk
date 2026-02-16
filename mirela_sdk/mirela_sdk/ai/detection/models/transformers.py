@@ -1,9 +1,7 @@
 """HuggingFace Transformers detection model implementation."""
 
 import gc
-import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -22,13 +20,13 @@ except ImportError:
 
 try:
     from transformers import (
+        AutoConfig,
         AutoImageProcessor,
         AutoModelForObjectDetection,
-        AutoConfig,
-        TrainingArguments,
+        EarlyStoppingCallback,
         Trainer,
         TrainerCallback,
-        EarlyStoppingCallback,
+        TrainingArguments,
     )
 
     TRANSFORMERS_AVAILABLE = True
@@ -40,8 +38,8 @@ from PIL import Image
 
 from mirela_sdk.ai.detection.core.base import BaseDetectionModel
 from mirela_sdk.ai.detection.core.configs import TrainingConfig
-from mirela_sdk.ai.detection.core.types import DetectionInput, Prediction
 from mirela_sdk.ai.detection.core.exceptions import ModelNotLoadedError, TrainingError
+from mirela_sdk.ai.detection.core.types import DetectionInput, Prediction
 from mirela_sdk.ai.detection.utils.device import get_device
 
 logger = logging.getLogger(__name__)
@@ -68,15 +66,11 @@ class TransformersModel(BaseDetectionModel):
     >>> result = model.detect(image)
     """
 
-    def __init__(
-        self, model_name: str = "facebook/detr-resnet-50", from_scratch: bool = False
-    ):
+    def __init__(self, model_name: str = "facebook/detr-resnet-50", from_scratch: bool = False):
         super().__init__(model_name, "transformers")
 
         if not TRANSFORMERS_AVAILABLE:
-            raise ImportError(
-                "transformers is required. Install: pip install transformers"
-            )
+            raise ImportError("transformers is required. Install: pip install transformers")
 
         self.model = None
         self.processor = None
@@ -127,9 +121,7 @@ class TransformersModel(BaseDetectionModel):
                 config.num_labels = len(id2label)
             self.model = AutoModelForObjectDetection.from_config(config)
         else:
-            self.model = AutoModelForObjectDetection.from_pretrained(
-                path, **model_kwargs
-            )
+            self.model = AutoModelForObjectDetection.from_pretrained(path, **model_kwargs)
 
         if not id2label and hasattr(self.model.config, "id2label"):
             self.class_names = self.model.config.id2label
@@ -196,9 +188,7 @@ class TransformersModel(BaseDetectionModel):
 
         # Load model with dataset classes
         imgsz = getattr(config, "imgsz", 640)
-        self.load_model(
-            self.model_name, id2label=id2label, label2id=label2id, imgsz=imgsz
-        )
+        self.load_model(self.model_name, id2label=id2label, label2id=label2id, imgsz=imgsz)
 
         # Setup callbacks
         callbacks = self._setup_callbacks(config, output_dir)
@@ -221,9 +211,7 @@ class TransformersModel(BaseDetectionModel):
                 per_device_eval_batch_size=config.batch_size,
                 gradient_accumulation_steps=config.gradient_accumulation_steps,
                 learning_rate=config.learning_rate,
-                logging_dir=(
-                    str(output_dir / run_name / "logs") if config.tensorboard else None
-                ),
+                logging_dir=(str(output_dir / run_name / "logs") if config.tensorboard else None),
                 logging_steps=5,
                 eval_strategy="epoch",
                 save_strategy="epoch",

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+
 import rclpy
 from rclpy.node import Node
 
-from mirela_sdk.control import DroneFactory, MavrosConfig, BebopConfig, PoseSource
+from mirela_sdk.control import BebopConfig, DroneFactory, MavrosConfig, PoseSource
 
 
 class BasicExample(Node):

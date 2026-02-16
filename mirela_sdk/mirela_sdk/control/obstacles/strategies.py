@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional
 from threading import Event
+from typing import TYPE_CHECKING, Optional
 
-from mirela_sdk.control.protocols import ObstacleInfo, ObstacleDirection
+from mirela_sdk.control.protocols import ObstacleDirection, ObstacleInfo
 
 if TYPE_CHECKING:
     from mirela_sdk.control.base import BaseDrone
@@ -84,9 +84,7 @@ class DisableAxisStrategy(AvoidanceStrategy):
         Disable altitude control.
     """
 
-    def __init__(
-        self, disable_x: bool = False, disable_y: bool = False, disable_z: bool = False
-    ):
+    def __init__(self, disable_x: bool = False, disable_y: bool = False, disable_z: bool = False):
         self.disable_x = disable_x
         self.disable_y = disable_y
         self.disable_z = disable_z
@@ -147,9 +145,7 @@ def lateral_pass_return_sequence(
 ):
     lateral = _compute_lateral(info.direction, lateral_distance)
 
-    drone.node.get_logger().info(
-        f"Executing lateral-pass-return: {lateral:.2f}m lateral"
-    )
+    drone.node.get_logger().info(f"Executing lateral-pass-return: {lateral:.2f}m lateral")
 
     drone.move_to(x=0.0, y=lateral, z=0.0, precision=precision, timeout=10.0)
     drone.move_to(x=forward_distance, y=0.0, z=0.0, precision=precision, timeout=10.0)

@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
+from geographic_msgs.msg import GeoPoseStamped
+from mavros_msgs.msg import PositionTarget
 from rclpy.duration import Duration
 
-from mavros_msgs.msg import PositionTarget
-from geographic_msgs.msg import GeoPoseStamped
-
-from mirela_sdk.control.types import AltitudeSource, MoveReference
 from mirela_sdk.control.exceptions import SensorNotAvailableError
-from mirela_sdk.control.pid import PIDController
-from mirela_sdk.utils.position_utils import PositionUtils
 from mirela_sdk.control.mavros.gps_utils import GPSUtils
+from mirela_sdk.control.pid import PIDController
+from mirela_sdk.control.types import AltitudeSource, MoveReference
+from mirela_sdk.utils.position_utils import PositionUtils
 
 if TYPE_CHECKING:
     from mirela_sdk.control.mavros.drone import MavrosDrone
@@ -101,9 +100,7 @@ class MavrosNavigator:
 
             disable_x, disable_y, disable_z = drone.obstacle_manager.get_axis_control()
 
-            dx, dy, dz, dyaw = self._compute_errors(
-                target, yaw, altitude_source, altitude_target
-            )
+            dx, dy, dz, dyaw = self._compute_errors(target, yaw, altitude_source, altitude_target)
 
             axes = {
                 "x": (x_active and not disable_x, dx, pid_x),
@@ -144,16 +141,12 @@ class MavrosNavigator:
                 if yaw is not None and abs(dyaw) > np.radians(3):
                     continue
                 drone.move_velocity(0.0, 0.0, 0.0, 0.0)
-                logger.info(
-                    f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m"
-                )
+                logger.info(f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
                 drone.move_velocity(0.0, 0.0, 0.0, 0.0)
-                logger.warn(
-                    f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m"
-                )
+                logger.warn(f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m")
                 return False
 
     def navigate_setpoint(
@@ -205,8 +198,7 @@ class MavrosNavigator:
         else:
             tp = target.position
             logger.info(
-                f"Setpoint nav \u2192 local target: "
-                f"x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
+                f"Setpoint nav \u2192 local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
             )
 
         start = drone.node.get_clock().now()
@@ -218,9 +210,7 @@ class MavrosNavigator:
             drone.delay(0.02)
 
             if is_gps:
-                reached, distance = self._check_reached_gps(
-                    target, check_alt, precision
-                )
+                reached, distance = self._check_reached_gps(target, check_alt, precision)
             else:
                 reached, distance = self._check_reached_local(target, precision)
 
@@ -230,15 +220,11 @@ class MavrosNavigator:
             )
 
             if reached:
-                logger.info(
-                    f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m"
-                )
+                logger.info(f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
-                logger.warn(
-                    f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m"
-                )
+                logger.warn(f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m")
                 return False
 
     def resolve_altitude_target(
@@ -282,14 +268,10 @@ class MavrosNavigator:
         # AUTO / VISION: use default position-based dz from get_body_distance
         return None
 
-    def _resolve_lidar_target(
-        self, z: float, reference: MoveReference
-    ) -> Optional[float]:
+    def _resolve_lidar_target(self, z: float, reference: MoveReference) -> Optional[float]:
         """Compute absolute lidar target altitude."""
         if not self._drone.lidar_available:
-            raise SensorNotAvailableError(
-                "Lidar", "altitude_source=LIDAR requires lidar data"
-            )
+            raise SensorNotAvailableError("Lidar", "altitude_source=LIDAR requires lidar data")
 
         current_lidar = self._drone.get_altitude(AltitudeSource.LIDAR)
 
@@ -307,9 +289,7 @@ class MavrosNavigator:
 
         return lidar_target
 
-    def _resolve_rel_alt_target(
-        self, z: float, reference: MoveReference
-    ) -> Optional[float]:
+    def _resolve_rel_alt_target(self, z: float, reference: MoveReference) -> Optional[float]:
         """Compute absolute relative altitude target."""
         current_rel = self._drone.get_altitude(AltitudeSource.REL_ALT)
 
@@ -402,9 +382,7 @@ class MavrosNavigator:
 
         return dz_default
 
-    def _check_reached_local(
-        self, target: PositionTarget, precision: float
-    ) -> tuple[bool, float]:
+    def _check_reached_local(self, target: PositionTarget, precision: float) -> tuple[bool, float]:
         """
         Check arrival for local (vision) targets.
 
@@ -507,12 +485,9 @@ class MavrosNavigator:
             )
         else:
             tp = target.position
-            logger.info(
-                f"PID nav: local target: x={tp.x:.2f}, " f"y={tp.y:.2f}, z={tp.z:.2f}"
-            )
+            logger.info(f"PID nav: local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}")
 
         if altitude_target is not None:
             logger.info(
-                f"PID nav: altitude target: {altitude_target:.2f}m "
-                f"(source={altitude_source.name})"
+                f"PID nav: altitude target: {altitude_target:.2f}m (source={altitude_source.name})"
             )

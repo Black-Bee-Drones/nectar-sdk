@@ -1,28 +1,28 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
+
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QComboBox,
-    QGroupBox,
-    QGridLayout,
-    QCheckBox,
-    QDoubleSpinBox,
-    QFrame,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QThread, QObject
-
 from rclpy.node import Node
 
 from mirela_sdk.interface.theme import COLORS
 from mirela_sdk.interface.widgets import (
-    StatusIndicator,
-    LabeledSlider,
-    KeyButton,
     DroneConfigPanel,
+    KeyButton,
+    LabeledSlider,
+    StatusIndicator,
 )
 
 
@@ -37,9 +37,7 @@ class DriverWorker(QObject):
         self._connection_string: str = ""
         self._ip: str = ""
 
-    def setup_connect(
-        self, drone_type: str, connection_string: str = "", ip: str = ""
-    ) -> None:
+    def setup_connect(self, drone_type: str, connection_string: str = "", ip: str = "") -> None:
         self._action = "connect"
         self._drone_type = drone_type
         self._connection_string = connection_string
@@ -302,9 +300,7 @@ class ControlTab(QWidget):
         Qt.Key_Right: ("vy", -1),
     }
 
-    def __init__(
-        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
-    ) -> None:
+    def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
         self._drone = None
@@ -560,9 +556,7 @@ class ControlTab(QWidget):
 
         self._velocity_status_label = QLabel("Cmd: vx=0.00 vy=0.00 vz=0.00 vyaw=0.00")
         self._velocity_status_label.setProperty("secondary", True)
-        self._velocity_status_label.setStyleSheet(
-            f"color: {COLORS.text_muted}; font-size: 10px;"
-        )
+        self._velocity_status_label.setStyleSheet(f"color: {COLORS.text_muted}; font-size: 10px;")
         sliders_layout.addWidget(self._velocity_status_label)
 
         main_layout.addWidget(keys_container)
@@ -897,19 +891,13 @@ class ControlTab(QWidget):
         self._driver_btn.style().polish(self._driver_btn)
 
         self._instance_btn.setEnabled(self._driver_connected)
-        self._instance_btn.setText(
-            "Cleanup" if self._instance_initialized else "Initialize"
-        )
+        self._instance_btn.setText("Cleanup" if self._instance_initialized else "Initialize")
 
         self._drone_combo.setEnabled(not self._driver_connected)
         self._config_panel.setEnabled(not self._instance_initialized)
 
-        self._status_driver.set_status(
-            "active" if self._driver_connected else "inactive"
-        )
-        self._status_instance.set_status(
-            "active" if self._instance_initialized else "inactive"
-        )
+        self._status_driver.set_status("active" if self._driver_connected else "inactive")
+        self._status_instance.set_status("active" if self._instance_initialized else "inactive")
 
         self._enable_btn.setEnabled(can_control)
         self._emergency_btn.setEnabled(can_control and self._controls_enabled)
@@ -919,15 +907,9 @@ class ControlTab(QWidget):
 
         controls_active = can_control and self._controls_enabled
         self._set_velocity_control_enabled(controls_active)
-        self._set_mavros_controls_enabled(
-            controls_active and self._drone_type == "mavros"
-        )
-        self._set_bebop_controls_enabled(
-            controls_active and self._drone_type == "bebop"
-        )
-        self._set_position_control_enabled(
-            controls_active and self._drone_type == "mavros"
-        )
+        self._set_mavros_controls_enabled(controls_active and self._drone_type == "mavros")
+        self._set_bebop_controls_enabled(controls_active and self._drone_type == "bebop")
+        self._set_position_control_enabled(controls_active and self._drone_type == "mavros")
 
     def _update_status_indicators(self) -> None:
         has_fcu = self._drone_type == "mavros"
@@ -1157,9 +1139,7 @@ class ControlTab(QWidget):
         if success and self._drone:
             self._instance_initialized = True
             if self._node:
-                self._node.get_logger().info(
-                    f"Drone instance initialized ({self._drone_type})"
-                )
+                self._node.get_logger().info(f"Drone instance initialized ({self._drone_type})")
         else:
             self._instance_initialized = False
             self._drone = None
@@ -1187,9 +1167,7 @@ class ControlTab(QWidget):
             self._enable_btn.setProperty("danger", False)
             self._command_timer.stop()
             self._stop_movement()
-            self._velocity_status_label.setText(
-                "Cmd: vx=0.00 vy=0.00 vz=0.00 vyaw=0.00"
-            )
+            self._velocity_status_label.setText("Cmd: vx=0.00 vy=0.00 vz=0.00 vyaw=0.00")
             if self._node:
                 self._node.get_logger().info("Controls disabled")
 
@@ -1217,9 +1195,7 @@ class ControlTab(QWidget):
 
         if self._node:
             if action == "takeoff":
-                self._node.get_logger().info(
-                    f"Flight action: {action} (alt={altitude:.1f}m)"
-                )
+                self._node.get_logger().info(f"Flight action: {action} (alt={altitude:.1f}m)")
             else:
                 self._node.get_logger().info(f"Flight action: {action}")
 
@@ -1240,9 +1216,7 @@ class ControlTab(QWidget):
 
     def _set_flight_buttons_enabled(self, enabled: bool) -> None:
         controls_should_be_active = (
-            self._driver_connected
-            and self._instance_initialized
-            and self._controls_enabled
+            self._driver_connected and self._instance_initialized and self._controls_enabled
         )
         actual_enabled = enabled and controls_should_be_active
         if self._drone_type == "mavros":
@@ -1283,7 +1257,6 @@ class ControlTab(QWidget):
     @Slot()
     def _land(self) -> None:
         self._execute_flight_action("land")
-
 
     @Slot()
     def _execute_move_to(self) -> None:
@@ -1330,9 +1303,7 @@ class ControlTab(QWidget):
 
         self._moveto_thread = QThread()
         self._moveto_worker = MoveToWorker()
-        self._moveto_worker.setup(
-            self._drone, x, y, z, yaw, reference, timeout, precision
-        )
+        self._moveto_worker.setup(self._drone, x, y, z, yaw, reference, timeout, precision)
         self._moveto_worker.moveToThread(self._moveto_thread)
 
         self._moveto_thread.started.connect(self._moveto_worker.run)
@@ -1468,8 +1439,9 @@ class ControlTab(QWidget):
                 self._pos_y_label.setText(f"Y: {pos.y:.2f}m")
                 self._pos_z_label.setText(f"Z: {pos.z:.2f}m")
 
-                from mirela_sdk.utils.position_utils import PositionUtils
                 import numpy as np
+
+                from mirela_sdk.utils.position_utils import PositionUtils
 
                 yaw_rad = PositionUtils.get_yaw_from_pose(vision_pos)
                 self._yaw_label.setText(f"Yaw: {np.degrees(yaw_rad):.1f}°")

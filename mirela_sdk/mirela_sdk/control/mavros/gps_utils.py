@@ -1,10 +1,10 @@
-from typing import Tuple, Optional
 from math import radians
+from typing import Optional, Tuple
 
-from pygeodesy.geoids import GeoidPGM
-from geopy.distance import geodesic
-from tf_transformations import quaternion_from_euler
 from geographic_msgs.msg import GeoPoseStamped
+from geopy.distance import geodesic
+from pygeodesy.geoids import GeoidPGM
+from tf_transformations import quaternion_from_euler
 
 
 class GPSUtils:
@@ -18,9 +18,7 @@ class GPSUtils:
     def _get_egm96(cls) -> GeoidPGM:
         """Lazy-load EGM96 geoid model."""
         if cls._egm96 is None:
-            cls._egm96 = GeoidPGM(
-                "/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3
-            )
+            cls._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
         return cls._egm96
 
     @classmethod

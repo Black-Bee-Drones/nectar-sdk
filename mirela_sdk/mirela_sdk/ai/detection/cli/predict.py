@@ -18,24 +18,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run inference with detection models")
 
     parser.add_argument("--model", type=str, required=True, help="Model path or name")
-    parser.add_argument(
-        "--input", type=str, required=True, help="Input image or directory"
-    )
+    parser.add_argument("--input", type=str, required=True, help="Input image or directory")
     parser.add_argument(
         "--output", type=str, default="outputs/predictions", help="Output directory"
     )
     parser.add_argument("--device", type=str, default="auto", help="Device")
-    parser.add_argument(
-        "--conf-threshold", type=float, default=0.5, help="Confidence threshold"
-    )
-    parser.add_argument(
-        "--iou-threshold", type=float, default=0.45, help="IoU threshold"
-    )
+    parser.add_argument("--conf-threshold", type=float, default=0.5, help="Confidence threshold")
+    parser.add_argument("--iou-threshold", type=float, default=0.45, help="IoU threshold")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
     parser.add_argument("--show", action="store_true", help="Display predictions")
-    parser.add_argument(
-        "--save-txt", action="store_true", help="Save predictions to text"
-    )
+    parser.add_argument("--save-txt", action="store_true", help="Save predictions to text")
 
     return parser.parse_args()
 
@@ -158,10 +150,7 @@ def process_directory(
                                 x1, y1, x2, y2 = det.bbox
                                 w, h = x2 - x1, y2 - y1
                                 x_c, y_c = x1 + w / 2, y1 + h / 2
-                                f.write(
-                                    f"{det.class_id} {x_c} {y_c} {w} {h} "
-                                    f"{det.confidence}\n"
-                                )
+                                f.write(f"{det.class_id} {x_c} {y_c} {w} {h} {det.confidence}\n")
                 else:
                     cv2.imwrite(str(output_path), image)
 

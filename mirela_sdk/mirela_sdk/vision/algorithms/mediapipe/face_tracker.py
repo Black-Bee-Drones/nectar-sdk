@@ -10,9 +10,13 @@ import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.vision import (
-    drawing_utils as mp_drawing,
-    drawing_styles as mp_styles,
     FaceLandmarksConnections,
+)
+from mediapipe.tasks.python.vision import (
+    drawing_styles as mp_styles,
+)
+from mediapipe.tasks.python.vision import (
+    drawing_utils as mp_drawing,
 )
 
 
@@ -549,10 +553,7 @@ class FaceMeshTracker:
         results = []
         for idx, face_landmarks in enumerate(self._detection_result.face_landmarks):
             blendshapes = None
-            if (
-                self._config.output_blendshapes
-                and self._detection_result.face_blendshapes
-            ):
+            if self._config.output_blendshapes and self._detection_result.face_blendshapes:
                 blendshapes = self._detection_result.face_blendshapes[idx]
 
             results.append(
@@ -563,9 +564,7 @@ class FaceMeshTracker:
             )
         return results
 
-    def get_landmarks(
-        self, face_idx: int = 0, landmark_ids: Optional[List[int]] = None
-    ) -> list:
+    def get_landmarks(self, face_idx: int = 0, landmark_ids: Optional[List[int]] = None) -> list:
         """Get face landmarks for a specific face.
 
         Parameters
@@ -673,12 +672,9 @@ class FaceMeshTracker:
         left_corner = landmarks[78]
         right_corner = landmarks[308]
 
-        v_dist = np.sqrt(
-            (upper_lip.x - lower_lip.x) ** 2 + (upper_lip.y - lower_lip.y) ** 2
-        )
+        v_dist = np.sqrt((upper_lip.x - lower_lip.x) ** 2 + (upper_lip.y - lower_lip.y) ** 2)
         h_dist = np.sqrt(
-            (left_corner.x - right_corner.x) ** 2
-            + (left_corner.y - right_corner.y) ** 2
+            (left_corner.x - right_corner.x) ** 2 + (left_corner.y - right_corner.y) ** 2
         )
 
         if h_dist == 0:

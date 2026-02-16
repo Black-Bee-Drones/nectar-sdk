@@ -1,6 +1,7 @@
-from typing import Optional, Tuple
-import subprocess
 import re
+import subprocess
+from typing import Optional, Tuple
+
 import cv2
 import numpy as np
 
@@ -44,9 +45,7 @@ class C920Cam(AbstractCam):
     def _find_device_and_ctrl(self) -> Tuple[Optional[str], Optional[str]]:
         """Detect C920 device path and control parameter via v4l2-ctl."""
         try:
-            result = subprocess.run(
-                ["v4l2-ctl", "--list-devices"], capture_output=True, text=True
-            )
+            result = subprocess.run(["v4l2-ctl", "--list-devices"], capture_output=True, text=True)
             lines = result.stdout.splitlines()
         except Exception:
             return None, None

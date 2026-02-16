@@ -6,7 +6,8 @@
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
         docker-build docker-build-full docker-run docker-exec \
-        full-install
+        full-install \
+        lint lint-fix format
 
 SETUP := ./scripts/setup.sh
 
@@ -51,6 +52,11 @@ docker-build:       ; @$(SETUP) docker-build
 docker-build-full:  ; @$(SETUP) docker-build-full
 docker-run:         ; @$(SETUP) docker-run
 docker-exec:        ; @$(SETUP) docker-exec
+
+# Code quality
+lint:               ; @cd mirela_sdk && ruff check .
+lint-fix:           ; @cd mirela_sdk && ruff check --fix .
+format:             ; @cd mirela_sdk && ruff format .
 
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install

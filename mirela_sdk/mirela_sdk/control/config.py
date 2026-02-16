@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from mirela_sdk.control.types import PoseSource, NavigationStrategy
+from mirela_sdk.control.types import NavigationStrategy, PoseSource
 
 
 @dataclass(frozen=True)

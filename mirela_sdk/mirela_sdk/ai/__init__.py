@@ -1,26 +1,26 @@
 from mirela_sdk.ai.detection import (
-    # Simple API
-    Detector,
-    Framework,
-    # Model classes
-    UltralyticsModel,
-    TransformersModel,
-    RFDETRModel,
     BaseDetectionModel,
+    DatasetConverter,
+    DatasetMerger,
     # Types
     Detection,
-    DetectionResult,
-    Prediction,
     DetectionInput,
-    # Configs
-    TrainingConfig,
+    DetectionResult,
+    # Simple API
+    Detector,
     EvaluationConfig,
     EvaluationMetrics,
+    Framework,
     # Utilities
     ModelLoader,
     ObjectDetectionEvaluator,
-    DatasetConverter,
-    DatasetMerger,
+    Prediction,
+    RFDETRModel,
+    # Configs
+    TrainingConfig,
+    TransformersModel,
+    # Model classes
+    UltralyticsModel,
 )
 from mirela_sdk.ai.utils import RoboflowUploader
 

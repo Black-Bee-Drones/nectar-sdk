@@ -1,10 +1,9 @@
-import cv2
-
-from typing import Optional, Tuple
-from enum import Enum
-
 import json
+from enum import Enum
 from pathlib import Path
+from typing import Optional, Tuple
+
+import cv2
 import numpy as np
 
 from mirela_sdk.vision.camera.abstract import DepthCam
@@ -27,15 +26,9 @@ class OakdCameraResolution(Enum):
 
     THE_540_P = "THE_540_P"
     THE_1080_P = (
-        dai.ColorCameraProperties.SensorResolution.THE_1080_P
-        if DEPTHAI_AVAILABLE
-        else "THE_1080_P"
+        dai.ColorCameraProperties.SensorResolution.THE_1080_P if DEPTHAI_AVAILABLE else "THE_1080_P"
     )
-    THE_4K = (
-        dai.ColorCameraProperties.SensorResolution.THE_4_K
-        if DEPTHAI_AVAILABLE
-        else "THE_4_K"
-    )
+    THE_4K = dai.ColorCameraProperties.SensorResolution.THE_4_K if DEPTHAI_AVAILABLE else "THE_4_K"
 
 
 class PipelineOrderingError(Exception): ...
@@ -80,9 +73,7 @@ class OakdCam(DepthCam):
         :param config: OakDConfig instance with camera configuration
         """
         if not DEPTHAI_AVAILABLE:
-            raise ImportError(
-                "depthai is required for OakdCam. Install with: pip install depthai"
-            )
+            raise ImportError("depthai is required for OakdCam. Install with: pip install depthai")
 
         super().__init__("oakd")
 
@@ -117,7 +108,6 @@ class OakdCam(DepthCam):
         camera_resolution: OakdCameraResolution = OakdCameraResolution.THE_540_P,
         set_control: bool = True,
     ) -> None:
-
         # Use config values if parameters not provided
         if cam_num is None:
             cam_num = self.__cam_num
@@ -143,7 +133,6 @@ class OakdCam(DepthCam):
         self._is_running = True
 
     def get_frame(self) -> Optional[np.ndarray]:
-
         if self.__rgb_queue is None:
             return None
         try:
@@ -155,7 +144,6 @@ class OakdCam(DepthCam):
             return None
 
     def get_depth_frame(self) -> Optional[np.ndarray]:
-
         if not self.__have_depth or self.__depth_queue is None:
             return None
         try:
@@ -173,7 +161,6 @@ class OakdCam(DepthCam):
         return depth_m
 
     def get_distance(self, u: int, v: int) -> Optional[float]:
-
         depth = self.get_depth_frame()
         if depth is None:
             return None
@@ -183,7 +170,6 @@ class OakdCam(DepthCam):
         return float(depth[int(v), int(u)])
 
     def close(self) -> None:
-
         try:
             if self.device is not None:
                 self.device.close()
@@ -212,9 +198,7 @@ class OakdCam(DepthCam):
         """
 
         if not isinstance(cam_resolution, OakdCameraResolution):
-            raise TypeError(
-                "camera resolution type is invalid. Use OakdCameraResolution types"
-            )
+            raise TypeError("camera resolution type is invalid. Use OakdCameraResolution types")
 
         self.__camera_resolution = cam_resolution
 
@@ -233,14 +217,11 @@ class OakdCam(DepthCam):
 
         self.__link_out = link_out
         self.__cam_num = cam_num
-        self.cam_type, self.boardSocket = self.oak_dict.get(
-            self.__cam_num, ("invalid", None)
-        )
+        self.cam_type, self.boardSocket = self.oak_dict.get(self.__cam_num, ("invalid", None))
 
         camera = None
 
         if self.cam_type != "invalid":
-
             if self.cam_type == OakdCam.RGB:
                 camera = self.color_camera()
                 if set_control:
@@ -376,9 +357,7 @@ class OakdCam(DepthCam):
         mono_right.setBoardSocket(dai.CameraBoardSocket.CAM_C)
         mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
 
-        stereo.setOutputSize(
-            mono_left.getResolutionWidth(), mono_left.getResolutionHeight()
-        )
+        stereo.setOutputSize(mono_left.getResolutionWidth(), mono_left.getResolutionHeight())
 
         mono_left.out.link(stereo.left)
         mono_right.out.link(stereo.right)
@@ -414,16 +393,12 @@ class OakdCam(DepthCam):
         """
 
         if not isinstance(stream_names, list):
-            raise TypeError(
-                "Invalid type for stream name. It must be a list of strings"
-            )
+            raise TypeError("Invalid type for stream name. It must be a list of strings")
 
         for stream_name in stream_names:
-
             link = self.stereo_links.get(stream_name, None)
 
             if link:
-
                 xout = self.pipeline.createXLinkOut()
                 xout.setStreamName(stream_name)
                 link(xout.input)
@@ -463,7 +438,6 @@ class OakdCam(DepthCam):
         sensor = self.imu_sensors.get(sensor_name, None)
 
         if sensor:
-
             self.imu.enableIMUSensor(sensor, rate)
 
         else:
@@ -528,19 +502,13 @@ class OakdCam(DepthCam):
             if name.isupper()
         }
         self.antband_modes = {
-            name: mode
-            for name, mode in vars(self.ctrl.AntiBandingMode).items()
-            if name.isupper()
+            name: mode for name, mode in vars(self.ctrl.AntiBandingMode).items() if name.isupper()
         }
         self.effect_modes = {
-            name: mode
-            for name, mode in vars(self.ctrl.EffectMode).items()
-            if name.isupper()
+            name: mode for name, mode in vars(self.ctrl.EffectMode).items() if name.isupper()
         }
         self.aut_foc_modes = {
-            name: mode
-            for name, mode in vars(self.ctrl.AutoFocusMode).items()
-            if name.isupper()
+            name: mode for name, mode in vars(self.ctrl.AutoFocusMode).items() if name.isupper()
         }
 
         self.__control_modes = [
@@ -550,9 +518,7 @@ class OakdCam(DepthCam):
             OakdCam.AUTOFOCUS,
         ]
 
-    def __enable_binary_controls(
-        self, control: str, action: callable, mode=None
-    ) -> str:
+    def __enable_binary_controls(self, control: str, action: callable, mode=None) -> str:
         """
         Enable binaries control parameters or set the parameters wich need a mode.
 
@@ -580,7 +546,7 @@ class OakdCam(DepthCam):
         :param value (int): the value to check if it is within the range.
         """
 
-        match (control):
+        match control:
             case "ae_comp":
                 return max(-9, min(9, value))
             case "brightness" | "contrast" | "saturation":
@@ -621,9 +587,7 @@ class OakdCam(DepthCam):
         action = self.__controls.get(control, None)
 
         if action:
-
             if control in self.__range_control:
-
                 value = self.__put_in_range(control, value)
                 result = f"{control.capitalize()} value set to {value}"
                 action(value)
@@ -660,16 +624,13 @@ class OakdCam(DepthCam):
 
         if action:
             if manual_control in ["exposure_time", "sensitivity_iso"]:
-
                 if manual_control == "exposure_time":
                     self.__expTime = self.__put_in_range(manual_control, value)
                 if manual_control == "sensitivity_iso":
                     self.__sensIso = self.__put_in_range(manual_control, value)
 
                 action(self.__expTime, self.__sensIso)
-                result = (
-                    f"Exposure time: {self.__expTime} \nSensitivity: {self.__sensIso}"
-                )
+                result = f"Exposure time: {self.__expTime} \nSensitivity: {self.__sensIso}"
 
             else:
                 value = self.__put_in_range(manual_control, value)
@@ -704,16 +665,14 @@ class OakdCam(DepthCam):
         """
 
         if not Path(model_path).exists():
-            raise FileNotFoundError(f"Model file not found, please check your path")
+            raise FileNotFoundError("Model file not found, please check your path")
         if not Path(json_path).exists():
-            raise FileNotFoundError(f"json file not found, please check your path")
+            raise FileNotFoundError("json file not found, please check your path")
 
         self.__get_model_settings(json_path)
 
         confidence = (
-            confidence
-            if confidence < 1.0 and confidence > 0.0
-            else self.confidence_threshold
+            confidence if confidence < 1.0 and confidence > 0.0 else self.confidence_threshold
         )
 
         # Define sources and outputs
@@ -770,9 +729,7 @@ class OakdCam(DepthCam):
 
         metadata: Optional[dict] = nn_config.get("NN_specific_metadata", None)
         if metadata is None:
-            raise ValueError(
-                "Missing required key in JSON file: " "NN_specific_metadata"
-            )
+            raise ValueError("Missing required key in JSON file: NN_specific_metadata")
 
         mappings: Optional[dict] = json_file.get("mappings", None)
         if mappings is None:
@@ -864,9 +821,7 @@ class OakdCam(DepthCam):
 
         xoutSpatialData = self.pipeline.create(dai.node.XLinkOut)
         xin_spatial_calc_config = self.pipeline.create(dai.node.XLinkIn)
-        spatial_location_calculator = self.pipeline.create(
-            dai.node.SpatialLocationCalculator
-        )
+        spatial_location_calculator = self.pipeline.create(dai.node.SpatialLocationCalculator)
 
         xoutSpatialData.setStreamName("spatialData")
         xin_spatial_calc_config.setStreamName("spatialCalcConfig")
@@ -895,14 +850,10 @@ class OakdCam(DepthCam):
         """
 
         if self.spatial_calc_config_inqueue is None and self.device is not None:
-            self.spatial_calc_config_inqueue = self.device.getInputQueue(
-                "spatialCalcConfig"
-            )
+            self.spatial_calc_config_inqueue = self.device.getInputQueue("spatialCalcConfig")
 
         if self.spatial_calc_config is None:
-            raise PipelineOrderingError(
-                "Configure depth settings before call update ROI function"
-            )
+            raise PipelineOrderingError("Configure depth settings before call update ROI function")
 
         top_left = dai.Point2f(top_left[0], top_left[1])
         bottom_right = dai.Point2f(bottom_right[0], bottom_right[1])
@@ -934,15 +885,11 @@ class OakdCam(DepthCam):
         """
 
         if not Path(mn_model_path).exists():
-            raise FileNotFoundError(
-                f"Mobile net model not found, please check your path"
-            )
+            raise FileNotFoundError("Mobile net model not found, please check your path")
         if not isinstance(labels, list):
             raise TypeError("Passed labels parameter is not a list.")
 
-        spatial_network = self.pipeline.create(
-            dai.node.MobileNetSpatialDetectionNetwork
-        )
+        spatial_network = self.pipeline.create(dai.node.MobileNetSpatialDetectionNetwork)
         cam_rgb = self.pipeline.create(dai.node.ColorCamera)
         stereo = self.get_stereo_depth()
 
