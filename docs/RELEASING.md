@@ -23,51 +23,36 @@ Examples:
 
 ## Release Checklist
 
-### 1. Prepare the release branch
+### 1. Version bump PR
 
-```bash
-git checkout -b release/vX.Y.Z
-```
+Create a PR that updates the version:
 
-Update version in:
 - `mirela_sdk/pyproject.toml` → `version = "X.Y.Z"`
 - `CITATION.cff` → `version: X.Y.Z` and `date-released`
 
-```bash
-git add -A
-git commit -m "release: vX.Y.Z"
-git push origin release/vX.Y.Z
-```
+CI runs `code-quality` (lint) and `pr-check` (Humble build + verify) on the PR.
 
-### 2. Open a PR to main
+### 2. Merge to main
 
-- Title: `release: vX.Y.Z`
-- CI runs `code-quality.yml` (lint check)
-- Review and merge
+After review, merge the PR. CI runs `build-test` (all distros: Humble, Jazzy, Kilted).
 
-### 3. Verify the build
+Check the [Actions tab](https://github.com/Black-Bee-Drones/mirela-sdk/actions) — all green before proceeding.
 
-After merging, `build-test.yml` runs automatically on `main`:
-- Builds Docker images for Humble, Jazzy, Kilted (with RealSense)
-- Runs `verify` and `realsense-verify` inside each image
-- Check the [Actions tab](https://github.com/Black-Bee-Drones/mirela-sdk/actions) — all green before proceeding
-
-### 4. Create GitHub release
+### 3. Create GitHub release
 
 - Go to [Releases](https://github.com/Black-Bee-Drones/mirela-sdk/releases/new)
-- Tag: `vX.Y.Z` (targeting `main`)
+- Tag: `vX.Y.Z` (create new tag, targeting `main`)
 - Title: `vX.Y.Z "Code Name"`
-- Description: changelog since last release (use "Generate release notes")
+- Click "Generate release notes" for the changelog
 - Publish
 
-### 5. CI automatically
+### 4. CI automatically
 
 `docker-push.yml` triggers and for each distro (Humble, Jazzy, Kilted):
-1. Builds the Docker image with RealSense
-2. Runs `verify` + `realsense-verify` inside the image
-3. **Only if verification passes**: pushes to Docker Hub
 
-If any verification fails, the image is NOT pushed.
+1. Builds the Docker image with RealSense
+2. Runs `verify` + `realsense-verify`
+3. **Only if all checks pass**: pushes to Docker Hub
 
 ## Docker Hub
 
@@ -86,8 +71,11 @@ docker run -it --rm --net=host blackbeedrones/mirela-sdk:humble
 
 ## CI Workflows
 
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `code-quality.yml` | PR and push to main | Lint + format check (fast, ~30s) |
-| `build-test.yml` | Push to main, weekly | Builds Docker images per distro, runs `verify` + `realsense-verify` |
-| `docker-push.yml` | GitHub release published | Build → verify → push to Docker Hub (verify gates push) |
+| Workflow | Trigger | Distros | What it does |
+|---|---|---|---|
+| `code-quality.yml` | PR + push to main | — | Lint + format (~30s) |
+| `pr-check.yml` | PR to main | Humble | Build Docker + verify (catches regressions before merge) |
+| `build-test.yml` | Push to main, weekly | All 3 | Build Docker + verify (full coverage) |
+| `docker-push.yml` | GitHub release | All 3 | Build → verify → push to Docker Hub |
+
+The build and verify logic is shared via `_build-verify.yml` (reusable workflow).
