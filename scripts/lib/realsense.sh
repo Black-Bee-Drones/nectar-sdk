@@ -287,7 +287,7 @@ _rebuild_workspace_realsense() {
     rosdep update
     rosdep install -i --from-path src --rosdistro "$ROS_DISTRO" -r \
         --skip-keys="librealsense2 python3-scipy python3-sklearn python3-numpy" -y
-    
+
     rm -rf "build/${ROS2_PKG_NAME}" "build/${INTERFACES_PKG_NAME}" \
            "build/realsense2_camera" "build/realsense2_camera_msgs" "build/realsense2_description" \
            "build/vision_to_mavros" \
