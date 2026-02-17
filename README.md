@@ -19,9 +19,15 @@
 
 <img align="left" width="25" height="25" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
 
-A modular software development kit for autonomous aerial systems built on [ROS2 Humble](https://docs.ros.org/en/humble/). Designed for drone competitions, research, and rapid prototyping of UAV applications.
+A modular software development kit for autonomous aerial systems built on [ROS2](https://docs.ros.org/). Designed for drone competitions, research, and rapid prototyping of UAV applications.
 
 Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competition team.
+
+| ROS 2 Distro | Build & Test | Docker Image |
+|:---:|:---:|:---:|
+| **Humble** | [![Build](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-humble-blue)](https://hub.docker.com/r/blackbeedrones/mirela-sdk/tags?name=humble) |
+| **Jazzy** | [![Build](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-jazzy-blue)](https://hub.docker.com/r/blackbeedrones/mirela-sdk/tags?name=jazzy) |
+| **Kilted** | [![Build](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-kilted-blue)](https://hub.docker.com/r/blackbeedrones/mirela-sdk/tags?name=kilted) |
 
 ## Table of Contents
 
