@@ -1,11 +1,11 @@
 name: ❓ Question
-description: Ask a question about Mirela SDK - Drone Control and Computer Vision
+description: Ask a question about Nectar SDK - Drone Control and Computer Vision
 labels: ["question"]
 body:
   - type: markdown
     attributes:
       value: |
-        Welcome to Mirela SDK! Thank you for asking your question. This template will help you provide the necessary details. We appreciate your contribution to our community.
+        Welcome to Nectar SDK! Thank you for asking your question. This template will help you provide the necessary details. We appreciate your contribution to our community.
 
   - type: checkboxes
     attributes:
@@ -42,7 +42,7 @@ body:
     attributes:
       label: "Question"
       description: |
-        Provide a clear and concise question regarding your drone control or computer vision implementation with Mirela SDK. Include context, such as steps taken, attempts, and any relevant code snippets or logs.
+        Provide a clear and concise question regarding your drone control or computer vision implementation with Nectar SDK. Include context, such as steps taken, attempts, and any relevant code snippets or logs.
       placeholder: |
         📝 Provide your question and context here.
         Example:

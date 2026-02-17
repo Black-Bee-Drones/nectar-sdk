@@ -44,33 +44,33 @@ jobs:
           target: sdk
           load: true
           push: false
-          tags: mirela-sdk:${{ matrix.ros_distro }}-release
+          tags: nectar-sdk:${{ matrix.ros_distro }}-release
           cache-from: type=gha,scope=${{ matrix.ros_distro }}-sdk
           cache-to: type=gha,mode=max,scope=${{ matrix.ros_distro }}-sdk
 
       # Verify — if this fails, push never happens
       - name: Verify SDK
         run: |
-          docker run --rm mirela-sdk:${{ matrix.ros_distro }}-release bash -c "
+          docker run --rm nectar-sdk:${{ matrix.ros_distro }}-release bash -c "
             source /opt/ros/\$ROS_DISTRO/setup.bash
             source /home/ros2_ws/install/local_setup.bash 2>/dev/null
-            /home/ros2_ws/src/mirela-sdk/scripts/setup.sh verify
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify
           "
 
       - name: Verify RealSense
         run: |
-          docker run --rm mirela-sdk:${{ matrix.ros_distro }}-release bash -c "
+          docker run --rm nectar-sdk:${{ matrix.ros_distro }}-release bash -c "
             source /opt/ros/\$ROS_DISTRO/setup.bash
             source /home/ros2_ws/install/local_setup.bash 2>/dev/null
-            /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense-verify
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh realsense-verify
           "
 
       # Tag and push (only reached if verify passed)
       - name: Push to Docker Hub
         run: |
-          docker tag mirela-sdk:${{ matrix.ros_distro }}-release \
-            ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
-          docker tag mirela-sdk:${{ matrix.ros_distro }}-release \
-            ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}
+          docker tag nectar-sdk:${{ matrix.ros_distro }}-release \
+            ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
+          docker tag nectar-sdk:${{ matrix.ros_distro }}-release \
+            ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}

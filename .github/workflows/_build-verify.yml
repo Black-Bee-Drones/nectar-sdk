@@ -29,7 +29,7 @@ jobs:
 
       - name: Set image tag
         id: meta
-        run: echo "tag=mirela-sdk:${{ inputs.ros_distro }}-ci" >> "$GITHUB_OUTPUT"
+        run: echo "tag=nectar-sdk:${{ inputs.ros_distro }}-ci" >> "$GITHUB_OUTPUT"
 
       - name: Free disk space
         run: |
@@ -59,7 +59,7 @@ jobs:
           docker run --rm ${{ steps.meta.outputs.tag }} bash -c "
             source /opt/ros/\$ROS_DISTRO/setup.bash
             source /home/ros2_ws/install/local_setup.bash 2>/dev/null
-            /home/ros2_ws/src/mirela-sdk/scripts/setup.sh verify
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify
           "
 
       - name: Verify RealSense
@@ -68,5 +68,5 @@ jobs:
           docker run --rm ${{ steps.meta.outputs.tag }} bash -c "
             source /opt/ros/\$ROS_DISTRO/setup.bash
             source /home/ros2_ws/install/local_setup.bash 2>/dev/null
-            /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense-verify
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh realsense-verify
           "

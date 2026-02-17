@@ -1,48 +1,46 @@
-# Mirela SDK: Drone Control, Computer Vision & AI Toolkit
+# Nectar SDK
 
-<table>
-  <tr>
-    <td>
-      <a href="https://docs.ros.org/en/humble/"><img src="https://img.shields.io/badge/-ROS2-22314E?style=for-the-badge&labelColor=black&logo=ros&" alt="ROS2 Badge" /></a>
-    </td>
-    <td>
-      <a href="https://opencv.org/"><img src="https://img.shields.io/badge/-OpenCV-5C3EE8?style=for-the-badge&labelColor=black&logo=opencv&logoColor=5C3EE8" alt="OpenCV Badge" /></a>
-    </td>
-    <td>
-      <a href="https://www.python.org/"><img src="https://img.shields.io/badge/-Python-3776AB?style=for-the-badge&labelColor=black&logo=python&logoColor=3776AB" alt="Python Badge" /></a>
-    </td>
-    <td>
-      <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?style=for-the-badge&labelColor=black&logo=docker&logoColor=2496ED" alt="Docker Badge" /></a>
-    </td>
-  </tr>
-</table>
+<img align="left" width="25" height="25" 
+src="https://images.emojiterra.com/google/
+noto-emoji/unicode-15/animated/1f41d.gif" 
+alt="Bee"> A modular software development kit for 
+autonomous aerial systems built on [ROS2](https://docs.ros.org/). Designed for drone 
+competitions, research, and rapid prototyping of of UAV applications
 
-<img align="left" width="25" height="25" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
 
-A modular software development kit for autonomous aerial systems built on [ROS2](https://docs.ros.org/). Designed for drone competitions, research, and rapid prototyping of UAV applications.
+<p>
+  <a href="https://docs.ros.org/en/humble/"><img src="https://img.shields.io/badge/ROS_2-Humble_|_Jazzy_|_Kilted-22314E?style=flat&logo=ros" alt="ROS 2" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python" /></a>
+  <a href="https://opencv.org/"><img src="https://img.shields.io/badge/OpenCV-4.11-5C3EE8?style=flat&logo=opencv&logoColor=white" alt="OpenCV" /></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=flat&logo=pytorch&logoColor=white" alt="PyTorch" /></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat" alt="License" /></a>
+</p>
+
+| ROS 2 Distro | Build & Test | Docker |
+|:---:|:---:|:---:|
+| **Humble** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-humble-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=humble) |
+| **Jazzy** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-jazzy-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=jazzy) |
+| **Kilted** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-kilted-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=kilted) |
 
 Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competition team.
 
-| ROS 2 Distro | Build & Test | Docker Image |
-|:---:|:---:|:---:|
-| **Humble** | [![Build](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-humble-blue)](https://hub.docker.com/r/blackbeedrones/mirela-sdk/tags?name=humble) |
-| **Jazzy** | [![Build](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-jazzy-blue)](https://hub.docker.com/r/blackbeedrones/mirela-sdk/tags?name=jazzy) |
-| **Kilted** | [![Build](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/mirela-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-kilted-blue)](https://hub.docker.com/r/blackbeedrones/mirela-sdk/tags?name=kilted) |
+---
 
 ## Table of Contents
 
-- [Features](#features-)
-- [Installation](#installation-)
-- [Quick Start](#quick-start-)
-- [Modules](#modules-)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Modules](#modules)
 - [Architecture](#architecture)
-- [Examples](#examples-)
-- [ROS2 Nodes](#ros2-nodes-)
-- [Directory Structure](#directory-structure-)
+- [Examples](#examples)
+- [ROS 2 Nodes](#ros-2-nodes)
+- [Directory Structure](#directory-structure)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Features 🐎
+## Features
 
 ### Drone Control
 - **Protocol-based architecture** with factory pattern for multiple drone types
@@ -66,30 +64,31 @@ Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competi
 - **Model evaluation** with mAP, precision, recall metrics
 
 ### Interface
-- **Tkinter GUI** for manual drone control and testing
+- **Qt6 / PySide6 GUI** for manual drone control and testing
 - **Keyboard controls** with velocity sliders
 - **Camera streaming** with snapshot and recording
+- **Real-time topic monitoring** and parameter reconfiguration
 
-## Installation 🦥
+## Installation
 
-### 🚀 Full Setup (from zero)
+### From Zero (full setup)
 
 ```bash
-git clone git@github.com:Black-Bee-Drones/mirela-sdk.git
-cd mirela-sdk
+git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk
 ./scripts/setup.sh full-install    # or: ./scripts/setup.sh (interactive menu)
 ```
 
-### Already have ROS2 + workspace
+### Already Have ROS 2 + Workspace
 
 ```bash
-cd ~/ros2_ws/src/mirela-sdk
+cd ~/ros2_ws/src/nectar-sdk
 ./scripts/setup.sh python all      # Install Python dependencies
 ./scripts/setup.sh build            # Build workspace
 # or: make install-all && make build
 ```
 
-### Module-specific
+### Module-Specific
 
 ```bash
 ./scripts/setup.sh python control   # GPS, PID, navigation
@@ -98,30 +97,29 @@ cd ~/ros2_ws/src/mirela-sdk
 ./scripts/setup.sh python interface # PySide6 GUI
 ```
 
-All versions and package lists are in [`scripts/lib/config.sh`](scripts/lib/config.sh) (single source of truth).
+All versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh) (single source of truth).
 
-See [`docs/INSTALL.md`](docs/INSTALL.md) for full installation guide.
+See [`docs/INSTALL.md`](docs/INSTALL.md) for the full installation guide.
 
-### 🐳 Docker
+### Docker
 
 ```bash
 make docker-build       # SDK image (no AI, fast)
 make docker-run         # Run with X11 + cameras + USB
 
 make docker-build-full  # Full image (+ PyTorch + AI)
-make docker-run-full
 ```
 
-See [`docker/README.md`](docker/README.md) for Jetson, CUDA, details.
+See [`docker/README.md`](docker/README.md) for GPU, Jetson, and advanced options.
 
-## Quick Start 🦓
+## Quick Start
 
 ### Drone Control
 
 ```python
 import rclpy
 from rclpy.node import Node
-from mirela_sdk.control import DroneFactory, MavrosConfig, PoseSource
+from nectar.control import DroneFactory, MavrosConfig, PoseSource
 
 rclpy.init()
 node = Node("flight_node")
@@ -144,7 +142,7 @@ rclpy.shutdown()
 ```python
 import rclpy
 from rclpy.node import Node
-from mirela_sdk.vision import ImageHandler, OpenCVConfig
+from nectar.vision import ImageHandler, OpenCVConfig
 
 class CameraNode(Node):
     def __init__(self):
@@ -171,7 +169,7 @@ rclpy.spin(CameraNode())
 ### Object Detection
 
 ```python
-from mirela_sdk.ai.detection import Detector
+from nectar.ai.detection import Detector
 
 # Load model (auto-detects framework)
 detector = Detector("yolov8n.pt")
@@ -186,21 +184,21 @@ for det in result:
 annotated = detector.draw_detections(image, result)
 ```
 
-## Modules ♟️
+## Modules
 
-### [Control Module](mirela_sdk/mirela_sdk/control/README.md)
+### [Control](nectar/nectar/control/README.md)
 
 Protocol-based drone control with factory instantiation and configurable navigation.
 
-| Component | Description | Documentation |
-|-----------|-------------|---------------|
-| `DroneFactory` | Creates drone instances by type | [control/README.md](mirela_sdk/mirela_sdk/control/README.md) |
-| `MavrosDrone` | ArduPilot/PX4 via MAVROS | [mavros/README.md](mirela_sdk/mirela_sdk/control/mavros/README.md) |
-| `BebopDrone` | Parrot Bebop 2 control | [bebop/README.md](mirela_sdk/mirela_sdk/control/bebop/README.md) |
-| `ObstacleManager` | Detection and avoidance | [obstacles/README.md](mirela_sdk/mirela_sdk/control/obstacles/README.md) |
-| `PIDController` | Position control loops | [pid/README.md](mirela_sdk/mirela_sdk/control/pid/README.md) |
+| Component | Description | Docs |
+|-----------|-------------|------|
+| `DroneFactory` | Creates drone instances by type | [control/](nectar/nectar/control/README.md) |
+| `MavrosDrone` | ArduPilot/PX4 via MAVROS | [mavros/](nectar/nectar/control/mavros/README.md) |
+| `BebopDrone` | Parrot Bebop 2 control | [bebop/](nectar/nectar/control/bebop/README.md) |
+| `ObstacleManager` | Detection and avoidance | [obstacles/](nectar/nectar/control/obstacles/README.md) |
+| `PIDController` | Position control loops | [pid/](nectar/nectar/control/pid/README.md) |
 
-### [Vision Module](mirela_sdk/mirela_sdk/vision/README.md)
+### [Vision](nectar/nectar/vision/README.md)
 
 Camera abstraction and image processing algorithms.
 
@@ -230,14 +228,14 @@ flowchart LR
     Algorithms --> Handler
 ```
 
-| Component | Description | Documentation |
-|-----------|-------------|---------------|
-| `CameraFactory` | Multi-backend camera creation | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#camerafactory) |
-| `ImageHandler` | ROS2 timer-based capture | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#imagehandler) |
-| `Aruco` | Marker detection and pose | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#aruco-markers) |
-| `ColorDetector` | HSV/LAB color filtering | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#color-detection) |
-| `LineDetector` | Line estimation methods | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#line-detection) |
-| `DistanceEstimator` | Pixel-to-distance models | [vision/README.md](mirela_sdk/mirela_sdk/vision/README.md#distance-estimation) |
+| Component | Description | Docs |
+|-----------|-------------|------|
+| `CameraFactory` | Multi-backend camera creation | [vision/](nectar/nectar/vision/README.md#camerafactory) |
+| `ImageHandler` | ROS 2 timer-based capture | [vision/](nectar/nectar/vision/README.md#imagehandler) |
+| `Aruco` | Marker detection and pose | [vision/](nectar/nectar/vision/README.md#aruco-markers) |
+| `ColorDetector` | HSV/LAB color filtering | [vision/](nectar/nectar/vision/README.md#color-detection) |
+| `LineDetector` | Line estimation methods | [vision/](nectar/nectar/vision/README.md#line-detection) |
+| `DistanceEstimator` | Pixel-to-distance models | [vision/](nectar/nectar/vision/README.md#distance-estimation) |
 
 **Supported Cameras:**
 
@@ -249,19 +247,19 @@ flowchart LR
 | `c920` | OpenCV | Logitech C920/C920e |
 | `imx219` | GStreamer | Raspberry Pi Camera v2 |
 
-### [AI Module](mirela_sdk/mirela_sdk/ai/README.md)
+### [AI](nectar/nectar/ai/README.md)
 
 Deep learning inference and training for object detection.
 
 | Component | Supported Models | External Docs |
 |-----------|------------------|---------------|
-| `UltralyticsModel` | YOLOv8, YOLOv10, YOLO11 | [Ultralytics Docs](https://docs.ultralytics.com/) |
-| `TransformersModel` | DETR, Conditional DETR | [HuggingFace Transformers](https://huggingface.co/docs/transformers/) |
+| `UltralyticsModel` | YOLOv8, YOLOv10, YOLO11 | [Ultralytics](https://docs.ultralytics.com/) |
+| `TransformersModel` | DETR, Conditional DETR | [HuggingFace](https://huggingface.co/docs/transformers/) |
 | `RFDETRModel` | RF-DETR variants | [RF-DETR](https://github.com/roboflow/RF-DETR) |
 
-### [Interface Module](mirela_sdk/mirela_sdk/interface/README.md)
+### [Interface](nectar/nectar/interface/README.md)
 
-Tkinter-based GUI for drone testing and control.
+Qt6 / PySide6 GUI for drone testing and control.
 
 | Component | Description |
 |-----------|-------------|
@@ -269,9 +267,9 @@ Tkinter-based GUI for drone testing and control.
 | `BebopComponent` | Bebop-specific controls |
 | `MavComponent` | MAVROS-specific controls |
 
-### [Mirela Interfaces](mirela_interfaces/README.md)
+### [Nectar Interfaces](nectar_interfaces/README.md)
 
-Custom ROS2 message definitions for inter-module communication.
+Custom ROS 2 message definitions for inter-module communication.
 
 | Message | Description | Used By |
 |---------|-------------|---------|
@@ -279,9 +277,9 @@ Custom ROS2 message definitions for inter-module communication.
 | `LineInfo` | Line center, angle, dimensions | `LineDetectionNode` |
 | `PhotoInfo` | Photo coordinates and metadata | Vision nodes |
 
-### Design Patterns
+## Architecture
 
-The SDK is built on proven design patterns for maintainability and extensibility:
+### Design Patterns
 
 | Pattern | Implementation | Purpose |
 |---------|----------------|---------|
@@ -291,114 +289,109 @@ The SDK is built on proven design patterns for maintainability and extensibility
 | **Abstract Base Class** | `BaseDrone`, `AbstractCam`, `BaseDetectionModel` | Share common implementation. Enforce method contracts. |
 | **Dataclass Config** | `MavrosConfig`, `OpenCVConfig`, `TrainingConfig` | Type-safe configuration with defaults and validation. |
 
-### Extensibility Points
+### Extensibility
 
 Add new implementations by registering with factories:
 
 ```python
-# Add new drone type
-from mirela_sdk.control import DroneFactory, BaseDrone
+# New drone type
+from nectar.control import DroneFactory, BaseDrone
 
 class MyCustomDrone(BaseDrone):
-    # ... implementation
-    pass
+    ...
 
 DroneFactory.register("custom", lambda cfg, node: MyCustomDrone(cfg, node))
 drone = DroneFactory.create("custom", config, node)
 
-# Add new camera driver
-from mirela_sdk.vision import CameraFactory, AbstractCam
+# New camera driver
+from nectar.vision import CameraFactory, AbstractCam
 
 class ThermalCamera(AbstractCam):
-    # ... implementation
-    pass
+    ...
 
 CameraFactory.register("thermal", ThermalCamera)
 camera = CameraFactory.from_source("thermal")
 
-# Add new detection framework
-from mirela_sdk.ai.detection import Detector, BaseDetectionModel
+# New detection framework
+from nectar.ai.detection import Detector, BaseDetectionModel
 
 class CustomModel(BaseDetectionModel):
-    # ... implementation
-    pass
+    ...
 
 Detector.register("custom", lambda name, **kw: CustomModel(name, **kw))
 detector = Detector("model.bin", framework="custom")
 ```
 
-## Examples 🦎
+## Examples
 
-Working examples are located in `mirela_sdk/mirela_sdk/examples/`:
+Working examples are in `nectar/nectar/examples/`:
 
-### Control Examples
+### Control
 
-| Example | Description | Run Command |
-|---------|-------------|-------------|
+| Example | Description | Run |
+|---------|-------------|-----|
 | `basic.py` | Takeoff, velocity, land | `python3 basic.py --drone mavros` |
 | `sensors.py` | GPS/vision data monitoring | `python3 sensors.py --source gps` |
 | `pid_simulation.py` | PID controller simulation | `python3 pid_simulation.py --plot` |
 | `mavros_navigation.py` | Position navigation | `python3 mavros_navigation.py` |
 | `mavros_obstacles.py` | Obstacle avoidance | `python3 mavros_obstacles.py` |
 
-See [examples/control/README.md](mirela_sdk/mirela_sdk/examples/control/README.md)
+See [examples/control/](nectar/nectar/examples/control/README.md)
 
-### Vision Examples
+### Vision
 
-| Example | Description | Run Command |
-|---------|-------------|-------------|
-| `camera_example.py` | Multi-camera capture | `ros2 run mirela_sdk camera_example` |
-| `depth_example.py` | Depth visualization | `ros2 run mirela_sdk depth_example --camera realsense` |
+| Example | Description | Run |
+|---------|-------------|-----|
+| `camera_example.py` | Multi-camera capture | `ros2 run nectar camera_example` |
+| `depth_example.py` | Depth visualization | `ros2 run nectar depth_example --camera realsense` |
 
-See [examples/vision/README.md](mirela_sdk/mirela_sdk/examples/vision/README.md)
+See [examples/vision/](nectar/nectar/examples/vision/README.md)
 
-### AI Examples
+### AI
 
-| Example | Description | Run Command |
-|---------|-------------|-------------|
-| `detector_example.py` | Real-time detection | `ros2 run mirela_sdk detector_example` |
+| Example | Description | Run |
+|---------|-------------|-----|
+| `detector_example.py` | Real-time detection | `ros2 run nectar detector_example` |
 | `batch_detector.py` | Batch image/video processing | `python3 batch_detector.py --input ./images` |
 
-See [examples/ai/README.md](mirela_sdk/mirela_sdk/examples/ai/README.md)
+See [examples/ai/](nectar/nectar/examples/ai/README.md)
 
-## ROS2 Nodes 🐢
-
-Pre-built nodes for common tasks:
+## ROS 2 Nodes
 
 ```bash
 # GUI
-ros2 run mirela_sdk app.py
+ros2 run nectar app.py
 
 # ArUco detection
-ros2 run mirela_sdk aruco_node.py --ros-args -p image_source:=webcam -p marker_dict:=5 -p tag_size:=0.05
+ros2 run nectar aruco_node.py --ros-args -p image_source:=webcam -p marker_dict:=5 -p tag_size:=0.05
 
 # Line detection
-ros2 run mirela_sdk line_detection_node.py --ros-args -p line_colors:="blue,red" -p method:=HoughLinesP
+ros2 run nectar line_detection_node.py --ros-args -p line_colors:="blue,red" -p method:=HoughLinesP
 
 # Color calibration
-ros2 run mirela_sdk color_calibration_node.py --ros-args -p image_source:=webcam
+ros2 run nectar color_calibration_node.py --ros-args -p image_source:=webcam
 
 # Camera calibration
-ros2 run mirela_sdk calibration.py --ros-args -p chessboard_size:="9,7"
+ros2 run nectar calibration.py --ros-args -p chessboard_size:="9,7"
 
 # Webcam publisher
-ros2 run mirela_sdk webcam_publisher_node.py --ros-args -p width:=1280 -p height:=720
+ros2 run nectar webcam_publisher_node.py --ros-args -p width:=1280 -p height:=720
 
 # Object detection
-ros2 run mirela_sdk detector_example.py --ros-args -p model_source:=yolov8n.pt
+ros2 run nectar detector_example.py --ros-args -p model_source:=yolov8n.pt
 ```
 
-## Directory Structure 📁
+## Directory Structure
 
 ```
-mirela-sdk/
+nectar-sdk/
 ├── scripts/                    # Setup & installation
 │   ├── setup.sh                # CLI + interactive menu
 │   └── lib/                    # Modular functions
 │       ├── config.sh           # Versions, packages (single source of truth)
 │       ├── common.sh           # Logging utilities
 │       ├── system.sh           # apt packages
-│       ├── ros2.sh             # ROS2 install + env
+│       ├── ros2.sh             # ROS 2 install + env
 │       ├── python.sh           # pip from pyproject.toml
 │       ├── realsense.sh        # Intel RealSense D435i
 │       ├── workspace.sh        # Build, clean, verify
@@ -411,19 +404,19 @@ mirela-sdk/
 │   ├── CONTRIBUTING.md
 │   ├── CODE_OF_CONDUCT.md
 │   └── SECURITY.md
-├── mirela_interfaces/          # ROS2 message definitions
+├── nectar_interfaces/          # ROS 2 message definitions
 │   ├── CMakeLists.txt
 │   ├── package.xml
 │   └── msg/
-├── mirela_sdk/                 # Main ROS2 package (ament_cmake + ament_cmake_python)
+├── nectar/                     # Main ROS 2 package (ament_cmake + ament_cmake_python)
 │   ├── CMakeLists.txt
 │   ├── package.xml
 │   ├── pyproject.toml          # Python dependencies (single source of truth)
-│   └── mirela_sdk/             # Python package
+│   └── nectar/                 # Python package
 │       ├── control/            # Drone control module
 │       ├── vision/             # Computer vision module
-│       ├── ai/                 # AI/Detection module
-│       ├── interface/          # Qt6/PySide6 GUI
+│       ├── ai/                 # AI / Detection module
+│       ├── interface/          # Qt6 / PySide6 GUI
 │       ├── examples/           # Working examples
 │       │   ├── control/
 │       │   ├── vision/
@@ -438,21 +431,21 @@ mirela-sdk/
 We welcome contributions from the community! Please see our [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) guide to get started.
 
 Before contributing:
-1. Check [GitHub Issues](https://github.com/Black-Bee-Drones/mirela-sdk/issues) for existing discussions
+1. Check [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) for existing discussions
 2. Follow [Conventional Commits](https://www.conventionalcommits.org) for commit messages
 3. Read our [Code of Conduct](docs/CODE_OF_CONDUCT.md)
 
-Thank you 🙏 to all our contributors!
+Thank you to all our contributors!
 
-<a href="https://github.com/Black-Bee-Drones/mirela-sdk/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Black-Bee-Drones/mirela-sdk&max=100" alt="Contributors" />
+<a href="https://github.com/Black-Bee-Drones/nectar-sdk/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Black-Bee-Drones/nectar-sdk&max=100" alt="Contributors" />
 </a>
 
-## References & Documentation 📖
+## References
 
 | Resource | Link |
 |----------|------|
-| ROS2 Humble | [docs.ros.org/en/humble](https://docs.ros.org/en/humble/) |
+| ROS 2 Humble | [docs.ros.org/en/humble](https://docs.ros.org/en/humble/) |
 | MAVROS | [github.com/mavlink/mavros](https://github.com/mavlink/mavros) |
 | OpenCV | [docs.opencv.org](https://docs.opencv.org/4.x/) |
 | Ultralytics YOLO | [docs.ultralytics.com](https://docs.ultralytics.com/) |
@@ -463,4 +456,4 @@ Thank you 🙏 to all our contributors!
 
 ## License
 
-This project is licensed under the Apache-2.0 License - see the [`LICENSE`](LICENSE) file for details.
+This project is licensed under the Apache-2.0 License — see the [`LICENSE`](LICENSE) file for details.

@@ -5,8 +5,8 @@
 For a fresh Ubuntu/Debian machine without ROS2:
 
 ```bash
-git clone git@github.com:Black-Bee-Drones/mirela-sdk.git
-cd mirela-sdk
+git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk
 ./scripts/setup.sh full-install
 ```
 
@@ -20,7 +20,7 @@ The full install covers: system packages, ROS2 Humble, MAVROS, GeographicLib, Py
 
 ## Already Have ROS2 + Workspace
 
-If you already cloned the repo inside a ROS2 workspace (`<workspace>/src/mirela-sdk`):
+If you already cloned the repo inside a ROS2 workspace (`<workspace>/src/nectar-sdk`):
 
 ```bash
 # Install Python dependencies (all modules)
@@ -39,7 +39,7 @@ make build
 
 ## Module-Specific Installation
 
-Install only the modules you need (dependencies defined in `mirela_sdk/pyproject.toml`):
+Install only the modules you need (dependencies defined in `nectar/pyproject.toml`):
 
 ```bash
 ./scripts/setup.sh python              # Core only (numpy, opencv, scipy)

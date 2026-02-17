@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Project
-PROJECT_REPO="git@github.com:Black-Bee-Drones/mirela-sdk.git"
-PROJECT_DIR_NAME="mirela-sdk"
-ROS2_PKG_NAME="mirela_sdk"
-INTERFACES_PKG_NAME="mirela_interfaces"
-DOCKER_IMAGE_PREFIX="mirela-sdk"
+PROJECT_REPO="git@github.com:Black-Bee-Drones/nectar-sdk.git"
+PROJECT_DIR_NAME="nectar-sdk"
+ROS2_PKG_NAME="nectar"
+INTERFACES_PKG_NAME="nectar_interfaces"
+DOCKER_IMAGE_PREFIX="nectar-sdk"
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_DOMAIN_ID="14"
@@ -15,8 +15,8 @@ TORCH_VARIANT="${TORCH_VARIANT:-auto}"
 TORCH_VERSION="${TORCH_VERSION:-}"
 TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
 
-TORCH_CONSTRAINTS_FILE="/tmp/mirela-torch-constraints.txt"
-TORCH_INDEX_FILE="/tmp/mirela-torch-index.txt"
+TORCH_CONSTRAINTS_FILE="/tmp/nectar-torch-constraints.txt"
+TORCH_INDEX_FILE="/tmp/nectar-torch-index.txt"
 
 # RealSense — versions depend on ROS distro and camera target.
 # Override with env vars: LIBREALSENSE_VERSION, REALSENSE_ROS_TAG

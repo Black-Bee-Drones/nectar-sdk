@@ -1,0 +1,63 @@
+# =============================================================================
+# Jetson Orin Nano Dockerfile (ARM64 / L4T)
+#
+# Targets:
+#   sdk       Everything except AI/torch
+#   sdk-full  + PyTorch (Jetson CUDA build) + AI packages
+#
+# Base image: dusty-nv/ros:humble-desktop-l4t-r36.4.0
+# See: https://github.com/dusty-nv/jetson-containers
+#
+# Build:
+#   docker build --target sdk -t nectar-sdk:jetson -f docker/Dockerfile.jetson .
+#   docker build --target sdk-full -t nectar-sdk:jetson-full -f docker/Dockerfile.jetson .
+# =============================================================================
+
+FROM dusty-nv/ros:humble-desktop-l4t-r36.4.0 AS base
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV NON_INTERACTIVE=true
+ENV ROS2_WORKSPACE=/home/ros2_ws
+
+COPY scripts/ /tmp/setup/scripts/
+
+RUN /tmp/setup/scripts/setup.sh system
+RUN /tmp/setup/scripts/setup.sh geographiclib
+RUN apt-get remove -y python3-sympy 2>/dev/null || true
+RUN python3 -m pip install --upgrade pip
+RUN rm -rf /var/lib/apt/lists/*
+
+WORKDIR /home/ros2_ws/src
+RUN /tmp/setup/scripts/setup.sh ros2-env
+
+# =============================================================================
+FROM base AS sdk
+
+COPY . /home/ros2_ws/src/nectar-sdk
+WORKDIR /home/ros2_ws/src/nectar-sdk
+
+RUN make install-all
+RUN make rosdep-init
+RUN make ros2-deps
+RUN make build
+
+CMD ["/bin/bash"]
+
+# =============================================================================
+# sdk-full: sdk + PyTorch (Jetson CUDA) + AI packages
+# Uses the Jetson-specific PyTorch wheels from jetson-containers.
+# PyTorch is typically pre-installed in dusty-nv images. If not:
+#   pip install torch torchvision --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/pytorch/
+# =============================================================================
+FROM sdk AS sdk-full
+
+# Jetson base images usually ship PyTorch pre-installed.
+# If not present, install from NVIDIA Jetson PyTorch index.
+RUN python3 -c "import torch" 2>/dev/null \
+    || pip install --no-cache-dir \
+    torch torchvision \
+    --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/pytorch/
+
+RUN make python-ai
+
+CMD ["/bin/bash"]
