@@ -39,10 +39,12 @@ cmd_build_pkg() {
 }
 
 cmd_clean() {
-    log_section "CLEANING WORKSPACE"
+    log_section "CLEANING SDK PACKAGES"
     cd "$WORKSPACE_DIR"
-    rm -rf build/ install/ log/
-    log_success "Workspace cleaned"
+    rm -rf "build/${ROS2_PKG_NAME}" "build/${INTERFACES_PKG_NAME}" \
+           "install/${ROS2_PKG_NAME}" "install/${INTERFACES_PKG_NAME}" \
+           log/
+    log_success "SDK packages cleaned (${ROS2_PKG_NAME}, ${INTERFACES_PKG_NAME})"
 }
 
 cmd_verify() {

@@ -285,9 +285,16 @@ _rebuild_workspace_realsense() {
     cd "$WORKSPACE_DIR"
     source "/opt/ros/${ROS_DISTRO}/setup.bash"
     rosdep update
-    rosdep install -i --from-path src --rosdistro "$ROS_DISTRO" \
+    rosdep install -i --from-path src --rosdistro "$ROS_DISTRO" -r \
         --skip-keys="librealsense2 python3-scipy python3-sklearn python3-numpy" -y
-    rm -rf build/ install/ log/
+    
+    rm -rf "build/${ROS2_PKG_NAME}" "build/${INTERFACES_PKG_NAME}" \
+           "build/realsense2_camera" "build/realsense2_camera_msgs" "build/realsense2_description" \
+           "build/vision_to_mavros" \
+           "install/${ROS2_PKG_NAME}" "install/${INTERFACES_PKG_NAME}" \
+           "install/realsense2_camera" "install/realsense2_camera_msgs" "install/realsense2_description" \
+           "install/vision_to_mavros" \
+           log/
     colcon build --symlink-install
     log_success "Workspace rebuilt"
 }
