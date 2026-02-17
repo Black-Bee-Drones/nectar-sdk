@@ -17,9 +17,9 @@ vMAJOR.MINOR.PATCH
 Releases can have a code name associated with the version. The git tag is always `vX.Y.Z` (machine-readable). The GitHub release title includes the code name (human-readable).
 
 Examples:
-- `v0.2.0 "Captain Ana"` — team captain 2025
-- `v1.0.0 "CBR 2025"` — Brazilian Robotics Competition
-- `v1.1.0 "Ouro Preto"` — competition city
+- `v0.2.0 "Tadini"` — team captain
+- `v1.0.0 "CBR 2026"` — competition name
+- `v1.1.0 "Mangalarga"` — internal code name
 
 ## Release Checklist
 
@@ -91,4 +91,3 @@ docker run -it --rm --net=host blackbeedrones/mirela-sdk:humble
 | `code-quality.yml` | PR and push to main | Lint + format check (fast, ~30s) |
 | `build-test.yml` | Push to main, weekly | Builds Docker images per distro, runs `verify` + `realsense-verify` |
 | `docker-push.yml` | GitHub release published | Build → verify → push to Docker Hub (verify gates push) |
-
