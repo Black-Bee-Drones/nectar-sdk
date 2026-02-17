@@ -17,7 +17,7 @@ on:
 
 jobs:
   build_and_verify:
-    name: ${{ inputs.ros_distro }}
+    name: Build & Verify (${{ inputs.ros_distro }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:

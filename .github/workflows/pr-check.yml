@@ -2,10 +2,10 @@ name: PR Check
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main]
 
 jobs:
-  humble:
+  check:
     uses: ./.github/workflows/_build-verify.yml
     with:
       ros_distro: humble
