@@ -285,7 +285,8 @@ _rebuild_workspace_realsense() {
     cd "$WORKSPACE_DIR"
     source "/opt/ros/${ROS_DISTRO}/setup.bash"
     rosdep update
-    rosdep install -i --from-path src --rosdistro "$ROS_DISTRO" --skip-keys=librealsense2 -y
+    rosdep install -i --from-path src --rosdistro "$ROS_DISTRO" \
+        --skip-keys="librealsense2 python3-scipy python3-sklearn python3-numpy" -y
     rm -rf build/ install/ log/
     colcon build --symlink-install
     log_success "Workspace rebuilt"

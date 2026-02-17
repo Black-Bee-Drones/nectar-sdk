@@ -93,9 +93,9 @@ Versions are auto-selected per ROS distro (`scripts/lib/config.sh`):
 
 | ROS 2 Distro | realsense-ros | librealsense | Cameras |
 |---|---|---|---|
-| Humble / Iron | 4.55.1 | v2.55.1 | D435, D435i, D455 |
+| Humble | 4.55.1 | v2.55.1 | D435, D435i, D455 |
 | Jazzy | [4.56.4](https://github.com/realsenseai/realsense-ros/releases/tag/4.56.4) | [v2.56.5](https://github.com/realsenseai/librealsense/releases/tag/v2.56.5) | D435, D435i, D455 |
-| Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | v2.56.5 | D435, D435i, D455 |
+| Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | [v2.57.6](https://github.com/realsenseai/librealsense/releases/tag/v2.57.6) | D435, D435i, D455 |
 
 Override versions for specific needs:
 ```bash

@@ -48,20 +48,39 @@ ENV REALSENSE_CUDA=${REALSENSE_CUDA}
 RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
     /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense; \
     fi
+# After realsense build, stale scipy/numpy .so files from --ignore-installed
+# can conflict. Purge and reinstall cleanly.
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-*; \
+    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
 
 CMD ["/bin/bash"]
 
 FROM sdk AS sdk-full
 
 ARG TORCH_VARIANT=cpu
+ARG INSTALL_REALSENSE=false
 ENV TORCH_VARIANT=${TORCH_VARIANT}
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     /home/ros2_ws/src/mirela-sdk/scripts/setup.sh pytorch ${TORCH_VARIANT}
 RUN --mount=type=cache,target=/root/.cache/pip \
     /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python ai
+
 RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
     && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
     || true
+
+RUN if [ "${INSTALL_REALSENSE:-false}" = "true" ]; then \
+    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-*; \
+    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
 
 CMD ["/bin/bash"]
