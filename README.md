@@ -1,10 +1,10 @@
 # Nectar SDK
 
-<img align="left" width="25" height="25" 
+<img align="left" width="25" height="25"
 src="https://images.emojiterra.com/google/
-noto-emoji/unicode-15/animated/1f41d.gif" 
-alt="Bee"> A modular software development kit for 
-autonomous aerial systems built on [ROS2](https://docs.ros.org/). Designed for drone 
+noto-emoji/unicode-15/animated/1f41d.gif"
+alt="Bee"> A modular software development kit for
+autonomous aerial systems built on [ROS2](https://docs.ros.org/). Designed for drone
 competitions, research, and rapid prototyping of of UAV applications
 
 
