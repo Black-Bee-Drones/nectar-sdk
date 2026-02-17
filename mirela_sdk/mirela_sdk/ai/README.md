@@ -61,21 +61,21 @@ from mirela_sdk.ai.detection import (
     # Main API
     Detector,
     Framework,
-    
+
     # Model classes
     UltralyticsModel,
     TransformersModel,
     RFDETRModel,
     BaseDetectionModel,
-    
+
     # Types
     Detection,
     DetectionResult,
-    
+
     # Configs
     TrainingConfig,
     EvaluationConfig,
-    
+
     # Utilities
     ModelLoader,
     ObjectDetectionEvaluator,
@@ -201,10 +201,10 @@ from mirela_sdk.vision import ImageHandler
 class DetectorNode(Node):
     def __init__(self):
         super().__init__("detector")
-        
+
         self.detector = Detector("model.pt")
         self.detector.load()
-        
+
         self.handler = ImageHandler(
             node=self,
             image_source="webcam",
@@ -212,7 +212,7 @@ class DetectorNode(Node):
             show_result="Detections",
         )
         self.handler.run()
-    
+
     def process(self, frame):
         result = self.detector.detect(frame)
         annotated = self.detector.draw_detections(frame, result)

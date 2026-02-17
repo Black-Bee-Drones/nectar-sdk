@@ -1,15 +1,15 @@
+#!/usr/bin/env python3
+import cv2
 import rclpy
 from rclpy.node import Node
-import cv2
 
 from mirela_sdk.vision.camera import (
-    ImageHandler,
-    CameraConfig,
-    OpenCVConfig,
-    IMX219Config,
-    RealSenseConfig,
-    OakDConfig,
     C920Config,
+    ImageHandler,
+    IMX219Config,
+    OakDConfig,
+    OpenCVConfig,
+    RealSenseConfig,
     ROSConfig,
     ROSDepthConfig,
 )
@@ -22,9 +22,7 @@ class CameraExampleNode(Node):
         self.declare_parameter("camera_type", "webcam")
         self.declare_parameter("show_result", True)
 
-        camera_type = (
-            self.get_parameter("camera_type").get_parameter_value().string_value
-        )
+        camera_type = self.get_parameter("camera_type").get_parameter_value().string_value
         show_result = self.get_parameter("show_result").get_parameter_value().bool_value
 
         config, source = self._get_camera_config(camera_type)

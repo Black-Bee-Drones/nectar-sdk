@@ -1,12 +1,12 @@
 import time
-from typing import Optional, Callable, Any
+from typing import Any, Callable, Optional
 
-from rclpy.node import Node
 import cv2
+from rclpy.node import Node
 
 from mirela_sdk.vision.camera.abstract import AbstractCam
-from mirela_sdk.vision.camera.factory import CameraFactory
 from mirela_sdk.vision.camera.config import CameraConfig
+from mirela_sdk.vision.camera.factory import CameraFactory
 
 
 class ImageHandler:
@@ -77,9 +77,7 @@ class ImageHandler:
         """Build camera instance from source string using factory."""
         if self.camera is not None:
             return self.camera
-        return CameraFactory.from_source(
-            self.image_source, config=self.config, node=self.node
-        )
+        return CameraFactory.from_source(self.image_source, config=self.config, node=self.node)
 
     def open(self) -> None:
         """
@@ -114,9 +112,7 @@ class ImageHandler:
             )
 
             if uses_async:
-                frame = self.camera.get_frame(
-                    wait_for_new=True, timeout=self._frame_timeout
-                )
+                frame = self.camera.get_frame(wait_for_new=True, timeout=self._frame_timeout)
             else:
                 frame = self.camera.get_frame()
 
@@ -162,13 +158,9 @@ class ImageHandler:
             self.camera = self._build_camera_from_source()
         if not self.camera.is_running:
             self.camera.start()
-        self.cam_timer = self.node.create_timer(
-            self.poll_interval, self._camera_callback
-        )
+        self.cam_timer = self.node.create_timer(self.poll_interval, self._camera_callback)
 
-    def take_photo(
-        self, timeout_sec: float = 1.0, wait_for_new: bool = True
-    ) -> Optional[Any]:
+    def take_photo(self, timeout_sec: float = 1.0, wait_for_new: bool = True) -> Optional[Any]:
         """
         Capture a single frame and optionally process it.
 
@@ -204,9 +196,7 @@ class ImageHandler:
         )
 
         if uses_async:
-            frame = self.camera.get_frame(
-                wait_for_new=wait_for_new, timeout=timeout_sec
-            )
+            frame = self.camera.get_frame(wait_for_new=wait_for_new, timeout=timeout_sec)
         else:
             while time.time() - start_time < timeout_sec:
                 frame = self.camera.get_frame()

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         # Feature Request
-        
+
         Thank you for submitting a feature request for Mirela SDK! Provide a clear and concise description of your request and any additional context that would help us understand your request better.
 
   - type: checkboxes
@@ -66,7 +66,7 @@ body:
         ```python
         # Example implementation idea
         from mirela_sdk.control.dji import DJI
-        
+
         dji = DJI(node=self)
         dji.takeoff()
         ```

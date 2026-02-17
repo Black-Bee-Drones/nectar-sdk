@@ -15,11 +15,11 @@ except ImportError:
 
 try:
     import supervision as sv
+    from supervision.metrics.f1_score import F1Score
     from supervision.metrics.mean_average_precision import MeanAveragePrecision
     from supervision.metrics.mean_average_recall import MeanAverageRecall
     from supervision.metrics.precision import Precision
     from supervision.metrics.recall import Recall
-    from supervision.metrics.f1_score import F1Score
 except ImportError:
     sv = None
 
@@ -72,11 +72,7 @@ class ObjectDetectionEvaluator:
             self.device = config.device
         elif torch and torch.cuda.is_available():
             self.device = "cuda"
-        elif (
-            torch
-            and hasattr(torch.backends, "mps")
-            and torch.backends.mps.is_available()
-        ):
+        elif torch and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             self.device = "mps"
         else:
             self.device = "cpu"
@@ -123,9 +119,7 @@ class ObjectDetectionEvaluator:
         all_times = []
         results = []
 
-        for i in tqdm(
-            range(0, len(all_images), self.config.batch_size), desc="Evaluating"
-        ):
+        for i in tqdm(range(0, len(all_images), self.config.batch_size), desc="Evaluating"):
             batch_images = all_images[i : i + self.config.batch_size]
             batch_paths = all_paths[i : i + self.config.batch_size]
             batch_gts = all_gts[i : i + self.config.batch_size]
@@ -166,9 +160,7 @@ class ObjectDetectionEvaluator:
         metrics = self._calculate_metrics(all_preds, all_gts, dataset.classes)
 
         # Add timing info
-        metrics.inference_time_per_image = (
-            sum(all_times) / len(all_times) if all_times else 0
-        )
+        metrics.inference_time_per_image = sum(all_times) / len(all_times) if all_times else 0
         metrics.total_detections = sum(len(p) for p in all_preds)
 
         # Generate visualizations
@@ -253,20 +245,13 @@ class ObjectDetectionEvaluator:
 
             ap50 = extract_per_class(map_result.ap_per_class, num_classes)
 
-            if (
-                map_result.ap_per_class is not None
-                and map_result.ap_per_class.ndim == 2
-            ):
+            if map_result.ap_per_class is not None and map_result.ap_per_class.ndim == 2:
                 ap50_95 = np.mean(map_result.ap_per_class, axis=1)
-                ap50_95 = np.pad(ap50_95, (0, max(0, num_classes - len(ap50_95))))[
-                    :num_classes
-                ]
+                ap50_95 = np.pad(ap50_95, (0, max(0, num_classes - len(ap50_95))))[:num_classes]
             else:
                 ap50_95 = ap50
 
-            precision = extract_per_class(
-                precision_result.precision_per_class, num_classes
-            )
+            precision = extract_per_class(precision_result.precision_per_class, num_classes)
             recall = extract_per_class(recall_result.recall_per_class, num_classes)
             f1 = extract_per_class(f1_result.f1_per_class, num_classes)
 
@@ -332,9 +317,7 @@ class ObjectDetectionEvaluator:
 
         return visualizations
 
-    def _plot_confusion_matrix(
-        self, cm: "sv.ConfusionMatrix", classes: List[str]
-    ) -> str:
+    def _plot_confusion_matrix(self, cm: "sv.ConfusionMatrix", classes: List[str]) -> str:
         """Plot and save confusion matrix."""
         import matplotlib.pyplot as plt
 
@@ -383,9 +366,7 @@ class ObjectDetectionEvaluator:
             if len(pred) > 0:
                 labels = [
                     f"{classes[cid] if cid < len(classes) else 'unk'}: {conf:.2f}"
-                    for cid, conf in zip(
-                        pred.class_id, pred.confidence or [1.0] * len(pred)
-                    )
+                    for cid, conf in zip(pred.class_id, pred.confidence or [1.0] * len(pred))
                 ]
                 img = box_annotator.annotate(img, pred)
                 img = label_annotator.annotate(img, pred, labels)
@@ -442,11 +423,7 @@ class ObjectDetectionEvaluator:
         for i in range(len(detections)):
             d = {
                 "box": detections.xyxy[i].tolist(),
-                "class_id": (
-                    int(detections.class_id[i])
-                    if detections.class_id is not None
-                    else 0
-                ),
+                "class_id": (int(detections.class_id[i]) if detections.class_id is not None else 0),
             }
             if detections.confidence is not None:
                 d["confidence"] = float(detections.confidence[i])

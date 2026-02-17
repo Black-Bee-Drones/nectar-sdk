@@ -1,8 +1,8 @@
-from typing import Optional, List, Callable, Dict
+import shlex
+import subprocess
 from dataclasses import dataclass
 from enum import Enum, auto
-import subprocess
-import shlex
+from typing import Callable, Dict, List, Optional
 
 from mirela_sdk.utils.process import ProcessUtils
 

@@ -1,30 +1,29 @@
-from typing import Optional, Dict, Any, List, Tuple
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QScrollArea,
-    QFrame,
     QSlider,
     QSpinBox,
-    QDoubleSpinBox,
-    QCheckBox,
     QSplitter,
-    QGroupBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal, Slot, QTimer
-
-from rclpy.node import Node
 from rcl_interfaces.msg import ParameterType
-from rcl_interfaces.srv import ListParameters, GetParameters, SetParameters
+from rcl_interfaces.srv import GetParameters, ListParameters, SetParameters
+from rclpy.node import Node
 
 from mirela_sdk.interface.theme import COLORS
 
@@ -355,9 +354,7 @@ class ParameterReconfigureWidget(QWidget):
     parameterSet = Signal(str, str, object)
     errorOccurred = Signal(str)
 
-    def __init__(
-        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
-    ) -> None:
+    def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
         self._current_node: Optional[str] = None
@@ -472,9 +469,7 @@ class ParameterReconfigureWidget(QWidget):
         try:
             nodes = self._node.get_node_names_and_namespaces()
             for node_name, namespace in sorted(nodes):
-                full_name = (
-                    f"{namespace}/{node_name}" if namespace != "/" else f"/{node_name}"
-                )
+                full_name = f"{namespace}/{node_name}" if namespace != "/" else f"/{node_name}"
                 full_name = full_name.replace("//", "/")
                 item = QListWidgetItem(full_name)
                 self._node_list.addItem(item)
@@ -574,18 +569,12 @@ class ParameterReconfigureWidget(QWidget):
         request.names = param_names
         future = client.call_async(request)
 
-        QTimer.singleShot(
-            100, lambda: self._handle_get_response(future, node_name, param_names)
-        )
+        QTimer.singleShot(100, lambda: self._handle_get_response(future, node_name, param_names))
 
-    def _handle_get_response(
-        self, future, node_name: str, param_names: List[str]
-    ) -> None:
+    def _handle_get_response(self, future, node_name: str, param_names: List[str]) -> None:
         """Handle get_parameters response and create editors."""
         if not future.done():
-            QTimer.singleShot(
-                50, lambda: self._handle_get_response(future, node_name, param_names)
-            )
+            QTimer.singleShot(50, lambda: self._handle_get_response(future, node_name, param_names))
             return
 
         try:
@@ -673,9 +662,7 @@ class ParameterReconfigureWidget(QWidget):
                 self._parameters[param.name] = param
 
             self._groups[group_name] = group_widget
-            self._params_layout.insertWidget(
-                self._params_layout.count() - 1, group_widget
-            )
+            self._params_layout.insertWidget(self._params_layout.count() - 1, group_widget)
 
     @Slot(str, object)
     def _on_parameter_changed(self, param_name: str, value: Any) -> None:
@@ -702,7 +689,6 @@ class ParameterReconfigureWidget(QWidget):
             return
 
         from rcl_interfaces.msg import Parameter as ParameterMsg
-        from rcl_interfaces.msg import ParameterValue
 
         param_msg = ParameterMsg()
         param_msg.name = param_name
@@ -712,13 +698,12 @@ class ParameterReconfigureWidget(QWidget):
         request.parameters = [param_msg]
 
         future = client.call_async(request)
-        QTimer.singleShot(
-            50, lambda: self._handle_set_response(future, param_name, value)
-        )
+        QTimer.singleShot(50, lambda: self._handle_set_response(future, param_name, value))
 
     def _create_parameter_value(self, value: Any):
         """Create ROS2 ParameterValue from Python value."""
-        from rcl_interfaces.msg import ParameterValue, ParameterType as PT
+        from rcl_interfaces.msg import ParameterType as PT
+        from rcl_interfaces.msg import ParameterValue
 
         pv = ParameterValue()
 
@@ -743,9 +728,7 @@ class ParameterReconfigureWidget(QWidget):
     def _handle_set_response(self, future, param_name: str, value: Any) -> None:
         """Handle set_parameters response."""
         if not future.done():
-            QTimer.singleShot(
-                50, lambda: self._handle_set_response(future, param_name, value)
-            )
+            QTimer.singleShot(50, lambda: self._handle_set_response(future, param_name, value))
             return
 
         try:

@@ -34,9 +34,7 @@ class DatasetMerger:
     ... })
     """
 
-    def __init__(
-        self, d1_path: str, d2_path: str, output_path: str, seed: int = 42
-    ):
+    def __init__(self, d1_path: str, d2_path: str, output_path: str, seed: int = 42):
         self.d1_path = Path(d1_path)
         self.d2_path = Path(d2_path)
         self.output_path = Path(output_path)
@@ -110,9 +108,7 @@ class DatasetMerger:
                     if p.suffix.lower() in [".jpg", ".jpeg", ".png"]
                 ]
 
-                sampled = self._get_sampled_files(
-                    split_labels, image_files, num_samples
-                )
+                sampled = self._get_sampled_files(split_labels, image_files, num_samples)
 
                 self._copy_files(
                     sampled,
@@ -139,9 +135,7 @@ class DatasetMerger:
         if num_samples == 0:
             return []
 
-        image_to_classes, class_to_images, _ = self._analyze_distribution(
-            labels_path, image_files
-        )
+        image_to_classes, class_to_images, _ = self._analyze_distribution(labels_path, image_files)
 
         if not class_to_images:
             print("  Warning: No labeled images found")
@@ -150,13 +144,9 @@ class DatasetMerger:
         if num_samples >= len(image_files):
             return image_files
 
-        return self._balanced_sample(
-            image_to_classes, class_to_images, num_samples
-        )
+        return self._balanced_sample(image_to_classes, class_to_images, num_samples)
 
-    def _analyze_distribution(
-        self, labels_path: Path, image_files: List[Path]
-    ):
+    def _analyze_distribution(self, labels_path: Path, image_files: List[Path]):
         """Analyze class distribution from labels."""
         image_to_classes = defaultdict(list)
         class_to_images = defaultdict(list)

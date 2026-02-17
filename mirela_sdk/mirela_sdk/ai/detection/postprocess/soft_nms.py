@@ -91,9 +91,7 @@ class SoftNMSStrategy(BaseMergingStrategy):
             else np.ones(len(boxes))
         )
         class_ids = (
-            detections.class_id.copy()
-            if detections.class_id is not None
-            else np.zeros(len(boxes))
+            detections.class_id.copy() if detections.class_id is not None else np.zeros(len(boxes))
         )
 
         # Sort by score

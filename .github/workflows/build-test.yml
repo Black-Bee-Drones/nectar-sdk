@@ -1,0 +1,23 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
+
+jobs:
+  humble:
+    uses: ./.github/workflows/_build-verify.yml
+    with:
+      ros_distro: humble
+
+  jazzy:
+    uses: ./.github/workflows/_build-verify.yml
+    with:
+      ros_distro: jazzy
+
+  kilted:
+    uses: ./.github/workflows/_build-verify.yml
+    with:
+      ros_distro: kilted

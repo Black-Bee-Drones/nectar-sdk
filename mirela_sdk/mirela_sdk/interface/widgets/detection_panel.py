@@ -1,19 +1,20 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
+
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
-    QComboBox,
     QLineEdit,
-    QDoubleSpinBox,
-    QCheckBox,
+    QPushButton,
     QStackedWidget,
-    QGridLayout,
-    QFrame,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal, Slot, QThread, QObject
 
 from mirela_sdk.interface.theme import COLORS
 
@@ -178,12 +179,8 @@ class DetectionConfigPanel(QWidget):
         fw_lbl.setFixedWidth(70)
 
         self._framework_combo = QComboBox()
-        self._framework_combo.addItems(
-            ["auto", "ultralytics", "transformers", "rfdetr"]
-        )
-        self._framework_combo.setToolTip(
-            "Detection framework (auto-detects from model)"
-        )
+        self._framework_combo.addItems(["auto", "ultralytics", "transformers", "rfdetr"])
+        self._framework_combo.setToolTip("Detection framework (auto-detects from model)")
         self._framework_combo.currentTextChanged.connect(self._on_framework_changed)
         fw_layout.addWidget(fw_lbl)
         fw_layout.addWidget(self._framework_combo, 1)
@@ -197,9 +194,7 @@ class DetectionConfigPanel(QWidget):
         src_lbl.setFixedWidth(70)
 
         self._source_combo = QComboBox()
-        self._source_combo.addItems(
-            ["Defaults", "Team Models", "HuggingFace", "Local File"]
-        )
+        self._source_combo.addItems(["Defaults", "Team Models", "HuggingFace", "Local File"])
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
         src_layout.addWidget(src_lbl)
         src_layout.addWidget(self._source_combo, 1)
@@ -222,9 +217,7 @@ class DetectionConfigPanel(QWidget):
 
         self._device_combo = QComboBox()
         self._device_combo.addItems(["auto", "cuda", "cpu", "0", "1"])
-        self._device_combo.setToolTip(
-            "Inference device (auto, cuda, cpu, or GPU index)"
-        )
+        self._device_combo.setToolTip("Inference device (auto, cuda, cpu, or GPU index)")
         dev_layout.addWidget(dev_lbl)
         dev_layout.addWidget(self._device_combo, 1)
         layout.addLayout(dev_layout)
@@ -323,9 +316,7 @@ class DetectionConfigPanel(QWidget):
         stats_layout.setSpacing(4)
 
         self._det_count_label = QLabel("Detections: -")
-        self._det_count_label.setStyleSheet(
-            f"color: {COLORS.accent}; font-weight: 600;"
-        )
+        self._det_count_label.setStyleSheet(f"color: {COLORS.accent}; font-weight: 600;")
 
         self._inf_time_label = QLabel("Inference: - ms")
         self._inf_time_label.setProperty("secondary", True)

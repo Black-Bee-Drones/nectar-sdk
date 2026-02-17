@@ -195,7 +195,7 @@ class HuggingFaceUploader:
                 commit_message=commit_message,
                 token=self.token,
             )
-            logger.info(f"Successfully uploaded file")
+            logger.info("Successfully uploaded file")
             return response
         except Exception as e:
             logger.error(f"Failed to upload file: {e}")

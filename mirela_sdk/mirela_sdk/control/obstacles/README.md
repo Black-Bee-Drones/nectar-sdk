@@ -14,14 +14,14 @@ classDiagram
         +update() ObstacleInfo
         +reset()
     }
-    
+
     class ObstacleInfo {
         <<dataclass>>
         +detected bool
         +direction Optional~ObstacleDirection~
         +distance Optional~float~
     }
-    
+
     class ObstacleDirection {
         <<enum>>
         FRONT
@@ -31,13 +31,13 @@ classDiagram
         UP
         DOWN
     }
-    
+
     class AvoidanceStrategy {
         <<abstract>>
         +execute(drone, info) bool
         +reset()*
     }
-    
+
     class ObstacleHandler {
         -_detector ObstacleDetector
         -_strategy AvoidanceStrategy
@@ -59,14 +59,14 @@ classDiagram
         +cleanup()
         -_update_callback()
     }
-    
+
     class ObstacleHandlerConfig {
         <<dataclass>>
         +enabled bool
         +strategy Optional~AvoidanceStrategy~
         +update_rate float
     }
-    
+
     class ObstacleManager {
         -_handlers dict~str,ObstacleHandler~
         +handlers dict~str,ObstacleHandler~
@@ -82,7 +82,7 @@ classDiagram
         +reset_all()
         +cleanup()
     }
-    
+
     class BaseObstacleDetector {
         <<abstract>>
         -_enabled bool
@@ -99,7 +99,7 @@ classDiagram
         #_on_disable()
         #_on_reset()
     }
-    
+
     class DepthObstacleDetector {
         -_node Node
         -_camera Optional~RealsenseCam~
@@ -119,13 +119,13 @@ classDiagram
         -_on_disable()
         -_on_reset()
     }
-    
+
     class PauseStrategy {
         -_paused bool
         +execute(drone, info) bool
         +reset()
     }
-    
+
     class DisableAxisStrategy {
         +disable_x bool
         +disable_y bool
@@ -133,7 +133,7 @@ classDiagram
         +execute(drone, info) bool
         +reset()
     }
-    
+
     class SequenceStrategy {
         -_sequence_func Callable
         -_executed bool
@@ -141,7 +141,7 @@ classDiagram
         +execute(drone, info) bool
         +reset()
     }
-    
+
     ObstacleDetector <|.. BaseObstacleDetector : implements
     BaseObstacleDetector <|-- DepthObstacleDetector
     AvoidanceStrategy <|-- PauseStrategy
@@ -167,7 +167,7 @@ sequenceDiagram
     participant D as DepthDetector
     participant Cam as RealSense Camera
     participant S as Strategy
-    
+
     Note over T,Cam: Background Detection (10Hz)
     loop Every 0.1s (Timer)
         T->>H: _update_callback()
@@ -179,14 +179,14 @@ sequenceDiagram
         D-->>H: ObstacleInfo
         H->>H: Lock & store
     end
-    
+
     Note over Nav,S: Navigation Loop (100Hz)
     loop Every 0.01s
         Nav->>Mgr: should_continue_navigation(drone)
         Mgr->>H: should_continue(drone)
         H->>H: Lock & read last_info
         H->>S: execute(drone, info)
-        
+
         alt Obstacle Detected
             S->>S: PauseStrategy
             S->>Nav: move_velocity(0,0,0,0)
@@ -207,9 +207,9 @@ sequenceDiagram
 
 ### Separation of Concerns
 
-**Detection** (What): Identify obstacles and return `ObstacleInfo`  
-**Strategy** (How): Define response behavior  
-**Handler** (When): Manage timing and integration  
+**Detection** (What): Identify obstacles and return `ObstacleInfo`
+**Strategy** (How): Define response behavior
+**Handler** (When): Manage timing and integration
 **Manager** (Where): Coordinate multiple detectors on a drone
 
 ### ObstacleInfo
@@ -232,7 +232,7 @@ Interface for obstacle detectors.
 class ObstacleDetector(Protocol):
     @property
     def is_enabled(self) -> bool: ...
-    
+
     def enable(self) -> None: ...
     def disable(self) -> None: ...
     def update(self) -> ObstacleInfo: ...
@@ -297,33 +297,33 @@ flowchart TD
     Downsample --> Filter{Filter Valid Depth}
     Filter -->|100mm < depth < 1500mm| ValidMask[Create Valid Mask]
     Filter -->|Outside range| Discard[Set to 0]
-    
+
     ValidMask --> Count{Count Valid Pixels}
     Count -->|< 50 pixels| NoObstacle[Return: No Obstacle]
     Count -->|≥ 50 pixels| ExtractPoints[Extract Point Cloud<br/>xs, ys, depths]
-    
+
     ExtractPoints --> DBSCAN[DBSCAN Clustering<br/>eps=20, min_samples=20]
     DBSCAN --> Clusters{Found Clusters?}
     Clusters -->|No clusters| NoObstacle
     Clusters -->|Yes| FilterClusters
-    
+
     FilterClusters[Filter by Threshold<br/>mean_depth < 1300mm] --> ValidClusters{Valid Clusters?}
     ValidClusters -->|None| NoObstacle
     ValidClusters -->|Yes| AnalyzePosition
-    
+
     AnalyzePosition[Analyze Cluster Position<br/>vs Image Center] --> Direction{Determine Direction}
-    
+
     Direction -->|All clusters<br/>x_max < center| DirLeft[LEFT]
     Direction -->|All clusters<br/>x_min > center| DirRight[RIGHT]
     Direction -->|Clusters both sides| DirFront[FRONT]
-    
+
     DirLeft --> CalcDist[Calculate Distance<br/>avg depth of clusters]
     DirRight --> CalcDist
     DirFront --> CalcDist
-    
+
     CalcDist --> Return([Return ObstacleInfo<br/>detected=True, direction, distance])
     NoObstacle --> ReturnFalse([Return ObstacleInfo<br/>detected=False])
-    
+
     style Start fill:#e1f5ff
     style Return fill:#d4edda
     style ReturnFalse fill:#f8d7da
@@ -342,7 +342,7 @@ class CustomDetector(BaseObstacleDetector):
     def _detect(self) -> ObstacleInfo:
         # Custom detection logic
         return ObstacleInfo(detected=True, direction=ObstacleDirection.FRONT)
-    
+
     def _reset_detector_state(self) -> None:
         # Reset internal state
         pass
@@ -355,32 +355,32 @@ class CustomDetector(BaseObstacleDetector):
 ```mermaid
 flowchart TD
     Start([drone.move_to<br/>x=10, y=0, z=0]) --> Nav{Navigation Loop}
-    
+
     Nav --> CheckObs{ObstacleManager:<br/>Check all detectors}
-    
+
     CheckObs -->|No obstacles| ComputePID[Compute PID<br/>vx, vy, vz, vyaw]
     ComputePID --> SendVel[drone.move_velocity<br/>vx, vy, vz, vyaw]
     SendVel --> CheckDist{Distance to<br/>target < precision?}
-    
+
     CheckObs -->|Obstacle detected| StrategyType{Which Strategy?}
-    
+
     StrategyType -->|PAUSE| Pause[Stop drone<br/>move_velocity<br/>0, 0, 0, 0]
     Pause --> WaitClear{Path cleared?}
     WaitClear -->|No| Pause
     WaitClear -->|Yes| Nav
-    
+
     StrategyType -->|DISABLE_AXIS| DisableZ[Disable Z axis<br/>Continue XY only]
     DisableZ --> ComputePID2[Compute PID<br/>vx, vy ONLY<br/>vz=0]
     ComputePID2 --> SendVel
-    
+
     StrategyType -->|SEQUENCE| ExecuteSeq[Execute Sequence:<br/>Lateral → Forward → Return]
     ExecuteSeq --> SeqComplete{Sequence<br/>complete?}
     SeqComplete -->|No| ExecuteSeq
     SeqComplete -->|Yes| Nav
-    
+
     CheckDist -->|No| Nav
     CheckDist -->|Yes| Done([Target Reached])
-    
+
     style Pause fill:#ffe6e6
     style DisableZ fill:#fff4e6
     style ExecuteSeq fill:#e6f3ff
@@ -403,12 +403,12 @@ class AvoidanceStrategy(ABC):
     def execute(self, drone: BaseDrone, info: ObstacleInfo) -> bool:
         """
         Execute avoidance behavior.
-        
+
         Returns:
             True if navigation should continue, False to pause
         """
         pass
-    
+
     @abstractmethod
     def reset(self) -> None:
         pass
@@ -497,7 +497,7 @@ handler = ObstacleHandler(
     node=node,
     config=ObstacleHandlerConfig(
         enabled=True,
-        update_rate=0.1 
+        update_rate=0.1
     )
 )
 ```
@@ -531,17 +531,17 @@ disable_x, disable_y, disable_z = manager.get_axis_control()
 
 **Navigation Integration**:
 ```python
-# In MavrosDrone._navigate_pid()
+# In MavrosNavigator.navigate_pid()
 while True:
     if not self._obstacle_manager.should_continue_navigation(self):
         continue  # Pause or sequence executing
-    
+
     disable_x, disable_y, disable_z = self._obstacle_manager.get_axis_control()
-    
+
     control_x = x is not None and not disable_x
     control_y = y is not None and not disable_y
     control_z = z is not None and not disable_z
-    
+
     # Continue with PID control
 ```
 
@@ -673,16 +673,16 @@ class BackupStrategy(AvoidanceStrategy):
     def __init__(self, backup_distance=1.0):
         self.backup_distance = backup_distance
         self._backing_up = False
-    
+
     def execute(self, drone, info):
         if info.detected and not self._backing_up:
             self._backing_up = True
             drone.move_to(x=-self.backup_distance, precision=0.2)
             self._backing_up = False
             return False  # Don't continue until backup complete
-        
+
         return not info.detected
-    
+
     def reset(self):
         self._backing_up = False
 
@@ -691,12 +691,9 @@ drone.add_obstacle_detector("depth", detector, BackupStrategy(backup_distance=2.
 
 ## Thread Safety
 
-**Detectors**: Run on independent ROS2 timers (background threads)  
-**Handlers**: Use locks for state access  
-**Strategies**: Execute in navigation thread (main thread)  
+**Detectors**: Run on independent ROS2 timers (background threads)
+**Handlers**: Use locks for state access
+**Strategies**: Execute in navigation thread (main thread)
 **Manager**: Single-threaded (navigation loop)
 
 **Synchronization**: Handler locks prevent race conditions between timer callback and navigation loop.
-
-
-

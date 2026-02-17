@@ -83,16 +83,8 @@ class WBFStrategy(BaseMergingStrategy):
             return detections, [], 0
 
         boxes = detections.xyxy
-        scores = (
-            detections.confidence
-            if detections.confidence is not None
-            else np.ones(len(boxes))
-        )
-        class_ids = (
-            detections.class_id
-            if detections.class_id is not None
-            else np.zeros(len(boxes))
-        )
+        scores = detections.confidence if detections.confidence is not None else np.ones(len(boxes))
+        class_ids = detections.class_id if detections.class_id is not None else np.zeros(len(boxes))
 
         # Filter low confidence
         mask = scores >= self.skip_box_threshold
@@ -145,9 +137,7 @@ class WBFStrategy(BaseMergingStrategy):
                 total_weight = weights.sum()
 
                 if total_weight > 0:
-                    fused_box = (match_boxes * weights[:, np.newaxis]).sum(
-                        axis=0
-                    ) / total_weight
+                    fused_box = (match_boxes * weights[:, np.newaxis]).sum(axis=0) / total_weight
                     fused_score = match_scores.mean()
                 else:
                     fused_box = match_boxes[0]

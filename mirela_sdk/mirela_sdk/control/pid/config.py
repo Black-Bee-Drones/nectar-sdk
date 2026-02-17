@@ -1,8 +1,9 @@
 """PID configuration from YAML files or dictionaries."""
 
 from dataclasses import dataclass, field
-import yaml
 from pathlib import Path
+
+import yaml
 
 
 @dataclass

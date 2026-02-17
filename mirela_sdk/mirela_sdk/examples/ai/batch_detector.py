@@ -20,9 +20,9 @@ Use Transformers DETR:
 """
 
 import argparse
+import tempfile
 from pathlib import Path
 from typing import List, Tuple
-import tempfile
 
 import cv2
 import numpy as np
@@ -30,9 +30,7 @@ import numpy as np
 from mirela_sdk.ai.detection import Detector, Framework
 
 
-def extract_video_frames(
-    video_path: str, output_dir: str = None
-) -> Tuple[List[str], float]:
+def extract_video_frames(video_path: str, output_dir: str = None) -> Tuple[List[str], float]:
     """
     Extract frames from video file.
 
@@ -205,7 +203,7 @@ def process_images(
             print(
                 f"Processed {idx + 1}/{len(image_files)} frames | "
                 f"Current: {num_detections} detections | "
-                f"Inference: {result.inference_time*1000:.1f}ms"
+                f"Inference: {result.inference_time * 1000:.1f}ms"
             )
 
     video_writer.release()
@@ -216,8 +214,8 @@ def process_images(
     print(f"Framework: {detector.framework.value}")
     print(f"Total frames: {len(image_files)}")
     print(f"Total detections: {total_detections}")
-    print(f"Average detections per frame: {total_detections/len(image_files):.2f}")
-    print(f"Average inference time: {total_inference_time/len(image_files)*1000:.1f}ms")
+    print(f"Average detections per frame: {total_detections / len(image_files):.2f}")
+    print(f"Average inference time: {total_inference_time / len(image_files) * 1000:.1f}ms")
     print(f"Output video: {video_path}")
     print(f"Output frames: {frames_dir}")
 
@@ -261,9 +259,7 @@ def add_frame_info(
     for i, line in enumerate(overlay_lines):
         y_pos = y_offset + (i + 1) * 25
 
-        (text_width, text_height), _ = cv2.getTextSize(
-            line, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1
-        )
+        (text_width, text_height), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
 
         cv2.rectangle(
             frame,
@@ -334,12 +330,8 @@ def main():
         choices=["box", "round_box", "color"],
         help="Type of annotation to draw",
     )
-    parser.add_argument(
-        "--hide-labels", action="store_true", help="Hide detection labels"
-    )
-    parser.add_argument(
-        "--hide-confidence", action="store_true", help="Hide confidence scores"
-    )
+    parser.add_argument("--hide-labels", action="store_true", help="Hide detection labels")
+    parser.add_argument("--hide-confidence", action="store_true", help="Hide confidence scores")
     parser.add_argument("--fps", type=int, default=30, help="FPS for output video")
 
     args = parser.parse_args()

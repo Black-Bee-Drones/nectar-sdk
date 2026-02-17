@@ -117,9 +117,7 @@ class ModelLoader:
             return ModelLoader.from_path(model_source)
 
         if "/" in model_source:
-            return ModelLoader.from_huggingface(
-                model_source, cache_dir=cache_dir, token=token
-            )
+            return ModelLoader.from_huggingface(model_source, cache_dir=cache_dir, token=token)
 
         raise ValueError(
             f"Invalid model source: {model_source}. "

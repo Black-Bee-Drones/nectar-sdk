@@ -6,8 +6,8 @@ Slicing strategies for detecting small objects in high-resolution images
 """
 
 from mirela_sdk.ai.detection.slicing.config import SlicingConfig, SlicingStrategy
-from mirela_sdk.ai.detection.slicing.slicer import ImageSlicer, SliceInfo
 from mirela_sdk.ai.detection.slicing.inference import SlicingInference
+from mirela_sdk.ai.detection.slicing.slicer import ImageSlicer, SliceInfo
 
 __all__ = [
     "SlicingConfig",

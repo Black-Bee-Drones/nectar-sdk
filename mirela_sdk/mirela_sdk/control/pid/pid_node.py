@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import rclpy
-from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
-from std_msgs.msg import Float64, Bool
+from rclpy.node import Node
+from std_msgs.msg import Bool, Float64
 
 from mirela_sdk.control.pid import PIDController
 
@@ -42,15 +42,11 @@ class PIDControllerNode(Node):
 
         # publishers and subscribers
         self._control_pub = self.create_publisher(Float64, control_topic, 10)
-        self._state_sub = self.create_subscription(
-            Float64, state_topic, self._state_callback, 10
-        )
+        self._state_sub = self.create_subscription(Float64, state_topic, self._state_callback, 10)
         self._setpoint_sub = self.create_subscription(
             Float64, setpoint_topic, self._setpoint_callback, 10
         )
-        self._enable_sub = self.create_subscription(
-            Bool, enable_topic, self._enable_callback, 10
-        )
+        self._enable_sub = self.create_subscription(Bool, enable_topic, self._enable_callback, 10)
 
         # Internal state
         self._auto_mode = self.get_parameter("auto_start").value
@@ -130,9 +126,7 @@ class PIDControllerNode(Node):
         if not self._auto_mode:
             self._pid.reset()
 
-        self.get_logger().info(
-            f"PID controller {'enabled' if self._auto_mode else 'disabled'}"
-        )
+        self.get_logger().info(f"PID controller {'enabled' if self._auto_mode else 'disabled'}")
 
     def _parameters_callback(self, params):
         """Handle parameter changes."""
@@ -167,9 +161,7 @@ class PIDControllerNode(Node):
                 self._auto_mode = param.value
                 if not self._auto_mode:
                     self._pid.reset()
-                self.get_logger().info(
-                    f"PID {'enabled' if self._auto_mode else 'disabled'}"
-                )
+                self.get_logger().info(f"PID {'enabled' if self._auto_mode else 'disabled'}")
             elif name == "reverse_action":
                 self._reverse_action = param.value
                 self.get_logger().info(

@@ -1,19 +1,19 @@
-.vscode
 .vscode/
-__pycache__
+
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.jpg
-log/
-log/*
-.venv/*
-.venv
-.venv
+*.egg-info/
+*.eggs/
+dist/
+.venv/
 
 build/
 install/
+log/
 
-
-
+*.jpg
+*.log
+*.tlog
+*.tlog.raw

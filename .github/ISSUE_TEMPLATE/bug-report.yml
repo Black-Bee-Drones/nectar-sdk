@@ -83,7 +83,7 @@ body:
       placeholder: |
         ```python
         from mirela_sdk.control.bebop import Bebop
-        
+
         bebop = Bebop(node=self, driver=True)
         bebop.takeoff()  # Bug occurs here
         ```

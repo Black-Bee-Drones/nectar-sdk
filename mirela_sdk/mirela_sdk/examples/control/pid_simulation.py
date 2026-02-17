@@ -101,9 +101,7 @@ def print_csv(results: list[SimulationResult]):
     """Print results as CSV"""
     print("time,setpoint,value,error,output")
     for r in results:
-        print(
-            f"{r.time:.2f},{r.setpoint:.2f},{r.value:.2f},{r.error:.2f},{r.output:.2f}"
-        )
+        print(f"{r.time:.2f},{r.setpoint:.2f},{r.value:.2f},{r.error:.2f},{r.output:.2f}")
 
 
 def plot_results(results: list[SimulationResult], save_path: str = None):
@@ -157,13 +155,9 @@ def main():
     parser.add_argument("--kp", type=float, default=2.0, help="Proportional gain")
     parser.add_argument("--ki", type=float, default=5.0, help="Integral gain")
     parser.add_argument("--kd", type=float, default=0.0, help="Derivative gain")
-    parser.add_argument(
-        "--duration", type=float, default=60.0, help="Simulation time (s)"
-    )
+    parser.add_argument("--duration", type=float, default=60.0, help="Simulation time (s)")
     parser.add_argument("--plot", action="store_true", help="Plot results")
-    parser.add_argument(
-        "--save", type=str, default=None, help="Save plot to file (e.g. plot.png)"
-    )
+    parser.add_argument("--save", type=str, default=None, help="Save plot to file (e.g. plot.png)")
     parser.add_argument("--csv", action="store_true", help="Output CSV format")
     args = parser.parse_args()
 

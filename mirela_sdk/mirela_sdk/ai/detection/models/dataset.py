@@ -2,10 +2,9 @@
 
 import json
 import logging
-import os
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from PIL import Image
@@ -80,9 +79,7 @@ class CocoDetectionDataset(Dataset):
         # Remap to sequential IDs (0-indexed)
         cat_ids = sorted(self.id2label.keys())
         self.old_to_new_id = {old: new for new, old in enumerate(cat_ids)}
-        self.id2label = {
-            new: self.id2label[old] for old, new in self.old_to_new_id.items()
-        }
+        self.id2label = {new: self.id2label[old] for old, new in self.old_to_new_id.items()}
         self.label2id = {v: k for k, v in self.id2label.items()}
 
         # Build image -> annotations mapping
@@ -101,9 +98,7 @@ class CocoDetectionDataset(Dataset):
             random.seed(seed)
             self.images = random.sample(self.images, max_samples)
 
-        logger.info(
-            f"Loaded {len(self.images)} images with {len(self.categories)} classes"
-        )
+        logger.info(f"Loaded {len(self.images)} images with {len(self.categories)} classes")
 
     def __len__(self) -> int:
         return len(self.images)
@@ -149,9 +144,7 @@ class CocoDetectionDataset(Dataset):
         }
 
         # Process with image processor
-        encoding = self.image_processor(
-            images=image, annotations=[target], return_tensors="pt"
-        )
+        encoding = self.image_processor(images=image, annotations=[target], return_tensors="pt")
 
         # Remove batch dimension
         pixel_values = encoding["pixel_values"].squeeze(0)

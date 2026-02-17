@@ -30,15 +30,15 @@ Example
 >>> distance_cm = estimator.estimate(pixel_height=25.0)
 """
 
-from mirela_sdk.vision.algorithms.distance.models import (
-    ModelType,
-    EstimationModel,
-    create_model,
+from mirela_sdk.vision.algorithms.distance.calibrator import (
+    CalibrationResult,
+    ModelCalibrator,
 )
 from mirela_sdk.vision.algorithms.distance.estimator import DistanceEstimator
-from mirela_sdk.vision.algorithms.distance.calibrator import (
-    ModelCalibrator,
-    CalibrationResult,
+from mirela_sdk.vision.algorithms.distance.models import (
+    EstimationModel,
+    ModelType,
+    create_model,
 )
 
 __all__ = [

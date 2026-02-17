@@ -26,24 +26,24 @@ classDiagram
         +register(key, builder)$
         +from_source(source, config, node)$ AbstractCam
     }
-    
+
     class AbstractCam {
         <<abstract>>
         -_name str
         -_is_running bool
         +name str
         +is_running bool
-        +start()* 
+        +start()*
         +get_frame()* Optional~ndarray~
         +close()*
     }
-    
+
     class DepthCam {
         <<abstract>>
         +get_depth_frame()* Optional~ndarray~
         +get_distance(u, v)* Optional~float~
     }
-    
+
     class OpenCVCam {
         -_cap VideoCapture
         -_config OpenCVConfig
@@ -52,7 +52,7 @@ classDiagram
         +get_frame() Optional~ndarray~
         +close()
     }
-    
+
     class RealsenseCam {
         -_pipeline Pipeline
         -_align Align
@@ -64,7 +64,7 @@ classDiagram
         +get_distance(u, v) Optional~float~
         +close()
     }
-    
+
     class OakdCam {
         -_pipeline Pipeline
         -_config OakDConfig
@@ -74,7 +74,7 @@ classDiagram
         +get_distance(u, v) Optional~float~
         +close()
     }
-    
+
     class ROSCam {
         -_node Node
         -_subscriber Subscription
@@ -83,7 +83,7 @@ classDiagram
         +get_frame(wait_for_new, timeout) Optional~ndarray~
         +close()
     }
-    
+
     class FileImageCam {
         -_path str
         -_image ndarray
@@ -91,21 +91,21 @@ classDiagram
         +get_frame() Optional~ndarray~
         +close()
     }
-    
+
     class C920Cam {
         -_config C920Config
         +start()
         +get_frame() Optional~ndarray~
         +close()
     }
-    
+
     class IMX219Cam {
         -_config IMX219Config
         +start()
         +get_frame() Optional~ndarray~
         +close()
     }
-    
+
     class ImageHandler {
         -node Node
         -image_source str
@@ -120,7 +120,7 @@ classDiagram
         +process()
         +cleanup()
     }
-    
+
     AbstractCam <|-- DepthCam
     AbstractCam <|-- OpenCVCam
     AbstractCam <|-- ROSCam
@@ -142,7 +142,7 @@ classDiagram
         <<dataclass>>
         +name str
     }
-    
+
     class OpenCVConfig {
         <<dataclass>>
         +device_index int
@@ -155,7 +155,7 @@ classDiagram
         +buffer_size Optional~int~
         +threaded bool
     }
-    
+
     class RealSenseConfig {
         <<dataclass>>
         +color_res Tuple~int,int~
@@ -169,25 +169,25 @@ classDiagram
         +color_compressed bool
         +depth_compressed bool
     }
-    
+
     class OakDConfig {
         <<dataclass>>
         +cam_num int
         +enable_depth bool
     }
-    
+
     class ROSConfig {
         <<dataclass>>
         +topic str
         +compressed bool
     }
-    
+
     class C920Config {
         <<dataclass>>
         +profile int
         +fallback_device_index int
     }
-    
+
     class IMX219Config {
         <<dataclass>>
         +sensor_id int
@@ -196,12 +196,12 @@ classDiagram
         +fps int
         +flip int
     }
-    
+
     class FileImageConfig {
         <<dataclass>>
         +path str
     }
-    
+
     CameraConfig <|-- OpenCVConfig
     CameraConfig <|-- RealSenseConfig
     CameraConfig <|-- OakDConfig
@@ -290,7 +290,7 @@ from mirela_sdk.vision import ImageHandler, OpenCVConfig
 class CameraNode(Node):
     def __init__(self):
         super().__init__('camera_node')
-        
+
         self.handler = ImageHandler(
             node=self,
             image_source="webcam",
@@ -299,7 +299,7 @@ class CameraNode(Node):
             show_result="Camera View"
         )
         self.handler.run()
-    
+
     def process_frame(self, frame):
         # Process each frame
         detections = self.detector.detect(frame)
@@ -315,7 +315,7 @@ Base class for all camera drivers. Defines the camera interface contract.
 class AbstractCam(ABC):
     name: str                           # Camera identifier
     is_running: bool                    # Capture status
-    
+
     def start() -> None                 # Initialize camera
     def get_frame() -> Optional[ndarray]  # Capture BGR frame
     def close() -> None                 # Release resources
@@ -350,7 +350,7 @@ classDiagram
         +calculateYawFromCorners(bbox) float
         +aruco_config(marker_dict, tag_size)
     }
-    
+
     class ColorDetector {
         -mode str
         -color_space ColorSpace
@@ -363,38 +363,38 @@ classDiagram
         +get_color_values(color_name) list
         +saveColorValues()
     }
-    
+
     class ColorSpace {
         <<enumeration>>
         HSV
         LAB
     }
-    
+
     class ILineEstimationMethod {
         <<abstract>>
         +estimate(img_detect, img_out, offset, draw, draw_color)* tuple
     }
-    
+
     class HoughLinesP {
         +estimate(img_detect, img_out, offset, draw, draw_color) tuple
     }
-    
+
     class RotatedRect {
         +estimate(img_detect, img_out, offset, draw, draw_color) tuple
     }
-    
+
     class FitEllipse {
         +estimate(img_detect, img_out, offset, draw, draw_color) tuple
     }
-    
+
     class RansacLine {
         +estimate(img_detect, img_out, offset, draw, draw_color) tuple
     }
-    
+
     class AdaptiveHoughLinesP {
         +estimate(img_detect, img_out, offset, draw, draw_color) tuple
     }
-    
+
     class LineDetector {
         -color_detector ColorDetector
         -estimation_method ILineEstimationMethod
@@ -402,7 +402,7 @@ classDiagram
         +detect_line(img, region, draw, draw_color) tuple
         +set_text_positions(positions_dict)
     }
-    
+
     ColorDetector --> ColorSpace
     ILineEstimationMethod <|.. HoughLinesP
     ILineEstimationMethod <|.. RotatedRect
@@ -446,7 +446,7 @@ aruco = Aruco(marker_dict=5, tag_size=0.05)  # 5x5, 5cm
 while True:
     frame = camera.get_frame()
     marker_id, translation, yaw = aruco.pose_estimate(frame, draw=True)
-    
+
     if marker_id is not None:
         x, y, z = translation
         print(f"Marker {marker_id}: x={x:.2f}m, y={y:.2f}m, z={z:.2f}m, yaw={yaw:.1f}°")
@@ -481,7 +481,7 @@ while True:
     frame = camera.get_frame()
     detector.filterColor(frame)
     cv2.imshow("Mask", detector.mask)
-    
+
     if cv2.waitKey(1) == ord('s'):
         detector.saveColorValues()  # Prompts for color name
 
@@ -550,7 +550,7 @@ detector = LineDetector(
 while True:
     frame = camera.get_frame()
     result, mask, cx, cy, angle, w, h = detector.detect_line(frame, draw=True)
-    
+
     if not math.isnan(cx):
         print(f"Line at ({cx:.0f}, {cy:.0f}), angle: {angle:.1f}°")
 ```
@@ -576,7 +576,7 @@ classDiagram
         +set_model_params(model_type, params)
         +available_methods()$ list
     }
-    
+
     class ModelCalibrator {
         -pixels ndarray
         -distances ndarray
@@ -588,7 +588,7 @@ classDiagram
         +print_results()
         +plot(save_path)
     }
-    
+
     class CalibrationResult {
         <<dataclass>>
         +model_type ModelType
@@ -600,7 +600,7 @@ classDiagram
         +predictions ndarray
         +name str
     }
-    
+
     class ModelType {
         <<enumeration>>
         LINEAR
@@ -610,26 +610,26 @@ classDiagram
         INVERSE_POWER
         ROBUST_POLY2
     }
-    
+
     class EstimationModel {
         <<abstract>>
         +estimate(value)* float
         +fit(x, y)* Dict
     }
-    
+
     class LinearModel {
         +k float
         +estimate(value) float
         +fit(x, y) Dict
     }
-    
+
     class PolynomialModel {
         +coeffs list
         +degree int
         +estimate(value) float
         +fit(x, y) Dict
     }
-    
+
     class ExponentialModel {
         +a float
         +b float
@@ -637,7 +637,7 @@ classDiagram
         +estimate(value) float
         +fit(x, y) Dict
     }
-    
+
     DistanceEstimator o-- EstimationModel
     ModelCalibrator --> CalibrationResult
     EstimationModel <|.. LinearModel
@@ -718,7 +718,7 @@ classDiagram
         +min_tracking_confidence float
         +running_mode str
     }
-    
+
     class HandResult {
         <<dataclass>>
         +landmarks list
@@ -726,7 +726,7 @@ classDiagram
         +handedness str
         +confidence float
     }
-    
+
     class HandLandmark {
         <<enumeration>>
         WRIST
@@ -734,7 +734,7 @@ classDiagram
         INDEX_FINGER_TIP
         ...
     }
-    
+
     class HandTracker {
         -_config HandTrackerConfig
         -_detector HandLandmarker
@@ -752,7 +752,7 @@ classDiagram
         +find_distance(l1, l2, image, hand_idx, draw) tuple
         +estimate_depth(hand_idx, width, height) float
     }
-    
+
     class FaceMeshTrackerConfig {
         <<dataclass>>
         +model_path Optional~str~
@@ -763,13 +763,13 @@ classDiagram
         +output_blendshapes bool
         +running_mode str
     }
-    
+
     class FaceResult {
         <<dataclass>>
         +landmarks list
         +blendshapes Optional~list~
     }
-    
+
     class FaceLandmarkRegion {
         <<class>>
         +FACE_OVAL List~int~
@@ -779,7 +779,7 @@ classDiagram
         +LEFT_IRIS List~int~
         +RIGHT_IRIS List~int~
     }
-    
+
     class FaceMeshTracker {
         -_config FaceMeshTrackerConfig
         -_detector FaceLandmarker
@@ -796,7 +796,7 @@ classDiagram
         +get_eye_aspect_ratio(eye, face_idx) float
         +get_mouth_aspect_ratio(face_idx) float
     }
-    
+
     HandTracker o-- HandTrackerConfig
     HandTracker --> HandResult
     FaceMeshTracker o-- FaceMeshTrackerConfig
@@ -838,12 +838,12 @@ with HandTracker(config) as tracker:
     while True:
         frame = camera.get_frame()
         tracker.detect(frame, draw=True)
-        
+
         fingers = tracker.raised_fingers()
         if fingers:
             count = sum(fingers)
             print(f"Fingers raised: {count}")
-        
+
         cv2.imshow("Hands", frame)
         if cv2.waitKey(1) == ord('q'):
             break
@@ -855,10 +855,10 @@ from mirela_sdk.vision import HandTracker, HandLandmark
 
 with HandTracker() as tracker:
     tracker.detect(frame)
-    
+
     # Get finger states: [thumb, index, middle, ring, pinky]
     fingers = tracker.raised_fingers()
-    
+
     # Map to gestures
     gestures = {
         (0, 0, 0, 0, 0): "fist",
@@ -867,7 +867,7 @@ with HandTracker() as tracker:
         (0, 1, 1, 0, 0): "peace",
         (1, 0, 0, 0, 1): "rock",
     }
-    
+
     gesture = gestures.get(tuple(fingers), "unknown")
 ```
 
@@ -906,14 +906,14 @@ with FaceMeshTracker(config) as tracker:
     while True:
         frame = camera.get_frame()
         tracker.detect(frame, draw=True)
-        
+
         # Blink detection
         left_ear = tracker.get_eye_aspect_ratio("left")
         right_ear = tracker.get_eye_aspect_ratio("right")
-        
+
         if left_ear < 0.15 and right_ear < 0.15:
             print("Blink detected!")
-        
+
         cv2.imshow("Face", frame)
         if cv2.waitKey(1) == ord('q'):
             break
@@ -925,11 +925,11 @@ from mirela_sdk.vision import FaceLandmarkRegion
 
 with FaceMeshTracker() as tracker:
     tracker.detect(frame)
-    
+
     # Get specific regions
     left_eye = tracker.get_landmarks(landmark_ids=FaceLandmarkRegion.LEFT_EYE)
     lips = tracker.get_landmarks(landmark_ids=FaceLandmarkRegion.LIPS)
-    
+
     # Draw specific region
     tracker.draw_region(frame, FaceLandmarkRegion.LEFT_EYE, color=(0, 255, 0))
 ```
@@ -947,7 +947,7 @@ classDiagram
         +process_image(img)
         +cleanup()
     }
-    
+
     class LineDetectionNode {
         -line_detectors Dict~str,LineDetector~
         -estimation_methods Dict~str,ILineEstimationMethod~
@@ -957,20 +957,20 @@ classDiagram
         +run()
         +cleanup()
     }
-    
+
     class ColorCalibrationNode {
         -color_detector ColorDetector
         -img_handler ImageHandler
         +process_image(img)
     }
-    
+
     class WebcamPublisherNode {
         -camera OpenCVCam
         -image_handler ImageHandler
         -publisher Publisher
         +cleanup()
     }
-    
+
     ArucoNode o-- Aruco
     ArucoNode o-- ImageHandler
     LineDetectionNode o-- LineDetector

@@ -2,7 +2,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -16,19 +16,18 @@ try:
 except ImportError:
     sv = None
 
+from mirela_sdk.ai.detection.core.configs import (
+    EvaluationConfig,
+    EvaluationMetrics,
+    TrainingConfig,
+    TrainingResult,
+)
+from mirela_sdk.ai.detection.core.exceptions import ModelNotLoadedError
 from mirela_sdk.ai.detection.core.types import (
-    Detection,
     DetectionInput,
     DetectionResult,
     Prediction,
 )
-from mirela_sdk.ai.detection.core.configs import (
-    TrainingConfig,
-    EvaluationConfig,
-    TrainingResult,
-    EvaluationMetrics,
-)
-from mirela_sdk.ai.detection.core.exceptions import ModelNotLoadedError
 
 
 class BaseDetectionModel(ABC):
@@ -370,9 +369,7 @@ class BaseDetectionModel(ABC):
             self.slicing_config = slicing_config
 
         self._slicing_inference = SlicingInference(self.slicing_config)
-        self.logger.info(
-            f"Slicing enabled with strategy: {self.slicing_config.strategy.value}"
-        )
+        self.logger.info(f"Slicing enabled with strategy: {self.slicing_config.strategy.value}")
 
     def disable_slicing(self) -> None:
         """Disable slicing-based inference."""
@@ -418,9 +415,7 @@ class BaseDetectionModel(ABC):
 
             if result.is_batch:
                 return (
-                    result.batch_detections[0]
-                    if result.batch_detections
-                    else sv.Detections.empty()
+                    result.batch_detections[0] if result.batch_detections else sv.Detections.empty()
                 )
             return result.detections
 
@@ -532,9 +527,7 @@ class BaseDetectionModel(ABC):
         >>> cv2.imshow("Detections", annotated)
         """
         if sv is None:
-            raise ImportError(
-                "supervision is required. Install with: pip install supervision"
-            )
+            raise ImportError("supervision is required. Install with: pip install supervision")
 
         if not result.detections:
             return image.copy()

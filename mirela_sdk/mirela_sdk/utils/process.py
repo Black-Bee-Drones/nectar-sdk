@@ -2,8 +2,8 @@ import logging
 import shlex
 import subprocess
 import sys
-from typing import List
 from time import sleep
+from typing import List
 
 _logger = logging.getLogger("mirela_sdk.utils.process")
 
@@ -65,11 +65,7 @@ class ProcessUtils:
                 check=False,
             )
             if result.returncode == 0:
-                return [
-                    line.strip()
-                    for line in result.stdout.strip().split("\n")
-                    if line.strip()
-                ]
+                return [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
             return []
         except subprocess.TimeoutExpired:
             return []
@@ -128,9 +124,7 @@ class ProcessUtils:
         return False
 
     @staticmethod
-    def start_process(
-        command: str, name: str = "my_session", gui: bool = False
-    ) -> bool:
+    def start_process(command: str, name: str = "my_session", gui: bool = False) -> bool:
         """
         Start a process in a tmux session or gnome-terminal.
 

@@ -1,38 +1,38 @@
-from typing import Optional, List, Callable, Dict, Any, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
-    from mirela_sdk.vision.camera.abstract import DepthCam
-import os
+    pass
 import json
+import os
 import time
+
 import cv2
 import numpy as np
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
+    QCheckBox,
     QComboBox,
     QGroupBox,
-    QCheckBox,
-    QSplitter,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QMessageBox,
+    QPushButton,
     QScrollArea,
     QSpinBox,
-    QMessageBox,
-    QInputDialog,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QThread, QObject
-
 from rclpy.node import Node
 
 from mirela_sdk.interface.theme import COLORS
 from mirela_sdk.interface.widgets import (
-    CollapsibleSection,
-    LabeledSlider,
-    DualVideoDisplay,
     CameraConfigPanel,
+    CollapsibleSection,
     DetectionConfigPanel,
+    DualVideoDisplay,
+    LabeledSlider,
 )
 
 
@@ -131,12 +131,8 @@ class ColorCalibrationManager:
 
     def reset(self) -> None:
         self._sampled_pixels.clear()
-        self._lower = np.array(
-            self.DEFAULT_RANGES[self._color_space]["lower"], dtype=np.uint8
-        )
-        self._upper = np.array(
-            self.DEFAULT_RANGES[self._color_space]["upper"], dtype=np.uint8
-        )
+        self._lower = np.array(self.DEFAULT_RANGES[self._color_space]["lower"], dtype=np.uint8)
+        self._upper = np.array(self.DEFAULT_RANGES[self._color_space]["upper"], dtype=np.uint8)
 
     def undo_sample(self) -> bool:
         if self._sampled_pixels:
@@ -148,9 +144,7 @@ class ColorCalibrationManager:
             return True
         return False
 
-    def sample_at_point(
-        self, frame: np.ndarray, x: int, y: int
-    ) -> Tuple[bool, np.ndarray]:
+    def sample_at_point(self, frame: np.ndarray, x: int, y: int) -> Tuple[bool, np.ndarray]:
         h, w = frame.shape[:2]
         if not (0 <= x < w and 0 <= y < h):
             return False, np.array([])
@@ -300,9 +294,7 @@ class CameraInitWorker(QObject):
     finished = Signal(bool, str)
     camera_ready = Signal(object)
 
-    def __init__(
-        self, config: Dict[str, Any], enable_depth: bool = False, node=None
-    ) -> None:
+    def __init__(self, config: Dict[str, Any], enable_depth: bool = False, node=None) -> None:
         super().__init__()
         self._config = config
         self._enable_depth = enable_depth
@@ -326,7 +318,7 @@ class CameraInitWorker(QObject):
     def _create_camera(self, camera_type: str):
         """Create camera instance based on type and configuration."""
         if camera_type == "webcam":
-            from mirela_sdk.vision.camera import OpenCVConfig, OpenCVCam
+            from mirela_sdk.vision.camera import OpenCVCam, OpenCVConfig
 
             config = OpenCVConfig(
                 device_index=self._config.get("device_index", 0),
@@ -342,7 +334,7 @@ class CameraInitWorker(QObject):
             use_ros = self._config.get("use_ros_topics", False)
 
             if use_ros:
-                from mirela_sdk.vision.camera import ROSDepthConfig, ROSDepthCam, QoSReliability
+                from mirela_sdk.vision.camera import QoSReliability, ROSDepthCam, ROSDepthConfig
 
                 color_topic = self._config.get("color_topic", "/camera/color/image_raw")
                 color_compressed = self._config.get("color_compressed", True)
@@ -366,7 +358,7 @@ class CameraInitWorker(QObject):
                     raise ValueError("ROS depth camera requires a ROS node")
                 return ROSDepthCam(self._node, config)
             else:
-                from mirela_sdk.vision.camera import RealSenseConfig, RealsenseCam
+                from mirela_sdk.vision.camera import RealsenseCam, RealSenseConfig
 
                 width = self._config.get("width", 640)
                 height = self._config.get("height", 480)
@@ -381,7 +373,7 @@ class CameraInitWorker(QObject):
                 return RealsenseCam(config)
 
         elif camera_type == "oakd":
-            from mirela_sdk.vision.camera import OakDConfig, OakdCam
+            from mirela_sdk.vision.camera import OakdCam, OakDConfig
 
             config = OakDConfig(
                 cam_num=self._config.get("cam_num", 1),
@@ -390,7 +382,7 @@ class CameraInitWorker(QObject):
             return OakdCam(config)
 
         elif camera_type == "ros":
-            from mirela_sdk.vision.camera import ROSConfig, ROSCam, QoSReliability, QoSDurability
+            from mirela_sdk.vision.camera import QoSDurability, QoSReliability, ROSCam, ROSConfig
 
             reliability_str = self._config.get("reliability", "Best Effort")
             if reliability_str == "Reliable":
@@ -417,13 +409,13 @@ class CameraInitWorker(QObject):
             return ROSCam(self._node, config)
 
         elif camera_type == "file":
-            from mirela_sdk.vision.camera import FileImageConfig, FileImageCam
+            from mirela_sdk.vision.camera import FileImageCam, FileImageConfig
 
             config = FileImageConfig(path=self._config.get("path", ""))
             return FileImageCam(config)
 
         elif camera_type == "c920":
-            from mirela_sdk.vision.camera import C920Config, C920Cam
+            from mirela_sdk.vision.camera import C920Cam, C920Config
 
             config = C920Config(
                 profile=self._config.get("profile", 1),
@@ -432,7 +424,7 @@ class CameraInitWorker(QObject):
             return C920Cam(config)
 
         elif camera_type == "imx219":
-            from mirela_sdk.vision.camera import IMX219Config, IMX219Cam
+            from mirela_sdk.vision.camera import IMX219Cam, IMX219Config
 
             config = IMX219Config(
                 sensor_id=self._config.get("sensor_id", 0),
@@ -472,9 +464,7 @@ class VisionTab(QWidget):
         "AdaptiveHoughLinesP",
     ]
 
-    def __init__(
-        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
-    ) -> None:
+    def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
         self._camera = None
@@ -643,13 +633,9 @@ class VisionTab(QWidget):
 
         # Measure distance checkbox
         self._measure_distance_cb = QCheckBox("Click to Measure Distance")
-        self._measure_distance_cb.setToolTip(
-            "Click on image to measure distance at point"
-        )
+        self._measure_distance_cb.setToolTip("Click on image to measure distance at point")
         self._measure_distance_cb.setEnabled(False)
-        self._measure_distance_cb.stateChanged.connect(
-            self._on_measure_distance_changed
-        )
+        self._measure_distance_cb.stateChanged.connect(self._on_measure_distance_changed)
 
         # Distance display
         self._distance_label = QLabel("Distance: -- m")
@@ -684,12 +670,8 @@ class VisionTab(QWidget):
         range_layout.setSpacing(4)
         self._depth_min_slider = LabeledSlider("Min", 0.0, 2.0, 0.1, 1)
         self._depth_max_slider = LabeledSlider("Max", 1.0, 15.0, 5.0, 1)
-        self._depth_min_slider.valueChanged.connect(
-            lambda v: setattr(self, "_depth_min_m", v)
-        )
-        self._depth_max_slider.valueChanged.connect(
-            lambda v: setattr(self, "_depth_max_m", v)
-        )
+        self._depth_min_slider.valueChanged.connect(lambda v: setattr(self, "_depth_min_m", v))
+        self._depth_max_slider.valueChanged.connect(lambda v: setattr(self, "_depth_max_m", v))
         range_layout.addWidget(self._depth_min_slider)
         range_layout.addWidget(self._depth_max_slider)
 
@@ -717,9 +699,7 @@ class VisionTab(QWidget):
 
         self._color_filter_cb = QCheckBox("Enable Color Filter")
         self._color_filter_cb.stateChanged.connect(
-            lambda: self._toggle_filter(
-                "color_filter", self._color_filter_cb.isChecked()
-            )
+            lambda: self._toggle_filter("color_filter", self._color_filter_cb.isChecked())
         )
 
         cs_layout = QHBoxLayout()
@@ -844,9 +824,7 @@ class VisionTab(QWidget):
 
         self._line_detect_cb = QCheckBox("Enable Line Detection")
         self._line_detect_cb.stateChanged.connect(
-            lambda: self._toggle_filter(
-                "line_detection", self._line_detect_cb.isChecked()
-            )
+            lambda: self._toggle_filter("line_detection", self._line_detect_cb.isChecked())
         )
 
         method_layout = QHBoxLayout()
@@ -972,9 +950,7 @@ class VisionTab(QWidget):
 
         self._adaptive_thresh_cb = QCheckBox("Adaptive Threshold")
         self._adaptive_thresh_cb.stateChanged.connect(
-            lambda: self._toggle_filter(
-                "adaptive_thresh", self._adaptive_thresh_cb.isChecked()
-            )
+            lambda: self._toggle_filter("adaptive_thresh", self._adaptive_thresh_cb.isChecked())
         )
 
         self._hist_eq_cb = QCheckBox("Histogram Equalization")
@@ -1024,9 +1000,7 @@ class VisionTab(QWidget):
         self._detection_panel = DetectionConfigPanel()
         self._detection_panel.detectorReady.connect(self._on_detector_ready)
         self._detection_panel.detectorUnloaded.connect(self._on_detector_unloaded)
-        self._detection_panel.statusChanged.connect(
-            lambda msg: self._info_label.setText(msg)
-        )
+        self._detection_panel.statusChanged.connect(lambda msg: self._info_label.setText(msg))
 
         # Hand and face tracking (existing)
         self._hand_cb = QCheckBox("Hand Tracking")
@@ -1351,9 +1325,7 @@ class VisionTab(QWidget):
         depth_clip[depth_clip <= 0] = float("nan")
 
         # Normalize to range
-        depth_norm = (depth_clip - self._depth_min_m) / (
-            self._depth_max_m - self._depth_min_m
-        )
+        depth_norm = (depth_clip - self._depth_min_m) / (self._depth_max_m - self._depth_min_m)
         depth_norm = np.clip(depth_norm, 0, 1)
         depth_vis = (depth_norm * 255).astype(np.float32)
         depth_vis = np.nan_to_num(depth_vis, nan=0.0).astype(np.uint8)
@@ -1365,12 +1337,12 @@ class VisionTab(QWidget):
     def _on_line_method_changed(self, method_name: str) -> None:
         try:
             from mirela_sdk.vision.algorithms.line import (
-                LineDetector,
-                HoughLinesP,
-                RotatedRect,
-                FitEllipse,
-                RansacLine,
                 AdaptiveHoughLinesP,
+                FitEllipse,
+                HoughLinesP,
+                LineDetector,
+                RansacLine,
+                RotatedRect,
             )
 
             methods = {
@@ -1427,15 +1399,11 @@ class VisionTab(QWidget):
 
             camera_type = self._camera_config.camera_type
             if is_depth:
-                self._info_label.setText(
-                    f"{camera_type.upper()} depth camera connected"
-                )
+                self._info_label.setText(f"{camera_type.upper()} depth camera connected")
             else:
                 self._info_label.setText(f"{camera_type.upper()} camera connected")
         else:
-            self._video_display.set_placeholder(
-                f"Error: {error}" if error else "Connection failed"
-            )
+            self._video_display.set_placeholder(f"Error: {error}" if error else "Connection failed")
             self._start_btn.setEnabled(True)
             self._camera_config.setEnabled(True)
             self._camera = None
@@ -1568,14 +1536,8 @@ class VisionTab(QWidget):
                 self._fps_counter = 0
 
             h, w = rgb_frame.shape[:2]
-            depth_str = (
-                " | Depth: ON"
-                if self._depth_enabled and self._is_depth_camera()
-                else ""
-            )
-            self._info_label.setText(
-                f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}"
-            )
+            depth_str = " | Depth: ON" if self._depth_enabled and self._is_depth_camera() else ""
+            self._info_label.setText(f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}")
 
             # Display RGB frame (always)
             self._video_display.display_rgb(rgb_frame)
@@ -1599,12 +1561,8 @@ class VisionTab(QWidget):
         y2 = center_y + roi_h // 2
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.line(
-            frame, (center_x - 15, center_y), (center_x + 15, center_y), (0, 255, 0), 1
-        )
-        cv2.line(
-            frame, (center_x, center_y - 15), (center_x, center_y + 15), (0, 255, 0), 1
-        )
+        cv2.line(frame, (center_x - 15, center_y), (center_x + 15, center_y), (0, 255, 0), 1)
+        cv2.line(frame, (center_x, center_y - 15), (center_x, center_y + 15), (0, 255, 0), 1)
 
         return frame
 
@@ -1661,9 +1619,7 @@ class VisionTab(QWidget):
             frame = self._cv_utils.sharpen(frame)
 
         if "rotation" in self._filter_params:
-            frame = self._cv_utils.rotate_image(
-                frame, int(self._rotation_angle.value())
-            )
+            frame = self._cv_utils.rotate_image(frame, int(self._rotation_angle.value()))
 
         if "resize" in self._filter_params:
             frame = self._cv_utils.resize_image(
@@ -1794,18 +1750,12 @@ class VisionTab(QWidget):
         self._ai_detector = None
 
         if self._cv_utils:
-            if (
-                hasattr(self._cv_utils, "_hand_tracker")
-                and self._cv_utils._hand_tracker
-            ):
+            if hasattr(self._cv_utils, "_hand_tracker") and self._cv_utils._hand_tracker:
                 try:
                     self._cv_utils._hand_tracker.close()
                 except (AttributeError, RuntimeError):
                     pass
-            if (
-                hasattr(self._cv_utils, "_face_tracker")
-                and self._cv_utils._face_tracker
-            ):
+            if hasattr(self._cv_utils, "_face_tracker") and self._cv_utils._face_tracker:
                 try:
                     self._cv_utils._face_tracker.close()
                 except (AttributeError, RuntimeError):
@@ -1840,26 +1790,16 @@ class OpenCVUtils:
         mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
         return cv2.bitwise_and(frame, frame, mask=mask)
 
-    def apply_edge_detection(
-        self, frame: np.ndarray, lower: int, upper: int
-    ) -> np.ndarray:
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
-        )
+    def apply_edge_detection(self, frame: np.ndarray, lower: int, upper: int) -> np.ndarray:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
         edges = cv2.Canny(gray, lower, upper)
         return cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
 
     def apply_contour_detection(self, frame: np.ndarray) -> np.ndarray:
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
         _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        result = (
-            frame.copy()
-            if len(frame.shape) == 3
-            else cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        )
+        result = frame.copy() if len(frame.shape) == 3 else cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
         cv2.drawContours(result, contours, -1, (0, 255, 0), 2)
         return result
 
@@ -1880,9 +1820,7 @@ class OpenCVUtils:
     def resize_image(self, frame: np.ndarray, width: int, height: int) -> np.ndarray:
         return cv2.resize(frame, (width, height))
 
-    def morphology(
-        self, frame: np.ndarray, operation: str, kernel_size: int
-    ) -> np.ndarray:
+    def morphology(self, frame: np.ndarray, operation: str, kernel_size: int) -> np.ndarray:
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
         ops = {
             "erode": cv2.MORPH_ERODE,
@@ -1894,9 +1832,7 @@ class OpenCVUtils:
         return cv2.morphologyEx(frame, op, kernel)
 
     def adaptive_threshold(self, frame: np.ndarray) -> np.ndarray:
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
         thresh = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
         )
@@ -1910,9 +1846,7 @@ class OpenCVUtils:
         return cv2.equalizeHist(frame)
 
     def pencil_sketch(self, frame: np.ndarray) -> np.ndarray:
-        gray, color = cv2.pencilSketch(
-            frame, sigma_s=60, sigma_r=0.07, shade_factor=0.05
-        )
+        gray, color = cv2.pencilSketch(frame, sigma_s=60, sigma_r=0.07, shade_factor=0.05)
         return color
 
     def stylization(self, frame: np.ndarray) -> np.ndarray:
@@ -1930,26 +1864,16 @@ class OpenCVUtils:
     def color_quantization(self, frame: np.ndarray, k: int = 8) -> np.ndarray:
         data = frame.reshape((-1, 3)).astype(np.float32)
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.001)
-        _, labels, centers = cv2.kmeans(
-            data, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS
-        )
+        _, labels, centers = cv2.kmeans(data, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
         centers = np.uint8(centers)
         result = centers[labels.flatten()]
         return result.reshape(frame.shape)
 
     def hough_lines(self, frame: np.ndarray) -> np.ndarray:
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
         edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-        lines = cv2.HoughLinesP(
-            edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10
-        )
-        result = (
-            frame.copy()
-            if len(frame.shape) == 3
-            else cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        )
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
+        result = frame.copy() if len(frame.shape) == 3 else cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
@@ -1957,9 +1881,7 @@ class OpenCVUtils:
         return result
 
     def hough_circles(self, frame: np.ndarray) -> np.ndarray:
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
         gray = cv2.medianBlur(gray, 5)
         circles = cv2.HoughCircles(
             gray,
@@ -1971,11 +1893,7 @@ class OpenCVUtils:
             minRadius=0,
             maxRadius=0,
         )
-        result = (
-            frame.copy()
-            if len(frame.shape) == 3
-            else cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        )
+        result = frame.copy() if len(frame.shape) == 3 else cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
         if circles is not None:
             circles = np.uint16(np.around(circles))
             for i in circles[0, :]:
@@ -1986,9 +1904,7 @@ class OpenCVUtils:
     def optical_flow(
         self, prev_gray: np.ndarray, curr_gray: np.ndarray, frame: np.ndarray
     ) -> np.ndarray:
-        flow = cv2.calcOpticalFlowFarneback(
-            prev_gray, curr_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
-        )
+        flow = cv2.calcOpticalFlowFarneback(prev_gray, curr_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
         mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
         hsv = np.zeros_like(frame)
         hsv[..., 0] = ang * 180 / np.pi / 2
@@ -2034,9 +1950,7 @@ class OpenCVUtils:
         parameters = cv2.aruco.DetectorParameters()
         detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
         corners, ids, _ = detector.detectMarkers(gray)
 
         result = frame.copy()

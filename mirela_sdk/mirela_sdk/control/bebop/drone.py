@@ -1,19 +1,20 @@
 from typing import Optional
 
-from rclpy.node import Node
-from rclpy.duration import Duration
-from std_msgs.msg import Empty, UInt8, Bool
 from geometry_msgs.msg import Twist, Vector3
+from rclpy.duration import Duration
+from rclpy.node import Node
+from std_msgs.msg import Bool, Empty, UInt8
 
 from mirela_sdk.control.base import BaseDrone
+from mirela_sdk.control.config import BebopConfig, DroneConfig
+from mirela_sdk.control.exceptions import CapabilityNotSupportedError
+from mirela_sdk.control.factory import DroneFactory
 from mirela_sdk.control.types import (
+    AltitudeSource,
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
 )
-from mirela_sdk.control.config import BebopConfig, DroneConfig
-from mirela_sdk.control.factory import DroneFactory
-from mirela_sdk.control.exceptions import CapabilityNotSupportedError
 from mirela_sdk.utils.process import ProcessUtils
 
 
@@ -58,21 +59,13 @@ class BebopDrone(BaseDrone):
     def _setup_publishers(self) -> None:
         config: BebopConfig = self._config
 
-        self._takeoff_pub = self._create_publisher(
-            Empty, f"/{config.namespace}/takeoff", 1
-        )
+        self._takeoff_pub = self._create_publisher(Empty, f"/{config.namespace}/takeoff", 1)
         self._land_pub = self._create_publisher(Empty, f"/{config.namespace}/land", 1)
         self._vel_pub = self._create_publisher(Twist, f"/{config.namespace}/cmd_vel", 1)
         self._flip_pub = self._create_publisher(UInt8, f"/{config.namespace}/flip", 1)
-        self._gimbal_pub = self._create_publisher(
-            Vector3, f"/{config.namespace}/move_camera", 1
-        )
-        self._emergency_pub = self._create_publisher(
-            Empty, f"/{config.namespace}/reset", 1
-        )
-        self._flattrim_pub = self._create_publisher(
-            Empty, f"/{config.namespace}/flattrim", 1
-        )
+        self._gimbal_pub = self._create_publisher(Vector3, f"/{config.namespace}/move_camera", 1)
+        self._emergency_pub = self._create_publisher(Empty, f"/{config.namespace}/reset", 1)
+        self._flattrim_pub = self._create_publisher(Empty, f"/{config.namespace}/flattrim", 1)
         self._photo_pub = self._create_publisher(Bool, f"/{config.namespace}/photo", 1)
         self._navigate_home_pub = self._create_publisher(
             Empty, f"/{config.namespace}/autoflight/navigate_home", 1
@@ -244,6 +237,7 @@ class BebopDrone(BaseDrone):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         raise CapabilityNotSupportedError("Position control", "Bebop")
 

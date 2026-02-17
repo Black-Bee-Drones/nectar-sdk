@@ -7,9 +7,17 @@ from typing import List, Optional, Tuple
 import cv2
 import mediapipe as mp
 import numpy as np
-from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from mediapipe.tasks.python.vision import (
+    FaceLandmarksConnections,
+)
+from mediapipe.tasks.python.vision import (
+    drawing_styles as mp_styles,
+)
+from mediapipe.tasks.python.vision import (
+    drawing_utils as mp_drawing,
+)
 
 
 class FaceLandmarkRegion:
@@ -25,31 +33,150 @@ class FaceLandmarkRegion:
     """
 
     FACE_OVAL: List[int] = [
-        10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
-        397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
-        172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
+        10,
+        338,
+        297,
+        332,
+        284,
+        251,
+        389,
+        356,
+        454,
+        323,
+        361,
+        288,
+        397,
+        365,
+        379,
+        378,
+        400,
+        377,
+        152,
+        148,
+        176,
+        149,
+        150,
+        136,
+        172,
+        58,
+        132,
+        93,
+        234,
+        127,
+        162,
+        21,
+        54,
+        103,
+        67,
+        109,
     ]
 
     LIPS: List[int] = [
-        61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308,
-        324, 318, 402, 317, 14, 87, 178, 88, 95, 185, 40, 39,
-        37, 0, 267, 269, 270, 409, 415, 310, 311, 312, 13, 82,
-        81, 42, 183, 78,
+        61,
+        146,
+        91,
+        181,
+        84,
+        17,
+        314,
+        405,
+        321,
+        375,
+        291,
+        308,
+        324,
+        318,
+        402,
+        317,
+        14,
+        87,
+        178,
+        88,
+        95,
+        185,
+        40,
+        39,
+        37,
+        0,
+        267,
+        269,
+        270,
+        409,
+        415,
+        310,
+        311,
+        312,
+        13,
+        82,
+        81,
+        42,
+        183,
+        78,
     ]
 
     LOWER_LIPS: List[int] = [
-        61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308,
-        324, 318, 402, 317, 14, 87, 178, 88, 95,
+        61,
+        146,
+        91,
+        181,
+        84,
+        17,
+        314,
+        405,
+        321,
+        375,
+        291,
+        308,
+        324,
+        318,
+        402,
+        317,
+        14,
+        87,
+        178,
+        88,
+        95,
     ]
 
     UPPER_LIPS: List[int] = [
-        185, 40, 39, 37, 0, 267, 269, 270, 409, 415,
-        310, 311, 312, 13, 82, 81, 42, 183, 78,
+        185,
+        40,
+        39,
+        37,
+        0,
+        267,
+        269,
+        270,
+        409,
+        415,
+        310,
+        311,
+        312,
+        13,
+        82,
+        81,
+        42,
+        183,
+        78,
     ]
 
     LEFT_EYE: List[int] = [
-        362, 382, 381, 380, 374, 373, 390, 249, 263, 466,
-        388, 387, 386, 385, 384, 398,
+        362,
+        382,
+        381,
+        380,
+        374,
+        373,
+        390,
+        249,
+        263,
+        466,
+        388,
+        387,
+        386,
+        385,
+        384,
+        398,
     ]
 
     LEFT_EYEBROW: List[int] = [336, 296, 334, 293, 300, 276, 283, 282, 295, 285]
@@ -57,8 +184,22 @@ class FaceLandmarkRegion:
     LEFT_IRIS: List[int] = [473]
 
     RIGHT_EYE: List[int] = [
-        33, 7, 163, 144, 145, 153, 154, 155, 133, 173,
-        157, 158, 159, 160, 161, 246,
+        33,
+        7,
+        163,
+        144,
+        145,
+        153,
+        154,
+        155,
+        133,
+        173,
+        157,
+        158,
+        159,
+        160,
+        161,
+        246,
     ]
 
     RIGHT_EYEBROW: List[int] = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
@@ -184,10 +325,13 @@ class FaceMeshTracker:
         self._detection_result: Optional[vision.FaceLandmarkerResult] = None
         self._is_running = False
 
-        # MediaPipe drawing utilities
-        self._mp_face_mesh = mp.solutions.face_mesh
-        self._mp_drawing = mp.solutions.drawing_utils
-        self._mp_drawing_styles = mp.solutions.drawing_styles
+        # Drawing connections
+        self._face_tesselation = FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
+        self._face_contours = FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS
+        self._face_irises = (
+            FaceLandmarksConnections.FACE_LANDMARKS_LEFT_IRIS
+            + FaceLandmarksConnections.FACE_LANDMARKS_RIGHT_IRIS
+        )
 
     def __enter__(self) -> "FaceMeshTracker":
         """Context manager entry."""
@@ -317,42 +461,31 @@ class FaceMeshTracker:
             return image
 
         for face_landmarks in self._detection_result.face_landmarks:
-            # Convert to proto format for drawing
-            landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-            landmarks_proto.landmark.extend(
-                [
-                    landmark_pb2.NormalizedLandmark(
-                        x=lm.x, y=lm.y, z=lm.z
-                    )
-                    for lm in face_landmarks
-                ]
-            )
-
             if draw_tesselation:
-                self._mp_drawing.draw_landmarks(
+                mp_drawing.draw_landmarks(
                     image=image,
-                    landmark_list=landmarks_proto,
-                    connections=self._mp_face_mesh.FACEMESH_TESSELATION,
+                    landmark_list=face_landmarks,
+                    connections=self._face_tesselation,
                     landmark_drawing_spec=None,
-                    connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_tesselation_style(),
+                    connection_drawing_spec=mp_styles.get_default_face_mesh_tesselation_style(),
                 )
 
             if draw_contours:
-                self._mp_drawing.draw_landmarks(
+                mp_drawing.draw_landmarks(
                     image=image,
-                    landmark_list=landmarks_proto,
-                    connections=self._mp_face_mesh.FACEMESH_CONTOURS,
+                    landmark_list=face_landmarks,
+                    connections=self._face_contours,
                     landmark_drawing_spec=None,
-                    connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_contours_style(),
+                    connection_drawing_spec=mp_styles.get_default_face_mesh_contours_style(),
                 )
 
             if draw_irises:
-                self._mp_drawing.draw_landmarks(
+                mp_drawing.draw_landmarks(
                     image=image,
-                    landmark_list=landmarks_proto,
-                    connections=self._mp_face_mesh.FACEMESH_IRISES,
+                    landmark_list=face_landmarks,
+                    connections=self._face_irises,
                     landmark_drawing_spec=None,
-                    connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_iris_connections_style(),
+                    connection_drawing_spec=mp_styles.get_default_face_mesh_iris_connections_style(),
                 )
 
         return image
@@ -420,10 +553,7 @@ class FaceMeshTracker:
         results = []
         for idx, face_landmarks in enumerate(self._detection_result.face_landmarks):
             blendshapes = None
-            if (
-                self._config.output_blendshapes
-                and self._detection_result.face_blendshapes
-            ):
+            if self._config.output_blendshapes and self._detection_result.face_blendshapes:
                 blendshapes = self._detection_result.face_blendshapes[idx]
 
             results.append(
@@ -434,9 +564,7 @@ class FaceMeshTracker:
             )
         return results
 
-    def get_landmarks(
-        self, face_idx: int = 0, landmark_ids: Optional[List[int]] = None
-    ) -> list:
+    def get_landmarks(self, face_idx: int = 0, landmark_ids: Optional[List[int]] = None) -> list:
         """Get face landmarks for a specific face.
 
         Parameters
@@ -544,12 +672,9 @@ class FaceMeshTracker:
         left_corner = landmarks[78]
         right_corner = landmarks[308]
 
-        v_dist = np.sqrt(
-            (upper_lip.x - lower_lip.x) ** 2 + (upper_lip.y - lower_lip.y) ** 2
-        )
+        v_dist = np.sqrt((upper_lip.x - lower_lip.x) ** 2 + (upper_lip.y - lower_lip.y) ** 2)
         h_dist = np.sqrt(
-            (left_corner.x - right_corner.x) ** 2
-            + (left_corner.y - right_corner.y) ** 2
+            (left_corner.x - right_corner.x) ** 2 + (left_corner.y - right_corner.y) ** 2
         )
 
         if h_dist == 0:

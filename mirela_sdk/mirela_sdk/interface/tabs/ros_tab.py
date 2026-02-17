@@ -1,43 +1,41 @@
-from typing import Optional, Dict, Any, List, Callable
-from collections import deque
-import time
-import json
-import yaml
 import csv
+import time
+from collections import deque
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import pyqtgraph as pg
+import yaml
+from pyqtgraph import PlotWidget
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
     QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
     QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSpinBox,
+    QSplitter,
+    QStackedWidget,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
-    QPlainTextEdit,
-    QLineEdit,
-    QSplitter,
-    QSpinBox,
-    QDoubleSpinBox,
-    QHeaderView,
-    QStackedWidget,
-    QFileDialog,
-    QMessageBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QFont, QTextCursor
-
-import pyqtgraph as pg
-from pyqtgraph import PlotWidget, PlotDataItem
-
 from rclpy.node import Node
 from rclpy.qos import (
-    QoSProfile,
-    QoSReliabilityPolicy,
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
     qos_profile_sensor_data,
     qos_profile_system_default,
 )
@@ -45,7 +43,6 @@ from rclpy.qos import (
 from mirela_sdk.interface.theme import COLORS
 from mirela_sdk.interface.widgets import ParameterReconfigureWidget
 from mirela_sdk.interface.widgets.message_editor import MessageFieldEditor
-
 
 QOS_PROFILES = {
     "Default (Reliable)": QoSProfile(
@@ -74,9 +71,7 @@ QOS_PROFILES = {
 class ROSTab(QWidget):
     message_received = Signal(str, str)
 
-    def __init__(
-        self, node: Optional[Node] = None, parent: Optional[QWidget] = None
-    ) -> None:
+    def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
         self._subscriptions: Dict[str, Any] = {}
@@ -242,9 +237,7 @@ class ROSTab(QWidget):
                 "sensor_msgs/msg/Joy",
             ]
         )
-        self._publish_type_combo.currentTextChanged.connect(
-            self._on_publish_type_changed
-        )
+        self._publish_type_combo.currentTextChanged.connect(self._on_publish_type_changed)
         type_layout.addWidget(self._publish_type_combo, 1)
 
         self._load_type_btn = QPushButton("Load Fields")
@@ -375,9 +368,7 @@ class ROSTab(QWidget):
                 "std_srvs/srv/Trigger",
             ]
         )
-        self._service_type_combo.currentTextChanged.connect(
-            self._on_service_type_changed
-        )
+        self._service_type_combo.currentTextChanged.connect(self._on_service_type_changed)
         srv_type_layout.addWidget(self._service_type_combo, 1)
 
         self._load_srv_type_btn = QPushButton("Load Fields")
@@ -538,10 +529,7 @@ class ROSTab(QWidget):
     def _filter_topics(self, text: str) -> None:
         for i in range(self._topics_tree.topLevelItemCount()):
             item = self._topics_tree.topLevelItem(i)
-            matches = (
-                text.lower() in item.text(0).lower()
-                or text.lower() in item.text(1).lower()
-            )
+            matches = text.lower() in item.text(0).lower() or text.lower() in item.text(1).lower()
             item.setHidden(not matches)
 
     @Slot(QTreeWidgetItem, int)
@@ -549,9 +537,7 @@ class ROSTab(QWidget):
         self._selected_topic = item.text(0)
         topic_type = item.text(1)
 
-        self._topic_info_label.setText(
-            f"Topic: {self._selected_topic}\nType: {topic_type}"
-        )
+        self._topic_info_label.setText(f"Topic: {self._selected_topic}\nType: {topic_type}")
 
         is_subscribed = self._selected_topic in self._subscriptions
         self._subscribe_btn.setEnabled(not is_subscribed)
@@ -579,9 +565,7 @@ class ROSTab(QWidget):
             self._pub_fields_editor.set_message_class(msg_class)
         else:
             self._current_pub_msg_class = None
-            self._message_display.appendPlainText(
-                f"Could not load message type: {type_str}"
-            )
+            self._message_display.appendPlainText(f"Could not load message type: {type_str}")
 
     @Slot(int)
     def _on_pub_mode_changed(self, index: int) -> None:
@@ -602,9 +586,7 @@ class ROSTab(QWidget):
             endpoint_info_list = self._node.get_publishers_info_by_topic(topic)
             if not endpoint_info_list:
                 if verbose:
-                    self._message_display.appendPlainText(
-                        f"No publishers found for {topic}"
-                    )
+                    self._message_display.appendPlainText(f"No publishers found for {topic}")
                 return
 
             endpoint_info = endpoint_info_list[0]
@@ -650,16 +632,12 @@ class ROSTab(QWidget):
                     break
 
             if not topic_type:
-                self._message_display.appendPlainText(
-                    f"Error: Could not find type for {topic}"
-                )
+                self._message_display.appendPlainText(f"Error: Could not find type for {topic}")
                 return
 
             msg_class = self._get_message_class(topic_type)
             if msg_class is None:
-                self._message_display.appendPlainText(
-                    f"Error: Unknown message type {topic_type}"
-                )
+                self._message_display.appendPlainText(f"Error: Unknown message type {topic_type}")
                 return
 
             qos_name = self._sub_qos_combo.currentText()
@@ -674,9 +652,7 @@ class ROSTab(QWidget):
             self._subscriptions[topic] = sub
             self._subscribe_btn.setEnabled(False)
             self._unsubscribe_btn.setEnabled(True)
-            self._message_display.appendPlainText(
-                f"Subscribed to {topic} (QoS: {qos_name})"
-            )
+            self._message_display.appendPlainText(f"Subscribed to {topic} (QoS: {qos_name})")
 
         except Exception as e:
             self._message_display.appendPlainText(f"Error: {e}")
@@ -755,9 +731,7 @@ class ROSTab(QWidget):
             try:
                 self._node.destroy_subscription(self._subscriptions[topic])
             except Exception as e:
-                self._message_display.appendPlainText(
-                    f"Error destroying subscription: {e}"
-                )
+                self._message_display.appendPlainText(f"Error destroying subscription: {e}")
             del self._subscriptions[topic]
             self._message_display.appendPlainText(f"Unsubscribed from {topic}")
             self._subscribe_btn.setEnabled(True)
@@ -800,9 +774,7 @@ class ROSTab(QWidget):
                         if data:
                             self._fill_message(msg, data)
                     except Exception as e:
-                        self._message_display.appendPlainText(
-                            f"Error parsing message: {e}"
-                        )
+                        self._message_display.appendPlainText(f"Error parsing message: {e}")
                         return
 
             if self._publisher is None or self._publisher.topic_name != topic:
@@ -813,9 +785,7 @@ class ROSTab(QWidget):
                         # Publisher may already be destroyed
                         pass
                 pub_qos_name = self._pub_qos_combo.currentText()
-                pub_qos = QOS_PROFILES.get(
-                    pub_qos_name, QOS_PROFILES["Default (Reliable)"]
-                )
+                pub_qos = QOS_PROFILES.get(pub_qos_name, QOS_PROFILES["Default (Reliable)"])
                 self._publisher = self._node.create_publisher(msg_class, topic, pub_qos)
 
             rate = self._publish_rate_spin.value()
@@ -874,9 +844,7 @@ class ROSTab(QWidget):
         for key, value in data.items():
             if hasattr(msg, key):
                 attr = getattr(msg, key)
-                if hasattr(attr, "get_fields_and_field_types") and isinstance(
-                    value, dict
-                ):
+                if hasattr(attr, "get_fields_and_field_types") and isinstance(value, dict):
                     self._fill_message(attr, value)
                 else:
                     try:
@@ -910,9 +878,7 @@ class ROSTab(QWidget):
         self._selected_service = item.text(0)
         service_type = item.text(1)
 
-        self._service_info_label.setText(
-            f"Service: {self._selected_service}\nType: {service_type}"
-        )
+        self._service_info_label.setText(f"Service: {self._selected_service}\nType: {service_type}")
         self._service_name_input.setText(self._selected_service)
         self._service_type_combo.setCurrentText(service_type)
 
@@ -935,9 +901,7 @@ class ROSTab(QWidget):
                 self._srv_fields_editor.set_message_class(srv_class.Request)
         else:
             self._current_srv_class = None
-            self._service_response.setPlainText(
-                f"Could not load service type: {type_str}"
-            )
+            self._service_response.setPlainText(f"Could not load service type: {type_str}")
 
     @Slot(int)
     def _on_srv_mode_changed(self, index: int) -> None:
@@ -963,9 +927,7 @@ class ROSTab(QWidget):
         try:
             srv_class = self._get_service_class(type_str)
             if srv_class is None:
-                self._service_response.setPlainText(
-                    f"Error: Unknown service type {type_str}"
-                )
+                self._service_response.setPlainText(f"Error: Unknown service type {type_str}")
                 return
 
             if service_name in self._service_clients:
@@ -975,9 +937,7 @@ class ROSTab(QWidget):
                 self._service_clients[service_name] = client
 
             if not client.wait_for_service(timeout_sec=2.0):
-                self._service_response.setPlainText(
-                    f"Service {service_name} not available"
-                )
+                self._service_response.setPlainText(f"Service {service_name} not available")
                 return
 
             request = srv_class.Request()
@@ -994,9 +954,7 @@ class ROSTab(QWidget):
                         if data:
                             self._fill_message(request, data)
                     except Exception as e:
-                        self._service_response.setPlainText(
-                            f"Error parsing request: {e}"
-                        )
+                        self._service_response.setPlainText(f"Error parsing request: {e}")
                         return
 
             self._service_response.setPlainText("Calling service...")
@@ -1011,9 +969,7 @@ class ROSTab(QWidget):
                 except Exception as e:
                     self._service_response.setPlainText(f"Error: {e}")
 
-            QTimer.singleShot(
-                100, lambda: self._check_service_response(future, handle_response)
-            )
+            QTimer.singleShot(100, lambda: self._check_service_response(future, handle_response))
 
         except Exception as e:
             self._service_response.setPlainText(f"Error: {e}")
@@ -1022,9 +978,7 @@ class ROSTab(QWidget):
         if future.done():
             callback()
         else:
-            QTimer.singleShot(
-                100, lambda: self._check_service_response(future, callback)
-            )
+            QTimer.singleShot(100, lambda: self._check_service_response(future, callback))
 
     def _get_service_class(self, type_str: str):
         try:
@@ -1078,7 +1032,8 @@ class ROSTab(QWidget):
         self._plot_pause_btn = QPushButton("Pause")
         self._plot_pause_btn.setCheckable(True)
         self._plot_pause_btn.toggled.connect(
-            lambda p: setattr(self, "_plot_is_paused", p) or self._plot_pause_btn.setText("Resume" if p else "Pause")
+            lambda p: setattr(self, "_plot_is_paused", p)
+            or self._plot_pause_btn.setText("Resume" if p else "Pause")
         )
 
         self._plot_clear_btn = QPushButton("Clear All")
@@ -1194,9 +1149,7 @@ class ROSTab(QWidget):
             return
         try:
             topic_names_and_types = self._node.get_topic_names_and_types()
-            self._plot_available_topics = {
-                name: types[0] for name, types in topic_names_and_types
-            }
+            self._plot_available_topics = {name: types[0] for name, types in topic_names_and_types}
             current_text = self._plot_topic_combo.currentText()
             self._plot_topic_combo.clear()
             self._plot_topic_combo.addItems(sorted(self._plot_available_topics.keys()))
@@ -1342,9 +1295,7 @@ class ROSTab(QWidget):
                     if value is not None and plot_id in self._plot_data:
                         self._plot_data[plot_id].add_point(value)
 
-            subscription = self._node.create_subscription(
-                msg_class, topic, callback, qos_profile
-            )
+            subscription = self._node.create_subscription(msg_class, topic, callback, qos_profile)
             self._plot_subscriptions[plot_id] = subscription
             self._plot_data[plot_id] = PlotData(max_points, self._plot_start_time)
 
@@ -1358,7 +1309,9 @@ class ROSTab(QWidget):
             item = QTreeWidgetItem(self._plots_tree)
             color_label = QLabel()
             color_label.setFixedSize(20, 20)
-            color_label.setStyleSheet(f"background-color: {color}; border: 1px solid {COLORS.border}; border-radius: 3px;")
+            color_label.setStyleSheet(
+                f"background-color: {color}; border: 1px solid {COLORS.border}; border-radius: 3px;"
+            )
             color_label.setToolTip(f"Color: {color}")
             item.setText(1, plot_id)
             item.setText(2, topic)
@@ -1401,7 +1354,7 @@ class ROSTab(QWidget):
         time_window = self._plot_time_window
         min_time = float("inf")
         max_time = float("-inf")
-        
+
         for plot_id, plot_item in self._plot_items.items():
             if plot_id not in self._plot_data:
                 continue
@@ -1409,23 +1362,23 @@ class ROSTab(QWidget):
             times, values = data.get_arrays()
             if len(times) == 0:
                 continue
-            
+
             if not self._plot_is_paused and time_window > 0:
                 current_relative_time = time.time() - self._plot_start_time
                 cutoff_time = current_relative_time - time_window
                 filtered_times = [t for t in times if t >= cutoff_time]
                 if len(filtered_times) < len(values):
-                    filtered_values = list(values)[-len(filtered_times):]
+                    filtered_values = list(values)[-len(filtered_times) :]
                 else:
                     filtered_values = list(values)
                 times = filtered_times
                 values = filtered_values
-            
+
             if len(times) > 0:
                 plot_item.setData(times, values)
                 min_time = min(min_time, min(times))
                 max_time = max(max_time, max(times))
-        
+
         if min_time != float("inf") and max_time != float("-inf"):
             self._plot_widget.setXRange(min_time, max_time, padding=0.05)
 
@@ -1434,12 +1387,12 @@ class ROSTab(QWidget):
             plot_data.clear()
         for plot_item in self._plot_items.values():
             plot_item.setData([], [])
-        
+
         if self._plot_start_time is not None:
             self._plot_start_time = time.time()
             for plot_data in self._plot_data.values():
                 plot_data.reset_start_time(self._plot_start_time)
-        
+
         if self._node:
             self._node.get_logger().info("Cleared all plot data, restarting capture")
 
@@ -1447,28 +1400,28 @@ class ROSTab(QWidget):
         if not self._plot_data:
             QMessageBox.warning(self, "Export", "No data to export")
             return
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_filename = f"plot_data_{timestamp}.csv"
-        
+
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Plot Data", default_filename, "CSV Files (*.csv)"
         )
         if not filename:
             return
-        
+
         try:
             with open(filename, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(["Time (s)"] + [plot_id for plot_id in self._plot_data.keys()])
-                
+
                 all_times = set()
                 for plot_data in self._plot_data.values():
                     times, _ = plot_data.get_arrays()
                     all_times.update(times)
-                
+
                 sorted_times = sorted(all_times)
-                
+
                 for t in sorted_times:
                     row = [t]
                     for plot_id in self._plot_data.keys():
@@ -1479,7 +1432,7 @@ class ROSTab(QWidget):
                         else:
                             row.append("")
                     writer.writerow(row)
-            
+
             QMessageBox.information(self, "Export", f"Data exported to {filename}")
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")

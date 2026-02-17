@@ -82,9 +82,7 @@ class ImageCalculus:
                     f"Invalid key '{k}'. Expected keys: {list(self._camera_offset.keys())}"
                 )
             if not isinstance(v, (int, float)):
-                raise TypeError(
-                    f"Value for '{k}' must be int or float, got {type(v).__name__}"
-                )
+                raise TypeError(f"Value for '{k}' must be int or float, got {type(v).__name__}")
             self._camera_offset[k] = v
 
     @property
@@ -95,9 +93,7 @@ class ImageCalculus:
     @camera_resolution.setter
     def camera_resolution(self, value):
         if not isinstance(value, dict):
-            raise TypeError(
-                f"camera_resolution must be a dict, got {type(value).__name__}"
-            )
+            raise TypeError(f"camera_resolution must be a dict, got {type(value).__name__}")
 
         for k, v in value.items():
             if k not in self._camera_resolution:
@@ -118,9 +114,7 @@ class ImageCalculus:
     @pixels_per_degree.setter
     def pixels_per_degree(self, value):
         if not isinstance(value, dict):
-            raise TypeError(
-                f"pixels_per_degree must be a dict, got {type(value).__name__}"
-            )
+            raise TypeError(f"pixels_per_degree must be a dict, got {type(value).__name__}")
 
         for k, v in value.items():
             if k not in self._pixels_per_degree:
@@ -128,9 +122,7 @@ class ImageCalculus:
                     f"Invalid key '{k}'. Expected keys: {list(self._pixels_per_degree.keys())}"
                 )
             if not isinstance(v, (int, float)):
-                raise TypeError(
-                    f"Value for '{k}' must be int or float, got {type(v).__name__}"
-                )
+                raise TypeError(f"Value for '{k}' must be int or float, got {type(v).__name__}")
             if v <= 0:
                 raise ValueError(f"Value for '{k}' must be positive, got {v}")
             self._pixels_per_degree[k] = v
@@ -271,9 +263,7 @@ class ImageCalculus:
 
         # Compute the angle from origin to target in image coordinates
         # Y-axis is inverted: rows increase downward, so we subtract
-        pixel_angle_deg = math.degrees(
-            math.atan2(origin_row - target_row, target_col - origin_col)
-        )
+        pixel_angle_deg = math.degrees(math.atan2(origin_row - target_row, target_col - origin_col))
 
         # Adjust angle according to the image's bearing (compass orientation)
         absolute_bearing = (image_bearing - pixel_angle_deg + 90) % 360

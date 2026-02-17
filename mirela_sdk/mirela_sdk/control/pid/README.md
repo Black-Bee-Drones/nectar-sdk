@@ -22,7 +22,7 @@ classDiagram
         +tune(kp, ki, kd)
         +get_components() dict
     }
-    
+
     class PIDConfig {
         <<dataclass>>
         +kp float
@@ -37,7 +37,7 @@ classDiagram
         +get_output_limits() tuple
         +get_integral_limits() tuple
     }
-    
+
     class PositionPIDConfig {
         <<dataclass>>
         +x PIDConfig
@@ -47,7 +47,7 @@ classDiagram
         +from_yaml(path) PositionPIDConfig
         +to_dict() dict
     }
-    
+
     PIDController ..> PIDConfig : configured by
     PositionPIDConfig *-- PIDConfig
 ```
@@ -203,7 +203,7 @@ config = PositionPIDConfig.from_yaml("position_config.yaml")
 PID controllers created per-axis from configuration:
 
 ```python
-# In MavrosDrone._navigate_pid()
+# In MavrosNavigator.navigate_pid()
 pid_x = self._create_pid("x")      # Creates from self._pid_config.x
 pid_y = self._create_pid("y")
 pid_z = self._create_pid("z")
@@ -212,12 +212,12 @@ pid_yaw = self._create_pid("yaw")
 # Control loop
 while True:
     dx, dy, dz, dyaw = self._compute_errors(target, yaw)
-    
+
     vx = pid_x.update(-dx)
     vy = pid_y.update(-dy)
     vz = pid_z.update(-dz)
     vyaw = pid_yaw.update(-dyaw)
-    
+
     drone.move_velocity(vx, vy, vz, vyaw)
 ```
 
@@ -255,7 +255,7 @@ Controls response magnitude.
 - **Higher kp**: Faster response, potential overshoot
 - **Lower kp**: Slower response, more stable
 
-**Indoor**: 0.3-0.6 (vision pose is accurate)  
+**Indoor**: 0.3-0.6 (vision pose is accurate)
 **Outdoor**: 0.6-1.0 (GPS noise requires higher gain)
 
 ### Integral Gain (ki)
@@ -265,7 +265,7 @@ Eliminates steady-state error.
 - **Higher ki**: Faster error elimination, potential instability
 - **Lower ki**: Slower convergence, more stable
 
-**Typical**: 0.0-0.1 (often not needed for position control)  
+**Typical**: 0.0-0.1 (often not needed for position control)
 **Yaw**: 0.05-0.15 (helps with compass drift)
 
 ### Derivative Gain (kd)
@@ -281,15 +281,15 @@ Dampens oscillations and overshoot.
 
 Velocity command limits (m/s for position, rad/s for yaw).
 
-**Indoor**: ±0.4-0.6 m/s (safe in constrained space)  
-**Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)  
+**Indoor**: ±0.4-0.6 m/s (safe in constrained space)
+**Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)
 **Vertical**: ±0.15-0.8 m/s (asymmetric: slower ascent)
 
 ### Integral Limits
 
 Anti-windup protection.
 
-**Typical**: 10-20% of output limits  
+**Typical**: 10-20% of output limits
 **Purpose**: Prevent integral term from accumulating during saturation
 
 ## Default Configurations

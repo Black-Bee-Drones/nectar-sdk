@@ -32,92 +32,92 @@ Examples
 >>> result = detector.train(config)
 """
 
-from mirela_sdk.ai.detection.detector import Detector, Framework
-
-# Core types and data classes
-from mirela_sdk.ai.detection.core.types import (
-    Detection,
-    DetectionResult,
-    Prediction,
-    DetectionInput,
-    ImageType,
-    BatchImageType,
-)
+from mirela_sdk.ai.detection.core.base import BaseDetectionModel
 
 # Configuration classes
 from mirela_sdk.ai.detection.core.configs import (
-    TrainingConfig,
     EvaluationConfig,
-    TrainingMetrics,
     EvaluationMetrics,
+    TrainingConfig,
+    TrainingMetrics,
     TrainingResult,
+)
+
+# Exceptions
+from mirela_sdk.ai.detection.core.exceptions import (
+    ConfigurationError,
+    DatasetError,
+    DetectionError,
+    DeviceError,
+    EvaluationError,
+    FrameworkError,
+    HuggingFaceError,
+    ModelNotLoadedError,
+    PostProcessingError,
+    SlicingError,
+    TrainingError,
 )
 
 # Protocols and base classes
 from mirela_sdk.ai.detection.core.protocols import (
     DetectorProtocol,
-    TrainableProtocol,
     MergingStrategy,
+    TrainableProtocol,
 )
-from mirela_sdk.ai.detection.core.base import BaseDetectionModel
 
 # Registry and factory
 from mirela_sdk.ai.detection.core.registry import (
-    ModelRegistry,
     DetectorFactory,
+    ModelRegistry,
     registry,
 )
 
-# Exceptions
-from mirela_sdk.ai.detection.core.exceptions import (
-    DetectionError,
-    ModelNotLoadedError,
-    TrainingError,
-    EvaluationError,
-    DatasetError,
-    ConfigurationError,
-    FrameworkError,
-    PostProcessingError,
-    SlicingError,
-    HuggingFaceError,
-    DeviceError,
+# Core types and data classes
+from mirela_sdk.ai.detection.core.types import (
+    BatchImageType,
+    Detection,
+    DetectionInput,
+    DetectionResult,
+    ImageType,
+    Prediction,
+)
+from mirela_sdk.ai.detection.detector import Detector, Framework
+
+# Evaluation
+from mirela_sdk.ai.detection.evaluation import ObjectDetectionEvaluator
+
+# Model implementations
+from mirela_sdk.ai.detection.models import (
+    CocoDetectionDataset,
+    ModelLoader,
+    RFDETRModel,
+    TransformersModel,
+    UltralyticsModel,
+    load_detection_dataset,
+)
+
+# Post-processing
+from mirela_sdk.ai.detection.postprocess import (
+    NMMStrategy,
+    NMSStrategy,
+    SoftNMSStrategy,
+    WBFStrategy,
 )
 
 # Slicing inference
 from mirela_sdk.ai.detection.slicing import (
     SlicingConfig,
-    SlicingStrategy,
     SlicingInference,
-)
-
-# Model implementations
-from mirela_sdk.ai.detection.models import (
-    ModelLoader,
-    UltralyticsModel,
-    TransformersModel,
-    RFDETRModel,
-    CocoDetectionDataset,
-    load_detection_dataset,
-)
-
-# Evaluation
-from mirela_sdk.ai.detection.evaluation import ObjectDetectionEvaluator
-
-# Post-processing
-from mirela_sdk.ai.detection.postprocess import (
-    NMSStrategy,
-    SoftNMSStrategy,
-    WBFStrategy,
-    NMMStrategy,
+    SlicingStrategy,
 )
 
 # Utilities
 from mirela_sdk.ai.detection.utils import (
-    HuggingFaceUploader,
-    get_device,
-    DeviceManager,
     DatasetConverter,
     DatasetMerger,
+    DeviceManager,
+    HuggingFaceUploader,
+    get_device,
 )
 
 __all__ = [

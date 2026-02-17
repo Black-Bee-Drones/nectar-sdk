@@ -21,7 +21,6 @@ except ImportError:
 
 from mirela_sdk.ai.detection.slicing.config import SlicingConfig, SlicingStrategy
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -164,9 +163,7 @@ class ImageSlicer:
                 )
 
                 if len(slices) >= self.config.max_slices:
-                    self.logger.warning(
-                        f"Reached maximum slices ({self.config.max_slices})"
-                    )
+                    self.logger.warning(f"Reached maximum slices ({self.config.max_slices})")
                     break
             if len(slices) >= self.config.max_slices:
                 break
@@ -203,9 +200,7 @@ class ImageSlicer:
         try:
             from scipy.ndimage import gaussian_filter, label
         except ImportError:
-            self.logger.warning(
-                "scipy required for adaptive slicing, falling back to grid"
-            )
+            self.logger.warning("scipy required for adaptive slicing, falling back to grid")
             return self._grid_slice(image)
 
         # Create density map

@@ -1,14 +1,14 @@
-from typing import Optional, TYPE_CHECKING
 from threading import Lock
+from typing import TYPE_CHECKING, Optional
 
 from rclpy.node import Node
 
-from mirela_sdk.control.protocols import ObstacleDetector, ObstacleInfo
-from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
 from mirela_sdk.control.obstacles.strategies import (
     AvoidanceStrategy,
     DisableAxisStrategy,
 )
+from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
+from mirela_sdk.control.protocols import ObstacleDetector, ObstacleInfo
 
 if TYPE_CHECKING:
     from mirela_sdk.control.base import BaseDrone

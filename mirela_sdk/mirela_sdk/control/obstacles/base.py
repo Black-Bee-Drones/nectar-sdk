@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from threading import Lock
+
 from mirela_sdk.control.protocols import ObstacleInfo
 
 

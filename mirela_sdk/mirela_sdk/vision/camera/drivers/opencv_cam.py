@@ -1,5 +1,6 @@
-from typing import Optional, Dict, Any
-from threading import Thread, Lock, Event
+from threading import Event, Lock, Thread
+from typing import Any, Dict, Optional
+
 import cv2
 import numpy as np
 
@@ -15,7 +16,7 @@ class OpenCVCam(AbstractCam):
     ----------
     config : OpenCVConfig
         Camera configuration.
-    
+
     Notes
     -----
     Supports two capture modes:
@@ -53,9 +54,7 @@ class OpenCVCam(AbstractCam):
         self._cap = cv2.VideoCapture(self._config.device_index, cv2.CAP_V4L2)
 
         if not self._cap.isOpened():
-            raise RuntimeError(
-                f"Failed to open camera at index {self._config.device_index}"
-            )
+            raise RuntimeError(f"Failed to open camera at index {self._config.device_index}")
 
         if self._config.fourcc:
             fourcc_code = cv2.VideoWriter_fourcc(*self._config.fourcc)
@@ -118,9 +117,7 @@ class OpenCVCam(AbstractCam):
         """Decode fourcc integer to string."""
         return "".join([chr((fourcc >> (8 * i)) & 0xFF) for i in range(4)])
 
-    def get_frame(
-        self, wait_for_new: bool = False, timeout: float = 0.1
-    ) -> Optional[np.ndarray]:
+    def get_frame(self, wait_for_new: bool = False, timeout: float = 0.1) -> Optional[np.ndarray]:
         """
         Get a frame from the camera.
 
@@ -144,10 +141,7 @@ class OpenCVCam(AbstractCam):
         if self._threaded:
             if wait_for_new and self._new_frame_event and self._frame_lock:
                 with self._frame_lock:
-                    if (
-                        self._frame_id > self._last_consumed_id
-                        and self._frame is not None
-                    ):
+                    if self._frame_id > self._last_consumed_id and self._frame is not None:
                         self._last_consumed_id = self._frame_id
                         return self._frame.copy()
 

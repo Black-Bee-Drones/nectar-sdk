@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+import math
 from abc import ABC, abstractmethod
 from typing import Tuple
-import math
 
 import cv2
 import numpy as np
@@ -269,9 +269,7 @@ class RotatedRect(ILineEstimationMethod):
             (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
 
-        contours, _ = cv2.findContours(
-            img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        contours, _ = cv2.findContours(img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         largest_contour = max(contours, key=cv2.contourArea)
 
         angle = center_x = center_y = float("nan")
@@ -365,12 +363,10 @@ class FitEllipse(ILineEstimationMethod):
         """
 
         _, img_detect = cv2.threshold(img_detect, 1, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(
-            img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        contours, _ = cv2.findContours(img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         angle = center_x = center_y = float("nan")
-        direction = curvature = None
+        _direction = _curvature = None
 
         if len(contours) > 0:
             rope_contour = max(contours, key=cv2.contourArea)
@@ -388,8 +384,8 @@ class FitEllipse(ILineEstimationMethod):
                     yc += offset[1]
                     center_x = xc
                     center_y = yc
-                    direction = np.sign(d2 - d1)
-                    curvature = np.abs(d1 - d2) / max(d1, d2)
+                    _direction = np.sign(d2 - d1)
+                    _curvature = np.abs(d1 - d2) / max(d1, d2)
 
                 if draw:
                     cv2.ellipse(img_out, ((xc, yc), (d1, d2), angle), (0, 255, 0), 2)
@@ -549,9 +545,7 @@ class RansacLine(ILineEstimationMethod):
         tuple
             (center_x, center_y, angle, width, height, x, y, w, h, rotated_box)
         """
-        contours, _ = cv2.findContours(
-            img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        contours, _ = cv2.findContours(img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         angle = center_x = center_y = float("nan")
 
@@ -641,9 +635,7 @@ class LineDetector:
         self._external_mask = None
 
         if color is not None:
-            self.color_detector = ColorDetector(
-                mode="preset", color=color, color_space=color_space
-            )
+            self.color_detector = ColorDetector(mode="preset", color=color, color_space=color_space)
         else:
             self.color_detector = None
 
@@ -676,11 +668,7 @@ class LineDetector:
         """
         if positions_dict and isinstance(positions_dict, dict):
             for key, value in positions_dict.items():
-                if (
-                    key in self.text_positions
-                    and isinstance(value, tuple)
-                    and len(value) == 2
-                ):
+                if key in self.text_positions and isinstance(value, tuple) and len(value) == 2:
                     self.text_positions[key] = value
 
     def detect_line(self, img, region=(0, 0), draw=True, draw_color=None):
@@ -743,9 +731,7 @@ class LineDetector:
             line_color = draw_color if draw_color is not None else (0, 255, 0)
             try:
                 center_x, center_y, angle, width, height, x, y, w, h, rotated_box = (
-                    self.estimation_method.estimate(
-                        region, img, offset, draw, line_color
-                    )
+                    self.estimation_method.estimate(region, img, offset, draw, line_color)
                 )
             except (TypeError, ValueError):
                 try:
@@ -842,8 +828,8 @@ def main():
         if not ret:
             break
 
-        result, region, center_x, center_y, angle, width, height = (
-            line_detector.detect_line(frame, region=(400, 400))
+        result, region, center_x, center_y, angle, width, height = line_detector.detect_line(
+            frame, region=(400, 400)
         )
 
         print(f"Angle: {angle:.2f}, Width: {width:.2f}, Height: {height:.2f}")

@@ -1,0 +1,76 @@
+name: Docker Push
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  push:
+    name: Push ${{ matrix.ros_distro }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy, kilted]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build locally (do NOT push yet)
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |
+            ROS_DISTRO=${{ matrix.ros_distro }}
+            INSTALL_REALSENSE=true
+          target: sdk
+          load: true
+          push: false
+          tags: mirela-sdk:${{ matrix.ros_distro }}-release
+          cache-from: type=gha,scope=${{ matrix.ros_distro }}-sdk
+          cache-to: type=gha,mode=max,scope=${{ matrix.ros_distro }}-sdk
+
+      # Verify — if this fails, push never happens
+      - name: Verify SDK
+        run: |
+          docker run --rm mirela-sdk:${{ matrix.ros_distro }}-release bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            /home/ros2_ws/src/mirela-sdk/scripts/setup.sh verify
+          "
+
+      - name: Verify RealSense
+        run: |
+          docker run --rm mirela-sdk:${{ matrix.ros_distro }}-release bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense-verify
+          "
+
+      # Tag and push (only reached if verify passed)
+      - name: Push to Docker Hub
+        run: |
+          docker tag mirela-sdk:${{ matrix.ros_distro }}-release \
+            ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
+          docker tag mirela-sdk:${{ matrix.ros_distro }}-release \
+            ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mirela-sdk:${{ matrix.ros_distro }}

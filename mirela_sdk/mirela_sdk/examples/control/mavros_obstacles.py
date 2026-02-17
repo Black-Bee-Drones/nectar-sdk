@@ -5,12 +5,12 @@ import rclpy
 from rclpy.node import Node
 
 from mirela_sdk.control import (
+    DepthObstacleDetector,
     DroneFactory,
     MavrosConfig,
-    PoseSource,
     MoveReference,
     NavigationStrategy,
-    DepthObstacleDetector,
+    PoseSource,
     strategies,
 )
 

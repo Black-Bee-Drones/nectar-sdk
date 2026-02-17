@@ -1,65 +1,86 @@
-FROM osrf/ros:humble-desktop-full
+# syntax=docker/dockerfile:1
+ARG ROS_DISTRO=humble
+FROM osrf/ros:${ROS_DISTRO}-desktop-full AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG ROS_DISTRO
+ENV NON_INTERACTIVE=true
+ENV ROS2_WORKSPACE=/home/ros2_ws
+ENV ROS_DISTRO=${ROS_DISTRO}
 
-# Atualização e instalação de pacotes essenciais
-RUN echo "⬆️  Atualizando e instalando pacotes essenciais..." && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    nano \
-    git \
-    python3-pip \
-    python3-colcon-common-extensions \
-    tmux \
-    ros-humble-mavros \
-    ros-humble-mavros-extras \
-    ros-humble-tf-transformations \
-    ros-humble-ament-cmake \
-    libboost-python-dev \
-    wget \
-    fswebcam \
-    v4l-utils \
-    && rm -rf /var/lib/apt/lists/*
+COPY scripts/ /tmp/setup/scripts/
 
-RUN usermod -a -G video root
+RUN /tmp/setup/scripts/setup.sh system
+RUN /tmp/setup/scripts/setup.sh geographiclib
+RUN rm -f /usr/lib/python*/EXTERNALLY-MANAGED
+RUN python3 -m pip install --ignore-installed pip
+RUN rm -rf /var/lib/apt/lists/*
 
-# Configuração do GeographicLib
-RUN echo "🌍 Configurando GeographicLib para MAVROS..." && \
-    wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh && \
-    chmod +x install_geographiclib_datasets.sh && \
-    ./install_geographiclib_datasets.sh && \
-    rm install_geographiclib_datasets.sh
-
-# Criar workspace ROS2
 WORKDIR /home/ros2_ws/src
+RUN /tmp/setup/scripts/setup.sh ros2-env
 
-# Clonar repositórios públicos
-RUN echo "📦 Clonando repositório vision_opencv para suporte a visão computacional..." && \
-    git clone -b humble https://github.com/ros-perception/vision_opencv.git
+FROM base AS sdk
 
-# Copiar o repositório local para dentro do container
 COPY . /home/ros2_ws/src/mirela-sdk
-# Instalar dependências Python
-RUN echo "🐍 Instalando dependências Python do mirela-sdk..." && \
-    cd /home/ros2_ws/src/mirela-sdk && pip install -r requirements.txt
 
-# Configurar ambiente ROS2
-RUN echo "🔧 Configurando ambiente ROS2 no bashrc..." && \
-    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
-    echo "source /home/ros2_ws/install/local_setup.bash" >> ~/.bashrc && \
-    echo "source /usr/share/colcon_cd/function/colcon_cd.sh" >> ~/.bashrc && \
-    echo "export ROS_DOMAIN_ID=14" >> ~/.bashrc && \
-    echo "export _colcon_cd_root=/opt/ros/humble/" >> ~/.bashrc
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python all
+# Python 3.12+ (Jazzy): system numpy 1.26.4 == pip numpy → dual install causes
+# RecursionError in sklearn/supervision. Remove the pip copy.
+# Python 3.10 (Humble): system numpy 1.21.5 is too old, pip copy must stay.
+RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
+    && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
+    || true
+RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh rosdep-init
+RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh ros2-deps
+RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh build
 
-# Build do workspace
-RUN echo "🔨 Construindo o workspace ROS2..." && \
-    /bin/bash -c "source /opt/ros/humble/setup.bash && \
-    cd /home/ros2_ws && \
-    rosdep fix-permissions && \
-    rosdep update && \
-    rosdep install -i --from-path src --rosdistro humble -r -y && \
-    colcon build --symlink-install && \
-    source /home/ros2_ws/install/local_setup.bash"
+# RealSense: udev rules + hotplug for runtime device access
+COPY docker/realsense/ /opt/realsense/
+RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
+RUN mkdir -p /etc/udev/rules.d && \
+    cp /opt/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/99-realsense-libusb.rules 2>/dev/null || true
 
-RUN echo "🚀🐝 AVANTE! Ambiente ROS2 Humble com MAVROS, Parrot Bebop e SDK pronto!"
+# RealSense: build librealsense from source + realsense-ros + vision_to_mavros
+ARG INSTALL_REALSENSE=false
+ARG REALSENSE_CUDA=false
+ENV REALSENSE_CUDA=${REALSENSE_CUDA}
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense; \
+    fi
+# After realsense build, stale scipy/numpy .so files from --ignore-installed
+# can conflict. Purge and reinstall cleanly.
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-*; \
+    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
+
+CMD ["/bin/bash"]
+
+FROM sdk AS sdk-full
+
+ARG TORCH_VARIANT=cpu
+ARG INSTALL_REALSENSE=false
+ENV TORCH_VARIANT=${TORCH_VARIANT}
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh pytorch ${TORCH_VARIANT}
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python ai
+
+RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
+    && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
+    || true
+
+RUN if [ "${INSTALL_REALSENSE:-false}" = "true" ]; then \
+    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-*; \
+    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
 
 CMD ["/bin/bash"]

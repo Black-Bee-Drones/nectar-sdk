@@ -1,5 +1,5 @@
-from typing import Optional
 import warnings
+from typing import Optional
 
 import numpy as np
 
@@ -8,8 +8,11 @@ from mirela_sdk.vision.camera.config import RealSenseConfig
 
 try:
     import pyrealsense2 as rs
-except Exception:
+
+    REALSENSE_AVAILABLE = True
+except ImportError:
     rs = None
+    REALSENSE_AVAILABLE = False
 
 
 class RealsenseCam(DepthCam):
@@ -55,6 +58,11 @@ class RealsenseCam(DepthCam):
     """
 
     def __init__(self, config: RealSenseConfig, node=None) -> None:
+        if not REALSENSE_AVAILABLE:
+            raise ImportError(
+                "pyrealsense2 is required for RealsenseCam. Install with: pip install pyrealsense2"
+            )
+
         super().__init__(name=config.name)
         self._config = config
         self._enable_depth = config.enable_depth
@@ -73,8 +81,8 @@ class RealsenseCam(DepthCam):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            from mirela_sdk.vision.camera.drivers.ros_depth_cam import ROSDepthCam
             from mirela_sdk.vision.camera.config import ROSDepthConfig
+            from mirela_sdk.vision.camera.drivers.ros_depth_cam import ROSDepthCam
 
             ros_config = ROSDepthConfig(
                 topic=config.color_topic,
@@ -111,8 +119,7 @@ class RealsenseCam(DepthCam):
 
         if rs is None:
             raise RuntimeError(
-                "pyrealsense2 is not installed. "
-                "Please install librealsense and pyrealsense2."
+                "pyrealsense2 is not installed. Please install librealsense and pyrealsense2."
             )
 
         config = rs.config()
@@ -159,9 +166,7 @@ class RealsenseCam(DepthCam):
             frames = self._align.process(frames)
         return frames
 
-    def get_frame(
-        self, wait_for_new: bool = True, timeout: float = 0.1
-    ) -> Optional[np.ndarray]:
+    def get_frame(self, wait_for_new: bool = True, timeout: float = 0.1) -> Optional[np.ndarray]:
         """
         Capture color frame from camera.
 

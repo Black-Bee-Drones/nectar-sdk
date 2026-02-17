@@ -1,23 +1,24 @@
-import sys
+#!/usr/bin/env python3
 import pathlib
 import signal
+import sys
 
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QTabWidget,
+    QMainWindow,
     QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QPixmap, QIcon
 
-from mirela_sdk.interface.theme import get_stylesheet, COLORS
 from mirela_sdk.interface.ros_executor import ROSExecutor
-from mirela_sdk.interface.tabs import ControlTab, VisionTab, ROSTab
+from mirela_sdk.interface.tabs import ControlTab, ROSTab, VisionTab
+from mirela_sdk.interface.theme import COLORS, get_stylesheet
 
 
 class MirelaApp(QMainWindow):

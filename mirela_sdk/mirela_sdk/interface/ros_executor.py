@@ -2,9 +2,9 @@ import threading
 from typing import Optional
 
 import rclpy
-from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
 from PySide6.QtCore import QObject, Signal
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
 
 
 class ROSExecutor(QObject):

@@ -1,8 +1,9 @@
-from typing import Protocol, Optional, runtime_checkable
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import Optional, Protocol, runtime_checkable
 
 from mirela_sdk.control.types import (
+    AltitudeSource,
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
@@ -62,6 +63,7 @@ class Drone(Protocol):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool: ...
 
     def move_to_gps(

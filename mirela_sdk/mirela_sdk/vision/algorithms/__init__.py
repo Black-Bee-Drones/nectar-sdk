@@ -1,29 +1,29 @@
-from .markers import Aruco
 from .color import ColorDetector, ColorSpace
-from .line import (
-    LineDetector,
-    ILineEstimationMethod,
-    HoughLinesP,
-    RotatedRect,
-    FitEllipse,
-    RansacLine,
-    AdaptiveHoughLinesP,
-)
 from .distance import (
-    DistanceEstimator,
-    ModelType,
-    ModelCalibrator,
     CalibrationResult,
+    DistanceEstimator,
+    ModelCalibrator,
+    ModelType,
 )
+from .line import (
+    AdaptiveHoughLinesP,
+    FitEllipse,
+    HoughLinesP,
+    ILineEstimationMethod,
+    LineDetector,
+    RansacLine,
+    RotatedRect,
+)
+from .markers import Aruco
 from .mediapipe import (
-    HandTracker,
-    HandTrackerConfig,
-    HandResult,
-    HandLandmark,
+    FaceLandmarkRegion,
     FaceMeshTracker,
     FaceMeshTrackerConfig,
     FaceResult,
-    FaceLandmarkRegion,
+    HandLandmark,
+    HandResult,
+    HandTracker,
+    HandTrackerConfig,
 )
 
 __all__ = [

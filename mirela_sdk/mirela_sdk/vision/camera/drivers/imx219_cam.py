@@ -55,9 +55,7 @@ class IMX219Cam(AbstractCam):
         self._cap = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
 
         if not self._cap.isOpened():
-            raise RuntimeError(
-                f"Failed to open IMX219 camera (sensor_id={self._config.sensor_id})"
-            )
+            raise RuntimeError(f"Failed to open IMX219 camera (sensor_id={self._config.sensor_id})")
 
         self._is_running = True
 

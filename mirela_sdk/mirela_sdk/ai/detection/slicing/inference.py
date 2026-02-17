@@ -23,7 +23,6 @@ except ImportError:
 from mirela_sdk.ai.detection.slicing.config import SlicingConfig, SlicingStrategy
 from mirela_sdk.ai.detection.slicing.slicer import ImageSlicer
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -69,25 +68,21 @@ class SlicingInference:
             Strategy instance.
         """
         from mirela_sdk.ai.detection.postprocess import (
+            NMMStrategy,
             NMSStrategy,
             SoftNMSStrategy,
-            NMMStrategy,
             WBFStrategy,
         )
 
         strategies = {
             "nms": lambda: NMSStrategy(iou_threshold=self.config.iou_threshold),
-            "soft_nms": lambda: SoftNMSStrategy(
-                iou_threshold=self.config.iou_threshold
-            ),
+            "soft_nms": lambda: SoftNMSStrategy(iou_threshold=self.config.iou_threshold),
             "nmm": lambda: NMMStrategy(iou_threshold=self.config.iou_threshold),
             "wbf": lambda: WBFStrategy(iou_threshold=self.config.iou_threshold),
         }
 
         if strategy_name not in strategies:
-            logger.warning(
-                "Unknown merge strategy '%s', falling back to 'nms'", strategy_name
-            )
+            logger.warning("Unknown merge strategy '%s', falling back to 'nms'", strategy_name)
             strategy_name = "nms"
 
         return strategies[strategy_name]()
@@ -122,9 +117,7 @@ class SlicingInference:
         >>> merged = slicer.run_sliced_inference(image, predict)
         """
         if sv is None:
-            raise ImportError(
-                "supervision is required. Install with: pip install supervision"
-            )
+            raise ImportError("supervision is required. Install with: pip install supervision")
 
         # Use Supervision's InferenceSlicer if configured
         if self.config.strategy == SlicingStrategy.SUPERVISION:
@@ -205,9 +198,7 @@ class SlicingInference:
             Merged detections.
         """
         if InferenceSlicer is None:
-            raise ImportError(
-                "supervision is required. Install with: pip install supervision"
-            )
+            raise ImportError("supervision is required. Install with: pip install supervision")
 
         # Convert to numpy
         if isinstance(image, (str, Path)):

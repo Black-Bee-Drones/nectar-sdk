@@ -2,11 +2,70 @@
 
 ArduPilot/PX4 drone control via MAVROS for ROS2.
 
+## Key Concepts
+
+### MAVLink and MAVROS
+
+[MAVLink](https://ardupilot.org/dev/docs/mavlink-basics.html) is a lightweight binary protocol used for communication between the flight controller (FCU), ground stations, and companion computers. [MAVROS](https://github.com/mavlink/mavros) is a ROS2 node that bridges MAVLink and ROS2, exposing FCU data as topics/services and translating ROS2 commands into MAVLink messages.
+
+This SDK uses MAVROS to send velocity/position commands and read sensor data. The drone must be in [GUIDED mode](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html) for offboard control.
+
+### Flight Modes
+
+ArduPilot [flight modes](https://ardupilot.org/copter/docs/flight-modes.html) determine how the FCU interprets inputs. Key modes used by this SDK:
+
+| Mode | Description |
+|------|-------------|
+| GUIDED | Offboard control. Accepts position/velocity commands from companion computer via MAVLink. Required for SDK navigation. |
+| STABILIZE | Manual stabilized flight. Pilot controls via RC. |
+| LOITER | GPS-based position hold. Maintains position when sticks centered. |
+| RTL | Return to launch. Autonomously flies back to home position and lands. |
+| LAND | Auto-land at current position. |
+
+Mode is set via `drone.set_mode()` which calls the [`/mavros/set_mode`](https://docs.ros.org/en/humble/p/mavros/) service. See [MAVLink flight mode protocol](https://ardupilot.org/dev/docs/mavlink-get-set-flightmode.html).
+
+### EKF (Extended Kalman Filter)
+
+The [EKF](https://ardupilot.org/copter/docs/common-apm-navigation-extended-kalman-filter-overview.html) is ArduPilot's state estimator. It fuses IMU, GPS, barometer, and optionally vision/rangefinder data to produce a reliable estimate of the vehicle's position, velocity, and attitude. All altitude and position values in this SDK ultimately come from the EKF's output via MAVROS topics.
+
+### Altitude Types
+
+ArduPilot uses [several altitude definitions](https://ardupilot.org/copter/docs/common-understanding-altitude.html):
+
+| Type | Description | Source | SDK Usage |
+|------|-------------|--------|-----------|
+| **AGL** (Above Ground Level) | Distance from vehicle to ground directly below | Rangefinder (lidar) | `AltitudeSource.LIDAR`, terrain following |
+| **Relative** | Altitude above HOME/ORIGIN. Displayed in GCS/OSD. | EKF (baro + GPS) | `AltitudeSource.REL_ALT`, `move_to_gps` |
+| **AMSL** (Above Mean Sea Level) | Altitude above mean sea level | EKF + geoid model | MAVROS GPS setpoint topics |
+| **Ellipsoid (WGS84)** | Raw GPS altitude above WGS84 reference ellipsoid. Not the same as AMSL. | GPS receiver | Raw `NavSatFix.altitude` |
+| **Vision Z** | Z component from vision pose in local frame. Relative to vision system origin. | External VIO (T265, d435i, etc.) | `AltitudeSource.VISION`, indoor navigation |
+
+**AMSL vs Ellipsoid**: GPS receivers output altitude above the WGS84 ellipsoid, but MAVROS setpoint topics expect AMSL. The difference is the [geoid height](https://en.wikipedia.org/wiki/EGM96), corrected by `GPSUtils` using the EGM96 model.
+
+**Surface Tracking**: When a [downward-facing rangefinder](https://ardupilot.org/copter/docs/common-rangefinder-landingpage.html) is within range, ArduPilot performs [surface tracking](https://ardupilot.org/copter/docs/terrain-following.html) -- adjusting target altitude to maintain constant AGL. Our `AltitudeSource.LIDAR` mode implements a similar concept at the SDK level via PID control.
+
+### Coordinate Frames
+
+| Frame | Axes | Origin | Used For |
+|-------|------|--------|----------|
+| **NED** (North-East-Down) | X=North, Y=East, Z=Down | Home or local origin | MAVROS local setpoints (`FRAME_LOCAL_NED`) |
+| **Body NED** | X=Forward, Y=Right, Z=Down | Vehicle center | Velocity commands (`FRAME_BODY_NED`) |
+| **WGS84** | Latitude, Longitude, Altitude | Earth reference ellipsoid | GPS coordinates (`NavSatFix`, `GeoPoseStamped`) |
+| **Local Vision** | Depends on VIO setup | Vision system origin | Vision pose (`PoseWithCovarianceStamped`), indoor |
+
+MAVROS bridges between the FCU's internal frames and ROS2 messages. For indoor operation, an external vision system must publish pose to `/mavros/vision_pose/pose_cov`. See [ArduPilot VIO setup](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html) and [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros).
+
+The SDK's `MoveReference` enum maps to these frames:
+- **BODY**: offsets relative to current position and heading (body NED)
+- **WORLD**: velocities in local NED frame (`move_velocity` only)
+- **TAKEOFF**: offsets relative to stored takeoff position and heading
+
 ## Architecture
 
 ```mermaid
 classDiagram
     class MavrosDrone {
+        -_navigator MavrosNavigator
         -_mavros_state State
         -_gps NavSatFix
         -_heading Float64
@@ -15,89 +74,68 @@ classDiagram
         -_rng_alt Range
         -_imu Imu
         -_pid_config PositionPIDConfig
-        -_takeoff_position Union~PoseWithCovarianceStamped,NavSatFix~
+        -_takeoff_position Union~PositionTarget,GeoPoseStamped~
         -_initial_altitude float
-        -_initial_heading float
-        -_lidar_available bool
         -_pose_source PoseSource
-        +config MavrosConfig
-        +node Node
-        +is_ready bool
         +is_indoor bool
         +mavros_state State
         +gps NavSatFix
         +heading float
         +rel_alt float
         +vision_pos PoseWithCovarianceStamped
-        +lidar_alt Optional~float~
-        +height float
+         +pid_config PositionPIDConfig
+        +lidar_available bool
+        +get_altitude(source) float
         +position Union~PoseWithCovarianceStamped,NavSatFix~
-        +obstacle_manager ObstacleManager
-        +from_config(config, node)$ MavrosDrone
         +connect() bool
-        +disconnect()
         +arm() bool
         +disarm() bool
         +takeoff(altitude, max_retries, adjust_altitude, precision, timeout) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
-        +move_to(x, y, z, yaw, reference, timeout, precision, strategy) bool
+        +move_to(x, y, z, yaw, reference, timeout, precision, strategy, altitude_source) bool
         +move_to_gps(lat, lon, alt, heading, timeout, precision, strategy) bool
+        +publish_setpoint(target)
         +emergency_stop()
         +set_home() bool
-        +set_takeoff_position(position)
+        +set_takeoff_position(pose, heading)
         +set_pid_config(config)
         +set_mode(mode) bool
         +set_param(param_id, value) bool
         +do_servo(aux_out, pwm_value) bool
         +rtl(altitude, precision, strategy, land) bool
-        +cleanup()
-        -_setup_subscribers()
-        -_setup_publishers()
-        -_setup_services()
-        -_load_pid_config()
-        -_startup_sensors()
-        -_navigate_pid(x, y, z, yaw, reference, timeout, precision) bool
-        -_navigate_setpoint(x, y, z, yaw, reference, timeout, precision) bool
-        -_navigate_gps_pid(lat, lon, alt, heading, timeout, precision) bool
-        -_navigate_gps_setpoint(lat, lon, alt, heading, timeout, precision) bool
-        -_compute_target(x, y, z, yaw, reference) tuple
-        -_compute_errors(target_x, target_y, target_z, target_yaw) tuple
-        -_create_pid(axis) PIDController
-        -_call_service(service, request, success_msg, fail_msg, sync, timeout) Any
-        -_get_driver_name() str
-        -_start_driver() bool
+        -_compute_target(x, y, z, yaw, reference)
+        -_compute_local_target(x, y, z, yaw, reference)
+        -_compute_gps_target(x, y, z, yaw, reference)
+        -_compute_setpoint_target(x, y, z, yaw, reference)
+        -_compute_gps_setpoint_target(x, y, z, yaw, reference)
+        -_compute_target_rel_alt(z, reference) float
+        -_validate_position_sensors()
+        -_call_service(service, request, success_msg, fail_msg, sync, timeout)
     }
-    
+
+    class MavrosNavigator {
+        -_drone MavrosDrone
+        +navigate_pid(target, active_axes, yaw, timeout, precision, altitude_source, altitude_target) bool
+        +navigate_setpoint(target, timeout, precision, check_alt) bool
+        +resolve_altitude_target(z, reference, altitude_source) float
+        -_compute_errors(target, yaw, altitude_source, altitude_target) tuple
+        -_resolve_altitude_error(dz_default, altitude_source, altitude_target) float
+        -_resolve_lidar_target(z, reference) float
+        -_resolve_rel_alt_target(z, reference) float
+        -_check_reached_local(target, precision) tuple
+        -_check_reached_gps(target, check_alt, precision) tuple
+        -_create_pid(axis) PIDController
+    }
+
     class GPSUtils {
         <<static>>
         -_egm96 GeoidPGM
-        -_get_egm96()$ GeoidPGM
         +geoid_height(lat, lon)$ float
         +create_gps_setpoint(lat, lon, alt_rel, heading, init_alt)$ GeoPoseStamped
-        +check_reached(cur_lat, cur_lon, cur_alt, tgt_lat, tgt_lon, tgt_alt, precision, alt_threshold)$ tuple~bool,float,float~
+        +check_reached(cur_lat, cur_lon, cur_alt, tgt_lat, tgt_lon, tgt_alt, precision, alt_threshold)$ tuple
     }
-    
-    class PIDController {
-        +kp float
-        +ki float
-        +kd float
-        +setpoint float
-        +output_limits tuple~float,float~
-        +integral_limits tuple~float,float~
-        +output float
-        -_integral float
-        -_last_error float
-        -_last_time float
-        -_proportional float
-        -_derivative float
-        +update(current_value) float
-        +reset()
-        +set_setpoint(setpoint)
-        +tune(kp, ki, kd)
-        +get_components() dict
-    }
-    
+
     class PositionPIDConfig {
         <<dataclass>>
         +x PIDConfig
@@ -105,38 +143,21 @@ classDiagram
         +z PIDConfig
         +yaw PIDConfig
         +from_yaml(file_path)$ PositionPIDConfig
-        +to_dict() dict
     }
-    
-    class PIDConfig {
-        <<dataclass>>
-        +kp float
-        +ki float
-        +kd float
-        +setpoint float
-        +output_min float
-        +output_max float
-        +integral_min float
-        +integral_max float
-        +from_yaml(file_path)$ PIDConfig
-        +from_dict(config_dict)$ PIDConfig
-        +to_dict() dict
-        +get_output_limits() tuple~float,float~
-        +get_integral_limits() tuple~float,float~
-    }
-    
+
     class BaseDrone {
         <<abstract>>
         +add_obstacle_detector()
         +enable_obstacle_detector()
         +cleanup()
     }
-    
+
     BaseDrone <|-- MavrosDrone
-    MavrosDrone o-- PIDController : uses 4 instances
+    MavrosDrone *-- MavrosNavigator
+    MavrosNavigator ..> PIDController : creates
+    MavrosNavigator ..> GPSUtils : uses
+    MavrosNavigator ..> PositionUtils : uses
     MavrosDrone o-- PositionPIDConfig
-    MavrosDrone ..> GPSUtils : uses
-    PositionPIDConfig *-- PIDConfig
 ```
 
 ## MavrosDrone
@@ -148,16 +169,9 @@ from mirela_sdk.control import DroneFactory, MavrosConfig, PoseSource
 
 config = MavrosConfig(
     pose_source=PoseSource.VISION,          # or GPS
-    navigation=NavigationStrategy.PID,       # or SETPOINT
+    expect_lidar=True,                      # Wait for lidar at startup
     connection_string="serial:///dev/ttyUSB0:921600",
-    pid_config_file=None,                    # Optional custom PID config
-    state_topic="/mavros/state",
-    gps_topic="/mavros/global_position/global",
-    vision_topic="/mavros/vision_pose/pose_cov",
-    lidar_topic="/mavros/rangefinder/rangefinder",
-    imu_topic="/mavros/imu/data",
-    rel_alt_topic="/mavros/global_position/rel_alt",
-    heading_topic="/mavros/global_position/compass_hdg"
+    pid_config_file=None,                   # Optional custom PID config
 )
 
 drone = DroneFactory.create("mavros", config, node)
@@ -168,7 +182,7 @@ drone = DroneFactory.create("mavros", config, node)
 **VISION** (Indoor):
 - Subscribes to `/mavros/vision_pose/pose_cov`
 - Uses local NED frame
-- Requires external pose estimation (ZED, Realsense, etc.)
+- Requires external pose estimation (Realsense, T265, etc.)
 
 **GPS** (Outdoor):
 - Subscribes to `/mavros/global_position/global`
@@ -182,27 +196,22 @@ drone.is_indoor                 # bool: True if pose_source == VISION
 drone.mavros_state             # State: FCU state (mode, armed, connected)
 drone.gps                      # NavSatFix: GPS data (outdoor only)
 drone.heading                  # float: Compass heading degrees (outdoor only)
+drone.rel_alt                  # float: Relative altitude (outdoor only)
 drone.vision_pos               # PoseWithCovarianceStamped: Vision pose (indoor only)
-drone.lidar_alt                # Optional[float]: Lidar rangefinder altitude
-drone.height                   # float: Best available altitude source
+drone.lidar_available          # bool: Whether lidar data has been received
+drone.get_altitude()           # float: Best available altitude (lidar > vision Z > rel_alt)
+drone.get_altitude(AltitudeSource.LIDAR)   # float: Lidar rangefinder reading
+drone.get_altitude(AltitudeSource.VISION)  # float: Vision pose Z
+drone.get_altitude(AltitudeSource.REL_ALT) # float: GPS relative altitude
 drone.position                 # Union[PoseWithCovarianceStamped, NavSatFix]
+drone.pid_config               # PositionPIDConfig: Current PID configuration
 ```
 
 ### Takeoff
 
-The `takeoff()` method executes a takeoff sequence with retry logic and optional altitude adjustment.
-
-**Basic Usage**:
 ```python
 drone.takeoff(altitude=1.5)  # Default: adjust_altitude=True, precision=0.12m, timeout=25s
-```
-
-**With Custom Adjustment**:
-```python
-# Disable altitude adjustment
 drone.takeoff(altitude=2.0, adjust_altitude=False)
-
-# Custom precision and timeout
 drone.takeoff(altitude=1.5, precision=0.15, timeout=30.0)
 ```
 
@@ -214,45 +223,154 @@ drone.takeoff(altitude=1.5, precision=0.15, timeout=30.0)
 5. If `adjust_altitude=True`: Uses `move_to()` to fine-tune altitude to target
 6. Retries up to `max_retries` times if altitude doesn't change
 
-**Altitude Adjustment**:
-After successful takeoff, if `adjust_altitude=True` and current altitude differs from target by more than `precision`, the method calls `move_to(z=altitude_diff)` to reach the exact target altitude. This ensures precise altitude control using PID navigation.
+## Navigation
 
-## Navigation Implementation
+Navigation logic is encapsulated in `MavrosNavigator` (composition), keeping `MavrosDrone` focused on hardware interface, sensor data, and target computation.
+
+### Capability Matrix
+
+| Entry Point | PoseSource | Strategy | Reference | AltitudeSource | Notes |
+|------------|-----------|----------|-----------|----------------|-------|
+| `move_to` | VISION | PID | BODY | AUTO, VISION | Default indoor |
+| `move_to` | VISION | PID | BODY | LIDAR | Terrain following |
+| `move_to` | VISION | PID | TAKEOFF | AUTO, VISION | Absolute from takeoff |
+| `move_to` | VISION | PID | TAKEOFF | LIDAR | Absolute height AGL |
+| `move_to` | VISION | SETPOINT | BODY, TAKEOFF | N/A | FCU handles altitude |
+| `move_to` | GPS | PID | BODY | AUTO, LIDAR | Lidar preferred outdoor |
+| `move_to` | GPS | PID | BODY | REL_ALT | Relative altitude |
+| `move_to` | GPS | PID | TAKEOFF | AUTO, LIDAR | Absolute height AGL |
+| `move_to` | GPS | PID | TAKEOFF | REL_ALT | Relative altitude |
+| `move_to` | GPS | SETPOINT | BODY, TAKEOFF | N/A | AMSL-corrected target |
+| `move_to` | any | any | WORLD | any | Not supported |
+| `move_to_gps` | GPS | PID | N/A | REL_ALT | GPS waypoint with PID |
+| `move_to_gps` | GPS | SETPOINT | N/A | N/A | GPS setpoint to FCU |
+| `move_to_gps` | VISION | any | N/A | any | Not supported |
+| `move_velocity` | any | N/A | BODY, WORLD, TAKEOFF | N/A | Direct velocity |
+
+### Navigation Examples
+
+**Indoor -- move relative to current position (BODY)**:
+```python
+# Drone moves 2m forward, then 1m left from where it ends up
+drone.move_to(x=2.0, y=0.0, z=0.0)             # 2m forward
+drone.move_to(x=0.0, y=1.0, z=0.0)             # 1m left
+drone.move_to(z=0.5)                            # 0.5m up (x/y disabled)
+```
+
+**Indoor -- move relative to takeoff position (TAKEOFF)**:
+```python
+# Coordinates are absolute offsets from where the drone took off
+drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)  # 2m forward of takeoff
+drone.move_to(x=2.0, y=1.0, z=0.0, reference=MoveReference.TAKEOFF)  # same X, 1m left of takeoff
+drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)  # back to takeoff position
+```
+
+**Indoor -- terrain following with lidar**:
+```python
+# z is height above ground (lidar reading), not position-based
+drone.move_to(x=2.0, y=0.0, z=0.3, altitude_source=AltitudeSource.LIDAR)  # fly at 0.3m AGL
+drone.move_to(x=2.0, y=0.0, z=1.5, altitude_source=AltitudeSource.LIDAR)  # fly at 1.5m AGL
+
+# With TAKEOFF reference, z is absolute AGL altitude
+drone.move_to(x=0.0, y=0.0, z=1.0,
+              reference=MoveReference.TAKEOFF,
+              altitude_source=AltitudeSource.LIDAR)  # hold 1.0m AGL at takeoff XY
+```
+
+**Indoor -- let FCU handle position (SETPOINT)**:
+```python
+# FCU receives target position directly; no PID loop on our side
+drone.move_to(x=2.0, y=1.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
+```
+
+**Outdoor -- GPS waypoint navigation**:
+```python
+# Navigate to absolute GPS coordinates; altitude is relative (above home)
+drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0, precision=1.0)
+
+# Let FCU handle navigation via setpoint
+drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
+                  strategy=NavigationStrategy.SETPOINT)
+```
+
+**Outdoor -- relative movement with PID**:
+```python
+# Move 5m forward from current GPS position using PID + lidar for altitude
+drone.move_to(x=5.0, y=0.0, z=0.0, altitude_source=AltitudeSource.LIDAR)
+```
+
+**Velocity control**:
+```python
+# Body-frame: forward relative to where drone is pointing
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.BODY)
+
+# World-frame: north in NED frame regardless of heading
+drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
+
+# Timed: move forward for 2 seconds then stop
+drone.move_velocity(vx=1.0, duration=2.0, reference=MoveReference.BODY)
+```
+
+### Altitude Source Behavior
+
+| AltitudeSource | Sensor | When Used | dz Computation |
+|---------------|--------|-----------|----------------|
+| AUTO | Best available | Default for `move_to` | Position-based via `get_body_distance()` |
+| LIDAR | Rangefinder | Terrain following, precise AGL | `altitude_target - current_lidar` |
+| VISION | Vision pose Z | Indoor altitude hold | Position-based via `get_body_distance()` |
+| REL_ALT | GPS relative alt | `move_to_gps` PID, outdoor | `altitude_target - current_rel_alt` |
+
+**LIDAR altitude target resolution**:
+- BODY reference: `current_lidar + z` (relative offset)
+- TAKEOFF reference: `z` (absolute height above ground)
+- Capped at 15m; falls back to position-based if exceeded
+
+### Navigation Flow
+
+```mermaid
+flowchart TD
+    A["move_to / move_to_gps"] --> B{"Strategy?"}
+    B -->|PID| C["Compute PID target"]
+    B -->|SETPOINT| D["Compute setpoint target"]
+    C --> E["resolve_altitude_target"]
+    E --> F["navigator.navigate_pid"]
+    D --> G["navigator.navigate_setpoint"]
+    F --> H["PID loop"]
+    G --> I["Setpoint loop"]
+    H --> J["_compute_errors"]
+    J --> K["_resolve_altitude_error"]
+    K --> L["move_velocity"]
+    I --> M{"Target type?"}
+    M -->|PositionTarget| N["publish_setpoint + _check_reached_local"]
+    M -->|GeoPoseStamped| O["publish_setpoint + _check_reached_gps"]
+```
 
 ### PID Navigation
 
-Velocity-based control with closed-loop feedback.
+Velocity-based control with closed-loop feedback via `MavrosNavigator.navigate_pid()`.
 
 **Algorithm**:
 ```
-1. Compute target position (based on reference frame)
-2. Calculate body-frame errors (dx, dy, dz, dyaw)
-3. Update PID controllers with errors
-4. Generate velocity commands
-5. Publish to /mavros/setpoint_raw/local
-6. Check arrival condition
-7. Repeat at 100 Hz
-```
-
-**PID Loop**:
-```python
-vx = pid_x.update(-dx)
-vy = pid_y.update(-dy)
-vz = pid_z.update(-dz)
-vyaw = pid_yaw.update(-dyaw)
-
-msg = PositionTarget()
-msg.coordinate_frame = PositionTarget.FRAME_BODY_NED
-msg.type_mask = 1479  # Velocity control
-msg.velocity.x = vx
-msg.velocity.y = vy
-msg.velocity.z = vz
-msg.yaw_rate = vyaw
-
-local_pub.publish(msg)
+1. MavrosDrone computes target position (based on reference frame)
+2. MavrosDrone resolves altitude_target (based on altitude_source)
+3. MavrosNavigator creates PID controllers from config
+4. Loop at ~100 Hz:
+   a. Compute body-frame errors (dx, dy, dz, dyaw)
+   b. Override dz if altitude_target set (LIDAR/REL_ALT source)
+   c. Update PID controllers with errors
+   d. Generate and publish velocity commands
+   e. Check arrival condition
 ```
 
 **Dead Zone**: Velocity commands zeroed when within `precision / 2` meters to prevent oscillation.
+
+### Setpoint Navigation
+
+Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. Handles both indoor and outdoor targets in a single method:
+
+**Indoor** (PositionTarget): Publishes to `/mavros/setpoint_raw/local`, checks Euclidean distance using vision pose.
+
+**Outdoor** (GeoPoseStamped): Publishes to `/mavros/setpoint_position/global` with AMSL-corrected altitude, checks geodesic distance using GPS and relative altitude.
 
 ### Velocity Control
 
@@ -267,70 +385,33 @@ Direct velocity command publishing to flight controller.
 
 **Duration**: If `duration` is specified, command is published at 30 Hz for the specified time. If `None`, command is published once (continuous until next command).
 
-### Setpoint Navigation
-
-Direct position setpoint publishing to flight controller.
-
-**Indoor** (Vision):
-```python
-msg = PositionTarget()
-msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
-msg.type_mask = 0b0000111111000111  # Position + yaw
-msg.position.x = target_x
-msg.position.y = target_y
-msg.position.z = target_z
-msg.yaw = target_yaw
-
-local_pub.publish(msg)
-```
-
-**Outdoor** (GPS):
-```python
-msg = GeoPoseStamped()
-msg.pose.position.latitude = target_lat
-msg.pose.position.longitude = target_lon
-msg.pose.position.altitude = target_alt  # AMSL with EGM96 correction
-msg.pose.orientation = quaternion_from_euler(0, 0, radians(target_heading))
-
-gps_pub.publish(msg)
-```
-
 ## Reference Frame Transformations
 
 ### Supported References by Method
 
 | Method | BODY | WORLD | TAKEOFF |
 |--------|------|-------|---------|
-| `move_velocity()` | ✅ | ✅ | ✅ |
-| `move_to()` | ✅ | ❌ | ✅ |
+| `move_velocity()` | yes | yes | yes |
+| `move_to()` | yes | no | yes |
 
 **Note**: `move_to()` does not support `WORLD` reference and will raise `CapabilityNotSupportedError` if used.
 
 ### BODY Frame
 
-Relative to current orientation.
+Relative to current position and orientation.
 
 **move_velocity**: Uses `FRAME_BODY_NED` coordinate frame.
 
 **move_to**: Transforms relative offsets to world coordinates:
 ```python
-# Transform to world coordinates
 dx = x * cos(current_yaw) - y * sin(current_yaw)
 dy = x * sin(current_yaw) + y * cos(current_yaw)
-dz = z
-
-target_x = current_x + dx
-target_y = current_y + dy
-target_z = current_z + dz
+target = current_position + (dx, dy, z)
 ```
 
 ### WORLD Frame
 
-Relative to world/local NED frame.
-
-**move_velocity only**: Uses `FRAME_LOCAL_NED` coordinate frame. Velocities are interpreted in world frame.
-
-**Not supported in move_to**: Use `BODY` or `TAKEOFF` reference instead.
+Relative to world/local NED frame. **move_velocity only**.
 
 ### TAKEOFF Frame
 
@@ -340,27 +421,10 @@ Relative to takeoff position and orientation.
 
 **move_to**: Direct offset from takeoff position:
 ```python
-# Direct offset from takeoff position
-target_x = takeoff_x + x
-target_y = takeoff_y + y
-target_z = takeoff_z + z
-target_yaw = takeoff_yaw + yaw
+target = takeoff_position + rotate(x, y, z, takeoff_yaw)
 ```
 
 **Requirement**: Takeoff position must be set via `takeoff()` or `set_takeoff_position()`.
-
-### GPS Offset Calculation
-
-```python
-from mirela_sdk.utils.gps_calculate import GPSCalculate
-
-# Calculate GPS coordinate from body-frame offset
-lat, lon, alt = GPSCalculate.calculate_gps_offset(
-    x, -y, z,  # NED convention: y inverted
-    current_lat, current_lon, current_alt,
-    heading
-)
-```
 
 ## RTL Implementation
 
@@ -502,36 +566,6 @@ config = PositionPIDConfig(
 drone.set_pid_config(config)
 ```
 
-## GPS Utilities
-
-### GPSUtils
-
-Static utility class for GPS-related calculations.
-
-**create_gps_setpoint**:
-```python
-from mirela_sdk.control.mavros.gps_utils import GPSUtils
-
-setpoint = GPSUtils.create_gps_setpoint(
-    latitude=27.1234,
-    longitude=-48.4567,
-    altitude=15.0,          # Relative altitude
-    heading=90.0,           # degrees
-    initial_altitude=100.0  # Initial GPS altitude for EGM96 correction
-)
-# Returns: GeoPoseStamped with AMSL altitude
-```
-
-**check_reached**:
-```python
-reached, distance, alt_error = GPSUtils.check_reached(
-    current_lat, current_lon, current_alt,
-    target_lat, target_lon, target_alt,
-    precision=0.5
-)
-# Returns: (bool, horizontal_distance, altitude_error)
-```
-
 ## ArduPilot-Specific Features
 
 ### Flight Modes
@@ -547,111 +581,71 @@ drone.set_mode("LAND")       # Auto land
 ### Parameter Setting
 
 ```python
-# Set single parameter
 drone.set_param("RTL_ALT", 1500)  # RTL altitude in cm
-
-# Via service call for more complex parameters
-from rcl_interfaces.msg import Parameter
-from rcl_interfaces.srv import SetParameters
-
-param = Parameter()
-param.name = "PARAM_NAME"
-param.value.integer_value = 100
-
-req = SetParameters.Request()
-req.parameters.append(param)
-# Service call via _param_srv
 ```
 
 ### Servo Control
 
+Controls auxiliary servo outputs (AUX1-AUX8, mapped to FCU channels 9-16). See [ArduPilot Servo Documentation](https://ardupilot.org/copter/docs/common-servo.html).
+
 ```python
-# Control auxiliary outputs (e.g., gripper, camera trigger)
 drone.do_servo(aux_out=1, pwm_value=1500)  # Servo channel 9
 drone.do_servo(aux_out=2, pwm_value=2000)  # Servo channel 10
 ```
 
-## Usage Examples
+## GPS Utilities
 
-### Indoor Position Control
+`GPSUtils` provides static methods for GPS navigation, used internally by `MavrosNavigator` and `MavrosDrone` for outdoor operations.
 
-```python
-from mirela_sdk.control import DroneFactory, MavrosConfig, PoseSource
+### EGM96 Geoid Correction
 
-config = MavrosConfig(pose_source=PoseSource.VISION)
-drone = DroneFactory.create("mavros", config, node)
+GPS altitude (WGS84 ellipsoid) differs from AMSL by the geoid height at a given location. MAVROS setpoint topics expect AMSL altitude. `GPSUtils` uses the [EGM96 geoid model](https://en.wikipedia.org/wiki/EGM96) (5-minute grid, cubic interpolation) to convert:
 
-drone.takeoff(altitude=1.5)
-drone.move_to(x=2.0, y=1.0, z=0.0, precision=0.2)
-drone.move_to(x=-1.0, y=0.5, z=0.5, precision=0.2)
-drone.rtl(land=True)
+```
+AMSL = GPS_ellipsoid_altitude - geoid_height + relative_altitude
 ```
 
-### Outdoor GPS Mission
+The EGM96 dataset must be installed (provided by [GeographicLib](https://geographiclib.sourceforge.io/)). Can check in the intallation guide.
+
+### API
+
+**create_gps_setpoint**: Creates a `GeoPoseStamped` with AMSL-corrected altitude and heading quaternion.
 
 ```python
-config = MavrosConfig(pose_source=PoseSource.GPS)
-drone = DroneFactory.create("mavros", config, node)
+from mirela_sdk.control.mavros.gps_utils import GPSUtils
 
-waypoints = [
-    (-27.1234, -48.4567, 15.0),
-    (-27.1245, -48.4578, 20.0),
-    (-27.1256, -48.4589, 15.0)
-]
-
-drone.takeoff(altitude=15.0)
-
-for lat, lon, alt in waypoints:
-    success = drone.move_to_gps(lat, lon, alt, precision=1.0)
-    if not success:
-        drone.node.get_logger().error(f"Failed to reach waypoint")
-        break
-
-drone.rtl(strategy=RTLStrategy.ARDUPILOT, land=True)
+setpoint = GPSUtils.create_gps_setpoint(
+    latitude=-27.1234,
+    longitude=-48.4567,
+    altitude_rel=15.0,         # Relative altitude above home (meters)
+    heading=90.0,              # Heading in degrees (0=North, clockwise)
+    initial_altitude=100.0,    # GPS altitude at startup for offset calculation
+)
+# Returns: GeoPoseStamped with AMSL altitude ready for MAVROS
 ```
 
-### Mixed Reference Frames
+**geoid_height**: Returns the EGM96 geoid height for a coordinate.
 
 ```python
-from mirela_sdk.control.types import MoveReference
-
-drone.takeoff(1.5)
-
-# Move 2m forward in body frame
-drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.BODY)
-
-# Velocity control in world frame
-drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
-
-# Return to takeoff position
-drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
+height = GPSUtils.geoid_height(latitude=-27.1234, longitude=-48.4567)
 ```
 
-### Velocity Control Examples
+**check_reached**: Checks if current GPS position is within precision of target using geodesic distance.
 
 ```python
-from mirela_sdk.control.types import MoveReference
-
-# Body-frame velocity (relative to current orientation)
-drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.BODY)
-
-# World-frame velocity (relative to world NED frame)
-drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
-
-# Takeoff-frame velocity (relative to takeoff orientation)
-drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.TAKEOFF)
-
-# Velocity for specific duration
-drone.move_velocity(vx=1.0, duration=2.0, reference=MoveReference.BODY)
+reached, distance, alt_diff = GPSUtils.check_reached(
+    current_lat, current_lon, current_alt,
+    target_lat, target_lon, target_alt,
+    precision_radius=0.5,   # Horizontal threshold (meters)
+    alt_threshold=0.5,      # Vertical threshold (meters)
+)
 ```
 
 ## Service Call Behavior
 
 All MAVROS service calls use `_call_service` with automatic response validation and deadlock-safe execution.
 
-### Async Pattern with Spin Loop
-
-Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), synchronous `client.call()` causes deadlock when called from callbacks or the same thread as the executor. We use `call_async()` with a spin loop:
+Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), we use `call_async()` with a spin loop to avoid deadlock:
 
 ```python
 future = service.call_async(request)
@@ -662,22 +656,12 @@ while not future.done():
 result = future.result()
 ```
 
-This pattern:
-- Avoids deadlock (no blocking on executor thread)
-- Maintains ROS2 communication during wait
-- Allows timeout handling
-- Provides synchronous-like behavior when needed
-
-### Parameters
-
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `sync` | `True` | If True, waits for response using spin loop. If False, returns immediately. |
 | `timeout` | `10.0` | Maximum seconds to wait for service availability and response. |
 
 ### Response Validation
-
-Responses are validated based on message type:
 
 | Service Type | Field Checked | Failure Condition |
 |--------------|---------------|-------------------|
@@ -703,76 +687,36 @@ Failed commands log the result code:
 [WARN] /mavros/cmd/arming: Failed (Result: DENIED)
 ```
 
-### Usage Examples
-
-**Flight actions** (arm, disarm, takeoff, land) use `sync=True`:
-
-```python
-def arm(self) -> bool:
-    req = CommandBool.Request()
-    req.value = True
-    res = self._call_service(
-        self._arm_srv, req, "Armed", "Arm failed", sync=True
-    )
-    return bool(res)
-```
-
-**Timeout handling**:
-
-```python
-try:
-    drone.arm()
-except TimeoutError as e:
-    drone.node.get_logger().error(f"Service timeout: {e}")
-
-## Error Handling
-
-```python
-from mirela_sdk.control.exceptions import (
-    TakeoffPositionNotSetError,
-    SensorNotAvailableError,
-    CapabilityNotSupportedError
-)
-
-try:
-    # Requires takeoff position
-    drone.move_to(x=1.0, reference=MoveReference.TAKEOFF)
-except TakeoffPositionNotSetError:
-    drone.takeoff(1.5)  # Sets takeoff position
-    drone.move_to(x=1.0, reference=MoveReference.TAKEOFF)
-
-try:
-    # GPS not available indoors
-    if drone.is_indoor:
-        heading = drone.heading  # Raises SensorNotAvailableError
-except SensorNotAvailableError as e:
-    drone.node.get_logger().warn(f"Sensor unavailable: {e}")
-
-try:
-    # Service timeout
-    drone.arm()
-except TimeoutError as e:
-    drone.node.get_logger().error(f"Service not available: {e}")
-```
-
 ---
 
 ## References
 
 ### MAVLink & MAVROS
+- [MAVLink Basics](https://ardupilot.org/dev/docs/mavlink-basics.html)
 - [MAVLink Protocol](https://mavlink.io/en/)
 - [MAV_RESULT Enum](https://mavlink.io/en/messages/common.html#MAV_RESULT)
 - [MAV_CMD Commands](https://mavlink.io/en/messages/common.html#mav_commands)
 - [MAVROS GitHub](https://github.com/mavlink/mavros)
 - [MAVROS ROS2 API](https://docs.ros.org/en/humble/p/mavros/)
+- [MAVROS Wiki (ROS1, still useful)](https://wiki.ros.org/mavros)
 
 ### ArduPilot
 - [ArduPilot Copter Documentation](https://ardupilot.org/copter/)
 - [Flight Modes](https://ardupilot.org/copter/docs/flight-modes.html)
+- [MAVLink Flight Mode Protocol](https://ardupilot.org/dev/docs/mavlink-get-set-flightmode.html)
+- [GUIDED Mode Commands](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html)
 - [Understanding Altitude](https://ardupilot.org/copter/docs/common-understanding-altitude.html)
+- [EKF Navigation Filter](https://ardupilot.org/copter/docs/common-apm-navigation-extended-kalman-filter-overview.html)
+- [Rangefinders](https://ardupilot.org/copter/docs/common-rangefinder-landingpage.html)
+- [Terrain Following](https://ardupilot.org/copter/docs/terrain-following.html)
+- [Servo Configuration](https://ardupilot.org/copter/docs/common-servo.html)
+
+### Vision & Indoor Navigation
+- [VIO Tracking Camera (ArduPilot)](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html)
+- [ROS VIO Setup Guide](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
+- [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)
 
 ### ROS2
 - [Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html)
 - [ROS2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
 - [Callback Groups](https://docs.ros.org/en/humble/How-To-Guides/Using-callback-groups.html)
-

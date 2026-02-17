@@ -84,9 +84,7 @@ class PIDController:
 
         # Integral term (with anti-windup)
         self._integral += self.ki * error * dt
-        self._integral = max(
-            min(self._integral, self.integral_limits[1]), self.integral_limits[0]
-        )
+        self._integral = max(min(self._integral, self.integral_limits[1]), self.integral_limits[0])
 
         # Derivative term
         error_diff = error - self._last_error
@@ -94,9 +92,7 @@ class PIDController:
 
         # total output
         self.output = self._proportional + self._integral + self._derivative
-        self.output = max(
-            min(self.output, self.output_limits[1]), self.output_limits[0]
-        )
+        self.output = max(min(self.output, self.output_limits[1]), self.output_limits[0])
 
         # Store state for next iteration
         self._last_error = error

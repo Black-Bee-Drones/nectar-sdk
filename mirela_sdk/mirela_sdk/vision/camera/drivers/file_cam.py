@@ -1,6 +1,7 @@
 from typing import Optional
-import numpy as np
+
 import cv2
+import numpy as np
 
 from mirela_sdk.vision.camera.abstract import AbstractCam
 from mirela_sdk.vision.camera.config import FileImageConfig
@@ -31,9 +32,7 @@ class FileImageCam(AbstractCam):
             raise FileNotFoundError(f"Could not load image: {self._config.path}")
         self._is_running = True
 
-    def get_frame(
-        self, wait_for_new: bool = False, timeout: float = 1.0
-    ) -> Optional[np.ndarray]:
+    def get_frame(self, wait_for_new: bool = False, timeout: float = 1.0) -> Optional[np.ndarray]:
         """
         Return the loaded image.
 

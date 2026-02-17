@@ -1,28 +1,29 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List, Callable, Union
+from typing import Callable, List, Optional, Union
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.client import Client
 from rclpy.duration import Duration
 from rclpy.node import Node
-from rclpy.qos import QoSProfile
 from rclpy.publisher import Publisher
+from rclpy.qos import QoSProfile
 from rclpy.subscription import Subscription
-from rclpy.client import Client
-from rclpy.callback_groups import ReentrantCallbackGroup
 
+from mirela_sdk.control.config import DroneConfig
+from mirela_sdk.control.exceptions import (
+    CapabilityNotSupportedError,
+    DriverNotFoundError,
+)
+from mirela_sdk.control.obstacles.handler import ObstacleHandler, ObstacleManager
+from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
+from mirela_sdk.control.protocols import ObstacleDetector
 from mirela_sdk.control.types import (
+    AltitudeSource,
     MoveReference,
     NavigationStrategy,
     RTLStrategy,
 )
-from mirela_sdk.control.config import DroneConfig
-from mirela_sdk.control.exceptions import (
-    DriverNotFoundError,
-    CapabilityNotSupportedError,
-)
-from mirela_sdk.control.obstacles.handler import ObstacleManager, ObstacleHandler
-from mirela_sdk.control.obstacles.types import ObstacleHandlerConfig
-from mirela_sdk.control.protocols import ObstacleDetector
 from mirela_sdk.utils.process import ProcessUtils
 
 
@@ -319,6 +320,7 @@ class BaseDrone(ABC):
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
         strategy: NavigationStrategy = NavigationStrategy.PID,
+        altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
         Navigate to target position.
@@ -367,6 +369,14 @@ class BaseDrone(ABC):
             - PID: velocity-based control with feedback loop
             - SETPOINT: direct position setpoint publishing
 
+        altitude_source : AltitudeSource (enum), default=AUTO
+            Altitude sensor source for PID navigation:
+
+            - AUTO: best available (lidar > vision Z > relative altitude).
+            - LIDAR: lidar rangefinder for ground-relative altitude control.
+            - VISION: vision pose Z component.
+            - REL_ALT: GPS-based relative altitude.
+
         Returns
         -------
         bool
@@ -376,6 +386,8 @@ class BaseDrone(ABC):
         ------
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
+        SensorNotAvailableError
+            If altitude_source=LIDAR but lidar is not available.
         """
         pass
 
