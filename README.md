@@ -1,28 +1,24 @@
+
 # Nectar SDK
 
 <div align="center">
 
-<img align="left" width="25" height="25" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
+<img align="left" width="35" height="35" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
 
-A modular software development kit for autonomous aerial systems built on [ROS 2](https://docs.ros.org/). Designed for drone competitions, research, and rapid prototyping of UAV applications.
+ROS 2 software development kit for autonomous aerial systems. Provides unified interfaces for flight control, computer vision, and object detection through a modular, extensible architecture.
 
-<p>
-  <a href="https://docs.ros.org/"><img src="https://img.shields.io/badge/-ROS%202-22314E?style=flat&labelColor=black&logo=ros&logoColor=22314E" alt="ROS 2" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/-Python-3776AB?style=flat&labelColor=black&logo=python&logoColor=3776AB" alt="Python" /></a>
-  <a href="https://opencv.org/"><img src="https://img.shields.io/badge/-OpenCV-5C3EE8?style=flat&labelColor=black&logo=opencv&logoColor=5C3EE8" alt="OpenCV" /></a>
-  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/-PyTorch-EE4C2C?style=flat&labelColor=black&logo=pytorch&logoColor=EE4C2C" alt="PyTorch" /></a>
-  <a href="https://github.com/IntelRealSense/librealsense"><img src="https://img.shields.io/badge/-RealSense-00C8FF?style=flat&labelColor=black&logo=intel&logoColor=00C8FF" alt="RealSense" /></a>
-  <a href="https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/"><img src="https://img.shields.io/badge/-Jetson-76B900?style=flat&labelColor=black&logo=nvidia&logoColor=76B900" alt="Jetson" /></a>
-  <a href="https://www.raspberrypi.com/"><img src="https://img.shields.io/badge/-Raspberry%20Pi-A22846?style=flat&labelColor=black&logo=raspberrypi&logoColor=A22846" alt="Raspberry Pi" /></a>
-  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?style=flat&labelColor=black&logo=docker&logoColor=2496ED" alt="Docker" /></a>
+<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/Apache-2.0-D22128?style=flat&labelColor=black&logo=apache&logoColor=D22128" alt="Apache License" /></a>
+  <a href="https://github.com/Black-Bee-Drones/nectar-sdk/releases/latest"><img src="https://img.shields.io/github/v/release/Black-Bee-Drones/nectar-sdk?sort=semver" alt="Latest release"></a>
+  <a href="https://github.com/Black-Bee-Drones/nectar-sdk/compare/main...dev"><img src="https://img.shields.io/github/commits-since/Black-Bee-Drones/nectar-sdk/main/dev?label=commits%20since" alt="Commits since"></a>
+  <a href="https://github.com/Black-Bee-Drones/nectar-sdk/stargazers"><img src="https://img.shields.io/github/stars/Black-Bee-Drones/nectar-sdk?style=social" alt="Stars"></a>
 </p>
 
 | ROS 2 Distro | Build & Test | Docker |
 |:---:|:---:|:---:|
-| **Humble** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-humble-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=humble) |
-| **Jazzy** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-jazzy-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=jazzy) |
-| **Kilted** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-kilted-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=kilted) |
+| **Humble** | [![Build Humble](https://img.shields.io/github/actions/workflow/status/Black-Bee-Drones/nectar-sdk/build-test-humble.yml?branch=main&label=Humble)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test-humble.yml) | [![Docker](https://img.shields.io/badge/Docker-humble-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=humble) |
+| **Jazzy** | [![Build Jazzy](https://img.shields.io/github/actions/workflow/status/Black-Bee-Drones/nectar-sdk/build-test-jazzy.yml?branch=main&label=Jazzy)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test-jazzy.yml) | [![Docker](https://img.shields.io/badge/Docker-jazzy-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=jazzy) |
+| **Kilted** | [![Build Kilted](https://img.shields.io/github/actions/workflow/status/Black-Bee-Drones/nectar-sdk/build-test-kilted.yml?branch=main&label=Kilted)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test-kilted.yml) | [![Docker](https://img.shields.io/badge/Docker-kilted-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=kilted) |
 
 </div>
 
