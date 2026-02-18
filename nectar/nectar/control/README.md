@@ -5,7 +5,6 @@ Protocol-based drone control framework for ROS2 with factory pattern instantiati
 ## Documentation Index
 
 - **README.md**: This file - Architecture overview and quick start
-- **API.md**: Complete API reference for all classes and methods
 - **mavros/README.md**: MAVROS-specific implementation details
 - **bebop/README.md**: Parrot Bebop 2 implementation details
 - **obstacles/README.md**: Obstacle detection system documentation

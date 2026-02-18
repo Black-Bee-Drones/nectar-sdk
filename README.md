@@ -1,5 +1,7 @@
 # Nectar SDK
 
+<div align="center">
+
 <img align="left" width="25" height="25" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
 
 A modular software development kit for autonomous aerial systems built on [ROS 2](https://docs.ros.org/). Designed for drone competitions, research, and rapid prototyping of UAV applications.
@@ -18,53 +20,93 @@ A modular software development kit for autonomous aerial systems built on [ROS 2
 | **Jazzy** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-jazzy-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=jazzy) |
 | **Kilted** | [![Build](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml/badge.svg?branch=main)](https://github.com/Black-Bee-Drones/nectar-sdk/actions/workflows/build-test.yml) | [![Docker](https://img.shields.io/badge/Docker-kilted-blue)](https://hub.docker.com/r/blackbeedrones/nectar-sdk/tags?name=kilted) |
 
-Developed by the [Black Bee Drones](https://github.com/Black-Bee-Drones) competition team.
+</div>
 
----
 
 ## Table of Contents
 
 - [Features](#features)
+  - [Drone Control](#drone-control)
+  - [Computer Vision](#computer-vision)
+  - [AI / Detection](#ai--detection)
+  - [Interface](#interface)
+  - [Nectar Interfaces](#nectar-interfaces)
 - [Installation](#installation)
+  - [From Scratch](#from-scratch)
+  - [Existing ROS 2 Workspace](#existing-ros-2-workspace)
+  - [Install by Module](#install-by-module)
+  - [Docker](#docker)
 - [Quick Start](#quick-start)
+  - [Drone Control](#drone-control-1)
+  - [Camera Capture](#camera-capture)
+  - [Object Detection](#object-detection)
 - [Architecture](#architecture)
-- [Modules](#modules)
+  - [Design Patterns](#design-patterns)
+- [Documentation](#documentation)
 - [ROS 2 Nodes](#ros-2-nodes)
 - [Examples](#examples)
 - [Directory Structure](#directory-structure)
 - [Contributing](#contributing)
+- [Black Bee Drones](#black-bee-drones)
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
 
 ## Features
 
-### Drone Control
-- Protocol-based drone interface with factory instantiation for [MAVROS](https://github.com/mavlink/mavros) (ArduPilot/PX4) and Bebop 2
+### [Drone Control](nectar/nectar/control/README.md)
+
+Protocol-based drone interface with factory instantiation. `DroneFactory` creates drone implementations by key — currently [MAVROS](https://github.com/mavlink/mavros) ([ArduPilot](https://ardupilot.org/)/[PX4](https://docs.px4.io/)) and Parrot Bebop 2, extensible to any platform. All drones implement the same `Drone` protocol: takeoff, land, move_to, move_to_gps, move_velocity, rtl, obstacle management.
+
 - Position navigation via PID control or FCU setpoints, in body, world, or takeoff reference frames
 - GPS waypoint missions with [EGM96](https://en.wikipedia.org/wiki/EGM96) geoid correction for AMSL altitude
 - Event-based obstacle detection with strategy-based avoidance (pause, axis disable, custom sequences)
 - Return-to-launch with PID or ArduPilot-native RTL modes
+- Per-axis PID tuning via YAML with runtime updates
 
-### Computer Vision
-- Camera abstraction: USB ([OpenCV](https://opencv.org/)), Intel [RealSense](https://github.com/IntelRealSense/librealsense) D4xx, Luxonis [OAK-D](https://docs.luxonis.com/), ROS 2 topics, Raspberry Pi Camera v2
+[Control overview](nectar/nectar/control/README.md) · [MAVROS details](nectar/nectar/control/mavros/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md)
+
+### [Computer Vision](nectar/nectar/vision/README.md)
+
+Camera abstraction and image processing. `CameraFactory` auto-detects the source type from a string identifier and returns the matching driver. `ImageHandler` wraps any camera in a ROS 2 timer loop with frame callbacks and optional OpenCV display.
+
+- Camera drivers: USB ([OpenCV](https://opencv.org/)), Intel [RealSense](https://github.com/IntelRealSense/librealsense) D4xx, Luxonis [OAK-D](https://docs.luxonis.com/), ROS 2 topics, Raspberry Pi Camera v2
 - [ArUco](https://docs.opencv.org/4.x/d5/dae/tutorial_aruco_detection.html) marker detection with 6-DOF pose estimation
 - Color detection with HSV/LAB calibration and interactive trackbars
 - Line detection with five estimation methods (Hough, RANSAC, rotated rect, fit ellipse, adaptive Hough)
-- Distance estimation via regression models (linear, polynomial, exponential, logarithmic, inverse power, robust)
+- Distance estimation via six regression models (linear, polynomial, exponential, logarithmic, inverse power, robust)
 - Hand and face tracking via [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions)
 
-### AI / Detection
-- Unified detection API across [Ultralytics YOLO](https://docs.ultralytics.com/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/) (DETR), and [RF-DETR](https://github.com/roboflow/RF-DETR)
-- Training pipelines with [TensorBoard](https://www.tensorflow.org/tensorboard) logging and [HuggingFace Hub](https://huggingface.co/docs/hub/) integration
-- Slicing inference for high-resolution images with configurable post-processing (NMS, Soft-NMS, WBF, NMM)
+[Vision overview](nectar/nectar/vision/README.md) — camera classes, algorithm API, node parameters, calibration, module structure
+
+### [AI / Detection](nectar/nectar/ai/README.md)
+
+Object detection across three frameworks through `Detector`, a single factory-based entry point. Auto-detects the framework from the model path or accepts explicit selection. Models load from local files, Ultralytics Hub, or HuggingFace Hub.
+
+- [Ultralytics YOLO](https://docs.ultralytics.com/) (YOLOv8, YOLOv10, YOLO11), [HuggingFace Transformers](https://huggingface.co/docs/transformers/) (DETR, Conditional DETR), [RF-DETR](https://github.com/roboflow/RF-DETR)
+- Training with per-framework config dataclasses, [TensorBoard](https://www.tensorflow.org/tensorboard) logging, [HuggingFace Hub](https://huggingface.co/docs/hub/) push
+- Slicing inference for high-resolution images with four post-processing strategies (NMS, Soft-NMS, WBF, NMM)
 - Model evaluation with mAP, precision, recall via [supervision](https://github.com/roboflow/supervision)
 - CLI tools for predict, train, and evaluate workflows
 
-### Interface
-- [Qt6 / PySide6](https://doc.qt.io/qtforpython-6/) desktop GUI with control, vision, and ROS 2 tabs
-- Keyboard drone control with velocity sliders and position navigation
-- Camera streaming with real-time filters, ArUco detection, and MediaPipe tracking
-- ROS 2 topic browser, service caller, parameter viewer, and image subscriber
+[AI overview](nectar/nectar/ai/README.md) · [Detection details](nectar/nectar/ai/detection/README.md) — class diagram, core types, framework configs, slicing, CLI, extension guide
+
+### [Interface](nectar/nectar/interface/README.md)
+
+[Qt6 / PySide6](https://doc.qt.io/qtforpython-6/) desktop application for testing and operating the SDK without writing code. Three tabs: **Control** (drone connection, arm/takeoff/land, keyboard velocity control, position navigation), **Vision** (camera streaming with 20+ real-time filters including ArUco detection and MediaPipe tracking), and **ROS** (topic browser/subscriber/publisher, service caller, parameter viewer, image subscriber).
+
+[Interface overview](nectar/nectar/interface/README.md) — architecture, tabs, widgets, threading model, camera integration, theming
+
+### [Nectar Interfaces](nectar_interfaces/README.md)
+
+Custom ROS 2 messages connecting vision output to control decisions:
+
+| Message | Fields | Published By |
+|---------|--------|--------------|
+| `ArucoTransforms` | marker ID, translation vector, yaw | `ArucoNode` |
+| `LineInfo` | center XY, angle, width, height | `LineDetectionNode` |
+| `PhotoInfo` | coordinate array, photo identifier | Vision nodes |
+
+[Interfaces overview](nectar_interfaces/README.md) — message definitions, usage examples (Python/C++), building, verification
 
 ## Installation
 
@@ -78,7 +120,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/
 
 ### Existing ROS 2 Workspace
 
-Clone and run a single command — it installs all Python dependencies, initializes rosdep, and builds the SDK packages:
+Clone and run a single command — it installs system dependencies, GeographicLib, Python packages, rosdep, and builds the SDK packages:
 
 ```bash
 cd ~/ros2_ws/src
@@ -88,8 +130,6 @@ make setup
 ```
 
 ### Install by Module
-
-Install only the modules you need:
 
 ```bash
 make python-control    # GPS, PID, MAVROS navigation
@@ -193,38 +233,166 @@ annotated = detector.draw_detections(image, result)
 
 ## Architecture
 
-The SDK is organized into four modules connected through ROS 2. Frames flow from cameras through vision algorithms and AI detection, producing results that inform control decisions. The interface ties everything together for interactive testing.
-
 ```mermaid
-flowchart TD
-    subgraph Hardware
-        FCU["Flight Controller\nArduPilot / PX4"]
-        Cameras["USB / RealSense / OAK-D"]
-    end
+classDiagram
+    namespace Control {
+        class DroneFactory {
+            +create(type, config, node)$ BaseDrone
+            +register(type, factory_func)$
+        }
+        class Drone {
+            <<protocol>>
+            +takeoff(altitude) bool
+            +land() bool
+            +move_to(x, y, z, reference, strategy) bool
+            +move_to_gps(lat, lon, alt) bool
+            +move_velocity(vx, vy, vz, reference)
+            +rtl(strategy) bool
+            +emergency_stop()
+        }
+        class BaseDrone {
+            <<abstract>>
+            #_obstacle_manager ObstacleManager
+            +add_obstacle_detector(name, detector, strategy)
+            +cleanup()
+        }
+        class MavrosDrone {
+            -_navigator MavrosNavigator
+            -_pose_source PoseSource
+            +set_mode(mode)
+            +set_pid_config(config)
+            +publish_setpoint(target)
+        }
+        class BebopDrone {
+            +flip(direction)
+            +camera_control(tilt, pan)
+        }
+        class MavrosNavigator {
+            +navigate_pid(target, precision) bool
+            +navigate_setpoint(target, precision) bool
+        }
+        class PIDController {
+            +update(current_value) float
+            +reset()
+            +tune(kp, ki, kd)
+        }
+        class ObstacleManager {
+            +should_continue_navigation(drone) bool
+            +get_axis_control() tuple
+        }
+        class AvoidanceStrategy {
+            <<abstract>>
+            +execute(drone, info) bool
+        }
+    }
 
-    FCU <-->|"MAVLink"| MAVROS["mavros"]
+    namespace Vision {
+        class CameraFactory {
+            +from_source(source, config, node)$ AbstractCam
+            +register(key, builder)$
+        }
+        class AbstractCam {
+            <<abstract>>
+            +start()
+            +get_frame() ndarray
+            +close()
+        }
+        class DepthCam {
+            <<abstract>>
+            +get_depth_frame() ndarray
+            +get_distance(u, v) float
+        }
+        class ImageHandler {
+            +run()
+            +take_photo() ndarray
+            +cleanup()
+        }
+        class Aruco {
+            +detect(img) tuple
+            +pose_estimate(img) tuple
+        }
+        class ColorDetector {
+            +filterColor(img)
+            +saveColorValues()
+        }
+        class LineDetector {
+            +detect_line(img) tuple
+        }
+        class ILineEstimationMethod {
+            <<abstract>>
+            +estimate(img) tuple
+        }
+        class DistanceEstimator {
+            +estimate(value) float
+        }
+        class EstimationModel {
+            <<abstract>>
+            +estimate(value) float
+            +fit(x, y) Dict
+        }
+    }
 
-    subgraph nectar["nectar package"]
-        direction TB
+    namespace AI {
+        class Detector {
+            +load() bool
+            +detect(image) DetectionResult
+            +train(config) Dict
+            +draw_detections(image, result) ndarray
+            +register(framework, builder)$
+            +enable_slicing(config)
+        }
+        class BaseDetectionModel {
+            <<abstract>>
+            +load_model(path)
+            +detect(image) DetectionResult
+            +train(config) Dict
+        }
+        class UltralyticsModel
+        class TransformersModel
+        class RFDETRModel
+        class DetectionResult {
+            +detections List~Detection~
+            +filter_by_confidence(threshold)
+            +filter_by_class(class_ids)
+        }
+    }
 
-        control["control/\nDroneFactory · MavrosDrone · BebopDrone\nNavigator · PID · ObstacleManager · GPSUtils"]
-        vision["vision/\nCameraFactory · ImageHandler\nArUco · Color · Line · Distance · MediaPipe"]
-        ai["ai/detection/\nDetector · YOLO · DETR · RF-DETR\nTraining · Evaluation · Slicing"]
-        interface["interface/\nQt6 GUI\nControl + Vision + ROS tabs"]
-    end
+    namespace Interface {
+        class NectarApp {
+            -_ros_executor ROSExecutor
+            -_control_tab ControlTab
+            -_vision_tab VisionTab
+            -_ros_tab ROSTab
+        }
+        class ROSExecutor {
+            +start(node_name) bool
+            +shutdown()
+        }
+    }
 
-    subgraph msgs["nectar_interfaces"]
-        ArucoTransforms
-        LineInfo
-        PhotoInfo
-    end
+    Drone <|.. BaseDrone : implements
+    BaseDrone <|-- MavrosDrone
+    BaseDrone <|-- BebopDrone
+    DroneFactory ..> BaseDrone : creates
+    MavrosDrone *-- MavrosNavigator
+    MavrosNavigator ..> PIDController : creates
+    BaseDrone o-- ObstacleManager
+    ObstacleManager ..> AvoidanceStrategy
 
-    MAVROS <--> control
-    Cameras --> vision
-    vision -->|"frames"| ai
-    vision --> msgs
-    msgs --> control
-    interface --> control & vision
+    AbstractCam <|-- DepthCam
+    CameraFactory ..> AbstractCam : creates
+    ImageHandler o-- AbstractCam
+    LineDetector o-- ILineEstimationMethod
+    LineDetector o-- ColorDetector
+    DistanceEstimator o-- EstimationModel
+
+    BaseDetectionModel <|-- UltralyticsModel
+    BaseDetectionModel <|-- TransformersModel
+    BaseDetectionModel <|-- RFDETRModel
+    Detector ..> BaseDetectionModel : creates
+    BaseDetectionModel ..> DetectionResult
+
+    NectarApp *-- ROSExecutor
 ```
 
 ### Design Patterns
@@ -255,50 +423,24 @@ Detector.register("custom", lambda name, **kw: CustomModel(name, **kw))
 detector = Detector("model.bin", framework="custom")
 ```
 
-## Modules
+## Documentation
 
-Each module has its own README with class diagrams, API reference, configuration options, and links to external documentation.
-
-### Control
-
-Drone control through a protocol-based interface. `DroneFactory` instantiates implementations: `MavrosDrone` communicates with ArduPilot/PX4 flight controllers via MAVROS, `BebopDrone` controls Parrot Bebop 2 drones. Navigation supports PID control with per-axis gain tuning or direct FCU setpoints, operating in body, world, or takeoff-relative reference frames. GPS missions apply EGM96 geoid correction for AMSL altitude. The obstacle system uses detectors paired with avoidance strategies (pause, disable axis, custom evasion sequences) through an event-driven handler.
-
-- [Control overview](nectar/nectar/control/README.md) — architecture, Drone protocol, factory, configuration, movement API, obstacle system
-- [MAVROS implementation](nectar/nectar/control/mavros/README.md) — MAVLink concepts, flight modes, coordinate frames, altitude types, PID vs setpoint navigation, GPS utilities, ROS 2 topics/services
-- [Obstacle detection](nectar/nectar/control/obstacles/README.md) — detector protocol, avoidance strategies, handler configuration
-- [PID controller](nectar/nectar/control/pid/README.md) — tuning, YAML configuration, runtime updates
-- [API reference](nectar/nectar/control/API.md) — complete method signatures
-
-### Vision
-
-Camera abstraction and image processing algorithms. `CameraFactory` auto-detects the source type (USB webcam, RealSense depth camera, OAK-D, ROS 2 topic, image file) from a string identifier and returns the matching driver. `ImageHandler` wraps any camera in a ROS 2 timer loop with frame callbacks and optional OpenCV display. Algorithms include ArUco marker pose estimation, HSV/LAB color filtering with trackbar calibration, line detection via five estimation methods (Hough, RANSAC, rotated rect, fit ellipse, adaptive Hough), pixel-to-distance regression with six model types, and MediaPipe hand/face tracking.
-
-- [Vision overview](nectar/nectar/vision/README.md) — camera classes, algorithm API, node parameters, calibration, module structure
-
-### AI / Detection
-
-Object detection across three frameworks through `Detector`, a single factory-based entry point. It auto-detects the framework from the model path or accepts explicit selection (`ultralytics`, `transformers`, `rfdetr`). Models load from local files, Ultralytics Hub, or HuggingFace Hub. Training uses per-framework config dataclasses with TensorBoard logging and optional HuggingFace push. Evaluation computes mAP via supervision. Slicing inference tiles large images and merges results with four post-processing strategies (NMS, Soft-NMS, WBF, NMM). CLI tools wrap predict, train, and evaluate as shell commands.
-
-- [AI overview](nectar/nectar/ai/README.md) — public API, Detector usage, training, evaluation, device management
-- [Detection details](nectar/nectar/ai/detection/README.md) — class diagram, core types, framework configs, slicing, CLI, config files, extension guide
-
-### Interface
-
-Qt6 / PySide6 desktop application for testing and operating the SDK without writing code. Three tabs: **Control** (drone connection, arm/takeoff/land, keyboard velocity control, position navigation with move_to), **Vision** (camera streaming with 20+ real-time filters including ArUco detection and MediaPipe tracking), and **ROS** (topic browser/subscriber/publisher, service caller, parameter viewer, image subscriber). The UI runs the Qt event loop on the main thread and ROS 2 in a background thread, with blocking operations (flight actions, navigation) dispatched to QThread workers.
-
-- [Interface overview](nectar/nectar/interface/README.md) — architecture, tabs, widgets, threading model, camera integration, theming
-
-### Nectar Interfaces
-
-Custom ROS 2 message definitions for inter-module communication:
-
-| Message | Fields | Published By |
-|---------|--------|--------------|
-| `ArucoTransforms` | marker ID, translation vector, yaw | `ArucoNode` |
-| `LineInfo` | center XY, angle, width, height | `LineDetectionNode` |
-| `PhotoInfo` | coordinate array, photo identifier | Vision nodes |
-
-- [Interfaces overview](nectar_interfaces/README.md) — message definitions, usage examples (Python/C++), building, verification
+| Document | Contents |
+|----------|----------|
+| [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, RealSense, Docker, troubleshooting |
+| [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, movement API, obstacle system |
+| [MAVROS Implementation](nectar/nectar/control/mavros/README.md) | MAVLink, flight modes, coordinate frames, altitude types, PID vs setpoint, GPS utilities, ROS 2 topics/services |
+| [Bebop Implementation](nectar/nectar/control/bebop/README.md) | Bebop 2 control, velocity, acrobatics |
+| [Obstacle Detection](nectar/nectar/control/obstacles/README.md) | Detector protocol, avoidance strategies, handler configuration |
+| [PID Controller](nectar/nectar/control/pid/README.md) | Tuning guide, YAML config, runtime updates, default indoor/outdoor configs |
+| [Vision Module](nectar/nectar/vision/README.md) | Camera drivers, ArUco, color, line, distance, MediaPipe, nodes, calibration |
+| [AI Module](nectar/nectar/ai/README.md) | Detector API, training, evaluation, device management |
+| [Detection Module](nectar/nectar/ai/detection/README.md) | Class diagram, core types, framework configs, slicing, CLI, extension guide |
+| [Interface Module](nectar/nectar/interface/README.md) | GUI tabs, widgets, threading model, camera integration, theming |
+| [Nectar Interfaces](nectar_interfaces/README.md) | ROS 2 message definitions, Python/C++ usage |
+| [Docker Guide](docker/README.md) | Build variants, GPU, RealSense, dependency strategy |
+| [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, PR process |
+| [Releasing](docs/RELEASING.md) | Version bump, CI workflows, Docker Hub push |
 
 ## ROS 2 Nodes
 
@@ -333,17 +475,11 @@ ros2 run nectar detector_example.py --ros-args -p model_source:=yolov8n.pt
 
 Working examples in `nectar/nectar/examples/`:
 
-| Module | Example | Description |
-|--------|---------|-------------|
-| Control | `basic.py` | Takeoff, velocity control, land |
-| Control | `sensors.py` | GPS and vision data monitoring |
-| Control | `pid_simulation.py` | PID controller simulation (no ROS 2 required) |
-| Control | `mavros_navigation.py` | Position navigation with body/takeoff/GPS modes |
-| Control | `mavros_obstacles.py` | Obstacle-aware navigation |
-| Vision | `camera_example.py` | Multi-camera capture and configuration |
-| Vision | `depth_example.py` | Depth camera visualization |
-| AI | `detector_example.py` | Real-time object detection |
-| AI | `batch_detector.py` | Batch image/video processing |
+**Control**: [basic.py](nectar/nectar/examples/control/basic.py) · [sensors.py](nectar/nectar/examples/control/sensors.py) · [pid_simulation.py](nectar/nectar/examples/control/pid_simulation.py) · [mavros_navigation.py](nectar/nectar/examples/control/mavros_navigation.py) · [mavros_obstacles.py](nectar/nectar/examples/control/mavros_obstacles.py)
+
+**Vision**: [camera_example.py](nectar/nectar/examples/vision/camera_example.py) · [depth_example.py](nectar/nectar/examples/vision/depth_example.py)
+
+**AI**: [detector_example.py](nectar/nectar/examples/ai/detector_example.py) · [batch_detector.py](nectar/nectar/examples/ai/batch_detector.py)
 
 See: [control examples](nectar/nectar/examples/control/README.md) · [vision examples](nectar/nectar/examples/vision/README.md) · [AI examples](nectar/nectar/examples/ai/README.md)
 
@@ -352,6 +488,7 @@ See: [control examples](nectar/nectar/examples/control/README.md) · [vision exa
 ```
 nectar-sdk/
 ├── scripts/                    # Setup and installation
+│   ├── bootstrap.sh            # Standalone curl installer
 │   ├── setup.sh                # CLI + interactive menu
 │   └── lib/                    # Modular shell functions
 │       ├── config.sh           # Versions, packages (single source of truth)
@@ -401,11 +538,15 @@ We welcome contributions. Please see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.
   <img src="https://contrib.rocks/image?repo=Black-Bee-Drones/nectar-sdk&max=100" alt="Contributors" />
 </a>
 
+## Black Bee Drones
+
+[Black Bee Drones](https://github.com/Black-Bee-Drones) is Latin America's first academic autonomous drone team. Founded as a research project at the [Federal University of Itajuba](https://unifei.edu.br/) (UNIFEI) in 2014, the team develops unmanned aircraft for complex missions requiring computer vision and artificial intelligence. We compete nationally and internationally, including [IMAV](https://www.imavs.org/) (3rd place indoor 2023 and 2025, 3rd place outdoor 2015, best autonomous indoor flight worldwide), and participate in events like DroneShow LA and Campus Party.
+
+Nectar SDK started in 2023 as a way to stop rewriting the same camera, PID, and detection code for each competition mission. It evolved into a ROS 2 package with consistent interfaces across drone control, computer vision, and AI detection — the shared foundation our team uses for every project. It has been turned into an open-source project to enable continuous development and to help other teams and researchers build autonomous systems more rapidly.
+
 ## Acknowledgments
 
-Nectar SDK exists because of the open source projects it builds on. We are grateful to:
-
-The [ROS 2](https://docs.ros.org/) community and Open Robotics for the middleware that connects everything. [MAVROS](https://github.com/mavlink/mavros) and the [MAVLink](https://mavlink.io/) protocol for bridging ROS 2 with ArduPilot and PX4 flight controllers. The [ArduPilot](https://ardupilot.org/) project for the flight controller firmware and its extensive documentation. [OpenCV](https://opencv.org/) for the computer vision foundation. [Ultralytics](https://docs.ultralytics.com/), [HuggingFace](https://huggingface.co/), and [Roboflow](https://roboflow.com/) for making object detection accessible through YOLO, Transformers, RF-DETR, and supervision. [PyTorch](https://pytorch.org/) for the deep learning backend. [Intel RealSense](https://github.com/IntelRealSense/librealsense) and [Luxonis](https://docs.luxonis.com/) for depth camera SDKs. [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions) for hand and face tracking. [Qt for Python](https://doc.qt.io/qtforpython-6/) for the GUI framework.
+Nectar SDK exists because of the open source projects it builds on. We are grateful to the [ROS 2](https://docs.ros.org/) community and Open Robotics for the middleware that connects everything. [MAVROS](https://github.com/mavlink/mavros) and the [MAVLink](https://mavlink.io/) protocol for bridging ROS 2 with [ArduPilot](https://ardupilot.org/) and [PX4](https://docs.px4.io/) flight controllers. [OpenCV](https://opencv.org/) for the computer vision foundation. [Ultralytics](https://docs.ultralytics.com/), [HuggingFace](https://huggingface.co/), and [Roboflow](https://roboflow.com/) for making object detection accessible through YOLO, Transformers, RF-DETR, and supervision. [PyTorch](https://pytorch.org/) for the deep learning backend. [Intel RealSense](https://github.com/IntelRealSense/librealsense) and [Luxonis](https://docs.luxonis.com/) for depth camera SDKs. [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions) for hand and face tracking. [Qt for Python](https://doc.qt.io/qtforpython-6/) for the GUI framework.
 
 ## License
 
