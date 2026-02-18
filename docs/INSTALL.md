@@ -1,45 +1,60 @@
 # Installation Guide
 
-## Quick Install (from zero)
+## From Scratch (no ROS 2)
 
-For a fresh Ubuntu/Debian machine without ROS2:
+A standalone bootstrap script installs everything on a fresh Ubuntu/Debian machine: system packages, ROS 2, MAVROS, GeographicLib, git/SSH, the SDK itself, Python dependencies, and builds the workspace.
 
 ```bash
-git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
-cd nectar-sdk
-./scripts/setup.sh full-install
+bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
 ```
 
-Or use the interactive menu:
+The bootstrap prompts for workspace path (default `~/ros2_ws`) and branch (main or dev), then clones the repo and delegates to `./scripts/setup.sh full-install`.
+
+For CI/Docker (non-interactive):
+
+```bash
+NON_INTERACTIVE=true ROS2_WORKSPACE=~/ros2_ws bash bootstrap.sh
+```
+
+### Interactive menu
+
+Run the setup script with no arguments for a guided menu where you can pick individual steps or customize the install:
 
 ```bash
 ./scripts/setup.sh
 ```
 
-The full install covers: system packages, ROS2 Humble, MAVROS, GeographicLib, Python dependencies, workspace build, and bashrc configuration.
+## Existing ROS 2 Workspace
 
-## Already Have ROS2 + Workspace
-
-If you already cloned the repo inside a ROS2 workspace (`<workspace>/src/nectar-sdk`):
+Clone into your workspace and run a single command — it installs system dependencies, GeographicLib, Python packages, rosdep, and builds the SDK packages:
 
 ```bash
-# Install Python dependencies (all modules)
-./scripts/setup.sh python all
-
-# Build
-./scripts/setup.sh build
+cd ~/ros2_ws/src
+git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk
+make setup
 ```
 
-Or via Make:
+This is equivalent to:
 
 ```bash
-make install-all
-make build
+./scripts/setup.sh setup
 ```
 
-## Module-Specific Installation
+Which runs: `system` → `geographiclib` → `python all` → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`.
+
+## Install by Module
 
 Install only the modules you need (dependencies defined in `nectar/pyproject.toml`):
+
+```bash
+make python-control    # GPS, PID, MAVROS navigation
+make python-vision     # Camera drivers, ArUco, color, line detection
+make python-ai         # YOLO, DETR, RF-DETR (requires PyTorch)
+make python-interface  # Qt6 / PySide6 GUI
+```
+
+Or via the setup script directly:
 
 ```bash
 ./scripts/setup.sh python              # Core only (numpy, opencv, scipy)
@@ -54,12 +69,9 @@ Install only the modules you need (dependencies defined in `nectar/pyproject.tom
 ## PyTorch (required for AI module)
 
 ```bash
-# Auto-detect GPU:
-./scripts/setup.sh pytorch
-
-# Or explicitly:
-./scripts/setup.sh pytorch-cpu         # CPU only
-./scripts/setup.sh pytorch-cuda        # CUDA 12.4
+make pytorch                           # Auto-detect GPU
+./scripts/setup.sh pytorch cpu         # Force CPU
+./scripts/setup.sh pytorch cu124       # Force CUDA 12.4
 ```
 
 See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for other configurations.
@@ -69,7 +81,7 @@ See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for other co
 Builds librealsense from source with optional CUDA, installs realsense-ros and vision_to_mavros:
 
 ```bash
-./scripts/setup.sh realsense
+make realsense
 ```
 
 Interactive menu with custom steps, CUDA auto-detection, and verification.
@@ -88,7 +100,7 @@ Override for specific cameras:
 
 ```bash
 # T265 tracking camera (last supported: Humble/Foxy only)
-LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 ./scripts/setup.sh realsense
+LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 make realsense
 ```
 
 ### CUDA build
@@ -96,7 +108,7 @@ LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 ./scripts/setup.sh realsen
 On systems with NVIDIA GPU, librealsense is built with CUDA automatically (detected via `nvcc`). Disable with:
 
 ```bash
-REALSENSE_CUDA=false ./scripts/setup.sh realsense
+REALSENSE_CUDA=false make realsense
 ```
 
 ### D435i + Isaac ROS Visual SLAM
@@ -107,44 +119,45 @@ For indoor navigation with D435i on Jetson Orin, the SDK includes [vision_to_mav
 
 ```bash
 ./scripts/setup.sh system          # apt packages
-./scripts/setup.sh ros2            # ROS2 Humble + MAVROS
+./scripts/setup.sh ros2            # ROS2 + MAVROS
 ./scripts/setup.sh geographiclib   # GeographicLib datasets
 ./scripts/setup.sh ros2-env        # Configure ~/.bashrc
 ./scripts/setup.sh rosdep-init     # Initialize rosdep
+./scripts/setup.sh git-ssh         # Configure git and SSH keys
 ```
 
 ## Build & Verify
 
 ```bash
-./scripts/setup.sh build           # Build entire workspace
-./scripts/setup.sh build-pkg       # Build SDK packages only
-./scripts/setup.sh verify          # Check installation
-./scripts/setup.sh clean           # Remove build artifacts
+make build              # Build entire workspace
+make build-pkg          # Build SDK packages only
+make verify             # Check installation
+make clean              # Remove build artifacts
+make test               # Run tests
 ```
 
 ## Docker
 
 | Tag | Command | What's included |
 |-----|---------|----------------|
-| `:latest` | `make docker-build` | All modules except AI/torch (fast, ~5 min) |
-| `:full` | `make docker-build-full` | Everything + PyTorch CPU + AI (~15 min) |
+| `:humble` | `make docker-build` | All modules except AI/torch (~5 min) |
+| `:humble-full-cpu` | `make docker-build-full` | Everything + PyTorch CPU + AI (~15 min) |
 
 ```bash
-# Build
 make docker-build           # SDK (no AI)
 make docker-build-full      # Full (+ AI)
-
-# Run (X11, cameras, USB auto-mounted)
-make docker-run
-make docker-run-full
+make docker-run             # Run with X11, cameras, USB
+make docker-exec            # Extra terminal in running container
 ```
 
-See [`docker/README.md`](../docker/README.md) for Jetson, CUDA, Docker Hub.
+See [`docker/README.md`](../docker/README.md) for GPU, RealSense, and advanced options.
 
 ## All Commands
 
 ```bash
 ./scripts/setup.sh help
+# or
+make help
 ```
 
 ## Changing Versions

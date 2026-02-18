@@ -42,7 +42,7 @@ check_distro() {
         log_warning "Only tested on Ubuntu/Debian"
         if [[ "${NON_INTERACTIVE:-}" != "true" ]]; then
             read -p "Continue anyway? (y/N): " -n 1 -r && echo
-            [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then exit 1; fi
         fi
     fi
 }

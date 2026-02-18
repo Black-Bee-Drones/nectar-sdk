@@ -30,8 +30,9 @@ show_help() {
     echo -e "${PURPLE}  SDK Setup - Installation & Development CLI${NC}"
     echo -e "${PURPLE}  ===========================================${NC}"
     echo ""
-    echo -e "${BLUE}Full Setup (from zero):${NC}"
-    echo "  ./setup.sh full-install       Full installation (ROS2 + deps + build)"
+    echo -e "${BLUE}Quick Start:${NC}"
+    echo "  ./setup.sh setup              Install deps + build SDK packages (existing ROS2)"
+    echo "  ./setup.sh full-install       Full installation from zero (ROS2 + deps + build)"
     echo "  ./setup.sh                    Interactive menu"
     echo ""
     echo -e "${BLUE}System:${NC}"
@@ -251,6 +252,18 @@ cmd_docker_exec() {
     docker exec $tty_flag "$name" bash
 }
 
+# Setup (existing ROS2 workspace — install deps + build SDK packages)
+
+cmd_setup() {
+    cmd_system
+    cmd_geographiclib
+    cmd_python "all"
+    cmd_rosdep_init
+    cmd_ros2_deps
+    cmd_build_pkg
+    cmd_verify
+}
+
 # Full installation (from zero)
 
 cmd_full_install() {
@@ -395,7 +408,8 @@ main() {
         docker-build-full)  cmd_docker_build "sdk-full" ;;
         docker-run)         cmd_docker_run ;;
         docker-exec)        cmd_docker_exec ;;
-        # Full
+        # Setup
+        setup)              cmd_setup ;;
         full-install)       cmd_full_install ;;
 
         *)

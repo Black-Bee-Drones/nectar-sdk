@@ -14,6 +14,9 @@ SETUP := ./scripts/setup.sh
 help:
 	@$(SETUP) help
 
+# Quick start (install deps + build SDK packages)
+setup:              ; @$(SETUP) setup
+
 # System
 system:             ; @$(SETUP) system
 update:             ; @$(SETUP) update
