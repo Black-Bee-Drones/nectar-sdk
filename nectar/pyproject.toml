@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nectar-sdk"
-version = "0.1.0"
+version = "1.0.0"
 description = "Drone control, computer vision, and AI toolkit for ROS2"
 readme = {text = "Drone control, computer vision, and AI toolkit for ROS2", content-type = "text/plain"}
 license = {text = "Apache-2.0"}
