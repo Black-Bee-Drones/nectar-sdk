@@ -37,7 +37,7 @@ fi
 
 # System apt packages
 SYSTEM_PACKAGES=(
-    git curl wget software-properties-common
+    git git-lfs curl wget software-properties-common
     python3-pip python3-dev python3-venv
     build-essential cmake pkg-config
     python3-colcon-common-extensions python3-rosdep

@@ -38,7 +38,8 @@ show_help() {
     echo -e "${BLUE}System:${NC}"
     echo "  ./setup.sh system             Install system packages (apt)"
     echo "  ./setup.sh update             Update system (apt upgrade)"
-    echo "  ./setup.sh git-ssh            Configure git and SSH keys"
+        echo "  ./setup.sh git-ssh            Configure git and SSH keys"
+        echo "  ./setup.sh git-lfs            Install and initialize Git LFS"
     echo ""
     echo -e "${BLUE}ROS2:${NC}"
     echo "  ./setup.sh ros2               Install ROS2 ${ROS_DISTRO^} + MAVROS"
@@ -256,6 +257,7 @@ cmd_docker_exec() {
 
 cmd_setup() {
     cmd_system
+    cmd_git_lfs
     cmd_geographiclib
     cmd_python "all"
     cmd_rosdep_init
@@ -272,6 +274,7 @@ cmd_full_install() {
 
     cmd_update_system
     cmd_system
+    cmd_git_lfs
     cmd_git_ssh
     cmd_ros2_install
     cmd_geographiclib
@@ -311,25 +314,26 @@ interactive_menu() {
         2)
             echo ""
             echo "Select steps (space-separated, e.g., 1 3 5):"
-            echo "  1) Update system        2) System packages    3) Git/SSH"
-            echo "  4) ROS2                 5) GeographicLib      6) Clone repo"
-            echo "  7) Python deps (all)    8) rosdep init        9) ROS2 env"
-            echo "  10) Build workspace     11) Verify"
+            echo "  1) Update system        2) System packages    3) Git LFS"
+            echo "  4) Git/SSH               5) ROS2               6) GeographicLib"
+            echo "  7) Clone repo            8) Python deps (all)  9) rosdep init"
+            echo "  10) ROS2 env             11) Build workspace   12) Verify"
             echo ""
             read -p "Steps: " steps
             for step in $steps; do
                 case $step in
                     1)  cmd_update_system ;;
                     2)  cmd_system ;;
-                    3)  cmd_git_ssh ;;
-                    4)  cmd_ros2_install ;;
-                    5)  cmd_geographiclib ;;
-                    6)  cmd_clone_project ;;
-                    7)  cmd_python "all" ;;
-                    8)  cmd_rosdep_init ;;
-                    9)  cmd_ros2_env ;;
-                    10) cmd_build ;;
-                    11) cmd_verify ;;
+                    3)  cmd_git_lfs ;;
+                    4)  cmd_git_ssh ;;
+                    5)  cmd_ros2_install ;;
+                    6)  cmd_geographiclib ;;
+                    7)  cmd_clone_project ;;
+                    8)  cmd_python "all" ;;
+                    9)  cmd_rosdep_init ;;
+                    10) cmd_ros2_env ;;
+                    11) cmd_build ;;
+                    12) cmd_verify ;;
                     *)  log_warning "Invalid step: $step" ;;
                 esac
             done
@@ -379,6 +383,7 @@ main() {
         system)             cmd_system ;;
         update)             cmd_update_system ;;
         git-ssh)            cmd_git_ssh ;;
+        git-lfs)            cmd_git_lfs ;;
 
         # ROS2
         ros2)               cmd_ros2_install ;;

@@ -25,6 +25,26 @@ Check [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) 
 
 ## Development Setup
 
+### Git LFS
+
+This repository uses [Git LFS](https://git-lfs.github.com/) to track large binary files (images, videos, model weights, etc.). Install Git LFS before cloning:
+
+```bash
+git lfs install
+
+git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk
+```
+
+Git LFS automatically handles large files defined in `.gitattributes`. When you add images, videos, or other large files, they're automatically tracked by LFS.
+
+**Note:** If you cloned before Git LFS was set up, you may need to pull LFS files:
+```bash
+git lfs pull
+```
+
+### Pre-commit Hooks
+
 Install [pre-commit](https://pre-commit.com/) hooks (one-time setup):
 
 ```bash

@@ -7,11 +7,15 @@
 A modular software development kit for autonomous aerial systems built on [ROS 2](https://docs.ros.org/). Designed for drone competitions, research, and rapid prototyping of UAV applications.
 
 <p>
-  <a href="https://docs.ros.org/en/humble/"><img src="https://img.shields.io/badge/ROS_2-Humble_|_Jazzy_|_Kilted-22314E?style=flat&logo=ros" alt="ROS 2" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python" /></a>
-  <a href="https://opencv.org/"><img src="https://img.shields.io/badge/OpenCV-4.11-5C3EE8?style=flat&logo=opencv&logoColor=white" alt="OpenCV" /></a>
-  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=flat&logo=pytorch&logoColor=white" alt="PyTorch" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat" alt="License" /></a>
+  <a href="https://docs.ros.org/"><img src="https://img.shields.io/badge/-ROS%202-22314E?style=flat&labelColor=black&logo=ros&logoColor=22314E" alt="ROS 2" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/-Python-3776AB?style=flat&labelColor=black&logo=python&logoColor=3776AB" alt="Python" /></a>
+  <a href="https://opencv.org/"><img src="https://img.shields.io/badge/-OpenCV-5C3EE8?style=flat&labelColor=black&logo=opencv&logoColor=5C3EE8" alt="OpenCV" /></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/-PyTorch-EE4C2C?style=flat&labelColor=black&logo=pytorch&logoColor=EE4C2C" alt="PyTorch" /></a>
+  <a href="https://github.com/IntelRealSense/librealsense"><img src="https://img.shields.io/badge/-RealSense-00C8FF?style=flat&labelColor=black&logo=intel&logoColor=00C8FF" alt="RealSense" /></a>
+  <a href="https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/"><img src="https://img.shields.io/badge/-Jetson-76B900?style=flat&labelColor=black&logo=nvidia&logoColor=76B900" alt="Jetson" /></a>
+  <a href="https://www.raspberrypi.com/"><img src="https://img.shields.io/badge/-Raspberry%20Pi-A22846?style=flat&labelColor=black&logo=raspberrypi&logoColor=A22846" alt="Raspberry Pi" /></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/-Docker-2496ED?style=flat&labelColor=black&logo=docker&logoColor=2496ED" alt="Docker" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Apache-2.0-D22128?style=flat&labelColor=black&logo=apache&logoColor=D22128" alt="Apache License" /></a>
 </p>
 
 | ROS 2 Distro | Build & Test | Docker |
@@ -147,10 +151,18 @@ Run the setup script with no arguments for a guided menu where you can pick indi
 
 ### Docker
 
+**Linux:**
 ```bash
 make docker-build       # SDK image (no AI)
 make docker-build-full  # Full image (+ PyTorch + AI)
 make docker-run         # Run with X11 + cameras + USB
+```
+
+**Windows:**
+```powershell
+.\docker\run_docker_win.ps1 build humble              # Build SDK image
+.\docker\run_docker_win.ps1 build jazzy full-cpu      # Build full image
+.\docker\run_docker_win.ps1 run humble                # Run container
 ```
 
 | Tag | Contents | PyTorch |

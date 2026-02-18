@@ -2,6 +2,14 @@
 
 Qt6/PySide6-based graphical user interface for drone control, computer vision, and ROS2 system tools.
 
+<div align="center">
+
+![Nectar SDK Interface](../../../assets/ui_app.png)
+
+*Nectar SDK GUI - Control, Vision, and ROS2 tools in one interface*
+
+</div>
+
 ## Quick Start
 
 ```python

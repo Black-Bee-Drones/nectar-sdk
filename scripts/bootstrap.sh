@@ -85,12 +85,24 @@ fi
 
 PROJECT_DIR="${WORKSPACE}/src/nectar-sdk"
 
-# --- Install git if missing ---
+# --- Install git and git-lfs if missing ---
 
 if ! command -v git &>/dev/null; then
     echo "[INFO]  Installing git..."
     sudo apt-get update -qq
     sudo apt-get install -y -qq git
+fi
+
+if ! command -v git-lfs &>/dev/null; then
+    echo "[INFO]  Installing Git LFS..."
+    sudo apt-get install -y -qq git-lfs
+fi
+
+# --- Initialize Git LFS ---
+
+if command -v git-lfs &>/dev/null; then
+    echo "[INFO]  Initializing Git LFS..."
+    git lfs install --skip-repo 2>/dev/null || git lfs install 2>/dev/null || true
 fi
 
 # --- Clone into workspace ---
