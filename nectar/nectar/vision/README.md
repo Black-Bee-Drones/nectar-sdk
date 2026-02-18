@@ -77,18 +77,33 @@ classDiagram
 
     class ROSCam {
         -_node Node
-        -_subscriber Subscription
+        -_config ROSConfig
         -_bridge CvBridge
+        -_frame Optional~ndarray~
+        -_sub Subscription
         +start()
         +get_frame(wait_for_new, timeout) Optional~ndarray~
         +close()
     }
 
+    class ROSDepthCam {
+        -_node Node
+        -_config ROSDepthConfig
+        -_color_cam ROSCam
+        -_depth Optional~ndarray~
+        +start()
+        +get_frame(wait_for_new, timeout) Optional~ndarray~
+        +get_depth_frame(wait_for_new, timeout) Optional~ndarray~
+        +get_distance(u, v, color_shape) Optional~float~
+        +close()
+    }
+
     class FileImageCam {
-        -_path str
-        -_image ndarray
+        -_config FileImageConfig
+        -_frame Optional~ndarray~
         +start()
         +get_frame() Optional~ndarray~
+        +reload() bool
         +close()
     }
 
@@ -107,12 +122,13 @@ classDiagram
     }
 
     class ImageHandler {
-        -node Node
-        -image_source str
-        -img ndarray
-        -camera AbstractCam
+        +node Node
+        +image_source str
+        +img ndarray
+        +camera AbstractCam
+        +poll_interval float
+        -_frame_timeout float
         -cam_timer Timer
-        -poll_interval float
         +open()
         +close()
         +run()
@@ -129,9 +145,11 @@ classDiagram
     AbstractCam <|-- IMX219Cam
     DepthCam <|-- RealsenseCam
     DepthCam <|-- OakdCam
+    DepthCam <|-- ROSDepthCam
+    ROSDepthCam *-- ROSCam
     CameraFactory ..> AbstractCam : creates
     ImageHandler o-- AbstractCam
-    ImageHandler o-- CameraFactory
+    ImageHandler ..> CameraFactory : uses
 ```
 
 ### Configuration Classes
@@ -180,6 +198,18 @@ classDiagram
         <<dataclass>>
         +topic str
         +compressed bool
+        +reliability QoSReliability
+        +durability QoSDurability
+        +history_depth int
+        +encoding str
+    }
+
+    class ROSDepthConfig {
+        <<dataclass>>
+        +depth_topic str
+        +depth_compressed bool
+        +depth_encoding str
+        +enable_depth bool
     }
 
     class C920Config {
@@ -209,6 +239,7 @@ classDiagram
     CameraConfig <|-- C920Config
     CameraConfig <|-- IMX219Config
     CameraConfig <|-- FileImageConfig
+    ROSConfig <|-- ROSDepthConfig
 ```
 
 ## Core Components
@@ -233,6 +264,7 @@ CameraFactory.register(key: str, builder: Type[AbstractCam])
 | `c920` | `C920Cam` | Logitech C920/C920e |
 | `imx219` | `IMX219Cam` | Raspberry Pi Camera v2 (Jetson) |
 | `ros` | `ROSCam` | ROS2 image topics |
+| `ros_depth` | `ROSDepthCam` | ROS2 color + depth image topics |
 | `file` | `FileImageCam` | Static image files |
 
 **Auto-detection**:
@@ -638,11 +670,36 @@ classDiagram
         +fit(x, y) Dict
     }
 
+    class LogarithmicModel {
+        +a float
+        +b float
+        +estimate(value) float
+        +fit(x, y) Dict
+    }
+
+    class InversePowerModel {
+        +k float
+        +p float
+        +estimate(value) float
+        +fit(x, y) Dict
+    }
+
+    class RobustPoly2Model {
+        +a float
+        +b float
+        +c float
+        +estimate(value) float
+        +fit(x, y) Dict
+    }
+
     DistanceEstimator o-- EstimationModel
     ModelCalibrator --> CalibrationResult
     EstimationModel <|.. LinearModel
     EstimationModel <|.. PolynomialModel
     EstimationModel <|.. ExponentialModel
+    EstimationModel <|.. LogarithmicModel
+    EstimationModel <|.. InversePowerModel
+    EstimationModel <|.. RobustPoly2Model
 ```
 
 **Model Types**:
@@ -1172,6 +1229,7 @@ vision/
 │       ├── realsense_cam.py
 │       ├── oakd_cam.py
 │       ├── ros_cam.py
+│       ├── ros_depth_cam.py
 │       ├── c920_cam.py
 │       ├── imx219_cam.py
 │       └── file_cam.py
