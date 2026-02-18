@@ -1,0 +1,36 @@
+# Example: RF-DETR training on COCO dataset
+# Usage: ./scripts/train_rfdetr.sh --config configs/rfdetr_example.yaml
+
+data:
+  dataset_path: /path/to/coco/dataset
+  dataset_format: coco
+
+train:
+  framework: rfdetr
+  model: rfdetr-base
+  epochs: 50
+  batch_size: 4
+  learning_rate: 1e-4
+  lr_encoder: 1e-5
+  output_dir: outputs/rfdetr-base
+  device: cuda
+  seed: 42
+  tensorboard: true
+  push_to_hub: false
+  hub_model_id: ""
+  multi_gpu: false
+  mixed_precision: fp16
+  gradient_accumulation_steps: 1
+  from_scratch: false
+  weight_decay: 1e-4
+  imgsz: 560
+  resolution: 560
+  use_ema: true
+  gradient_checkpointing: false
+  early_stopping_patience: 5
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5

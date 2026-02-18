@@ -1,0 +1,33 @@
+# Example: DETR training on COCO dataset
+# Usage: ./scripts/train_transformers.sh --config configs/detr_example.yaml
+
+data:
+  dataset_path: /path/to/coco/dataset
+  dataset_format: coco
+
+train:
+  framework: transformers
+  model: facebook/detr-resnet-50
+  epochs: 50
+  batch_size: 4
+  learning_rate: 5e-5
+  output_dir: outputs/detr-resnet-50
+  device: cuda
+  seed: 42
+  tensorboard: true
+  push_to_hub: false
+  hub_model_id: ""
+  multi_gpu: false
+  mixed_precision: "no"
+  gradient_accumulation_steps: 1
+  from_scratch: false
+  weight_decay: 1e-4
+  warmup_ratio: 0.1
+  lr_scheduler_type: linear
+  imgsz: 640
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5

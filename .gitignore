@@ -1,18 +1,18 @@
-.vscode
 .vscode/
-__pycache__
+
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.jpg
-log/
-log/*
-.venv/*
-.venv
-.venv
+*.egg-info/
+*.eggs/
+dist/
+.venv/
 
-# ROS2 build artifacts
 build/
 install/
+log/
 
+*.log
+*.tlog
+*.tlog.raw

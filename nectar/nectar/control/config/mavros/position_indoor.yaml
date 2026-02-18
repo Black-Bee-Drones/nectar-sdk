@@ -1,0 +1,36 @@
+# Indoor position control PID parameters
+x:
+  kp: 0.5
+  ki: 0.0
+  kd: 0.0
+  output_min: -0.42
+  output_max: 0.42
+  integral_min: -0.5
+  integral_max: 0.5
+
+y:
+  kp: 0.5
+  ki: 0.0
+  kd: 0.0
+  output_min: -0.42
+  output_max: 0.42
+  integral_min: -0.5
+  integral_max: 0.5
+
+z:
+  kp: 0.22
+  ki: 0.0
+  kd: 0.0
+  output_min: -0.15
+  output_max: 0.1
+  integral_min: -0.3
+  integral_max: 0.3
+
+yaw:
+  kp: 0.5
+  ki: 0.1
+  kd: 0.0
+  output_min: -0.2
+  output_max: 0.2
+  integral_min: -0.5
+  integral_max: 0.5

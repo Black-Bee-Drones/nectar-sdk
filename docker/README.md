@@ -1,153 +1,150 @@
-# [![dock](https://img.icons8.com/?size=30&id=GZxgGaKN8jxz&format=png&color=000000)](#) Docker Environment for MIRELA SDK
+# Docker
 
-This repository provides a multi-stage Docker setup for the MIRELA SDK, supporting both outdoor GPS-based drone control and indoor VSLAM operations. The setup includes MAVROS, computer vision support, RealSense D435i integration, and vision_to_mavros for seamless indoor navigation.
+## Images
 
-## 🐳 Multi-Stage Docker Environment
+| Tag | Contents | PyTorch |
+|-----|----------|---------|
+| `:latest` | core + control + vision + interface + realsense + oakd | None |
+| `:full-cpu` | All above + AI packages | CPU |
+| `:full-cu124` | All above + AI packages | CUDA 12.4 |
 
-### Available Images:
-
-1. **`mirela-sdk:base`** - Base image with ROS2 Humble, MAVROS, and computer vision support
-2. **`mirela-sdk:realsense`** - Extended image with RealSense D435i support and VSLAM capabilities
-
-### Key Features:
-
-#### Base Image (`mirela-sdk:base`):
-* **ROS2 Humble Desktop Full:** Complete ROS2 Humble desktop installation
-* **MAVROS & MAVROS Extras:** Communication with MAVLink-compatible autopilots
-* **Computer Vision Support:** `vision_opencv` for image processing
-* **Custom SDK Integration:** `mirela-sdk` with all Python dependencies
-* **GeographicLib Datasets:** Essential geographic data for MAVROS
-* **Pre-configured Environment:** ROS2 environment ready to use
-
-#### RealSense Image (`mirela-sdk:realsense`):
-* **All Base Features:** Everything from the base image
-* **Intel RealSense D435i Support:** Complete librealsense2 installation with CUDA support
-* **RealSense ROS2 Driver:** `realsense-ros` package for ROS2 integration
-* **Vision to MAVROS:** `vision_to_mavros` for indoor pose estimation
-* **VSLAM Ready:** Optimized for indoor navigation tasks
-* **CUDA Acceleration:** GPU-accelerated processing on Jetson platforms
-
-### 🛠️ Building the Docker Images
-
-#### Automated Build (Recommended):
-```bash
-# Build all images
-./build_images.sh all
-
-# Or build specific images
-./build_images.sh base       # Only base image
-./build_images.sh realsense  # Only RealSense image
-```
-
-#### Manual Build:
-```bash
-# Build base image
-docker build --network=host -t mirela-sdk:base -f Dockerfile.base .
-
-# Build RealSense image (requires base image)
-docker build --network=host -t mirela-sdk:realsense -f Dockerfile.realsense .
-```
-
-## 🏎️ Running the Docker Containers
-
-### Linux: [`run_docker_linux.sh`](run_docker_linux.sh) 🐧
-
-The updated script supports both image types with flexible options:
-
-#### Usage Examples:
+## Quick Start
 
 ```bash
-# Run base image (default)
-./run_docker_linux.sh --base
-
-# Run RealSense image
-./run_docker_linux.sh --realsense
-
-# Build and run RealSense image
-./run_docker_linux.sh --realsense --build
-
-# Custom container name
-./run_docker_linux.sh --realsense --name my_custom_container
-
-# Show help
-./run_docker_linux.sh --help
+make docker-build       # SDK (no AI, ~5 min)
+make docker-run         # auto-selects image, GPU auto-detected
+make docker-exec        # open more terminals
 ```
 
-#### Key Features:
+## Build
 
-* **Multi-Image Support:** Choose between base and RealSense images
-* **X11 Forwarding:** Graphical applications display on host X server
-* **Device Mounting:** Access to cameras (`/dev/video0`, `/dev/video1`) and USB devices
-* **Volume Mounting:** Mount host workspace for development
-* **Host Networking:** Shared network access with host
-* **Privileged Mode:** Full access to hardware devices
-
-#### Container Specifications:
-
-**Base Container:**
-- Image: `mirela-sdk:base`
-- Use case: Outdoor GPS-based drone control
-- Dependencies: MAVROS, vision_opencv, mirela-sdk
-
-**RealSense Container:**
-- Image: `mirela-sdk:realsense`
-- Use case: Indoor VSLAM with RealSense D435i
-- Dependencies: All base + librealsense2, realsense-ros, vision_to_mavros
-
-### Windows Support
-
-Windows scripts are available but may need updates for the new multi-stage setup. For Windows development, consider using WSL2 with the Linux scripts above.
-
-## 🎯 Usage Scenarios
-
-### Outdoor GPS-Based Missions
-For outdoor competitions with GPS availability:
 ```bash
-# Use base image for GPS navigation
-./run_docker_linux.sh --base
-
-# Inside container, run your GPS-based control scripts
-ros2 run mirela_sdk gps_control_node
+make docker-build                              # SDK (no AI)
+make docker-build-full                         # + AI with PyTorch CPU (default)
+TORCH_VARIANT=cu124 make docker-build-full     # + AI with PyTorch CUDA 12.4
+TORCH_VARIANT=auto  make docker-build-full     # auto-detect CUDA from nvidia-smi
 ```
 
-### Indoor VSLAM Missions
-For indoor environments with RealSense D435i:
+### Different ROS distro
+
 ```bash
-# Use RealSense image for indoor navigation
-./run_docker_linux.sh --realsense
-
-# Inside container, launch RealSense and vision_to_mavros
-ros2 launch realsense2_camera rs_launch.py
-ros2 launch vision_to_mavros t265_tf_to_mavros_launch.py
+ROS_DISTRO=jazzy make docker-build
+ROS_DISTRO=jazzy TORCH_VARIANT=cu124 make docker-build-full
 ```
 
-### Development Workflow
-For active development and testing:
+### Pinning a specific PyTorch version (advanced)
+
+By default pip resolves the latest torch compatible with the chosen CUDA index.
+Override with environment variables:
+
 ```bash
-# Mount your host workspace for live editing
-./run_docker_linux.sh --realsense --name dev_container
-
-# Your changes in ~/ros2_ws/src/mirela-sdk will be reflected immediately
+TORCH_VERSION=2.7.1 TORCHVISION_VERSION=0.22.1 TORCH_VARIANT=cu124 make docker-build-full
 ```
 
-## 🔧 Best Practices
+## Run
 
-### Environment Selection
-- **Use `base` image** for outdoor GPS missions (smaller, faster)
-- **Use `realsense` image** for indoor VSLAM missions (includes RealSense support)
-- **Both images** can run simultaneously with different container names
+```bash
+make docker-run         # shows menu if multiple images exist
+make docker-exec        # extra terminal in running container
+```
 
-### Performance Optimization
-- **Jetson Orin Nano:** Use RealSense image for CUDA acceleration
-- **Raspberry Pi:** Use base image to save resources
-- **Development:** Use volume mounting for live code editing
+`docker-run` automatically:
+- Detects available images (shows menu if multiple)
+- Adds `--gpus all` when NVIDIA GPU detected
+- Mounts X11, cameras (`/dev/video*`), USB
+- Enables host networking for ROS2
 
-### Container Management
-- **Persistent data:** Use named containers for development
-- **Clean restarts:** Containers auto-remove on exit (use `--name` to persist)
-- **Resource monitoring:** Use `docker stats` to monitor resource usage
+### Windows
 
-## Docker Installation Guide
+**Note:** Windows users cannot use `make` commands or the bash `setup.sh` script. Use the PowerShell helper script instead.
+
+**PowerShell:**
+```powershell
+.\docker\run_docker_win.ps1 build humble              # Build SDK image
+.\docker\run_docker_win.ps1 build jazzy full-cpu      # Build full image with CPU PyTorch
+.\docker\run_docker_win.ps1 run humble                 # Run container
+.\docker\run_docker_win.ps1 exec                       # Attach to running container
+```
+
+The script supports:
+- ROS 2 distros: `humble`, `jazzy`, `kilted`
+- Build variants: `full-cpu`, `full-cu124` (for full builds)
+- Automatic GPU detection (requires Docker Desktop with NVIDIA Container Toolkit)
+- Windows X11 display setup for GUI applications
+
+**Note:** For GUI applications on Windows, ensure Docker Desktop is configured to allow X11 forwarding. The script uses `host.docker.internal:0.0` for display.
+
+## GPU
+
+| Hardware | Build command |
+|----------|-------------|
+| No GPU | `make docker-build-full` |
+| NVIDIA GPU | `TORCH_VARIANT=cu124 make docker-build-full` |
+| Auto-detect | `TORCH_VARIANT=auto make docker-build-full` |
+| Jetson | Use `Dockerfile.jetson` (planned) |
+| No AI needed | `make docker-build` |
+
+GPU passthrough (`--gpus all`) is added automatically at run time when `nvidia-smi` is found.
+See [Docker GPU docs](https://docs.docker.com/desktop/features/gpu/) for setup.
+
+You can also install CUDA torch inside a running CPU container:
+```bash
+./scripts/setup.sh pytorch cu124
+./scripts/setup.sh python ai
+```
+
+## RealSense
+
+RealSense support is opt-in (builds librealsense from source, adds ~15-20 min and ~500 MB).
+It is installed in the `sdk` stage, so both `:latest` and `:full` images include it.
+
+```bash
+# SDK with RealSense (no AI)
+INSTALL_REALSENSE=true make docker-build
+
+# Full with RealSense + AI + GPU
+INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
+
+# With CUDA-accelerated librealsense
+INSTALL_REALSENSE=true REALSENSE_CUDA=true TORCH_VARIANT=cu124 make docker-build-full
+```
+
+Versions are auto-selected per ROS distro (`scripts/lib/config.sh`):
+
+| ROS 2 Distro | realsense-ros | librealsense | Cameras |
+|---|---|---|---|
+| Humble | 4.55.1 | v2.55.1 | D435, D435i, D455 |
+| Jazzy | [4.56.4](https://github.com/realsenseai/realsense-ros/releases/tag/4.56.4) | [v2.56.5](https://github.com/realsenseai/librealsense/releases/tag/v2.56.5) | D435, D435i, D455 |
+| Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | [v2.57.6](https://github.com/realsenseai/librealsense/releases/tag/v2.57.6) | D435, D435i, D455 |
+
+Override versions for specific needs:
+```bash
+# T265 tracking camera (Humble only, last supported versions)
+LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 \
+  INSTALL_REALSENSE=true make docker-build
+```
+
+udev rules and hotplug scripts for D435/D435i/D455 are included for
+runtime device access (following the
+[VSLAM-UAV](https://github.com/bandofpv/VSLAM-UAV) Docker pattern).
+
+## Dependency strategy
+
+PyTorch is **not** listed in `pyproject.toml` dependencies. This is intentional:
+
+1. `setup.sh pytorch <variant>` installs torch + torchvision from the correct
+   wheel index (CPU or CUDA) and saves a constraints file.
+2. `setup.sh python ai` installs the `[ai]` extra **with** that constraints
+   file and `--extra-index-url`, so pip never replaces the CUDA wheels with
+   generic PyPI ones.
+
+### numpy < 2.0
+
+`numpy>=1.26,<2.0` is enforced in `pyproject.toml` for compatibility with
+ROS 2 `cv_bridge` / `vision_opencv` binaries across Humble, Jazzy, and Kilted.
+See [vision_opencv#535](https://github.com/ros-perception/vision_opencv/issues/535).
+
+## Docker Installation
 
 ### Windows
 
@@ -190,14 +187,3 @@ For active development and testing:
     sudo apt-get install ./docker-desktop-amd64.deb
     sudo apt-get install docker-ce
     ```
-
-## 📝 Notes
-
-* Ensure Docker is installed and running on your system.
-* The `--net=host` option provides the container full access to the host's network. While convenient, this should be used with caution due to security implications.
-* The scripts assume the `Dockerfile` is located in the `docker/` directory.
-
-
-
-
-

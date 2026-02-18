@@ -1,65 +1,222 @@
-# Contributing
+# Contributing to Nectar SDK 🐝
 
-Thank you for your interest in contributing to this project! When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change.
+Thank you for your interest in contributing! This guide will help you get started.
 
-Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md). Please follow it in all your interactions with the project.
+## Before You Start
 
-## Issues and Feature Requests
+Please discuss significant changes via [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) or [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) before implementation.
 
-Found a bug in the source code, a mistake in the documentation, or do you have a new feature in mind? Take a look at [GitHub Discussions](https://github.com/Black-Bee-Drones/mirela-sdk/discussions) to see if it's already being discussed. If not, you can help us by [submitting an issue on GitHub](https://github.com/Black-Bee-Drones/mirela-sdk/issues).
+Read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
 
-Before you create an issue, make sure to search the issue archive to avoid duplicates. Your issue may have already been addressed!
+## Issues and Feature Requests 🐛
 
-Please try to create bug reports that are:
+### Reporting Bugs
 
-- **Reproducible:** Include steps to reproduce the problem.
-- **Specific:** Provide as much detail as possible, including the version, environment, etc.
-- **Unique:** Do not duplicate existing open issues.
-- **Scoped to a Single Bug:** One bug per report.
+Create bug reports that are:
 
-**Even better: Submit a pull request with a fix or new feature!**
+- **Reproducible**: Include steps to reproduce the issue
+- **Specific**: Version numbers, OS, hardware details
+- **Unique**: Search existing issues first
+- **Scoped**: One bug per report
 
-### How to Submit a Pull Request
+### Feature Requests
 
-1. **Search for Existing Pull Requests:**
-   - Search our repository for open or closed [Pull Requests](https://github.com/Black-Bee-Drones/mirela-sdk/pulls) that relate to your submission. You don't want to duplicate effort.
+Check [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) for ongoing conversations before opening a new request.
 
-2. **Fork the Project:**
-   - Click the "Fork" button on the top right corner of the repository page to create a copy of the project in your GitHub account.
+## Development Setup
 
-3. **Create a Feature Branch:**
-   - Clone your forked repository to your local machine.
-   - Create a new branch for your feature or bug fix:
-     ```sh
-     git checkout -b feat/amazing_feature
-     ```
+### Git LFS
 
-4. **Commit Your Changes:**
-   - Make your changes and commit them with a descriptive message. Our project follows the [Conventional Commits](https://www.conventionalcommits.org) specification, so please ensure your commit messages adhere to this format:
-     ```sh
-     git commit -m 'feat: add amazing_feature'
-     ```
+This repository uses [Git LFS](https://git-lfs.github.com/) to track large binary files (images, videos, model weights, etc.). Install Git LFS before cloning:
 
-5. **Push to the Branch:**
-   - Push your changes to your forked repository:
-     ```sh
-     git push origin feat/amazing_feature
-     ```
+```bash
+git lfs install
 
-6. **Open a Pull Request:**
-   - Go to the original repository and click on "New Pull Request."
-   - Select your branch from the dropdown menu.
-   - Fill out the [`pull request template`](../.github/PULL_REQUEST_TEMPLATE.md) with a clear and concise description of your changes.
-   - Click "Create Pull Request."
+git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk
+```
 
-## Code Review
+Git LFS automatically handles large files defined in `.gitattributes`. When you add images, videos, or other large files, they're automatically tracked by LFS.
 
-After you submit your pull request, it will be reviewed by the project maintainers. We may request changes or additional information. Please be patient and responsive to any feedback.
+**Note:** If you cloned before Git LFS was set up, you may need to pull LFS files:
+```bash
+git lfs pull
+```
 
-## Additional Guidelines
+### Pre-commit Hooks
 
-- **Branch Naming:** Use descriptive branch names that clearly indicate the purpose of your changes (e.g., `fix/bug_description`, `feat/new_feature`).
-- **Testing:** Ensure that your changes do not break existing tests and, if applicable, add new tests to cover your changes.
-- **Documentation:** Update the documentation to reflect any changes or new features you have added.
+Install [pre-commit](https://pre-commit.com/) hooks (one-time setup):
 
-Thank you for your contributions!
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+After `pre-commit install`, hooks run **automatically on every `git commit`** — they check only staged files, auto-fix what they can, and abort the commit if changes were made. Just `git add` the fixes and commit again.
+
+### Before Pushing
+
+Always run the full check before pushing (same command CI runs):
+
+```bash
+make check
+# or equivalently: pre-commit run --all-files
+```
+
+This validates **all files** (Python, Markdown, YAML, shell scripts) for:
+- Trailing whitespace and missing end-of-file newlines
+- Python lint errors (unused imports, undefined names)
+- Import sorting
+- Code formatting
+
+### Quick Commands
+
+```bash
+make check       # run all checks (same as CI)
+make lint        # Python lint only (ruff check)
+make lint-fix    # Python lint + auto-fix (ruff check --fix)
+make format      # Python format only (ruff format)
+```
+
+Use `make lint` / `make format` during development for fast feedback on Python files. Use `make check` before pushing to ensure CI will pass.
+
+## Pull Request Process 🔄
+
+### 1. Fork and Clone
+
+```bash
+# Fork via GitHub UI, then:
+git clone git@github.com:YOUR_USERNAME/nectar-sdk.git
+cd nectar-sdk
+git remote add upstream git@github.com:Black-Bee-Drones/nectar-sdk.git
+```
+
+### 2. Create Feature Branch
+
+```bash
+git checkout -b feat/your-feature-name
+# or
+git checkout -b fix/bug-description
+```
+
+**Branch Naming**:
+- `feat/` - New features
+- `fix/` - Bug fixes
+- `docs/` - Documentation only
+- `refactor/` - Code refactoring
+- `test/` - Test additions/fixes
+
+### 3. Make Changes
+
+Follow the project code style:
+
+- **Python**: Follow [PEP 8](https://peps.python.org/pep-0008/)
+- **Docstrings**: Use [NumPy style](https://numpydoc.readthedocs.io/en/latest/format.html)
+- **Type hints**: Include type annotations for public APIs
+
+### 4. Commit with Conventional Commits
+
+We follow [Conventional Commits](https://www.conventionalcommits.org):
+
+```bash
+# Format: type(scope): description
+
+git commit -m "feat(control): add obstacle avoidance strategy"
+git commit -m "fix(vision): resolve camera initialization race condition"
+git commit -m "docs(readme): update installation instructions"
+```
+
+**Types**:
+| Type | Description |
+|------|-------------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation |
+| `style` | Formatting (no code change) |
+| `refactor` | Code restructuring |
+| `test` | Test additions |
+| `chore` | Build/tooling |
+
+### 5. Push and Create PR
+
+```bash
+git push origin feat/your-feature-name
+```
+
+Then open a Pull Request via GitHub using our [PR template](../.github/PULL_REQUEST_TEMPLATE.md).
+
+## Code Guidelines 📝
+
+### Documentation
+
+- Update module README.md when adding features
+- Add docstrings to public classes and methods
+- Include usage examples for new APIs
+
+**Docstring Example**:
+```python
+def move_to(
+    self,
+    x: float,
+    y: float,
+    z: float,
+    precision: float = 0.2,
+) -> bool:
+    """
+    Navigate to a position in the world frame.
+
+    Parameters
+    ----------
+    x : float
+        Target X position in meters.
+    y : float
+        Target Y position in meters.
+    z : float
+        Target Z position (altitude) in meters.
+    precision : float, optional
+        Position tolerance in meters. Default is 0.2.
+
+    Returns
+    -------
+    bool
+        True if target reached within timeout, False otherwise.
+
+    Examples
+    --------
+    >>> drone.move_to(x=2.0, y=1.0, z=1.5, precision=0.3)
+    True
+    """
+```
+
+### Testing
+
+- Ensure existing tests pass before submitting
+- Add tests for new functionality when possible
+- Test with actual hardware when modifying drone control code
+
+### Module Structure
+
+When adding new components:
+
+1. **Control Module**: Extend `BaseDrone` or implement `Drone` protocol
+2. **Vision Module**:
+   - Cameras: Add to `camera/drivers/`, register in `CameraFactory`
+   - Algorithms: Add to `algorithms/<category>/`
+3. **AI Module**: Extend `BaseDetectionModel`, register in `Detector`
+4. **Export**: Add public symbols to `__init__.py`
+5. **Document**: Update module README.md
+
+## Review Process 👀
+
+After submission:
+
+1. Maintainers review code and provide feedback
+2. Address requested changes
+3. Once approved, PR is merged
+
+Be patient and responsive to feedback. Thank you for contributing!
+
+## Questions?
+
+- [GitHub Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) for general questions
+- [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) for bugs/features

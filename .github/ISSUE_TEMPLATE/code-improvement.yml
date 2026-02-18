@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for suggesting a code improvement for Mirela SDK! Your feedback is valuable for enhancing the project. Please provide as much detail as possible to help us understand your proposal and implement it effectively.
+        Thank you for suggesting a code improvement for Nectar SDK! Your feedback is valuable for enhancing the project. Please provide as much detail as possible to help us understand your proposal and implement it effectively.
 
   - type: checkboxes
     attributes:
@@ -18,7 +18,7 @@ body:
 
   - type: textarea
     attributes:
-      label: "Mirela SDK Version"
+      label: "Nectar SDK Version"
       description: "Please specify the commit or tag version you're using."
       placeholder: |
         Example: version 1.0.0 or commit hash
