@@ -151,10 +151,6 @@ class NectarApp(QMainWindow):
         self._status_message = QLabel("Ready")
         self._statusbar.addWidget(self._status_message)
 
-        version_label = QLabel("Nectar SDK v0.1.0")
-        version_label.setStyleSheet(f"color: {COLORS.text_muted};")
-        self._statusbar.addPermanentWidget(version_label)
-
     def _connect_signals(self) -> None:
         self._ros_executor.status_changed.connect(self._on_ros_status_changed)
         self._ros_executor.error_occurred.connect(self._on_ros_error)
@@ -177,7 +173,6 @@ class NectarApp(QMainWindow):
                 font-weight: 500;
             """
             )
-            self._status_message.setText("ROS2 node active")
         else:
             self._ros_status_label.setText("● ROS2: Disconnected")
             self._ros_status_label.setStyleSheet(
@@ -187,7 +182,6 @@ class NectarApp(QMainWindow):
                 font-weight: 500;
             """
             )
-            self._status_message.setText("ROS2 node inactive")
 
     @Slot(str)
     def _on_ros_error(self, error: str) -> None:
