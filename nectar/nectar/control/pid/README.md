@@ -7,15 +7,19 @@ Configurable PID controller implementation with YAML-based tuning and multi-axis
 ```mermaid
 classDiagram
     class PIDController {
-        -_kp float
-        -_ki float
-        -_kd float
-        -_setpoint float
+        +kp float
+        +ki float
+        +kd float
+        +setpoint float
+        +output_limits tuple~float,float~
+        +integral_limits tuple~float,float~
+        +output float
         -_integral float
-        -_prev_error float
-        -_prev_time float
-        -_output_limits tuple
-        -_integral_limits tuple
+        -_last_error float
+        -_last_time Optional~float~
+        -_first_update bool
+        -_proportional float
+        -_derivative float
         +update(current_value) float
         +reset()
         +set_setpoint(value)
@@ -28,14 +32,16 @@ classDiagram
         +kp float
         +ki float
         +kd float
+        +setpoint float
         +output_min float
         +output_max float
         +integral_min float
         +integral_max float
-        +from_yaml(path) PIDConfig
-        +from_dict(data) PIDConfig
-        +get_output_limits() tuple
-        +get_integral_limits() tuple
+        +from_yaml(path)$ PIDConfig
+        +from_dict(data)$ PIDConfig
+        +to_dict() dict
+        +get_output_limits() tuple~float,float~
+        +get_integral_limits() tuple~float,float~
     }
 
     class PositionPIDConfig {

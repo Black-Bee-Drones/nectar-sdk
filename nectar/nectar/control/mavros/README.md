@@ -67,26 +67,32 @@ classDiagram
     class MavrosDrone {
         -_navigator MavrosNavigator
         -_mavros_state State
-        -_gps NavSatFix
-        -_heading Float64
-        -_rel_alt Float64
-        -_vision_pos PoseWithCovarianceStamped
-        -_rng_alt Range
-        -_imu Imu
-        -_pid_config PositionPIDConfig
-        -_takeoff_position Union~PositionTarget,GeoPoseStamped~
+        -_gps Optional~NavSatFix~
+        -_heading Optional~Float64~
+        -_rel_alt Optional~Float64~
+        -_vision_pos Optional~PoseWithCovarianceStamped~
+        -_rng_alt Optional~Range~
+        -_imu Optional~Imu~
+        -_pid_config Optional~PositionPIDConfig~
+        -_takeoff_position Optional
         -_initial_altitude float
+        -_initial_heading float
         -_pose_source PoseSource
         +is_indoor bool
         +mavros_state State
+        +is_armed Optional~bool~
+        +flight_mode Optional~str~
+        +is_fcu_connected Optional~bool~
         +gps NavSatFix
         +heading float
         +rel_alt float
-        +vision_pos PoseWithCovarianceStamped
-         +pid_config PositionPIDConfig
+        +vision_pos Optional~PoseWithCovarianceStamped~
         +lidar_available bool
-        +get_altitude(source) float
+        +pid_config Optional~PositionPIDConfig~
         +position Union~PoseWithCovarianceStamped,NavSatFix~
+        +position_as_target Optional~Union~PositionTarget,GeoPoseStamped~~
+        +from_config(config, node)$ MavrosDrone
+        +get_altitude(source) Optional~float~
         +connect() bool
         +arm() bool
         +disarm() bool

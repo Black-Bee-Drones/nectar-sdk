@@ -475,11 +475,17 @@ ros2 run nectar detector_example.py --ros-args -p model_source:=yolov8n.pt
 
 Working examples in `nectar/nectar/examples/`:
 
-**Control**: [basic.py](nectar/nectar/examples/control/basic.py) · [sensors.py](nectar/nectar/examples/control/sensors.py) · [pid_simulation.py](nectar/nectar/examples/control/pid_simulation.py) · [mavros_navigation.py](nectar/nectar/examples/control/mavros_navigation.py) · [mavros_obstacles.py](nectar/nectar/examples/control/mavros_obstacles.py)
-
-**Vision**: [camera_example.py](nectar/nectar/examples/vision/camera_example.py) · [depth_example.py](nectar/nectar/examples/vision/depth_example.py)
-
-**AI**: [detector_example.py](nectar/nectar/examples/ai/detector_example.py) · [batch_detector.py](nectar/nectar/examples/ai/batch_detector.py)
+| Example | Description |
+|---------|-------------|
+| [basic.py](nectar/nectar/examples/control/basic.py) | Takeoff, velocity, land |
+| [sensors.py](nectar/nectar/examples/control/sensors.py) | Monitor GPS/vision data |
+| [pid_simulation.py](nectar/nectar/examples/control/pid_simulation.py) | PID controller simulation |
+| [mavros_navigation.py](nectar/nectar/examples/control/mavros_navigation.py) | Navigation test (BODY, TAKEOFF, GPS references) |
+| [mavros_obstacles.py](nectar/nectar/examples/control/mavros_obstacles.py) | Obstacle avoidance |
+| [camera_example.py](nectar/nectar/examples/vision/camera_example.py) | Camera capture |
+| [depth_example.py](nectar/nectar/examples/vision/depth_example.py) | Depth visualization |
+| [detector_example.py](nectar/nectar/examples/ai/detector_example.py) | Object detection |
+| [batch_detector.py](nectar/nectar/examples/ai/batch_detector.py) | Batch image/video processing |
 
 See: [control examples](nectar/nectar/examples/control/README.md) · [vision examples](nectar/nectar/examples/vision/README.md) · [AI examples](nectar/nectar/examples/ai/README.md)
 

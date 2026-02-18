@@ -54,6 +54,11 @@ classDiagram
         +config DroneConfig
         +node Node
         +is_ready bool
+        +driver_running bool
+        +is_armed Optional~bool~
+        +flight_mode Optional~str~
+        +is_fcu_connected Optional~bool~
+        +driver_session_name str
         +obstacle_manager ObstacleManager
         +add_obstacle_detector(name, detector, strategy, config)
         +remove_obstacle_detector(name)
@@ -61,46 +66,56 @@ classDiagram
         +disable_obstacle_detector(name)
         +enable_all_obstacle_detectors()
         +disable_all_obstacle_detectors()
+        +check_driver_status() bool
+        +start_driver_process() bool
+        +stop_driver_process() bool
         +delay(seconds)
         +cleanup()
         #_init_driver()
-        #_check_driver_running(timeout) bool
         #_wait_for_driver(timeout) bool
         #_create_subscriber(msg_type, topic, callback, qos) Subscription
         #_create_publisher(msg_type, topic, qos) Publisher
         #_create_client(srv_type, service_name) Client
         #_get_driver_name()* str
         #_start_driver()* bool
+        #_get_driver_command()* str
     }
 
     class MavrosDrone {
         -_mavros_state State
-        -_gps NavSatFix
-        -_heading Float64
-        -_rel_alt Float64
-        -_vision_pos PoseWithCovarianceStamped
-        -_rng_alt Range
-        -_imu Imu
-        -_pid_config PositionPIDConfig
-        -_takeoff_position Union
+        -_gps Optional~NavSatFix~
+        -_heading Optional~Float64~
+        -_rel_alt Optional~Float64~
+        -_vision_pos Optional~PoseWithCovarianceStamped~
+        -_rng_alt Optional~Range~
+        -_imu Optional~Imu~
+        -_pid_config Optional~PositionPIDConfig~
+        -_takeoff_position Optional
+        -_initial_altitude float
+        -_initial_heading float
         -_pose_source PoseSource
+        -_navigator MavrosNavigator
         +is_indoor bool
         +mavros_state State
+        +is_armed Optional~bool~
+        +flight_mode Optional~str~
+        +is_fcu_connected Optional~bool~
         +gps NavSatFix
         +heading float
         +rel_alt float
-        +vision_pos PoseWithCovarianceStamped
-        +lidar_alt Optional~float~
-        +height float
+        +vision_pos Optional~PoseWithCovarianceStamped~
+        +lidar_available bool
+        +pid_config Optional~PositionPIDConfig~
         +position Union~PoseWithCovarianceStamped,NavSatFix~
+        +position_as_target Optional~Union~PositionTarget,GeoPoseStamped~~
         +from_config(config, node)$ MavrosDrone
-        +set_mode(mode)
-        +set_param(param_id, value)
-        +do_servo(aux_out, pwm_value)
+        +get_altitude(source) Optional~float~
+        +set_mode(mode) bool
+        +set_param(param_id, value) bool
+        +do_servo(aux_out, pwm_value) bool
         +set_home() bool
         +set_takeoff_position(pose, heading)
         +set_pid_config(config)
-        -_navigator MavrosNavigator
         -_setup_subscribers()
         -_setup_publishers()
         -_setup_services()
@@ -108,6 +123,7 @@ classDiagram
         -_startup_sensors()
         -_compute_target()
         -_compute_setpoint_target()
+        -_compute_target_rel_alt()
         -_validate_position_sensors()
     }
 
@@ -116,7 +132,6 @@ classDiagram
         +flip(direction)
         +camera_control(tilt, pan)
         +snapshot()
-        +navigate_home()
         -_setup_publishers()
     }
 
@@ -157,8 +172,8 @@ classDiagram
         -_handlers dict~str,ObstacleHandler~
         +handlers dict~str,ObstacleHandler~
         +add(name, handler)
-        +remove(name) ObstacleHandler
-        +get(name) ObstacleHandler
+        +remove(name) Optional~ObstacleHandler~
+        +get(name) Optional~ObstacleHandler~
         +enable(name)
         +disable(name)
         +enable_all()
@@ -371,16 +386,38 @@ classDiagram
     class ObstacleHandler {
         -_detector ObstacleDetector
         -_strategy AvoidanceStrategy
+        -_node Node
+        -_config ObstacleHandlerConfig
+        -_last_info ObstacleInfo
+        -_lock Lock
         -_timer Timer
+        +detector ObstacleDetector
+        +strategy AvoidanceStrategy
+        +is_enabled bool
+        +last_info ObstacleInfo
+        +enable()
+        +disable()
+        +update() ObstacleInfo
         +should_continue(drone) bool
-        +get_axis_modifiers() tuple
+        +get_axis_modifiers() tuple~bool,bool,bool~
+        +reset()
+        +cleanup()
     }
 
     class ObstacleManager {
-        -_handlers dict
+        -_handlers dict~str,ObstacleHandler~
+        +handlers dict~str,ObstacleHandler~
         +add(name, handler)
+        +remove(name) Optional~ObstacleHandler~
+        +get(name) Optional~ObstacleHandler~
+        +enable(name)
+        +disable(name)
+        +enable_all()
+        +disable_all()
         +should_continue_navigation(drone) bool
-        +get_axis_control() tuple
+        +get_axis_control() tuple~bool,bool,bool~
+        +reset_all()
+        +cleanup()
     }
 
     class PauseStrategy {
@@ -469,18 +506,10 @@ See `pid/README.md` for implementation details.
 
 ```python
 DroneError
-├── ConnectionError
 ├── DriverNotFoundError
-├── TakeoffError
-├── LandingError
-├── NavigationError
-│   ├── TakeoffPositionNotSetError
-│   ├── InvalidModeError
-│   └── InvalidStrategyError
+├── TakeoffPositionNotSetError
 ├── SensorNotAvailableError
-├── CapabilityNotSupportedError
-├── GPSError
-└── TimeoutError
+└── CapabilityNotSupportedError
 ```
 
 ## Usage Examples
