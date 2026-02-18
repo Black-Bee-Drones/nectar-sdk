@@ -112,15 +112,13 @@ Custom ROS 2 messages connecting vision output to control decisions:
 
 ### From Scratch
 
-A standalone bootstrap script handles everything: ROS 2, system packages, MAVROS, GeographicLib, git/SSH, cloning, Python dependencies, workspace build, and verification. It prompts for workspace path and branch with sensible defaults.
+A standalone bootstrap script handles everything: ROS 2, system packages, MAVROS, GeographicLib, git/SSH, cloning, Python dependencies, workspace build, and verification.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
 ```
 
 ### Existing ROS 2 Workspace
-
-Clone and run a single command — it installs system dependencies, GeographicLib, Python packages, rosdep, and builds the SDK packages:
 
 ```bash
 cd ~/ros2_ws/src
@@ -163,7 +161,7 @@ make docker-run         # Run with X11 + cameras + USB
 
 See [`docker/README.md`](docker/README.md) for GPU, RealSense, and advanced options.
 
-All versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh) (single source of truth). See [`docs/INSTALL.md`](docs/INSTALL.md) for the full guide.
+All versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh). See [`docs/INSTALL.md`](docs/INSTALL.md) for the full guide.
 
 ## Quick Start
 

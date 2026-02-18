@@ -63,60 +63,131 @@ ProcessUtils.kill_process("mavros_node")
 
 ## GPS Utilities
 
-Geographic coordinate calculations using [pygeodesy](https://mrjean1.github.io/PyGeodesy/) for geodetic operations.
+Geographic coordinate calculations using [geographiclib](https://geographiclib.sourceforge.io/) for geodetic operations.
 
-### Functions
+### GPSCalculate Class
 
-| Function | Description |
-|----------|-------------|
-| `haversine_distance(lat1, lon1, lat2, lon2)` | Distance between GPS points (meters) |
-| `calculate_bearing(lat1, lon1, lat2, lon2)` | Bearing angle between points (degrees) |
-| `geoid_height(lat, lon)` | EGM96 geoid undulation at location |
-| `gps_to_local(lat, lon, ref_lat, ref_lon)` | Convert GPS to local NED frame |
+Static utility class for GPS coordinate calculations.
+
+| Method | Description |
+|--------|-------------|
+| `haversine(lat1, lon1, lat2, lon2)` | Distance between GPS points using Haversine formula (meters) |
+| `bearing(lat1, lon1, lat2, lon2)` | Initial bearing angle between points (degrees, 0-360°) |
+| `calculate_gps_offset(x, y, z, lat, lon, alt, heading)` | Calculate new GPS coordinates from offset in meters |
+| `interp_geo(start, end, frac)` | Geodesic interpolation between two GPS coordinates |
+| `generate_point_grid(vertices, grid_shape)` | Generate 2D grid of GPS coordinates within quadrilateral area |
 
 ### Usage
 
 ```python
-from nectar.utils.gps_calculate import haversine_distance, calculate_bearing
+from nectar.utils.gps_calculate import GPSCalculate
 
 # Calculate distance between two GPS coordinates
-dist = haversine_distance(-27.1234, -48.4567, -27.1245, -48.4578)
+dist = GPSCalculate.haversine(-27.1234, -48.4567, -27.1245, -48.4578)
 print(f"Distance: {dist:.2f} m")
 
 # Calculate bearing
-bearing = calculate_bearing(-27.1234, -48.4567, -27.1245, -48.4578)
+bearing = GPSCalculate.bearing(-27.1234, -48.4567, -27.1245, -48.4578)
 print(f"Bearing: {bearing:.1f}°")
+
+# Calculate GPS offset
+new_lat, new_lon, new_alt = GPSCalculate.calculate_gps_offset(
+    x=10.0,  # 10 meters east
+    y=5.0,   # 5 meters north
+    z=2.0,   # 2 meters up
+    latitude=-27.1234,
+    longitude=-48.4567,
+    altitude=100.0,
+    heading=45.0  # degrees
+)
+
+# Interpolate between GPS points
+midpoint = GPSCalculate.interp_geo(
+    start=(-27.1234, -48.4567),
+    end=(-27.1245, -48.4578),
+    frac=0.5  # 50% of the way
+)
+
+# Generate grid of GPS points
+vertices = (
+    (-27.1234, -48.4567),  # top-left
+    (-27.1234, -48.4578),  # top-right
+    (-27.1245, -48.4578),  # bottom-right
+    (-27.1245, -48.4567),  # bottom-left
+)
+grid = GPSCalculate.generate_point_grid(vertices, grid_shape=(10, 10))
 ```
 
 ## Position Utilities
 
-Coordinate transformations and rotation conversions.
+Coordinate transformations, rotation conversions, and ROS message utilities.
 
-### Functions
+### PositionUtils Class
 
-| Function | Description |
-|----------|-------------|
-| `quaternion_to_euler(q)` | Quaternion to roll, pitch, yaw |
-| `euler_to_quaternion(roll, pitch, yaw)` | Euler angles to quaternion |
-| `body_to_world(velocity, yaw)` | Body-frame to world-frame velocity |
-| `world_to_body(velocity, yaw)` | World-frame to body-frame velocity |
+Static utility class for position and orientation operations.
+
+| Method | Description |
+|--------|-------------|
+| `get_body_distance(target, current, heading)` | Calculate distance from current to target in body frame coordinates |
+| `get_yaw_from_pose(pose)` | Extract yaw angle from ROS pose message (radians) |
+| `convert_position_to_target(pose, heading, lidar)` | Convert position messages to target message types |
+| `transform_takeoff_to_body_velocities(vx, vy, vz, current_yaw, takeoff_yaw)` | Transform velocities from takeoff frame to body frame |
 
 ### Usage
 
 ```python
-from nectar.utils.position_utils import body_to_world, quaternion_to_euler
+from nectar.utils.position_utils import PositionUtils
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from mavros_msgs.msg import PositionTarget
 
-# Convert body-frame velocity to world-frame
-vx_world, vy_world = body_to_world(vx=1.0, vy=0.5, yaw=45.0)
+# Calculate body frame distance
+dx_body, dy_body, dz_body = PositionUtils.get_body_distance(
+    target=target_position,  # PositionTarget or GeoPoseStamped
+    current=current_pose,     # PoseWithCovarianceStamped or NavSatFix
+    heading=45.0  # degrees
+)
 
-# Convert quaternion to Euler angles
-roll, pitch, yaw = quaternion_to_euler([0.0, 0.0, 0.707, 0.707])
+# Extract yaw from pose
+yaw = PositionUtils.get_yaw_from_pose(pose_message)  # radians
+
+# Convert position to target message
+target = PositionUtils.convert_position_to_target(
+    pose=current_pose,
+    heading=45.0,  # degrees, required for NavSatFix
+    lidar=2.5  # optional altitude override
+)
+
+# Transform velocities from takeoff frame to body frame
+vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
+    vx=1.0,
+    vy=0.5,
+    vz=0.0,
+    current_yaw=0.785,  # radians (45°)
+    takeoff_yaw=0.0     # radians
+)
 ```
+
+### Supported Message Types
+
+**PositionUtils.get_body_distance()**:
+- `target`: `PositionTarget` (indoor) or `GeoPoseStamped` (outdoor)
+- `current`: `PoseWithCovarianceStamped` (indoor) or `NavSatFix` (outdoor)
+
+**PositionUtils.get_yaw_from_pose()**:
+- `PoseWithCovarianceStamped`, `GeoPoseStamped`, or `PositionTarget`
+
+**PositionUtils.convert_position_to_target()**:
+- `PoseWithCovarianceStamped` → `PositionTarget` (indoor)
+- `NavSatFix` → `GeoPoseStamped` (outdoor, requires heading)
 
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `pygeodesy` | Geodetic calculations |
-| `transforms3d` | Rotation conversions |
+| `geographiclib` | Geodetic calculations (WGS84 ellipsoid) |
+| `tf_transformations` | ROS quaternion/Euler conversions |
 | `numpy` | Array operations |
+| `geographic_msgs` | ROS GPS message types |
+| `geometry_msgs` | ROS pose message types |
+| `mavros_msgs` | MAVROS message types |
+| `sensor_msgs` | ROS sensor message types |

@@ -12,25 +12,49 @@ flowchart TB
 
     subgraph Core["Core"]
         BDM["BaseDetectionModel"]
-        Types["Detection / DetectionResult"]
-        Configs["TrainingConfig / EvaluationConfig"]
+        Types["Detection / DetectionResult<br/>DetectionInput / Prediction"]
+        Configs["TrainingConfig / EvaluationConfig<br/>TrainingMetrics / EvaluationMetrics<br/>TrainingResult"]
+        Protocols["DetectorProtocol<br/>TrainableProtocol<br/>MergingStrategy"]
+        Registry["ModelRegistry<br/>DetectorFactory"]
+        Exceptions["DetectionError<br/>ModelNotLoadedError<br/>TrainingError<br/>EvaluationError<br/>..."]
     end
 
     subgraph Models["Models"]
         UM["UltralyticsModel"]
         TM["TransformersModel"]
         RM["RFDETRModel"]
+        ML["ModelLoader"]
+    end
+
+    subgraph Slicing["Slicing"]
+        SI["SlicingInference"]
+        SC["SlicingConfig"]
+        SS["SlicingStrategy"]
+    end
+
+    subgraph PostProcess["Post-processing"]
+        NMS["NMSStrategy"]
+        SoftNMS["SoftNMSStrategy"]
+        WBF["WBFStrategy"]
+        NMM["NMMStrategy"]
+    end
+
+    subgraph Evaluation["Evaluation"]
+        ODE["ObjectDetectionEvaluator"]
     end
 
     subgraph External["External"]
         YOLO["ultralytics"]
         HF["transformers"]
         RF["rfdetr"]
+        SV["supervision"]
+        HFH["huggingface_hub"]
     end
 
     Detector -->|creates| UM
     Detector -->|creates| TM
     Detector -->|creates| RM
+    Detector -->|uses| Registry
 
     UM -->|extends| BDM
     TM -->|extends| BDM
@@ -38,10 +62,21 @@ flowchart TB
 
     BDM -->|uses| Types
     BDM -->|uses| Configs
+    BDM -->|uses| Protocols
+    BDM -->|uses| Slicing
+    BDM -->|raises| Exceptions
+
+    SI -->|uses| SC
+    SI -->|uses| SS
+    SI -->|uses| PostProcess
 
     UM -->|wraps| YOLO
     TM -->|wraps| HF
     RM -->|wraps| RF
+
+    ODE -->|uses| SV
+    PostProcess -->|uses| SV
+    ML -->|uses| HFH
 ```
 
 ## Quick Start
@@ -106,110 +141,329 @@ classDiagram
     }
 
     class Detector {
-        -_builders: Dict
-        -_model: BaseDetectionModel
-        -_framework: Framework
-        +model_source: str
-        +device: str
-        +confidence_threshold: float
-        +framework: Framework
-        +is_loaded: bool
-        +class_names: Dict
+        -_builders Dict~str,BuilderFunc~
+        -_model BaseDetectionModel
+        -_framework Framework
+        -_loaded bool
+        -_hf_token Optional~str~
+        -_kwargs Dict
+        +model_source str
+        +device str
+        +confidence_threshold float
+        +framework Framework
+        +is_loaded bool
+        +class_names Dict~int,str~
+        +model BaseDetectionModel
         +register(framework, builder)$
-        +available_frameworks()$ List
+        +available_frameworks()$ List~str~
+        +_detect_framework(source)$ Framework
+        +_create_model(framework, model_name)$ BaseDetectionModel
         +load(model_path) bool
         +detect(image, conf, iou) DetectionResult
-        +detect_batch(images) List
-        +train(config) Dict
-        +evaluate(config) Dict
-        +draw_detections(image, result) ndarray
+        +detect_batch(images, conf, iou) List~DetectionResult~
+        +train(config) Dict~str,Any~
+        +evaluate(config) Dict~str,Any~
+        +draw_detections(image, result, show_labels, show_confidence, show_class, annotator_type, thickness, text_scale) ndarray
         +enable_slicing(config)
         +disable_slicing()
     }
 
     class BaseDetectionModel {
         <<abstract>>
-        +model_name: str
-        +framework: str
-        +model: Any
-        +class_names: Dict
-        +is_loaded: bool
+        +model_name str
+        +framework str
+        +model Any
+        +class_names Dict~int,str~
+        +slicing_config Optional~SlicingConfig~
+        -_slicing_inference Optional~SlicingInference~
+        -logger Logger
+        +is_loaded bool
         +load_model(path)*
+        +_predict_single(input)* Prediction
+        +_predict_batch(input) Prediction
+        +predict(input) Prediction
+        +_predict_with_slicing(input) Prediction
         +detect(image, conf, iou) DetectionResult
-        +detect_batch(images) List
-        +train(config)* Dict
+        +detect_batch(images, conf, iou) List~DetectionResult~
+        +train(config)* TrainingResult
         +save(path)* str
-        +evaluate(config) Dict
-        +draw_detections(image, result) ndarray
+        +evaluate(config) EvaluationMetrics
+        +draw_detections(image, result, show_labels, show_confidence, show_class, annotator_type, thickness, text_scale) ndarray
+        +enable_slicing(config)
+        +disable_slicing()
     }
 
     class UltralyticsModel {
-        +from_scratch: bool
+        -model Optional~YOLO~
+        -_callbacks List
+        +from_scratch bool
         +load_model(path)
-        +train(config) Dict
+        +_download_from_huggingface(path) str
+        +train(config) TrainingResult
         +save(path) str
     }
 
     class TransformersModel {
-        +processor: AutoImageProcessor
-        +from_scratch: bool
-        +load_model(path, id2label, label2id)
-        +train(config) Dict
+        -model Optional~AutoModelForObjectDetection~
+        -processor Optional~AutoImageProcessor~
+        +from_scratch bool
+        +load_model(path, id2label, label2id, imgsz)
+        +train(config) TrainingResult
         +save(path) str
     }
 
     class RFDETRModel {
-        +rfdetr_wrapper: Any
-        +resolution: int
-        +from_scratch: bool
+        -model Optional
+        -model_class Type
+        -base_model_name str
+        -model_path Optional~str~
+        +rfdetr_size Optional~str~
+        +resolution Optional~int~
+        +from_scratch bool
         +load_model(path)
-        +train(config) Dict
+        +_infer_model_size(path) str
+        +train(config) TrainingResult
     }
 
     class Detection {
-        +bbox: ndarray
-        +confidence: float
-        +class_id: int
-        +class_name: str
-        +tracker_id: int
-        +metadata: Dict
-        +center: Tuple
-        +width: float
-        +height: float
-        +area: float
+        <<dataclass>>
+        +xyxy ndarray
+        +confidence float
+        +class_id int
+        +class_name str
+        +center Tuple~float,float~
+        +width int
+        +height int
+        +area int
+        +bbox List~int~
+        +to_dict() Dict
+        +from_dict(data)$ Detection
     }
 
     class DetectionResult {
-        +detections: List
-        +inference_time: float
-        +image_path: str
-        +model_name: str
+        <<dataclass>>
+        +detections List~Detection~
+        +image Optional~ndarray~
+        +inference_time float
+        +image_path Optional~str~
+        +model_name Optional~str~
+        +__len__() int
+        +__getitem__(idx) Detection
+        +__iter__() Iterator
+        +__bool__() bool
         +filter_by_confidence(threshold) DetectionResult
-        +filter_by_class(class_ids) DetectionResult
+        +filter_by_class(class_names) DetectionResult
+        +filter_by_class_id(class_ids) DetectionResult
+        +to_supervision() sv.Detections
+        +from_supervision(detections, class_names)$ DetectionResult
+        +to_dict() Dict
     }
 
     class TrainingConfig {
-        +dataset_path: str
-        +epochs: int
-        +batch_size: int
-        +learning_rate: float
-        +output_dir: str
-        +device: str
-        +tensorboard: bool
-        +push_to_hub: bool
-        +hub_model_id: str
-        +multi_gpu: bool
-        +mixed_precision: str
+        <<dataclass>>
+        +dataset_path str
+        +epochs int
+        +batch_size int
+        +learning_rate float
+        +output_dir str
+        +device str
+        +seed int
+        +tensorboard bool
+        +save_period int
+        +push_to_hub bool
+        +hub_model_id Optional~str~
+        +multi_gpu bool
+        +mixed_precision str
+        +gradient_accumulation_steps int
+        +max_train_samples Optional~int~
+        +max_eval_samples Optional~int~
+        +max_test_samples Optional~int~
+        +train_split float
+        +val_split float
+        +test_split float
+        +dataset_format Optional~str~
+        +framework str
+        +model str
+        +from_scratch bool
+        +imgsz Optional~Union~int,List~int~~
+        +early_stopping_patience Optional~int~
+        +early_stopping_delta float
+        +early_stopping_metric str
+        +early_stopping_mode str
+        +weight_decay float
+        +lr_scheduler_type str
+        +warmup_steps int
+        +warmup_ratio float
+        +max_grad_norm float
+        +optimizer_type str
+        +dropout float
+        +warmup_epochs float
+        +warmup_momentum float
+        +lrf float
+        +freeze Optional~Union~int,List~int~~
+        +cos_lr bool
+        +rfdetr_size Optional~str~
+        +lr_encoder Optional~float~
+        +use_ema bool
+        +gradient_checkpointing bool
+        +drop_path float
+        +ema_decay float
+        +sync_bn bool
+        +num_workers int
+        +gc_per_accumulation bool
+        +evaluate bool
+        +resume bool
+        +to_dict() Dict
+        +to_yaml(path)
+        +from_dict(data)$ TrainingConfig
+        +from_yaml(path)$ TrainingConfig
     }
 
     class EvaluationConfig {
-        +model_path: str
-        +dataset_path: str
-        +framework: str
-        +output_dir: str
-        +split: str
-        +conf_threshold: float
-        +iou_threshold: float
+        <<dataclass>>
+        +model_path str
+        +dataset_path str
+        +framework str
+        +output_dir str
+        +dataset_type str
+        +split str
+        +conf_threshold float
+        +iou_threshold float
+        +device str
+        +batch_size int
+        +num_samples Optional~int~
+        +to_dict() Dict
+        +from_dict(data)$ EvaluationConfig
+        +from_yaml(path)$ EvaluationConfig
+    }
+
+    class TrainingMetrics {
+        <<dataclass>>
+        +epoch int
+        +train_loss float
+        +val_loss Optional~float~
+        +map50 Optional~float~
+        +map50_95 Optional~float~
+        +precision Optional~float~
+        +recall Optional~float~
+        +f1_score Optional~float~
+        +learning_rate Optional~float~
+        +to_dict() Dict
+    }
+
+    class EvaluationMetrics {
+        <<dataclass>>
+        +map50 float
+        +map50_95 float
+        +mar50 float
+        +mar50_95 float
+        +precision float
+        +recall float
+        +f1_score float
+        +inference_time_per_image float
+        +total_detections int
+        +per_class_metrics List~Dict~
+        +visualizations Dict~str,str~
+        +to_dict() Dict
+        +save_json(path)
+    }
+
+    class TrainingResult {
+        <<dataclass>>
+        +model_path str
+        +metrics TrainingMetrics
+        +config TrainingConfig
+    }
+
+    class DetectionInput {
+        <<dataclass>>
+        +image Union~ImageType,BatchImageType~
+        +conf_threshold float
+        +iou_threshold float
+        +device Optional~str~
+        +is_batch bool
+        +to_dict() Dict
+    }
+
+    class Prediction {
+        <<dataclass>>
+        +detections Optional~sv.Detections~
+        +batch_detections Optional~List~sv.Detections~~
+        +results Optional~List~DetectionResult~~
+        +inference_time float
+        +image_path Optional~Union~str,List~str~~
+        +model_name Optional~str~
+        +is_batch bool
+        +num_detections int
+        +to_dict() Dict
+        +from_detections(detections, class_names)$ Prediction
+        +from_batch_detections(batch_detections, class_names)$ Prediction
+    }
+
+    class ModelRegistry {
+        <<singleton>>
+        -_models Dict~str,Type~
+        -_factories Dict~str,Callable~
+        +register(name)$ Callable
+        +register_factory(name, factory_func)$
+        +get(name)$ Type
+        +create(name, model_name, config)$ BaseDetectionModel
+        +list_models()$ List~str~
+        +is_registered(name)$ bool
+        +clear()$
+    }
+
+    class DetectorFactory {
+        <<static>>
+        +create(framework, model_source, config)$ BaseDetectionModel
+        +from_pretrained(model_id, framework)$ BaseDetectionModel
+        +from_checkpoint(checkpoint_path, framework)$ BaseDetectionModel
+    }
+
+    class SlicingConfig {
+        <<dataclass>>
+        +strategy SlicingStrategy
+        +slice_size Tuple~int,int~
+        +overlap_ratio float
+        +iou_threshold float
+        +conf_threshold float
+        +min_slice_area_ratio float
+        +max_slices int
+        +adaptive_threshold float
+        +clustering_eps float
+        +clustering_min_samples int
+        +merge_strategy str
+        +include_full_image bool
+        +from_dict(config_dict)$ SlicingConfig
+        +to_dict() Dict
+        +grid(slice_size, overlap_ratio)$ SlicingConfig
+        +adaptive(slice_size, threshold)$ SlicingConfig
+    }
+
+    class SlicingStrategy {
+        <<enumeration>>
+        NONE
+        GRID
+        ADAPTIVE
+        CLUSTERING
+        SUPERVISION
+    }
+
+    class SlicingInference {
+        -config SlicingConfig
+        -slicer ImageSlicer
+        -_merge_strategy BaseMergingStrategy
+        +run_sliced_inference(image, inference_callback, initial_detections) sv.Detections
+        -_create_merge_strategy(strategy_name) BaseMergingStrategy
+    }
+
+    class ObjectDetectionEvaluator {
+        -model Any
+        -config EvaluationConfig
+        -output_dir Path
+        -device str
+        -logger Logger
+        +evaluate() EvaluationMetrics
     }
 
     Detector --> Framework
@@ -224,7 +478,27 @@ classDiagram
 
     BaseDetectionModel --> Detection
     BaseDetectionModel --> DetectionResult
+    BaseDetectionModel --> DetectionInput
+    BaseDetectionModel --> Prediction
     BaseDetectionModel --> TrainingConfig
+    BaseDetectionModel --> EvaluationConfig
+    BaseDetectionModel --> SlicingConfig
+    BaseDetectionModel ..> SlicingInference : uses
+
+    DetectionResult o-- Detection
+    DetectionResult --> DetectionInput
+    Prediction o-- DetectionResult
+    Prediction --> DetectionInput
+
+    DetectorFactory --> ModelRegistry
+    ModelRegistry --> BaseDetectionModel
+
+    SlicingInference o-- SlicingConfig
+    SlicingInference --> SlicingStrategy
+    SlicingInference --> BaseMergingStrategy
+
+    ObjectDetectionEvaluator --> EvaluationConfig
+    ObjectDetectionEvaluator --> EvaluationMetrics
 ```
 
 ## Direct Model Classes
@@ -334,28 +608,121 @@ sequenceDiagram
 ```mermaid
 classDiagram
     class TrainingConfig {
-        +dataset_path: str
-        +epochs: int
-        +batch_size: int
+        <<dataclass>>
+        +dataset_path str
+        +epochs int
+        +batch_size int
+        +learning_rate float
+        +output_dir str
+        +device str
+        +seed int
+        +tensorboard bool
+        +save_period int
+        +push_to_hub bool
+        +hub_model_id Optional~str~
+        +multi_gpu bool
+        +mixed_precision str
+        +gradient_accumulation_steps int
+        +max_train_samples Optional~int~
+        +max_eval_samples Optional~int~
+        +max_test_samples Optional~int~
+        +train_split float
+        +val_split float
+        +test_split float
+        +dataset_format Optional~str~
+        +framework str
+        +model str
+        +from_scratch bool
+        +imgsz Optional~Union~int,List~int~~
+        +early_stopping_patience Optional~int~
+        +early_stopping_delta float
+        +early_stopping_metric str
+        +early_stopping_mode str
+        +weight_decay float
+        +lr_scheduler_type str
+        +warmup_steps int
+        +warmup_ratio float
+        +max_grad_norm float
+        +optimizer_type str
+        +dropout float
+        +warmup_epochs float
+        +warmup_momentum float
+        +lrf float
+        +freeze Optional~Union~int,List~int~~
+        +cos_lr bool
+        +rfdetr_size Optional~str~
+        +lr_encoder Optional~float~
+        +use_ema bool
+        +gradient_checkpointing bool
+        +drop_path float
+        +ema_decay float
+        +sync_bn bool
+        +num_workers int
+        +gc_per_accumulation bool
+        +evaluate bool
+        +resume bool
+        +to_dict() Dict
+        +to_yaml(path)
+        +from_dict(data)$ TrainingConfig
+        +from_yaml(path)$ TrainingConfig
     }
 
     class UltralyticsTrainingConfig {
-        +augment: bool
-        +mosaic: float
-        +mixup: float
-        +to_ultralytics_args() Dict
+        <<dataclass>>
+        +model str
+        +framework str
+        +augment bool
+        +mosaic float
+        +mixup float
+        +hsv_h float
+        +hsv_s float
+        +hsv_v float
+        +degrees float
+        +translate float
+        +scale float
+        +shear float
+        +flipud float
+        +fliplr float
+        +close_mosaic int
+        +nbs int
+        +overlap_mask bool
+        +mask_ratio int
+        +to_ultralytics_args() Dict~str,Any~
     }
 
     class TransformersTrainingConfig {
-        +dataloader_num_workers: int
-        +load_best_model_at_end: bool
-        +to_training_args() Dict
+        <<dataclass>>
+        +model str
+        +framework str
+        +dataloader_num_workers int
+        +load_best_model_at_end bool
+        +metric_for_best_model str
+        +greater_is_better bool
+        +remove_unused_columns bool
+        +eval_do_concat_batches bool
+        +dataloader_pin_memory bool
+        +hub_strategy str
+        +hub_private_repo bool
+        +to_training_args() Dict~str,Any~
     }
 
     class RFDETRTrainingConfig {
-        +resolution: int
-        +use_ema: bool
-        +to_rfdetr_args() Dict
+        <<dataclass>>
+        +model str
+        +framework str
+        +rfdetr_size Optional~str~
+        +resolution Optional~int~
+        +use_ema bool
+        +gradient_checkpointing bool
+        +lr_encoder Optional~float~
+        +ema_decay float
+        +ema_tau float
+        +lr_vit_layer_decay float
+        +sync_bn bool
+        +set_cost_class float
+        +set_cost_bbox float
+        +set_cost_giou float
+        +to_rfdetr_args() Dict~str,Any~
     }
 
     TrainingConfig <|-- UltralyticsTrainingConfig
@@ -412,24 +779,37 @@ detector.disable_slicing()
 classDiagram
     class BaseMergingStrategy {
         <<abstract>>
-        +iou_threshold: float
-        +name: str
-        +merge_boxes(detections)* Tuple
+        +iou_threshold float
+        +name str
+        +merge_boxes(detections)* Tuple~sv.Detections,List~List~int~~,int~
     }
 
     class NMSStrategy {
-        +class_agnostic: bool
+        +iou_threshold float
+        +class_agnostic bool
+        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
     }
 
     class SoftNMSStrategy {
-        +sigma: float
+        +iou_threshold float
+        +sigma float
+        +score_threshold float
+        +_compute_iou(box, boxes) ndarray
+        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
     }
 
     class WBFStrategy {
-        +skip_box_thr: float
+        +iou_threshold float
+        +skip_box_threshold float
+        +_compute_iou(box1, box2) float
+        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
     }
 
-    class NMMStrategy
+    class NMMStrategy {
+        +iou_threshold float
+        +_compute_iou(box1, box2) float
+        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+    }
 
     BaseMergingStrategy <|-- NMSStrategy
     BaseMergingStrategy <|-- SoftNMSStrategy

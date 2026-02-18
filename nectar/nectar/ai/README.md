@@ -17,11 +17,15 @@ flowchart TB
     subgraph AI["ai/"]
         subgraph Detection["detection/"]
             Detector["Detector"]
-            Models["Models"]
-            Training["Training"]
-            Evaluation["Evaluation"]
+            Core["Core<br/>(BaseDetectionModel, Types, Configs, Protocols, Registry, Exceptions)"]
+            Models["Models<br/>(UltralyticsModel, TransformersModel, RFDETRModel, ModelLoader)"]
+            Training["Training<br/>(Framework-specific Configs)"]
+            Evaluation["Evaluation<br/>(ObjectDetectionEvaluator)"]
+            Slicing["Slicing<br/>(SlicingInference, SlicingConfig)"]
+            PostProcess["Post-process<br/>(NMS, SoftNMS, WBF, NMM)"]
+            Utils["Utils<br/>(DeviceManager, HuggingFaceUploader, DatasetConverter, DatasetMerger)"]
         end
-        Utils["utils/"]
+        Utils["utils/<br/>(RoboflowUploader)"]
     end
 
     subgraph External["External"]
@@ -30,13 +34,23 @@ flowchart TB
         rfdetr
         supervision
         huggingface_hub
+        torch
+        torchvision
     end
 
+    Detector --> Core
     Detector --> Models
+    Core --> Models
     Models --> ultralytics
     Models --> transformers
     Models --> rfdetr
+    Models --> torch
+    Models --> torchvision
     Evaluation --> supervision
+    Slicing --> PostProcess
+    Slicing --> supervision
+    PostProcess --> supervision
+    Utils --> huggingface_hub
 ```
 
 ## Quick Start
