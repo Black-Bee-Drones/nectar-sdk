@@ -243,15 +243,21 @@ annotated = detector.draw_detections(image, result)
 
 ## Architecture
 
+*High-level architecture diagram showing main components and relationships. For detailed class diagrams, see module-specific READMEs: [Control](nectar/nectar/control/README.md), [Vision](nectar/nectar/vision/README.md), [AI](nectar/nectar/ai/README.md), [Interface](nectar/nectar/interface/README.md).*
+
 ```mermaid
 classDiagram
     namespace Control {
         class DroneFactory {
+            <<singleton>>
             +create(type, config, node)$ BaseDrone
             +register(type, factory_func)$
+            +available_types()$ List~str~
         }
         class Drone {
             <<protocol>>
+            +connect() bool
+            +arm() bool
             +takeoff(altitude) bool
             +land() bool
             +move_to(x, y, z, reference, strategy) bool
@@ -264,14 +270,16 @@ classDiagram
             <<abstract>>
             #_obstacle_manager ObstacleManager
             +add_obstacle_detector(name, detector, strategy)
+            +enable_obstacle_detector(name)
             +cleanup()
         }
         class MavrosDrone {
             -_navigator MavrosNavigator
             -_pose_source PoseSource
-            +set_mode(mode)
+            +set_mode(mode) bool
             +set_pid_config(config)
             +publish_setpoint(target)
+            +get_altitude(source) Optional~float~
         }
         class BebopDrone {
             +flip(direction)
@@ -289,81 +297,186 @@ classDiagram
         class ObstacleManager {
             +should_continue_navigation(drone) bool
             +get_axis_control() tuple
+            +add(name, handler)
+            +enable(name)
         }
         class AvoidanceStrategy {
             <<abstract>>
             +execute(drone, info) bool
         }
+        class GPSUtils {
+            <<static>>
+            +geoid_height(lat, lon)$ float
+            +create_gps_setpoint(lat, lon, alt, heading)$ GeoPoseStamped
+            +check_reached(cur, tgt, precision)$ tuple
+        }
     }
 
     namespace Vision {
         class CameraFactory {
+            <<singleton>>
             +from_source(source, config, node)$ AbstractCam
             +register(key, builder)$
         }
         class AbstractCam {
             <<abstract>>
+            +name str
+            +is_running bool
             +start()
-            +get_frame() ndarray
+            +get_frame() Optional~ndarray~
             +close()
         }
         class DepthCam {
             <<abstract>>
-            +get_depth_frame() ndarray
-            +get_distance(u, v) float
+            +get_depth_frame() Optional~ndarray~
+            +get_distance(u, v) Optional~float~
+        }
+        class OpenCVCam {
+            +start()
+            +get_frame() Optional~ndarray~
+        }
+        class RealsenseCam {
+            +start()
+            +get_frame() Optional~ndarray~
+            +get_depth_frame() Optional~ndarray~
+        }
+        class OakdCam {
+            +start()
+            +get_frame() Optional~ndarray~
+            +get_depth_frame() Optional~ndarray~
+        }
+        class ROSCam {
+            +start()
+            +get_frame() Optional~ndarray~
+        }
+        class ROSDepthCam {
+            -_color_cam ROSCam
+            +get_frame() Optional~ndarray~
+            +get_depth_frame() Optional~ndarray~
         }
         class ImageHandler {
+            +node Node
+            +camera AbstractCam
             +run()
             +take_photo() ndarray
             +cleanup()
         }
         class Aruco {
-            +detect(img) tuple
-            +pose_estimate(img) tuple
+            +marker_dict int
+            +tag_size float
+            +detect(img, draw) tuple
+            +pose_estimate(img, draw) tuple
         }
         class ColorDetector {
             +filterColor(img)
             +saveColorValues()
+            +get_color_values(name) list
         }
         class LineDetector {
-            +detect_line(img) tuple
+            -color_detector ColorDetector
+            -estimation_method ILineEstimationMethod
+            +detect_line(img, region) tuple
         }
         class ILineEstimationMethod {
             <<abstract>>
             +estimate(img) tuple
         }
         class DistanceEstimator {
+            -_model EstimationModel
             +estimate(value) float
+            +compare_methods(value) Dict
+        }
+        class ModelCalibrator {
+            +fit_all() Dict
+            +best_model(criterion) CalibrationResult
+            +save_params(path)
         }
         class EstimationModel {
             <<abstract>>
             +estimate(value) float
             +fit(x, y) Dict
         }
+        class HandTracker {
+            +detect(frame, draw) ndarray
+            +get_hands() List~HandResult~
+            +raised_fingers(hand_idx) List~int~
+        }
+        class FaceMeshTracker {
+            +detect(frame, draw) ndarray
+            +get_faces() List~FaceResult~
+            +get_eye_aspect_ratio(eye) float
+        }
     }
 
     namespace AI {
         class Detector {
+            +model_source str
+            +framework Framework
             +load() bool
-            +detect(image) DetectionResult
-            +train(config) Dict
+            +detect(image, conf) DetectionResult
+            +train(config) TrainingResult
+            +evaluate(config) EvaluationMetrics
             +draw_detections(image, result) ndarray
             +register(framework, builder)$
             +enable_slicing(config)
         }
         class BaseDetectionModel {
             <<abstract>>
+            +model_name str
+            +framework str
+            +is_loaded bool
             +load_model(path)
-            +detect(image) DetectionResult
-            +train(config) Dict
+            +detect(image, conf, iou) DetectionResult
+            +train(config) TrainingResult
+            +save(path) str
         }
-        class UltralyticsModel
-        class TransformersModel
-        class RFDETRModel
+        class UltralyticsModel {
+            +load_model(path)
+            +train(config) TrainingResult
+        }
+        class TransformersModel {
+            +load_model(path)
+            +train(config) TrainingResult
+        }
+        class RFDETRModel {
+            +load_model(path)
+            +train(config) TrainingResult
+        }
+        class ModelRegistry {
+            <<singleton>>
+            +register(name, model_class)$
+            +create(name, model_name)$ BaseDetectionModel
+        }
+        class Detection {
+            <<dataclass>>
+            +xyxy ndarray
+            +confidence float
+            +class_id int
+            +class_name str
+        }
         class DetectionResult {
+            <<dataclass>>
             +detections List~Detection~
-            +filter_by_confidence(threshold)
-            +filter_by_class(class_ids)
+            +filter_by_confidence(threshold) DetectionResult
+            +filter_by_class_id(class_ids) DetectionResult
+            +to_supervision() sv.Detections
+        }
+        class SlicingInference {
+            -config SlicingConfig
+            +run_sliced_inference(image, callback) sv.Detections
+        }
+        class BaseMergingStrategy {
+            <<abstract>>
+            +merge_boxes(detections) Tuple
+        }
+        class NMSStrategy {
+            +merge_boxes(detections) Tuple
+        }
+        class WBFStrategy {
+            +merge_boxes(detections) Tuple
+        }
+        class ObjectDetectionEvaluator {
+            +evaluate() EvaluationMetrics
         }
     }
 
@@ -373,10 +486,48 @@ classDiagram
             -_control_tab ControlTab
             -_vision_tab VisionTab
             -_ros_tab ROSTab
+            +main()$
         }
         class ROSExecutor {
+            +node Node
             +start(node_name) bool
             +shutdown()
+        }
+        class ControlTab {
+            +set_node(node)
+            +cleanup()
+        }
+        class VisionTab {
+            +set_node(node)
+            +cleanup()
+        }
+        class ROSTab {
+            +set_node(node)
+            +cleanup()
+        }
+    }
+
+    namespace Utils {
+        class GPSCalculate {
+            <<static>>
+            +haversine(lat1, lon1, lat2, lon2)$ float
+            +bearing(lat1, lon1, lat2, lon2)$ float
+            +calculate_gps_offset(x, y, z, lat, lon, alt, heading)$ tuple
+            +interp_geo(start, end, frac)$ tuple
+        }
+        class PositionUtils {
+            <<static>>
+            +get_body_distance(target, current, heading)$ tuple
+            +get_yaw_from_pose(pose)$ float
+            +convert_position_to_target(pose, heading, lidar)$ Union
+            +transform_takeoff_to_body_velocities(vx, vy, vz, current_yaw, takeoff_yaw)$ tuple
+        }
+        class ProcessUtils {
+            <<static>>
+            +start_process(command, name, gui) bool
+            +kill_process(name) bool
+            +is_node_running(node_pattern) bool
+            +wait_for_node(node_pattern, timeout) bool
         }
     }
 
@@ -386,23 +537,47 @@ classDiagram
     DroneFactory ..> BaseDrone : creates
     MavrosDrone *-- MavrosNavigator
     MavrosNavigator ..> PIDController : creates
+    MavrosNavigator ..> GPSUtils : uses
+    MavrosNavigator ..> PositionUtils : uses
     BaseDrone o-- ObstacleManager
     ObstacleManager ..> AvoidanceStrategy
 
     AbstractCam <|-- DepthCam
+    AbstractCam <|-- OpenCVCam
+    AbstractCam <|-- ROSCam
+    DepthCam <|-- RealsenseCam
+    DepthCam <|-- OakdCam
+    DepthCam <|-- ROSDepthCam
+    ROSDepthCam *-- ROSCam
     CameraFactory ..> AbstractCam : creates
     ImageHandler o-- AbstractCam
+    ImageHandler ..> CameraFactory
     LineDetector o-- ILineEstimationMethod
     LineDetector o-- ColorDetector
     DistanceEstimator o-- EstimationModel
+    DistanceEstimator ..> ModelCalibrator : uses
 
     BaseDetectionModel <|-- UltralyticsModel
     BaseDetectionModel <|-- TransformersModel
     BaseDetectionModel <|-- RFDETRModel
     Detector ..> BaseDetectionModel : creates
-    BaseDetectionModel ..> DetectionResult
+    Detector ..> ModelRegistry : uses
+    ModelRegistry ..> BaseDetectionModel : creates
+    BaseDetectionModel ..> DetectionResult : returns
+    DetectionResult o-- Detection
+    BaseDetectionModel ..> SlicingInference : uses
+    SlicingInference ..> BaseMergingStrategy : uses
+    BaseMergingStrategy <|-- NMSStrategy
+    BaseMergingStrategy <|-- WBFStrategy
+    BaseDetectionModel ..> ObjectDetectionEvaluator : uses
 
     NectarApp *-- ROSExecutor
+    NectarApp *-- ControlTab
+    NectarApp *-- VisionTab
+    NectarApp *-- ROSTab
+    ControlTab ..> ROSExecutor : uses
+    VisionTab ..> ROSExecutor : uses
+    ROSTab ..> ROSExecutor : uses
 ```
 
 ### Design Patterns
