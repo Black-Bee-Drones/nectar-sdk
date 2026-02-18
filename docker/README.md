@@ -54,6 +54,26 @@ make docker-exec        # extra terminal in running container
 - Mounts X11, cameras (`/dev/video*`), USB
 - Enables host networking for ROS2
 
+### Windows
+
+**Note:** Windows users cannot use `make` commands or the bash `setup.sh` script. Use the PowerShell helper script instead.
+
+**PowerShell:**
+```powershell
+.\docker\run_docker_win.ps1 build humble              # Build SDK image
+.\docker\run_docker_win.ps1 build jazzy full-cpu      # Build full image with CPU PyTorch
+.\docker\run_docker_win.ps1 run humble                 # Run container
+.\docker\run_docker_win.ps1 exec                       # Attach to running container
+```
+
+The script supports:
+- ROS 2 distros: `humble`, `jazzy`, `kilted`
+- Build variants: `full-cpu`, `full-cu124` (for full builds)
+- Automatic GPU detection (requires Docker Desktop with NVIDIA Container Toolkit)
+- Windows X11 display setup for GUI applications
+
+**Note:** For GUI applications on Windows, ensure Docker Desktop is configured to allow X11 forwarding. The script uses `host.docker.internal:0.0` for display.
+
 ## GPU
 
 | Hardware | Build command |
@@ -123,3 +143,47 @@ PyTorch is **not** listed in `pyproject.toml` dependencies. This is intentional:
 `numpy>=1.26,<2.0` is enforced in `pyproject.toml` for compatibility with
 ROS 2 `cv_bridge` / `vision_opencv` binaries across Humble, Jazzy, and Kilted.
 See [vision_opencv#535](https://github.com/ros-perception/vision_opencv/issues/535).
+
+## Docker Installation
+
+### Windows
+
+1. Download the [Docker Desktop installer](https://docs.docker.com/desktop/setup/install/windows-install/#install-from-the-command-line).
+2. Open the folder containing the installer in Command Prompt (run as Administrator).
+3. Install Docker Desktop using the command line for greater control over installation options:
+
+    ```bash
+    start /w "" "Docker Desktop Installer.exe" install -accept-license --installation-dir="D:\Docker\Docker" --wsl-default-data-root="D:\Docker\wsl" --windows-containers-default-data-root="D:\Docker"
+    ```
+
+    - This setup allows customization of the installation directory and the default location for WSL (Docker images).
+    - Customizing these paths is especially useful if your primary drive (e.g., `C:`) has limited space.
+
+4. Optionally, install [XLaunch](https://sourceforge.net/projects/vcxsrv/) to enable GUI applications in Docker. Configure the `DISPLAY` environment variable in Docker and launch applications with GUI support.
+
+### Linux (Ubuntu)
+
+1. Add Docker’s official GPG key and repository:
+
+    ```bash
+    sudo apt-get update
+    sudo apt-get install ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update
+    ```
+
+2. Download the latest `.deb` file for Docker Desktop from the [official release notes](https://docs.docker.com/desktop/release-notes/).
+3. Install Docker Desktop and Docker Engine:
+
+    ```bash
+    sudo apt-get update
+    sudo apt-get install ./docker-desktop-amd64.deb
+    sudo apt-get install docker-ce
+    ```

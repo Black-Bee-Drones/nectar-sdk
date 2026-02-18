@@ -112,11 +112,11 @@ cmd_verify() {
             'python3 -c "from cv_bridge import CvBridge; import numpy as np; CvBridge().cv2_to_imgmsg(np.zeros((10,10,3),dtype=np.uint8))"'
 
     # --- SDK modules ---
-    _check      "import mirela_sdk"              'python3 -c "import mirela_sdk"'
-    _check      "import mirela_sdk.vision"       'python3 -c "import mirela_sdk.vision"'
-    _check      "import mirela_sdk.control"      'python3 -c "import mirela_sdk.control"'
-    _check_opt  "import mirela_sdk.ai"           'python3 -c "import mirela_sdk.ai"'
-    _check_opt  "import mirela_sdk.interface"    'python3 -c "import mirela_sdk.interface"'
+    _check      "import nectar"              'python3 -c "import nectar"'
+    _check      "import nectar.vision"       'python3 -c "import nectar.vision"'
+    _check      "import nectar.control"      'python3 -c "import nectar.control"'
+    _check_opt  "import nectar.ai"           'python3 -c "import nectar.ai"'
+    _check_opt  "import nectar.interface"    'python3 -c "import nectar.interface"'
 
     # --- Optional: Control deps ---
     _check_opt  "import shapely"      'python3 -c "import shapely"'

@@ -107,7 +107,7 @@ cmd_python() {
 #   TORCH_VERSION       Pin a specific torch version  (e.g. "2.7.1")
 #   TORCHVISION_VERSION Pin a specific torchvision    (e.g. "0.22.1")
 cmd_pytorch() {
-    local variant="${1:-auto}"
+    local variant="${1:-${TORCH_VARIANT:-auto}}"
     local flags
     flags=$(_pip_flags)
 

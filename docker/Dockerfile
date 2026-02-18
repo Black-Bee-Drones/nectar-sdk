@@ -21,19 +21,19 @@ RUN /tmp/setup/scripts/setup.sh ros2-env
 
 FROM base AS sdk
 
-COPY . /home/ros2_ws/src/mirela-sdk
+COPY . /home/ros2_ws/src/nectar-sdk
+WORKDIR /home/ros2_ws/src/nectar-sdk
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python all
+RUN --mount=type=cache,target=/root/.cache/pip make install-all
 # Python 3.12+ (Jazzy): system numpy 1.26.4 == pip numpy → dual install causes
 # RecursionError in sklearn/supervision. Remove the pip copy.
 # Python 3.10 (Humble): system numpy 1.21.5 is too old, pip copy must stay.
 RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
     && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
     || true
-RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh rosdep-init
-RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh ros2-deps
-RUN /home/ros2_ws/src/mirela-sdk/scripts/setup.sh build
+RUN make rosdep-init
+RUN make ros2-deps
+RUN make build
 
 # RealSense: udev rules + hotplug for runtime device access
 COPY docker/realsense/ /opt/realsense/
@@ -45,9 +45,7 @@ RUN mkdir -p /etc/udev/rules.d && \
 ARG INSTALL_REALSENSE=false
 ARG REALSENSE_CUDA=false
 ENV REALSENSE_CUDA=${REALSENSE_CUDA}
-RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
-    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh realsense; \
-    fi
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then make realsense; fi
 # After realsense build, stale scipy/numpy .so files from --ignore-installed
 # can conflict. Purge and reinstall cleanly.
 RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
@@ -66,10 +64,8 @@ ARG TORCH_VARIANT=cpu
 ARG INSTALL_REALSENSE=false
 ENV TORCH_VARIANT=${TORCH_VARIANT}
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh pytorch ${TORCH_VARIANT}
-RUN --mount=type=cache,target=/root/.cache/pip \
-    /home/ros2_ws/src/mirela-sdk/scripts/setup.sh python ai
+RUN --mount=type=cache,target=/root/.cache/pip make pytorch
+RUN --mount=type=cache,target=/root/.cache/pip make python-ai
 
 RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
     && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \

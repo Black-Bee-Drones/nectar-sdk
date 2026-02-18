@@ -1,11 +1,11 @@
 name: 🐛 Bug Report
-description: Problems with Mirela SDK
+description: Problems with Nectar SDK
 labels: [bug, triage]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for submitting a bug report for Mirela SDK! We appreciate your help in making the project better.
+        Thank you for submitting a bug report for Nectar SDK! We appreciate your help in making the project better.
 
   - type: checkboxes
     attributes:
@@ -19,7 +19,7 @@ body:
 
   - type: textarea
     attributes:
-      label: "Mirela SDK Version"
+      label: "Nectar SDK Version"
       description: "Please specify the commit or tag version you're using."
       placeholder: |
         Example: version 1.0.0 or commit hash
@@ -82,7 +82,7 @@ body:
       description: "Provide code snippets or examples that could help understand the issue."
       placeholder: |
         ```python
-        from mirela_sdk.control.bebop import Bebop
+        from nectar.control.bebop import Bebop
 
         bebop = Bebop(node=self, driver=True)
         bebop.takeoff()  # Bug occurs here

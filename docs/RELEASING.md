@@ -27,7 +27,7 @@ Examples:
 
 Create a PR that updates the version:
 
-- `mirela_sdk/pyproject.toml` → `version = "X.Y.Z"`
+- `nectar/pyproject.toml` → `version = "X.Y.Z"`
 - `CITATION.cff` → `version: X.Y.Z` and `date-released`
 
 CI runs `code-quality` (lint) and `pr-check` (Humble build + verify) on the PR.
@@ -36,11 +36,11 @@ CI runs `code-quality` (lint) and `pr-check` (Humble build + verify) on the PR.
 
 After review, merge the PR. CI runs `build-test` (all distros: Humble, Jazzy, Kilted).
 
-Check the [Actions tab](https://github.com/Black-Bee-Drones/mirela-sdk/actions) — all green before proceeding.
+Check the [Actions tab](https://github.com/Black-Bee-Drones/nectar-sdk/actions) — all green before proceeding.
 
 ### 3. Create GitHub release
 
-- Go to [Releases](https://github.com/Black-Bee-Drones/mirela-sdk/releases/new)
+- Go to [Releases](https://github.com/Black-Bee-Drones/nectar-sdk/releases/new)
 - Tag: `vX.Y.Z` (create new tag, targeting `main`)
 - Title: `vX.Y.Z "Code Name"`
 - Click "Generate release notes" for the changelog
@@ -56,7 +56,7 @@ Check the [Actions tab](https://github.com/Black-Bee-Drones/mirela-sdk/actions) 
 
 ## Docker Hub
 
-Images are pushed to [Docker Hub](https://hub.docker.com/r/blackbeedrones/mirela-sdk) on every release.
+Images are pushed to [Docker Hub](https://hub.docker.com/r/blackbeedrones/nectar-sdk) on every release.
 
 | Tag pattern | Example | Contents |
 |---|---|---|
@@ -65,8 +65,8 @@ Images are pushed to [Docker Hub](https://hub.docker.com/r/blackbeedrones/mirela
 
 Pull and run:
 ```bash
-docker pull blackbeedrones/mirela-sdk:humble
-docker run -it --rm --net=host blackbeedrones/mirela-sdk:humble
+docker pull blackbeedrones/nectar-sdk:humble
+docker run -it --rm --net=host blackbeedrones/nectar-sdk:humble
 ```
 
 ## CI Workflows

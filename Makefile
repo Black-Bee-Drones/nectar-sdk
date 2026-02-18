@@ -14,6 +14,9 @@ SETUP := ./scripts/setup.sh
 help:
 	@$(SETUP) help
 
+# Quick start (install deps + build SDK packages)
+setup:              ; @$(SETUP) setup
+
 # System
 system:             ; @$(SETUP) system
 update:             ; @$(SETUP) update
@@ -55,9 +58,9 @@ docker-exec:        ; @$(SETUP) docker-exec
 
 # Code quality
 check:              ; @pre-commit run --all-files
-lint:               ; @cd mirela_sdk && ruff check .
-lint-fix:           ; @cd mirela_sdk && ruff check --fix .
-format:             ; @cd mirela_sdk && ruff format .
+lint:               ; @cd nectar && ruff check .
+lint-fix:           ; @cd nectar && ruff check --fix .
+format:             ; @cd nectar && ruff format .
 
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install

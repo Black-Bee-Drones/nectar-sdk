@@ -1,7 +1,7 @@
 # This CITATION.cff file was generated with https://bit.ly/cffinit.
 
 cff-version: 1.2.0
-title: "Mirela SDK"
+title: "Nectar SDK"
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
@@ -10,17 +10,16 @@ authors:
   - name: Black Bee Drones
     country: BR
     website: 'https://github.com/Black-Bee-Drones'
-repository-code: 'https://github.com/Black-Bee-Drones/mirela-sdk'
+repository-code: 'https://github.com/Black-Bee-Drones/nectar-sdk'
 abstract: >-
-  Mirela SDK is a software development kit designed to
-  simplify drone control and computer vision tasks. It
-  provides a robust and user-friendly interface for
-  interacting with various drone platforms (Parrot Bebop,
-  MAVROS-enabled drones) and processing image data. Features
-  include ArUco marker detection, color detection, camera
-  calibration, GPS integration, OAK-D camera support, PID
-  control, and a graphical user interface. Built on ROS2 for
-  robust communication and interoperability.
+  Nectar SDK is a modular software development kit for
+  autonomous aerial systems built on ROS2. Designed for
+  drone competitions, research, and rapid prototyping of
+  UAV applications. Features include drone control (MAVROS,
+  Bebop), computer vision (ArUco, color, line detection),
+  AI-powered object detection (YOLO, DETR, RF-DETR),
+  camera abstraction (USB, RealSense, OAK-D), PID control,
+  GPS navigation, and a Qt6 graphical interface.
 keywords:
   - Drone Control
   - Computer Vision

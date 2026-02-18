@@ -1,10 +1,10 @@
-# Contributing to Mirela SDK 🐝
+# Contributing to Nectar SDK 🐝
 
 Thank you for your interest in contributing! This guide will help you get started.
 
 ## Before You Start
 
-Please discuss significant changes via [GitHub Issues](https://github.com/Black-Bee-Drones/mirela-sdk/issues) or [Discussions](https://github.com/Black-Bee-Drones/mirela-sdk/discussions) before implementation.
+Please discuss significant changes via [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) or [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) before implementation.
 
 Read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
 
@@ -21,9 +21,29 @@ Create bug reports that are:
 
 ### Feature Requests
 
-Check [Discussions](https://github.com/Black-Bee-Drones/mirela-sdk/discussions) for ongoing conversations before opening a new request.
+Check [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) for ongoing conversations before opening a new request.
 
 ## Development Setup
+
+### Git LFS
+
+This repository uses [Git LFS](https://git-lfs.github.com/) to track large binary files (images, videos, model weights, etc.). Install Git LFS before cloning:
+
+```bash
+git lfs install
+
+git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk
+```
+
+Git LFS automatically handles large files defined in `.gitattributes`. When you add images, videos, or other large files, they're automatically tracked by LFS.
+
+**Note:** If you cloned before Git LFS was set up, you may need to pull LFS files:
+```bash
+git lfs pull
+```
+
+### Pre-commit Hooks
 
 Install [pre-commit](https://pre-commit.com/) hooks (one-time setup):
 
@@ -66,9 +86,9 @@ Use `make lint` / `make format` during development for fast feedback on Python f
 
 ```bash
 # Fork via GitHub UI, then:
-git clone git@github.com:YOUR_USERNAME/mirela-sdk.git
-cd mirela-sdk
-git remote add upstream git@github.com:Black-Bee-Drones/mirela-sdk.git
+git clone git@github.com:YOUR_USERNAME/nectar-sdk.git
+cd nectar-sdk
+git remote add upstream git@github.com:Black-Bee-Drones/nectar-sdk.git
 ```
 
 ### 2. Create Feature Branch
@@ -198,5 +218,5 @@ Be patient and responsive to feedback. Thank you for contributing!
 
 ## Questions?
 
-- [GitHub Discussions](https://github.com/Black-Bee-Drones/mirela-sdk/discussions) for general questions
-- [GitHub Issues](https://github.com/Black-Bee-Drones/mirela-sdk/issues) for bugs/features
+- [GitHub Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) for general questions
+- [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) for bugs/features
