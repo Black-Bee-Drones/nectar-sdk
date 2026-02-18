@@ -27,6 +27,9 @@ cmd_build() {
     cd "$WORKSPACE_DIR"
     source "/opt/ros/${ROS_DISTRO}/setup.bash"
     colcon build --symlink-install
+    if [ -f "install/setup.bash" ]; then
+        source "install/setup.bash"
+    fi
     log_success "Workspace built"
 }
 
@@ -35,6 +38,9 @@ cmd_build_pkg() {
     cd "$WORKSPACE_DIR"
     source "/opt/ros/${ROS_DISTRO}/setup.bash"
     colcon build --symlink-install --packages-select "$INTERFACES_PKG_NAME" "$ROS2_PKG_NAME"
+    if [ -f "install/setup.bash" ]; then
+        source "install/setup.bash"
+    fi
     log_success "Packages built"
 }
 
