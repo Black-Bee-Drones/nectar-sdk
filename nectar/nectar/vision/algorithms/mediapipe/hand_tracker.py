@@ -13,17 +13,17 @@ from mediapipe.tasks.python import vision
 
 try:
     from mediapipe.tasks.python.vision import (
+        HandLandmarksConnections,
+    )
+    from mediapipe.tasks.python.vision import (
         drawing_styles as mp_styles,
     )
     from mediapipe.tasks.python.vision import (
         drawing_utils as mp_drawing,
     )
-    from mediapipe.tasks.python.vision import (
-        HandLandmarksConnections,
-    )
 
     _MP_NEW_API = True
-    landmark_pb2 = None 
+    landmark_pb2 = None
 except ImportError:
     try:
         from mediapipe.framework.formats import landmark_pb2
@@ -176,14 +176,9 @@ class HandTracker:
 
     # Depth estimation calibration data (pixel distance → cm)
     _DEPTH_CALIB_X = (
-        np.array(
-            [300, 245, 200, 170, 145, 130, 112, 103, 93, 87, 80, 75, 70, 67, 62, 59, 57]
-        )
-        / 1.5
+        np.array([300, 245, 200, 170, 145, 130, 112, 103, 93, 87, 80, 75, 70, 67, 62, 59, 57]) / 1.5
     )
-    _DEPTH_CALIB_Y = np.array(
-        [20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
-    )
+    _DEPTH_CALIB_Y = np.array([20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100])
 
     def __init__(self, config: Optional[HandTrackerConfig] = None):
         self._config = config or HandTrackerConfig()
@@ -456,9 +451,7 @@ class HandTracker:
 
         return fingers
 
-    def get_landmarks(
-        self, hand_idx: int = 0, landmark_ids: Optional[List[int]] = None
-    ) -> list:
+    def get_landmarks(self, hand_idx: int = 0, landmark_ids: Optional[List[int]] = None) -> list:
         """Get normalized landmarks for a specific hand.
 
         Parameters
