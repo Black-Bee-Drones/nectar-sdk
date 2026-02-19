@@ -54,6 +54,7 @@ from nectar.vision.nodes import (
     ArucoNode,
     ClickColorCalibrationNode,
     ColorCalibrationNode,
+    IMX219PublisherNode,
     LineDetectionNode,
     WebcamPublisherNode,
 )
@@ -119,6 +120,7 @@ __all__ = [
     "ArucoNode",
     "ClickColorCalibrationNode",
     "ColorCalibrationNode",
+    "IMX219PublisherNode",
     "LineDetectionNode",
     "WebcamPublisherNode",
 ]
