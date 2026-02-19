@@ -35,7 +35,7 @@ control = [
 ]
 
 vision = [
-    "mediapipe==0.10.32",
+    "mediapipe>=0.10.18,<0.11.0",
 ]
 
 ai = [
@@ -53,7 +53,7 @@ ai = [
 ]
 
 interface = [
-    "PySide6==6.10.2",
+    "PySide6>=6.8.0,<7.0.0",
     "pyqtgraph==0.14.0",
 ]
 

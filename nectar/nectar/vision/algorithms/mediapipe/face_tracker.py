@@ -9,15 +9,26 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.vision import (
-    FaceLandmarksConnections,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_styles as mp_styles,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_utils as mp_drawing,
-)
+
+try:
+    from mediapipe.tasks.python.vision import (
+        drawing_styles as mp_styles,
+    )
+    from mediapipe.tasks.python.vision import (
+        drawing_utils as mp_drawing,
+    )
+    from mediapipe.tasks.python.vision import (
+        FaceLandmarksConnections,
+    )
+
+    _MP_NEW_API = True
+    landmark_pb2 = None
+except ImportError:
+    try:
+        from mediapipe.framework.formats import landmark_pb2
+    except ImportError:
+        landmark_pb2 = None
+    _MP_NEW_API = False
 
 
 class FaceLandmarkRegion:
@@ -325,13 +336,30 @@ class FaceMeshTracker:
         self._detection_result: Optional[vision.FaceLandmarkerResult] = None
         self._is_running = False
 
-        # Drawing connections
-        self._face_tesselation = FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
-        self._face_contours = FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS
-        self._face_irises = (
-            FaceLandmarksConnections.FACE_LANDMARKS_LEFT_IRIS
-            + FaceLandmarksConnections.FACE_LANDMARKS_RIGHT_IRIS
-        )
+        if _MP_NEW_API:
+            self._face_tesselation = FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
+            self._face_contours = FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS
+            self._face_irises = (
+                FaceLandmarksConnections.FACE_LANDMARKS_LEFT_IRIS
+                + FaceLandmarksConnections.FACE_LANDMARKS_RIGHT_IRIS
+            )
+        else:
+            self._mp_face_mesh = mp.solutions.face_mesh
+            self._mp_drawing = mp.solutions.drawing_utils
+            self._mp_drawing_styles = mp.solutions.drawing_styles
+            self._face_tesselation = self._mp_face_mesh.FACEMESH_TESSELATION
+            self._face_contours = (
+                self._mp_face_mesh.FACEMESH_CONTOURS
+                | self._mp_face_mesh.FACEMESH_LEFT_EYE
+                | self._mp_face_mesh.FACEMESH_RIGHT_EYE
+                | self._mp_face_mesh.FACEMESH_LEFT_EYEBROW
+                | self._mp_face_mesh.FACEMESH_RIGHT_EYEBROW
+                | self._mp_face_mesh.FACEMESH_LIPS
+            )
+            self._face_irises = (
+                self._mp_face_mesh.FACEMESH_LEFT_IRIS
+                | self._mp_face_mesh.FACEMESH_RIGHT_IRIS
+            )
 
     def __enter__(self) -> "FaceMeshTracker":
         """Context manager entry."""
@@ -461,32 +489,71 @@ class FaceMeshTracker:
             return image
 
         for face_landmarks in self._detection_result.face_landmarks:
-            if draw_tesselation:
-                mp_drawing.draw_landmarks(
-                    image=image,
-                    landmark_list=face_landmarks,
-                    connections=self._face_tesselation,
-                    landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_styles.get_default_face_mesh_tesselation_style(),
-                )
+            if _MP_NEW_API:
+                if draw_tesselation:
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=self._face_tesselation,
+                        landmark_drawing_spec=None,
+                        connection_drawing_spec=mp_styles.get_default_face_mesh_tesselation_style(),
+                    )
 
-            if draw_contours:
-                mp_drawing.draw_landmarks(
-                    image=image,
-                    landmark_list=face_landmarks,
-                    connections=self._face_contours,
-                    landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_styles.get_default_face_mesh_contours_style(),
-                )
+                if draw_contours:
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=self._face_contours,
+                        landmark_drawing_spec=None,
+                        connection_drawing_spec=mp_styles.get_default_face_mesh_contours_style(),
+                    )
 
-            if draw_irises:
-                mp_drawing.draw_landmarks(
-                    image=image,
-                    landmark_list=face_landmarks,
-                    connections=self._face_irises,
-                    landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_styles.get_default_face_mesh_iris_connections_style(),
-                )
+                if draw_irises:
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=self._face_irises,
+                        landmark_drawing_spec=None,
+                        connection_drawing_spec=mp_styles.get_default_face_mesh_iris_connections_style(),
+                    )
+            else:
+                if landmark_pb2 is not None:
+                    face_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+                    face_landmarks_proto.landmark.extend(
+                        [
+                            landmark_pb2.NormalizedLandmark(
+                                x=landmark.x, y=landmark.y, z=landmark.z
+                            )
+                            for landmark in face_landmarks
+                        ]
+                    )
+
+                    if draw_tesselation:
+                        self._mp_drawing.draw_landmarks(
+                            image=image,
+                            landmark_list=face_landmarks_proto,
+                            connections=self._face_tesselation,
+                            landmark_drawing_spec=None,
+                            connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_tesselation_style(),
+                        )
+
+                    if draw_contours:
+                        self._mp_drawing.draw_landmarks(
+                            image=image,
+                            landmark_list=face_landmarks_proto,
+                            connections=self._face_contours,
+                            landmark_drawing_spec=None,
+                            connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_contours_style(),
+                        )
+
+                    if draw_irises:
+                        self._mp_drawing.draw_landmarks(
+                            image=image,
+                            landmark_list=face_landmarks_proto,
+                            connections=self._face_irises,
+                            landmark_drawing_spec=None,
+                            connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_iris_connections_style(),
+                        )
 
         return image
 
@@ -553,7 +620,10 @@ class FaceMeshTracker:
         results = []
         for idx, face_landmarks in enumerate(self._detection_result.face_landmarks):
             blendshapes = None
-            if self._config.output_blendshapes and self._detection_result.face_blendshapes:
+            if (
+                self._config.output_blendshapes
+                and self._detection_result.face_blendshapes
+            ):
                 blendshapes = self._detection_result.face_blendshapes[idx]
 
             results.append(
@@ -564,7 +634,9 @@ class FaceMeshTracker:
             )
         return results
 
-    def get_landmarks(self, face_idx: int = 0, landmark_ids: Optional[List[int]] = None) -> list:
+    def get_landmarks(
+        self, face_idx: int = 0, landmark_ids: Optional[List[int]] = None
+    ) -> list:
         """Get face landmarks for a specific face.
 
         Parameters
@@ -672,9 +744,12 @@ class FaceMeshTracker:
         left_corner = landmarks[78]
         right_corner = landmarks[308]
 
-        v_dist = np.sqrt((upper_lip.x - lower_lip.x) ** 2 + (upper_lip.y - lower_lip.y) ** 2)
+        v_dist = np.sqrt(
+            (upper_lip.x - lower_lip.x) ** 2 + (upper_lip.y - lower_lip.y) ** 2
+        )
         h_dist = np.sqrt(
-            (left_corner.x - right_corner.x) ** 2 + (left_corner.y - right_corner.y) ** 2
+            (left_corner.x - right_corner.x) ** 2
+            + (left_corner.y - right_corner.y) ** 2
         )
 
         if h_dist == 0:
