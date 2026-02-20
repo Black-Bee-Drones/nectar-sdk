@@ -52,11 +52,10 @@ from nectar.vision.camera import (
 )
 from nectar.vision.nodes import (
     ArucoNode,
+    CameraPublisherNode,
     ClickColorCalibrationNode,
     ColorCalibrationNode,
-    IMX219PublisherNode,
     LineDetectionNode,
-    WebcamPublisherNode,
 )
 from nectar.vision.utils import ImageCalculus
 
@@ -120,7 +119,6 @@ __all__ = [
     "ArucoNode",
     "ClickColorCalibrationNode",
     "ColorCalibrationNode",
-    "IMX219PublisherNode",
     "LineDetectionNode",
-    "WebcamPublisherNode",
+    "CameraPublisherNode",
 ]
