@@ -17,9 +17,7 @@ from nectar.vision.camera.config import (
 )
 
 
-def _get_param(
-    params: Union[Node, Dict[str, Any]], key: str, default: Any = None
-) -> Any:
+def _get_param(params: Union[Node, Dict[str, Any]], key: str, default: Any = None) -> Any:
     """Extract parameter from Node or dict."""
     if isinstance(params, Node):
         return params.get_parameter(key).value
