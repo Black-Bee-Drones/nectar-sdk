@@ -1,5 +1,5 @@
-from typing import Optional
 from time import sleep
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -33,11 +33,11 @@ class IMX219Cam(AbstractCam):
         super().__init__(name=config.name)
         self._config = config
         self._cap: Optional[cv2.VideoCapture] = None
-        self._brightness: Optional[float] = config.brightness # Mutable runtime override
+        self._brightness: Optional[float] = config.brightness  # Mutable runtime override
 
     def _build_gstreamer_pipeline(self) -> str:
         """Build GStreamer pipeline string for nvarguscamerasrc."""
-        
+
         brightness_element = ""
         if self._brightness is not None:
             brightness_element = f"videobalance brightness={self._brightness:.4f} ! "
@@ -99,7 +99,7 @@ class IMX219Cam(AbstractCam):
         """Release and reopen the GStreamer pipeline with current settings."""
         if self._is_running:
             self.close()
-            sleep(0.2) # Short delay to ensure resources are released before restarting
+            sleep(0.2)  # Short delay to ensure resources are released before restarting
         self.start()
 
     def get_frame(self) -> Optional[np.ndarray]:

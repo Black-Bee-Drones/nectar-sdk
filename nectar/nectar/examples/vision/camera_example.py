@@ -1,18 +1,9 @@
 #!/usr/bin/env python3
-import cv2
 import rclpy
 from rclpy.node import Node
 
-from nectar.vision.camera import (
-    C920Config,
-    ImageHandler,
-    IMX219Config,
-    OakDConfig,
-    OpenCVConfig,
-    RealSenseConfig,
-    ROSConfig,
-    ROSDepthConfig,
-)
+from nectar.vision.camera import ImageHandler
+from nectar.vision.camera.config_builder import ConfigBuilder
 
 
 class CameraExampleNode(Node):
@@ -42,45 +33,48 @@ class CameraExampleNode(Node):
 
     def _get_camera_config(self, camera_type: str) -> tuple:
         """Return (config, source_key) for the given camera type."""
-        if camera_type == "webcam":
-            return (
-                OpenCVConfig(device_index=0, width=1280, height=720, fps=30),
-                "webcam",
-            )
-        if camera_type == "imx219":
-            return IMX219Config(sensor_id=0, width=1280, height=720, flip=2), "imx219"
-        if camera_type == "realsense":
-            return (
-                RealSenseConfig(color_res=(1280, 720), depth_res=(1280, 720), fps=30),
-                "realsense",
-            )
-        if camera_type == "realsense_ros":
-            return (
-                ROSDepthConfig(
-                    topic="/camera/color/image_raw/compressed",
-                    compressed=True,
-                    depth_topic="/camera/depth/image_rect_raw",
-                    depth_compressed=False,
-                ),
-                "ros_depth",
-            )
-        if camera_type == "c920":
-            return C920Config(profile=1), "c920"
-        if camera_type == "oakd":
-            return OakDConfig(), "oakd"
-        if camera_type == "ros":
-            return (
-                ROSConfig(topic="/camera/color/image_raw/compressed", compressed=True),
-                "ros",
-            )
+        source_key = camera_type
 
-        return None, camera_type
+        if camera_type == "webcam":
+            params = {"device_index": 0, "width": 1280, "height": 720, "fps": 30}
+        elif camera_type == "imx219":
+            params = {"sensor_id": 0, "width": 1280, "height": 720, "flip": 2}
+        elif camera_type == "realsense":
+            params = {
+                "color_width": 1280,
+                "color_height": 720,
+                "depth_width": 1280,
+                "depth_height": 720,
+                "fps": 30,
+            }
+        elif camera_type == "realsense_ros":
+            params = {
+                "topic": "/camera/color/image_raw/compressed",
+                "compressed": True,
+                "depth_topic": "/camera/depth/image_rect_raw",
+                "depth_compressed": False,
+            }
+            source_key = "ros_depth"
+        elif camera_type == "c920":
+            params = {"profile": 1}
+        elif camera_type == "oakd":
+            params = {}
+        elif camera_type == "ros":
+            params = {
+                "topic": "/camera/color/image_raw/compressed",
+                "compressed": True,
+            }
+        else:
+            return None, camera_type
+
+        config = ConfigBuilder.build(source_key, params)
+        return config, source_key
 
     def process_frame(self, frame):
         if frame is not None:
             self.count += 1
             self.get_logger().info(f"Received frame with shape: {frame.shape}")
-            cv2.imwrite(f"frame_{self.count}.png", frame)
+            # cv2.imwrite(f"frame_{self.count}.png", frame)
 
     def destroy_node(self):
         self.image_handler.cleanup()
