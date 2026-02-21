@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import cv2
 import rclpy
@@ -9,35 +9,10 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage, Image
 
-from nectar.vision.camera.config import (
-    C920Config,
-    CameraConfig,
-    FileImageConfig,
-    IMX219Config,
-    OakDConfig,
-    OpenCVConfig,
-    QoSDurability,
-    QoSReliability,
-    RealSenseConfig,
-    ROSConfig,
-    ROSDepthConfig,
-)
+from nectar.vision.camera.config import CameraConfig
+from nectar.vision.camera.config_builder import ConfigBuilder
 from nectar.vision.camera.factory import CameraFactory
 from nectar.vision.camera.handler import ImageHandler
-
-
-# Maps camera_source values to their config class for reference.
-_SOURCE_CONFIG_MAP: Dict[str, type] = {
-    "webcam": OpenCVConfig,
-    "opencv": OpenCVConfig,
-    "c920": C920Config,
-    "imx219": IMX219Config,
-    "realsense": RealSenseConfig,
-    "oakd": OakDConfig,
-    "ros": ROSConfig,
-    "ros_depth": ROSDepthConfig,
-    "file": FileImageConfig,
-}
 
 
 class CameraPublisherNode(Node):
@@ -190,7 +165,7 @@ class CameraPublisherNode(Node):
     def __init__(self):
         super().__init__("camera_publisher")
 
-        # ── General parameters ──────────────────────────────────────────
+        # General parameters
         self.declare_parameter("camera_source", "webcam")
         self.declare_parameter("use_compression", True)
         self.declare_parameter("jpeg_quality", 80)
@@ -198,7 +173,7 @@ class CameraPublisherNode(Node):
         self.declare_parameter("poll_interval", -1.0)
         self.declare_parameter("frame_timeout", -1.0)
 
-        # ── OpenCV / Webcam parameters ──────────────────────────────────
+        # OpenCV / Webcam parameters
         self.declare_parameter("device_index", 0)
         self.declare_parameter("fps", 30)
         self.declare_parameter("width", 640)
@@ -209,15 +184,15 @@ class CameraPublisherNode(Node):
         self.declare_parameter("buffer_size", 2)
         self.declare_parameter("threaded", True)
 
-        # ── C920 parameters ─────────────────────────────────────────────
+        # C920 parameters
         self.declare_parameter("profile", 1)
         self.declare_parameter("fallback_device_index", 0)
 
-        # ── IMX219 parameters ──────────────────────────────────────────–
+        # IMX219 parameters
         self.declare_parameter("sensor_id", 0)
         self.declare_parameter("flip", 0)
 
-        # ── RealSense parameters ────────────────────────────────────────
+        # RealSense parameters
         self.declare_parameter("color_width", 640)
         self.declare_parameter("color_height", 480)
         self.declare_parameter("depth_width", 640)
@@ -230,10 +205,10 @@ class CameraPublisherNode(Node):
         self.declare_parameter("color_compressed", True)
         self.declare_parameter("depth_compressed", False)
 
-        # ── OAK-D parameters ───────────────────────────────────────────
+        # OAK-D parameters
         self.declare_parameter("cam_num", 1)
 
-        # ── ROS camera parameters ──────────────────────────────────────
+        # ROS camera parameters
         self.declare_parameter("topic", "/image_raw")
         self.declare_parameter("compressed", False)
         self.declare_parameter("reliability", "best_effort")
@@ -242,10 +217,10 @@ class CameraPublisherNode(Node):
         self.declare_parameter("encoding", "bgr8")
         self.declare_parameter("depth_encoding", "passthrough")
 
-        # ── File parameters ────────────────────────────────────────────
+        # File parameters
         self.declare_parameter("file_path", "")
 
-        # ── Read general values ─────────────────────────────────────────
+        # Read general values
         self.camera_source: str = self.get_parameter("camera_source").value
         self.use_compression: bool = self.get_parameter("use_compression").value
         self.jpeg_quality: int = self.get_parameter("jpeg_quality").value
@@ -255,7 +230,7 @@ class CameraPublisherNode(Node):
 
         self._is_shutdown = False
 
-        # ── Publisher ───────────────────────────────────────────────────
+        # Publisher
         qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
@@ -273,21 +248,19 @@ class CameraPublisherNode(Node):
         self.bridge = CvBridge()
         self.jpeg_params = (cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality)
 
-        # ── FPS tracking ────────────────────────────────────────────────
+        # FPS tracking
         self._frame_count = 0
         self._fps_start_time = time.time()
         self._current_fps = 0.0
 
-        # ── Build config & camera ───────────────────────────────────────
+        # Build config & camera
         config = self._build_config()
-        camera = CameraFactory.from_source(
-            self.camera_source, config=config, node=self
-        )
+        camera = CameraFactory.from_source(self.camera_source, config=config, node=self)
         camera.start()
 
         self._log_camera_info(camera)
 
-        # ── Compute poll / timeout defaults ─────────────────────────────
+        # Compute poll / timeout defaults
         poll_interval = self._resolve_poll_interval(camera)
         frame_timeout = self._resolve_frame_timeout(camera)
 
@@ -304,132 +277,22 @@ class CameraPublisherNode(Node):
         self.image_handler.run()
 
         if self.log_fps_interval > 0:
-            self.fps_timer = self.create_timer(
-                self.log_fps_interval, self._log_fps_stats
-            )
+            self.fps_timer = self.create_timer(self.log_fps_interval, self._log_fps_stats)
 
         self.get_logger().info(
             f"Camera publisher started — source: {self.camera_source}, "
             f"compression: {self.use_compression}"
         )
 
-    # ── Config builders ─────────────────────────────────────────────────
-
     def _build_config(self) -> CameraConfig:
         """Build the camera-specific config from ROS parameters."""
-        source = self.camera_source.lower()
-
-        if source in ("webcam", "opencv"):
-            return self._build_opencv_config()
-        elif source == "c920":
-            return self._build_c920_config()
-        elif source == "imx219":
-            return self._build_imx219_config()
-        elif source == "realsense":
-            return self._build_realsense_config()
-        elif source == "oakd":
-            return self._build_oakd_config()
-        elif source == "ros":
-            return self._build_ros_config()
-        elif source == "ros_depth":
-            return self._build_ros_depth_config()
-        elif source == "file":
-            return self._build_file_config()
-        else:
-            # Let the factory try auto-detection (file path, ROS topic, etc.)
+        if not ConfigBuilder.is_registered(self.camera_source):
             self.get_logger().info(
                 f"Source '{self.camera_source}' not a known key — "
                 "passing directly to CameraFactory for auto-detection."
             )
-            return CameraConfig(name=self.camera_source)
 
-    def _build_opencv_config(self) -> OpenCVConfig:
-        return OpenCVConfig(
-            name="camera",
-            device_index=self.get_parameter("device_index").value,
-            width=self.get_parameter("width").value,
-            height=self.get_parameter("height").value,
-            fps=self.get_parameter("fps").value,
-            fourcc=self.get_parameter("fourcc").value,
-            autofocus=self.get_parameter("autofocus").value,
-            focus=self.get_parameter("focus").value,
-            buffer_size=min(max(self.get_parameter("buffer_size").value, 1), 10),
-            threaded=self.get_parameter("threaded").value,
-        )
-
-    def _build_c920_config(self) -> C920Config:
-        return C920Config(
-            name="c920",
-            profile=self.get_parameter("profile").value,
-            fallback_device_index=self.get_parameter("fallback_device_index").value,
-        )
-
-    def _build_imx219_config(self) -> IMX219Config:
-        return IMX219Config(
-            sensor_id=self.get_parameter("sensor_id").value,
-            width=self.get_parameter("width").value,
-            height=self.get_parameter("height").value,
-            fps=self.get_parameter("fps").value,
-            flip=self.get_parameter("flip").value,
-            brightness=self.get_parameter("brightness").value,
-        )
-
-    def _build_realsense_config(self) -> RealSenseConfig:
-        return RealSenseConfig(
-            color_res=(
-                self.get_parameter("color_width").value,
-                self.get_parameter("color_height").value,
-            ),
-            depth_res=(
-                self.get_parameter("depth_width").value,
-                self.get_parameter("depth_height").value,
-            ),
-            fps=self.get_parameter("fps").value,
-            align_to_color=self.get_parameter("align_to_color").value,
-            enable_depth=self.get_parameter("enable_depth").value,
-            use_ros_topics=self.get_parameter("use_ros_topics").value,
-            color_topic=self.get_parameter("color_topic").value,
-            depth_topic=self.get_parameter("depth_topic").value,
-            color_compressed=self.get_parameter("color_compressed").value,
-            depth_compressed=self.get_parameter("depth_compressed").value,
-        )
-
-    def _build_oakd_config(self) -> OakDConfig:
-        return OakDConfig(
-            cam_num=self.get_parameter("cam_num").value,
-            enable_depth=self.get_parameter("enable_depth").value,
-        )
-
-    def _build_ros_config(self) -> ROSConfig:
-        return ROSConfig(
-            topic=self.get_parameter("topic").value,
-            compressed=self.get_parameter("compressed").value,
-            reliability=QoSReliability(self.get_parameter("reliability").value),
-            durability=QoSDurability(self.get_parameter("durability").value),
-            history_depth=self.get_parameter("history_depth").value,
-            encoding=self.get_parameter("encoding").value,
-        )
-
-    def _build_ros_depth_config(self) -> ROSDepthConfig:
-        return ROSDepthConfig(
-            topic=self.get_parameter("topic").value,
-            compressed=self.get_parameter("compressed").value,
-            reliability=QoSReliability(self.get_parameter("reliability").value),
-            durability=QoSDurability(self.get_parameter("durability").value),
-            history_depth=self.get_parameter("history_depth").value,
-            encoding=self.get_parameter("encoding").value,
-            depth_topic=self.get_parameter("depth_topic").value,
-            depth_compressed=self.get_parameter("depth_compressed").value,
-            depth_encoding=self.get_parameter("depth_encoding").value,
-            enable_depth=self.get_parameter("enable_depth").value,
-        )
-
-    def _build_file_config(self) -> FileImageConfig:
-        return FileImageConfig(
-            path=self.get_parameter("file_path").value,
-        )
-
-    # ── Helpers ─────────────────────────────────────────────────────────
+        return ConfigBuilder.build(self.camera_source, self)
 
     def _resolve_poll_interval(self, camera: Any) -> float:
         """Return poll interval, using override or a sensible default."""
@@ -440,7 +303,6 @@ class CameraPublisherNode(Node):
         if is_threaded:
             return 0.001
 
-        # Try to derive from FPS in config or camera settings
         fps = self._get_effective_fps(camera)
         return 1.0 / max(fps, 1)
 
@@ -455,12 +317,10 @@ class CameraPublisherNode(Node):
     @staticmethod
     def _get_effective_fps(camera: Any) -> float:
         """Best-effort extraction of effective FPS from camera."""
-        # OpenCVCam exposes actual_settings
         actual = getattr(camera, "actual_settings", None)
         if actual and "fps" in actual:
             return float(actual["fps"])
 
-        # Fall back to config attribute
         cfg = getattr(camera, "_config", None)
         if cfg:
             fps = getattr(cfg, "fps", None)
@@ -483,11 +343,7 @@ class CameraPublisherNode(Node):
                     f"({requested_fps}). This is a hardware/driver limitation."
                 )
         else:
-            self.get_logger().info(
-                f"Camera '{self.camera_source}' started successfully."
-            )
-
-    # ── Frame publishing ────────────────────────────────────────────────
+            self.get_logger().info(f"Camera '{self.camera_source}' started successfully.")
 
     def _publish_frame(self, frame) -> None:
         """
