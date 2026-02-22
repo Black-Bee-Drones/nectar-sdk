@@ -79,8 +79,8 @@ class VisDroneHandler:
             splits = ["train", "val", "test"]
 
         try:
-            from ultralytics.utils.downloads import download
             from ultralytics.utils import ASSETS_URL
+            from ultralytics.utils.downloads import download
         except ImportError as exc:
             raise ImportError(
                 "ultralytics required for download. Install: pip install ultralytics"
@@ -296,9 +296,7 @@ class VisDroneHandler:
                     w_norm = w * dw
                     h_norm = h * dh
 
-                    lines.append(
-                        f"{cls} {x_center:.6f} {y_center:.6f} {w_norm:.6f} {h_norm:.6f}\n"
-                    )
+                    lines.append(f"{cls} {x_center:.6f} {y_center:.6f} {w_norm:.6f} {h_norm:.6f}\n")
 
             if lines:
                 label_path = labels_dir / ann_file.name
@@ -321,9 +319,7 @@ class VisDroneHandler:
         target_split = self.output_dir / split
         target_split.mkdir(parents=True, exist_ok=True)
 
-        categories = [
-            {"id": i, "name": name} for i, name in self.VISDRONE_CLASSES.items()
-        ]
+        categories = [{"id": i, "name": name} for i, name in self.VISDRONE_CLASSES.items()]
 
         coco_data = {"images": [], "annotations": [], "categories": categories}
 
@@ -432,9 +428,7 @@ def main():
     """CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Download and convert VisDrone dataset"
-    )
+    parser = argparse.ArgumentParser(description="Download and convert VisDrone dataset")
     parser.add_argument("--output-dir", required=True, help="Output directory")
     parser.add_argument(
         "--format",
