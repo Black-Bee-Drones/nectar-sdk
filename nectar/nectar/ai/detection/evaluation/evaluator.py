@@ -1,12 +1,13 @@
-"""Object detection evaluator."""
+"""Object detection evaluator"""
 
 import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
+import pandas as pd
 
 try:
     import torch
@@ -27,17 +28,36 @@ from tqdm import tqdm
 
 from nectar.ai.detection.core.configs import EvaluationConfig, EvaluationMetrics
 from nectar.ai.detection.core.types import DetectionInput
+from nectar.ai.detection.evaluation.analysis import (
+    compute_curves,
+    create_error_statistics,
+    process_evaluation_results,
+    save_error_statistics_csv,
+)
+from nectar.ai.detection.evaluation.visualizations import (
+    generate_evaluation_report,
+    plot_confidence_curve,
+    plot_confusion_matrix,
+    plot_error_analysis,
+    plot_metrics_summary,
+    plot_performance_analysis,
+    plot_pr_curve,
+    plot_prediction_samples,
+    save_per_class_metrics,
+)
 from nectar.ai.detection.models.dataset import load_detection_dataset
 
 logger = logging.getLogger(__name__)
+
+_RAW_CONF_THRESHOLD = 0.001
 
 
 class ObjectDetectionEvaluator:
     """
     Evaluator for object detection models.
 
-    Calculates metrics including mAP, precision, recall, F1-score
-    and generates visualizations.
+    Runs inference at a low confidence threshold to capture all predictions
+    (like Ultralytics), then computes metrics at the user-specified threshold.
 
     Parameters
     ----------
@@ -45,19 +65,6 @@ class ObjectDetectionEvaluator:
         Detection model implementing predict() method.
     config : EvaluationConfig
         Evaluation configuration.
-
-    Examples
-    --------
-    >>> from nectar.ai.detection import YOLODetector, EvaluationConfig
-    >>> detector = YOLODetector("yolov8n.pt")
-    >>> config = EvaluationConfig(
-    ...     model_path="best.pt",
-    ...     dataset_path="/path/to/dataset",
-    ...     split="test",
-    ... )
-    >>> evaluator = ObjectDetectionEvaluator(detector, config)
-    >>> metrics = evaluator.evaluate()
-    >>> print(f"mAP@50: {metrics.map50:.4f}")
     """
 
     def __init__(self, model: Any, config: EvaluationConfig):
@@ -65,9 +72,7 @@ class ObjectDetectionEvaluator:
         self.config = config
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.logger = logging.getLogger(__name__)
 
-        # Device setup
         if config.device != "auto":
             self.device = config.device
         elif torch and torch.cuda.is_available():
@@ -78,352 +83,357 @@ class ObjectDetectionEvaluator:
             self.device = "cpu"
 
     def evaluate(self) -> EvaluationMetrics:
-        """
-        Run evaluation on dataset.
-
-        Returns
-        -------
-        EvaluationMetrics
-            Evaluation results including mAP, precision, recall, F1.
-        """
         if sv is None:
             raise ImportError("supervision is required for evaluation")
 
-        # Load dataset
         dataset = load_detection_dataset(
-            self.config.dataset_path,
-            self.config.dataset_type,
-            self.config.split,
+            self.config.dataset_path, self.config.dataset_type, self.config.split
         )
 
-        # Collect all data
-        all_images = []
-        all_paths = []
-        all_gts = []
-
+        all_paths, all_images, all_gts = [], [], []
         for path, image, gt in dataset:
             all_paths.append(path)
             all_images.append(image)
             all_gts.append(gt)
 
-        # Limit samples if specified
         if self.config.num_samples and self.config.num_samples < len(all_images):
-            all_images = all_images[: self.config.num_samples]
             all_paths = all_paths[: self.config.num_samples]
+            all_images = all_images[: self.config.num_samples]
             all_gts = all_gts[: self.config.num_samples]
 
-        self.logger.info(f"Evaluating on {len(all_images)} images")
+        logger.info("Evaluating on %d images", len(all_images))
 
-        # Run predictions
-        all_preds = []
-        all_times = []
-        results = []
+        # Run inference at low conf threshold to capture all predictions
+        all_preds, all_times, raw_results = self._run_inference(all_images, all_paths, all_gts)
 
-        for i in tqdm(range(0, len(all_images), self.config.batch_size), desc="Evaluating"):
-            batch_images = all_images[i : i + self.config.batch_size]
-            batch_paths = all_paths[i : i + self.config.batch_size]
-            batch_gts = all_gts[i : i + self.config.batch_size]
+        # Save raw results (with all detections)
+        with open(self.output_dir / "evaluation_results.json", "w", encoding="utf-8") as f:
+            json.dump(raw_results, f, indent=2)
 
-            detection_input = DetectionInput(
-                image=batch_images,
-                conf_threshold=self.config.conf_threshold,
-                iou_threshold=self.config.iou_threshold,
-                device=self.device,
+        # Filter predictions at user's conf_threshold for supervision metrics
+        filtered_preds = self._filter_by_confidence(all_preds, self.config.conf_threshold)
+
+        # Compute supervision metrics on filtered predictions
+        metrics_dict, per_class_metrics = self._compute_metrics(
+            filtered_preds, all_gts, dataset.classes
+        )
+
+        avg_time = sum(all_times) / len(all_times) if all_times else 0
+        metrics_dict["inference_time_per_image"] = avg_time
+        metrics_dict["total_detections"] = sum(len(p) for p in filtered_preds)
+
+        # Save overall metrics
+        pd.DataFrame([metrics_dict]).to_csv(self.output_dir / "evaluation_metrics.csv", index=False)
+        with open(self.output_dir / "metrics_summary.json", "w", encoding="utf-8") as f:
+            json.dump(metrics_dict, f, indent=2)
+
+        save_per_class_metrics(per_class_metrics, self.output_dir)
+        self._log_per_class_table(per_class_metrics)
+
+        # Compute per-class curves from raw (unfiltered) predictions
+        names = {i: n for i, n in enumerate(dataset.classes)}
+        num_classes = len(dataset.classes)
+
+        visualizations = {}
+
+        try:
+            px, py_p, py_r, py_f1, ap_curve = compute_curves(
+                all_preds, all_gts, num_classes, self.config.iou_threshold
             )
 
-            start_time = time.time()
+            path = plot_pr_curve(px, py_p, ap_curve, names, self.output_dir)
+            visualizations["PR_curve"] = path
+
+            path = plot_confidence_curve(
+                px, py_p, names, self.output_dir, "Precision", "P_curve.png"
+            )
+            visualizations["P_curve"] = path
+
+            path = plot_confidence_curve(px, py_r, names, self.output_dir, "Recall", "R_curve.png")
+            visualizations["R_curve"] = path
+
+            path = plot_confidence_curve(px, py_f1, names, self.output_dir, "F1", "F1_curve.png")
+            visualizations["F1_curve"] = path
+        except Exception as e:
+            logger.error("Failed to generate curve plots: %s", e)
+
+        try:
+            path = plot_metrics_summary(metrics_dict, self.output_dir)
+            visualizations["results"] = path
+        except Exception as e:
+            logger.error("Failed to generate metrics summary: %s", e)
+
+        try:
+            cm = sv.ConfusionMatrix.from_detections(
+                predictions=all_preds,
+                targets=all_gts,
+                classes=dataset.classes,
+                conf_threshold=self.config.conf_threshold,
+                iou_threshold=self.config.iou_threshold,
+            )
+            path = plot_confusion_matrix(cm, self.output_dir, dataset.classes)
+            visualizations["confusion_matrix"] = path
+        except Exception as e:
+            logger.error("Failed to generate confusion matrix: %s", e)
+
+        try:
+            cm_matrix, fps, fns = create_error_statistics(
+                self.output_dir,
+                dataset.classes,
+                self.config.iou_threshold,
+                self.config.conf_threshold,
+            )
+            path = plot_error_analysis(cm_matrix, fps, fns, dataset.classes, self.output_dir)
+            visualizations["error_analysis"] = path
+            save_error_statistics_csv(self.output_dir, dataset.classes, fps, fns)
+        except Exception as e:
+            logger.error("Failed to generate error analysis: %s", e)
+
+        try:
+            pr_curves = process_evaluation_results(self.output_dir, dataset.classes)
+            if pr_curves:
+                rows = []
+                for cid, data in pr_curves.items():
+                    name = dataset.classes[cid] if cid < len(dataset.classes) else f"class_{cid}"
+                    rows.append(
+                        {
+                            "class_id": cid,
+                            "class_name": name,
+                            "total_gt": data["total_gt"],
+                            "total_predictions": data["total_predictions"],
+                            "ap": data["ap"],
+                            "optimal_threshold": data["optimal_threshold"],
+                            "optimal_f1": data["optimal_f1"],
+                            "optimal_precision": data.get("optimal_precision", 0),
+                            "optimal_recall": data.get("optimal_recall", 0),
+                        }
+                    )
+                pd.DataFrame(rows).sort_values("ap", ascending=False).to_csv(
+                    self.output_dir / "pr_analysis_results.csv", index=False
+                )
+        except Exception as e:
+            logger.error("Failed to generate PR analysis CSV: %s", e)
+
+        try:
+            df = pd.DataFrame(per_class_metrics)
+            path = plot_performance_analysis(df, self.output_dir)
+            if path:
+                visualizations["performance_analysis"] = path
+        except Exception as e:
+            logger.error("Failed to generate performance analysis: %s", e)
+
+        try:
+            path = plot_prediction_samples(
+                all_images,
+                filtered_preds,
+                all_gts,
+                all_paths,
+                dataset.classes,
+                self.output_dir,
+            )
+            if path:
+                visualizations["prediction_samples"] = path
+        except Exception as e:
+            logger.error("Failed to generate prediction samples: %s", e)
+
+        try:
+            config_dict = {
+                "model_path": self.config.model_path,
+                "dataset_path": self.config.dataset_path,
+                "framework": self.config.framework,
+                "split": self.config.split,
+                "conf_threshold": self.config.conf_threshold,
+                "iou_threshold": self.config.iou_threshold,
+                "device": self.config.device,
+                "batch_size": self.config.batch_size,
+                "class_names": dataset.classes,
+            }
+            generate_evaluation_report(metrics_dict, config_dict, self.output_dir, raw_results)
+        except Exception as e:
+            logger.error("Failed to generate evaluation report: %s", e)
+
+        logger.info("mAP@50: %.4f", metrics_dict["map50"])
+        logger.info("mAP@50-95: %.4f", metrics_dict["map50_95"])
+        logger.info("Precision: %.4f", metrics_dict["precision"])
+        logger.info("Recall: %.4f", metrics_dict["recall"])
+        logger.info("F1: %.4f", metrics_dict["f1_score"])
+
+        return EvaluationMetrics(
+            map50=metrics_dict["map50"],
+            map50_95=metrics_dict["map50_95"],
+            mar50=metrics_dict.get("mar_100", 0),
+            mar50_95=metrics_dict.get("mar_10", 0),
+            precision=metrics_dict["precision"],
+            recall=metrics_dict["recall"],
+            f1_score=metrics_dict["f1_score"],
+            inference_time_per_image=avg_time,
+            total_detections=metrics_dict["total_detections"],
+            visualizations=visualizations,
+        )
+
+    def _run_inference(self, images, paths, gts):
+        preds = []
+        times = []
+        results = []
+
+        for i in tqdm(range(0, len(images), self.config.batch_size), desc="Evaluating"):
+            batch_imgs = images[i : i + self.config.batch_size]
+            batch_paths = paths[i : i + self.config.batch_size]
+            batch_gts = gts[i : i + self.config.batch_size]
+
+            detection_input = DetectionInput(
+                image=batch_imgs,
+                conf_threshold=_RAW_CONF_THRESHOLD,
+                iou_threshold=self.config.iou_threshold,
+                device=self.device,
+                imgsz=self.config.imgsz,
+            )
+
+            start = time.time()
             prediction = self.model.predict(detection_input)
-            batch_time = time.time() - start_time
+            elapsed = time.time() - start
 
             batch_preds = prediction.batch_detections or [prediction.detections]
-            all_preds.extend(batch_preds)
+            preds.extend(batch_preds)
 
-            for _ in range(len(batch_images)):
-                all_times.append(batch_time / len(batch_images))
+            per_image_time = elapsed / len(batch_imgs)
+            for _ in batch_imgs:
+                times.append(per_image_time)
 
-            # Save results
             for pred, gt, path in zip(batch_preds, batch_gts, batch_paths):
                 results.append(
                     {
                         "image_path": str(path),
-                        "ground_truth": self._detections_to_dict(gt),
-                        "predictions": self._detections_to_dict(pred),
-                        "inference_time": batch_time / len(batch_images),
+                        "ground_truth": self._detections_to_list(gt),
+                        "predictions": self._detections_to_list(pred),
+                        "inference_time": per_image_time,
                     }
                 )
 
-        # Save raw results
-        with open(self.output_dir / "evaluation_results.json", "w") as f:
-            json.dump(results, f, indent=2)
+        return preds, times, results
 
-        # Calculate metrics
-        metrics = self._calculate_metrics(all_preds, all_gts, dataset.classes)
+    @staticmethod
+    def _filter_by_confidence(preds, conf_threshold):
+        filtered = []
+        for pred in preds:
+            if pred.confidence is not None and len(pred) > 0:
+                mask = pred.confidence >= conf_threshold
+                filtered.append(pred[mask])
+            else:
+                filtered.append(pred)
+        return filtered
 
-        # Add timing info
-        metrics.inference_time_per_image = sum(all_times) / len(all_times) if all_times else 0
-        metrics.total_detections = sum(len(p) for p in all_preds)
-
-        # Generate visualizations
-        visualizations = self._generate_visualizations(
-            all_images, all_preds, all_gts, all_paths, dataset.classes
-        )
-        metrics.visualizations = visualizations
-
-        # Save metrics summary
-        self._save_metrics_summary(metrics)
-
-        return metrics
-
-    def _calculate_metrics(
-        self,
-        predictions: List["sv.Detections"],
-        targets: List["sv.Detections"],
-        classes: List[str],
-    ) -> EvaluationMetrics:
-        """Calculate evaluation metrics using supervision."""
-        # mAP
+    def _compute_metrics(self, preds, gts, classes):
         map_metric = MeanAveragePrecision()
-        map_metric.update(predictions=predictions, targets=targets)
+        map_metric.update(predictions=preds, targets=gts)
         map_result = map_metric.compute()
 
-        # mAR
         mar_metric = MeanAverageRecall()
-        mar_metric.update(predictions=predictions, targets=targets)
+        mar_metric.update(predictions=preds, targets=gts)
         mar_result = mar_metric.compute()
 
-        # Precision, Recall, F1
         precision_metric = Precision()
         recall_metric = Recall()
         f1_metric = F1Score()
-
-        precision_metric.update(predictions=predictions, targets=targets)
-        recall_metric.update(predictions=predictions, targets=targets)
-        f1_metric.update(predictions=predictions, targets=targets)
-
+        precision_metric.update(predictions=preds, targets=gts)
+        recall_metric.update(predictions=preds, targets=gts)
+        f1_metric.update(predictions=preds, targets=gts)
         precision_result = precision_metric.compute()
         recall_result = recall_metric.compute()
         f1_result = f1_metric.compute()
 
-        # Save per-class metrics
-        self._save_per_class_metrics(
-            map_result, precision_result, recall_result, f1_result, classes
-        )
+        for name, result in [
+            ("map_metrics", map_result),
+            ("mar_metrics", mar_result),
+            ("precision_metrics", precision_result),
+            ("recall_metrics", recall_result),
+            ("f1_metrics", f1_result),
+        ]:
+            try:
+                result.to_pandas().to_csv(self.output_dir / f"{name}.csv", index=False)
+            except Exception:
+                pass
 
-        return EvaluationMetrics(
-            map50=float(map_result.map50),
-            map50_95=float(map_result.map50_95),
-            mar50=float(mar_result.mAR_at_100),
-            mar50_95=float(mar_result.mAR_at_10),
-            precision=float(precision_result.precision_at_50),
-            recall=float(recall_result.recall_at_50),
-            f1_score=float(f1_result.f1_50),
-        )
-
-    def _save_per_class_metrics(
-        self,
-        map_result,
-        precision_result,
-        recall_result,
-        f1_result,
-        classes: List[str],
-    ) -> None:
-        """Save per-class metrics to CSV."""
-        try:
-            import pandas as pd
-
-            num_classes = len(classes)
-
-            def extract_per_class(arr, num_classes):
-                if arr is None or arr.size == 0:
-                    return np.zeros(num_classes)
-                if arr.ndim == 2:
-                    arr = arr[:, 0]
-                result = np.zeros(num_classes)
-                copy_len = min(len(arr), num_classes)
-                result[:copy_len] = arr[:copy_len]
-                return result
-
-            ap50 = extract_per_class(map_result.ap_per_class, num_classes)
-
-            if map_result.ap_per_class is not None and map_result.ap_per_class.ndim == 2:
-                ap50_95 = np.mean(map_result.ap_per_class, axis=1)
-                ap50_95 = np.pad(ap50_95, (0, max(0, num_classes - len(ap50_95))))[:num_classes]
-            else:
-                ap50_95 = ap50
-
-            precision = extract_per_class(precision_result.precision_per_class, num_classes)
-            recall = extract_per_class(recall_result.recall_per_class, num_classes)
-            f1 = extract_per_class(f1_result.f1_per_class, num_classes)
-
-            per_class = []
-            for i, cls_name in enumerate(classes):
-                per_class.append(
-                    {
-                        "class_id": i,
-                        "class_name": cls_name,
-                        "ap50": float(ap50[i]),
-                        "ap50_95": float(ap50_95[i]),
-                        "precision": float(precision[i]),
-                        "recall": float(recall[i]),
-                        "f1_score": float(f1[i]),
-                    }
-                )
-
-            df = pd.DataFrame(per_class)
-            df.to_csv(self.output_dir / "per_class_metrics.csv", index=False)
-
-            with open(self.output_dir / "per_class_metrics.json", "w") as f:
-                json.dump(per_class, f, indent=2)
-
-        except Exception as e:
-            self.logger.error(f"Failed to save per-class metrics: {e}")
-
-    def _generate_visualizations(
-        self,
-        images: List[np.ndarray],
-        predictions: List["sv.Detections"],
-        targets: List["sv.Detections"],
-        paths: List[str],
-        classes: List[str],
-    ) -> Dict[str, str]:
-        """Generate visualization plots."""
-        visualizations = {}
-
-        try:
-            # Confusion matrix
-            cm = sv.ConfusionMatrix.from_detections(
-                predictions=predictions,
-                targets=targets,
-                classes=classes,
-                conf_threshold=self.config.conf_threshold,
-                iou_threshold=self.config.iou_threshold,
-            )
-            cm_path = self._plot_confusion_matrix(cm, classes)
-            visualizations["confusion_matrix"] = cm_path
-
-        except Exception as e:
-            self.logger.error(f"Failed to generate confusion matrix: {e}")
-
-        try:
-            # Sample predictions
-            samples_path = self._plot_sample_predictions(
-                images[:9], predictions[:9], targets[:9], paths[:9], classes
-            )
-            if samples_path:
-                visualizations["samples"] = samples_path
-
-        except Exception as e:
-            self.logger.error(f"Failed to generate samples: {e}")
-
-        return visualizations
-
-    def _plot_confusion_matrix(self, cm: "sv.ConfusionMatrix", classes: List[str]) -> str:
-        """Plot and save confusion matrix."""
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots(figsize=(12, 10))
-        cm.plot(ax=ax)
-        ax.set_title("Confusion Matrix")
-
-        path = str(self.output_dir / "confusion_matrix.png")
-        plt.savefig(path, dpi=150, bbox_inches="tight")
-        plt.close()
-
-        return path
-
-    def _plot_sample_predictions(
-        self,
-        images: List[np.ndarray],
-        predictions: List["sv.Detections"],
-        targets: List["sv.Detections"],
-        paths: List[str],
-        classes: List[str],
-    ) -> Optional[str]:
-        """Plot sample predictions vs ground truth."""
-        import matplotlib.pyplot as plt
-
-        n_samples = min(9, len(images))
-        if n_samples == 0:
-            return None
-
-        cols = 3
-        rows = (n_samples + cols - 1) // cols
-        fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
-
-        if rows == 1:
-            axes = [axes] if cols == 1 else axes
-        axes = np.array(axes).flatten()
-
-        box_annotator = sv.BoxAnnotator()
-        label_annotator = sv.LabelAnnotator()
-
-        for i in range(n_samples):
-            img = images[i].copy()
-            pred = predictions[i]
-            gt = targets[i]
-
-            # Annotate predictions (green)
-            if len(pred) > 0:
-                labels = [
-                    f"{classes[cid] if cid < len(classes) else 'unk'}: {conf:.2f}"
-                    for cid, conf in zip(pred.class_id, pred.confidence or [1.0] * len(pred))
-                ]
-                img = box_annotator.annotate(img, pred)
-                img = label_annotator.annotate(img, pred, labels)
-
-            axes[i].imshow(img)
-            axes[i].set_title(f"GT: {len(gt)}, Pred: {len(pred)}")
-            axes[i].axis("off")
-
-        for i in range(n_samples, len(axes)):
-            axes[i].axis("off")
-
-        plt.tight_layout()
-        path = str(self.output_dir / "sample_predictions.png")
-        plt.savefig(path, dpi=150, bbox_inches="tight")
-        plt.close()
-
-        return path
-
-    def _save_metrics_summary(self, metrics: EvaluationMetrics) -> None:
-        """Save metrics summary."""
-        summary = {
-            "map50": metrics.map50,
-            "map50_95": metrics.map50_95,
-            "mar50": metrics.mar50,
-            "mar50_95": metrics.mar50_95,
-            "precision": metrics.precision,
-            "recall": metrics.recall,
-            "f1_score": metrics.f1_score,
-            "inference_time_per_image": metrics.inference_time_per_image,
-            "total_detections": metrics.total_detections,
+        metrics_dict = {
+            "map50": float(map_result.map50),
+            "map50_95": float(map_result.map50_95),
+            "mar_100": float(mar_result.mAR_at_100),
+            "mar_10": float(mar_result.mAR_at_10),
+            "mar_1": float(mar_result.mAR_at_1),
+            "precision": float(precision_result.precision_at_50),
+            "recall": float(recall_result.recall_at_50),
+            "f1_score": float(f1_result.f1_50),
         }
 
-        with open(self.output_dir / "metrics_summary.json", "w") as f:
-            json.dump(summary, f, indent=2)
+        num_classes = len(classes)
 
-        try:
-            import pandas as pd
+        def _extract(arr, n, iou_idx=0):
+            if arr is None or arr.size == 0:
+                return np.zeros(n)
+            if arr.ndim == 2:
+                arr = arr[:, min(iou_idx, arr.shape[1] - 1)]
+            out = np.zeros(n)
+            copy_len = min(len(arr), n)
+            out[:copy_len] = arr[:copy_len]
+            return out
 
-            df = pd.DataFrame([summary])
-            df.to_csv(self.output_dir / "evaluation_metrics.csv", index=False)
-        except ImportError:
-            pass
+        ap50 = _extract(map_result.ap_per_class, num_classes)
+        if map_result.ap_per_class is not None and map_result.ap_per_class.ndim == 2:
+            ap50_95_raw = np.mean(map_result.ap_per_class, axis=1)
+            ap50_95 = np.zeros(num_classes)
+            ap50_95[: min(len(ap50_95_raw), num_classes)] = ap50_95_raw[:num_classes]
+        else:
+            ap50_95 = ap50.copy()
 
-        self.logger.info(f"mAP@50: {metrics.map50:.4f}")
-        self.logger.info(f"mAP@50-95: {metrics.map50_95:.4f}")
-        self.logger.info(f"Precision: {metrics.precision:.4f}")
-        self.logger.info(f"Recall: {metrics.recall:.4f}")
-        self.logger.info(f"F1: {metrics.f1_score:.4f}")
+        prec_pc = _extract(precision_result.precision_per_class, num_classes)
+        rec_pc = _extract(recall_result.recall_per_class, num_classes)
+        f1_pc = _extract(f1_result.f1_per_class, num_classes)
+
+        per_class = []
+        for i, cls_name in enumerate(classes):
+            per_class.append(
+                {
+                    "class_id": i,
+                    "class_name": cls_name,
+                    "ap50": float(ap50[i]),
+                    "ap50_95": float(ap50_95[i]),
+                    "precision": float(prec_pc[i]),
+                    "recall": float(rec_pc[i]),
+                    "f1_score": float(f1_pc[i]),
+                }
+            )
+
+        return metrics_dict, per_class
+
+    def _log_per_class_table(self, per_class_metrics):
+        logger.info("Per-class metrics:")
+        logger.info(
+            "%-20s %8s %10s %12s %10s %8s",
+            "Class",
+            "AP@50",
+            "AP@50-95",
+            "Precision@50",
+            "Recall@50",
+            "F1@50",
+        )
+        for m in per_class_metrics:
+            logger.info(
+                "%-20s %8.3f %10.3f %12.3f %10.3f %8.3f",
+                m["class_name"],
+                m["ap50"],
+                m["ap50_95"],
+                m["precision"],
+                m["recall"],
+                m["f1_score"],
+            )
 
     @staticmethod
-    def _detections_to_dict(detections: "sv.Detections") -> List[Dict]:
-        """Convert detections to serializable dict."""
+    def _detections_to_list(detections: "sv.Detections") -> List[Dict]:
         result = []
         for i in range(len(detections)):
             d = {
                 "box": detections.xyxy[i].tolist(),
-                "class_id": (int(detections.class_id[i]) if detections.class_id is not None else 0),
+                "label": (int(detections.class_id[i]) if detections.class_id is not None else 0),
             }
             if detections.confidence is not None:
                 d["confidence"] = float(detections.confidence[i])
