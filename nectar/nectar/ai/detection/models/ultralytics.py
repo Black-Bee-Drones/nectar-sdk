@@ -132,15 +132,19 @@ class UltralyticsModel(BaseDetectionModel):
         else:
             raise ValueError(f"Unsupported image type: {type(image)}")
 
+        predict_kwargs = {
+            "source": source,
+            "conf": detection_input.conf_threshold,
+            "iou": detection_input.iou_threshold,
+            "device": device,
+            "save": False,
+            "verbose": False,
+        }
+        if detection_input.imgsz is not None:
+            predict_kwargs["imgsz"] = detection_input.imgsz
+
         start_time = time.time()
-        results = self.model.predict(
-            source=source,
-            conf=detection_input.conf_threshold,
-            iou=detection_input.iou_threshold,
-            device=device,
-            save=False,
-            verbose=False,
-        )
+        results = self.model.predict(**predict_kwargs)
         inference_time = time.time() - start_time
 
         if results and len(results) > 0:
