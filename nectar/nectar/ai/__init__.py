@@ -1,7 +1,5 @@
 from nectar.ai.detection import (
     BaseDetectionModel,
-    DatasetConverter,
-    DatasetMerger,
     # Types
     Detection,
     DetectionInput,
@@ -22,7 +20,7 @@ from nectar.ai.detection import (
     # Model classes
     UltralyticsModel,
 )
-from nectar.ai.utils import RoboflowUploader
+from nectar.ai.detection.datasets.upload import RoboflowUploader
 
 __all__ = [
     # Simple API
@@ -45,7 +43,5 @@ __all__ = [
     # Utilities
     "ModelLoader",
     "ObjectDetectionEvaluator",
-    "DatasetConverter",
-    "DatasetMerger",
     "RoboflowUploader",
 ]

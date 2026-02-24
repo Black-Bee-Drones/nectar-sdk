@@ -113,8 +113,6 @@ from nectar.ai.detection.slicing import (
 
 # Utilities
 from nectar.ai.detection.utils import (
-    DatasetConverter,
-    DatasetMerger,
     DeviceManager,
     HuggingFaceUploader,
     get_device,
@@ -181,6 +179,4 @@ __all__ = [
     "HuggingFaceUploader",
     "get_device",
     "DeviceManager",
-    "DatasetConverter",
-    "DatasetMerger",
 ]
