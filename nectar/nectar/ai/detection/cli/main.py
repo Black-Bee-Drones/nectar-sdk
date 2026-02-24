@@ -3,7 +3,6 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from nectar.ai.detection.core.configs import DEFAULT_OUTPUT_DIR
 
@@ -21,9 +20,7 @@ def main():
     train_parser = subparsers.add_parser("train", help="Train detection model")
     train_parser.add_argument("--config", help="Path to YAML config file")
     train_parser.add_argument("--model", help="Model name or path")
-    train_parser.add_argument(
-        "--framework", help="Framework (ultralytics, transformers, rfdetr)"
-    )
+    train_parser.add_argument("--framework", help="Framework (ultralytics, transformers, rfdetr)")
     train_parser.add_argument("--dataset", help="Path to dataset")
     train_parser.add_argument(
         "--dataset-format", default="yolo", help="Dataset format (yolo, coco)"
@@ -35,28 +32,20 @@ def main():
     )
     train_parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     train_parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
-    train_parser.add_argument(
-        "--learning-rate", type=float, default=0.001, help="Learning rate"
-    )
+    train_parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate")
     train_parser.add_argument("--device", default="auto", help="Device")
     train_parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     predict_parser = subparsers.add_parser("predict", help="Run inference")
     predict_parser.add_argument("--model", required=True, help="Model path")
-    predict_parser.add_argument(
-        "--input", required=True, help="Input image or directory"
-    )
+    predict_parser.add_argument("--input", required=True, help="Input image or directory")
     predict_parser.add_argument("--output", help="Output directory")
-    predict_parser.add_argument(
-        "--conf", type=float, default=0.25, help="Confidence threshold"
-    )
+    predict_parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     predict_parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold")
     predict_parser.add_argument("--device", default="auto", help="Device")
 
     eval_parser = subparsers.add_parser("eval", help="Evaluate model")
-    eval_parser.add_argument(
-        "--model-path", required=True, help="Model checkpoint path"
-    )
+    eval_parser.add_argument("--model-path", required=True, help="Model checkpoint path")
     eval_parser.add_argument("--dataset-path", required=True, help="Dataset path")
     eval_parser.add_argument("--framework", required=True, help="Framework")
     eval_parser.add_argument(
@@ -68,9 +57,7 @@ def main():
     eval_parser.add_argument(
         "--conf-threshold", type=float, default=0.5, help="Confidence threshold"
     )
-    eval_parser.add_argument(
-        "--iou-threshold", type=float, default=0.5, help="IoU threshold"
-    )
+    eval_parser.add_argument("--iou-threshold", type=float, default=0.5, help="IoU threshold")
     eval_parser.add_argument("--device", default="auto", help="Device")
     eval_parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
 

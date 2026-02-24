@@ -16,3 +16,7 @@ log/
 *.log
 *.tlog
 *.tlog.raw
+
+# Datasets and outputs
+nectar/nectar/ai/detection/data/
+nectar/nectar/ai/detection/outputs/
