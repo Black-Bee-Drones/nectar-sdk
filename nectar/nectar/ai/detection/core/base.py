@@ -198,6 +198,7 @@ class BaseDetectionModel(ABC):
                 conf_threshold=detection_input.conf_threshold,
                 iou_threshold=detection_input.iou_threshold,
                 device=detection_input.device,
+                imgsz=detection_input.imgsz,
             )
 
             start_time = time.time()

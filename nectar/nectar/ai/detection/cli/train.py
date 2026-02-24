@@ -309,12 +309,13 @@ def main():
                 model_path=result["model_path"],
                 dataset_path=dataset,
                 framework=framework,
-                output_dir=str(Path(params.get("output_dir")) / "evaluation"),
+                output_dir=str(Path(output_dir_raw) / "evaluation"),
                 split=eval_split,
                 conf_threshold=params.get("conf_threshold", 0.25),
                 iou_threshold=params.get("iou_threshold", 0.5),
                 device=params.get("device", "auto"),
                 batch_size=params.get("batch_size", 16),
+                imgsz=params.get("imgsz"),
             )
 
             evaluator = ObjectDetectionEvaluator(detector.model, eval_config)

@@ -1,8 +1,5 @@
 """
 Core data types for object detection.
-
-This module defines the fundamental data structures used throughout
-the detection module for representing detections, predictions, and inputs.
 """
 
 from dataclasses import dataclass, field
@@ -404,6 +401,7 @@ class DetectionInput:
     conf_threshold: float = 0.5
     iou_threshold: float = 0.5
     device: Optional[str] = None
+    imgsz: Optional[int] = None
 
     @property
     def is_batch(self) -> bool:

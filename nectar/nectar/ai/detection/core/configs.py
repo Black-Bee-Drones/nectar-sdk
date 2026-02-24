@@ -252,6 +252,7 @@ class EvaluationConfig:
     device: str = "auto"
     batch_size: int = 16
     num_samples: Optional[int] = None
+    imgsz: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
