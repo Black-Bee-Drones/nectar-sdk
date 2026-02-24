@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import yaml
 from tqdm import tqdm
 
-from nectar.ai.detection.datasets.format import FormatDetector, FormatConverter
+from nectar.ai.detection.datasets.format import FormatConverter, FormatDetector
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,7 @@ class Stratifier:
         Print progress information. Defaults to True.
     """
 
-    def __init__(
-        self, source_dir: str, target_dir: str, seed: int = 42, verbose: bool = True
-    ):
+    def __init__(self, source_dir: str, target_dir: str, seed: int = 42, verbose: bool = True):
         self.source_dir = Path(source_dir)
         self.target_dir = Path(target_dir)
         self.seed = seed
@@ -91,9 +89,7 @@ class Stratifier:
         else:
             raise ValueError(f"Unsupported format: {source_format}")
 
-    def _stratify_coco(
-        self, train_ratio: float, val_ratio: float, test_ratio: float
-    ) -> str:
+    def _stratify_coco(self, train_ratio: float, val_ratio: float, test_ratio: float) -> str:
         """Stratify COCO format dataset."""
         images_dir = self.source_dir / "images"
         dataset_json = self.source_dir / "dataset.json"
@@ -133,9 +129,7 @@ class Stratifier:
 
             split_data = {
                 "images": [i for i in coco_data["images"] if i["id"] in ids],
-                "annotations": [
-                    a for a in coco_data["annotations"] if a["image_id"] in ids
-                ],
+                "annotations": [a for a in coco_data["annotations"] if a["image_id"] in ids],
                 "categories": coco_data["categories"],
             }
 
@@ -153,9 +147,7 @@ class Stratifier:
         self._print(f"Stratified split saved to: {self.target_dir}")
         return str(self.target_dir)
 
-    def _stratify_yolo(
-        self, train_ratio: float, val_ratio: float, test_ratio: float
-    ) -> str:
+    def _stratify_yolo(self, train_ratio: float, val_ratio: float, test_ratio: float) -> str:
         """Stratify YOLO format dataset."""
         images_dir = self.source_dir / "images"
         labels_dir = self.source_dir / "labels"
@@ -270,9 +262,7 @@ class Stratifier:
                 category_images[primary].append(img_id)
 
         no_annotation = [
-            img["id"]
-            for img in coco_data["images"]
-            if img["id"] not in image_to_categories
+            img["id"] for img in coco_data["images"] if img["id"] not in image_to_categories
         ]
 
         train_ids, val_ids, test_ids = set(), set(), set()
@@ -320,9 +310,7 @@ class Stratifier:
                 primary = min(classes)
                 category_images[primary].append(img_path)
 
-        no_annotation = [
-            img for img in images if img not in image_to_classes
-        ]
+        no_annotation = [img for img in images if img not in image_to_classes]
 
         train_images, val_images, test_images = [], [], []
 
@@ -379,7 +367,5 @@ class Stratifier:
             self._print(f"{name:<25} {t:>12} {v:>12} {te:>12}")
 
         self._print("-" * 70)
-        self._print(
-            f"{'IMAGES':<25} {len(train_ids):>12} {len(val_ids):>12} {len(test_ids):>12}"
-        )
+        self._print(f"{'IMAGES':<25} {len(train_ids):>12} {len(val_ids):>12} {len(test_ids):>12}")
         self._print("=" * 70 + "\n")
