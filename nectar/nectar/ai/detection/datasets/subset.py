@@ -6,7 +6,7 @@ import random
 import shutil
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import yaml
 from tqdm import tqdm
@@ -32,9 +32,7 @@ class SubsetCreator:
         Print progress information. Defaults to True.
     """
 
-    def __init__(
-        self, dataset_path: str, output_dir: str, seed: int = 42, verbose: bool = True
-    ):
+    def __init__(self, dataset_path: str, output_dir: str, seed: int = 42, verbose: bool = True):
         self.dataset_path = Path(dataset_path)
         self.output_dir = Path(output_dir)
         self.seed = seed
@@ -75,13 +73,9 @@ class SubsetCreator:
         format_type = detector.detect()
 
         if format_type == "yolo":
-            return self._create_yolo_subset(
-                max_train_samples, max_eval_samples, max_test_samples
-            )
+            return self._create_yolo_subset(max_train_samples, max_eval_samples, max_test_samples)
         elif format_type == "coco":
-            return self._create_coco_subset(
-                max_train_samples, max_eval_samples, max_test_samples
-            )
+            return self._create_coco_subset(max_train_samples, max_eval_samples, max_test_samples)
         else:
             raise ValueError(f"Unsupported format: {format_type}")
 
@@ -152,9 +146,7 @@ class SubsetCreator:
 
         self._print(f"Analyzing class distribution for {split} split...")
         for img_path in image_files:
-            label_path = (split_path.parent / "labels" / img_path.stem).with_suffix(
-                ".txt"
-            )
+            label_path = (split_path.parent / "labels" / img_path.stem).with_suffix(".txt")
             if not label_path.exists():
                 continue
 
@@ -181,9 +173,7 @@ class SubsetCreator:
             self._print(f"No valid labeled images found for {split} split")
             return
 
-        self._print(
-            f"Found {len(valid_image_files)} valid images with labels for {split} split"
-        )
+        self._print(f"Found {len(valid_image_files)} valid images with labels for {split} split")
         self._print(f"Class distribution: {dict(total_class_counts)}")
 
         if max_samples >= len(valid_image_files):
@@ -202,9 +192,7 @@ class SubsetCreator:
         for img_path in tqdm(sampled_images, desc=f"Copying {split}"):
             shutil.copy2(img_path, subset_images_dir / img_path.name)
 
-            label_path = (split_path.parent / "labels" / img_path.stem).with_suffix(
-                ".txt"
-            )
+            label_path = (split_path.parent / "labels" / img_path.stem).with_suffix(".txt")
             if label_path.exists():
                 shutil.copy2(label_path, subset_labels_dir / label_path.name)
 
@@ -272,9 +260,7 @@ class SubsetCreator:
         subset_split_dir = self.output_dir / split
         subset_split_dir.mkdir(parents=True, exist_ok=True)
 
-        subset_annotations = [
-            ann for ann in annotations if ann["image_id"] in selected_image_ids
-        ]
+        subset_annotations = [ann for ann in annotations if ann["image_id"] in selected_image_ids]
 
         subset_data = {
             "images": selected_images,
@@ -331,9 +317,7 @@ class SubsetCreator:
 
         total_quota = sum(class_quotas.values())
         if total_quota < max_samples:
-            sorted_classes = sorted(
-                total_class_counts.items(), key=lambda x: x[1], reverse=True
-            )
+            sorted_classes = sorted(total_class_counts.items(), key=lambda x: x[1], reverse=True)
             remaining = max_samples - total_quota
             for class_id, _ in sorted_classes:
                 if remaining <= 0:
@@ -349,11 +333,7 @@ class SubsetCreator:
                 continue
 
             quota = class_quotas.get(class_id, 0)
-            candidates = [
-                img
-                for img in class_to_images[class_id]
-                if img not in selected_images
-            ]
+            candidates = [img for img in class_to_images[class_id] if img not in selected_images]
             self.random_gen.shuffle(candidates)
 
             selected = candidates[:quota]
@@ -363,9 +343,7 @@ class SubsetCreator:
                 break
 
         if len(selected_images) < max_samples:
-            remaining = [
-                img for img in valid_images if img not in selected_images
-            ]
+            remaining = [img for img in valid_images if img not in selected_images]
             self.random_gen.shuffle(remaining)
             needed = max_samples - len(selected_images)
             selected_images.update(remaining[:needed])
@@ -405,9 +383,7 @@ class SubsetCreator:
 
         total_quota = sum(class_quotas.values())
         if total_quota < max_samples:
-            sorted_classes = sorted(
-                total_class_counts.items(), key=lambda x: x[1], reverse=True
-            )
+            sorted_classes = sorted(total_class_counts.items(), key=lambda x: x[1], reverse=True)
             remaining = max_samples - total_quota
             for class_id, _ in sorted_classes:
                 if remaining <= 0:
@@ -435,9 +411,7 @@ class SubsetCreator:
                 break
 
         if len(selected_images) < max_samples:
-            remaining = [
-                img for img in images if img["id"] not in selected_images
-            ]
+            remaining = [img for img in images if img["id"] not in selected_images]
             self.random_gen.shuffle(remaining)
             needed = max_samples - len(selected_images)
             selected_images.update(img["id"] for img in remaining[:needed])
