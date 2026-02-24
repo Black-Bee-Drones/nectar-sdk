@@ -3,6 +3,7 @@ Training configuration classes.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict
 
 from nectar.ai.detection.core.configs import TrainingConfig as BaseTrainingConfig
@@ -88,16 +89,17 @@ class UltralyticsTrainingConfig(TrainingConfig):
         Dict[str, Any]
             Arguments for YOLO.train().
         """
-        return {
+        output_dir = Path(self.output_dir).resolve()
+        args = {
             "data": self.dataset_path,
             "epochs": self.epochs,
             "batch": self.batch_size,
-            "imgsz": self.imgsz or 640,
+            "imgsz": self.imgsz if self.imgsz is not None else 640,
             "save": True,
             "save_period": self.save_period,
-            "project": self.output_dir,
+            "project": str(output_dir.parent),
+            "name": output_dir.name,
             "exist_ok": True,
-            "optimizer": self.optimizer_type,
             "lr0": self.learning_rate,
             "seed": self.seed,
             "deterministic": True,
@@ -126,6 +128,9 @@ class UltralyticsTrainingConfig(TrainingConfig):
             "fliplr": self.fliplr,
             "close_mosaic": self.close_mosaic,
         }
+        if self.optimizer_type is not None:
+            args["optimizer"] = self.optimizer_type
+        return args
 
 
 @dataclass

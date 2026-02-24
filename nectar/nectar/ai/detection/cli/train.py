@@ -26,8 +26,15 @@ def parse_args():
         "--dataset-format", type=str, default="yolo", help="Dataset format (yolo, coco)"
     )
 
+    from nectar.ai.detection.core.configs import DEFAULT_OUTPUT_DIR
+
     # Training parameters
-    parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=str(DEFAULT_OUTPUT_DIR),
+        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})",
+    )
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate")
@@ -105,7 +112,6 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
 
     CLI arguments take precedence over config file.
     """
-    # Map CLI arg names to config keys
     arg_to_config = {
         "dataset": "dataset_path",
         "learning_rate": "learning_rate",
@@ -122,33 +128,42 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
         "iou_threshold": "iou_threshold",
         "dataset_format": "dataset_format",
         "mixed_precision": "mixed_precision",
+        "epochs": "epochs",
+        "imgsz": "imgsz",
+        "model": "model",
+        "framework": "framework",
     }
 
     result = config.copy()
 
+    from nectar.ai.detection.core.configs import DEFAULT_OUTPUT_DIR
+
+    parser_defaults = {
+        "epochs": 10,
+        "batch_size": 16,
+        "learning_rate": 0.001,
+        "imgsz": 640,
+        "device": "auto",
+        "seed": 42,
+        "output_dir": str(DEFAULT_OUTPUT_DIR),
+    }
+
     for arg_name, value in vars(args).items():
-        if value is None:
+        if value is None or arg_name == "config":
             continue
 
-        # Skip config path
-        if arg_name == "config":
-            continue
+        config_key = arg_to_config.get(arg_name, arg_name)
 
-        # Handle boolean flags
         if isinstance(value, bool):
             if value:
-                config_key = arg_to_config.get(arg_name, arg_name)
                 result[config_key] = value
             continue
 
-        # Map arg name to config key
-        config_key = arg_to_config.get(arg_name, arg_name)
+        default_value = parser_defaults.get(arg_name)
+        if default_value is not None and value == default_value and config_key in config:
+            continue
 
-        # CLI overrides config
-        if arg_name in vars(args) and value != getattr(parse_args.__defaults__, arg_name, None):
-            result[config_key] = value
-        elif config_key not in result:
-            result[config_key] = value
+        result[config_key] = value
 
     return result
 
@@ -194,6 +209,21 @@ def main():
         logger.error("Dataset is required (--dataset or config data.dataset_path)")
         sys.exit(1)
 
+    # Resolve relative paths relative to detection module directory
+    from nectar.ai.detection.core.configs import (
+        DEFAULT_OUTPUT_DIR,
+        DETECTION_MODULE_DIR,
+    )
+
+    dataset_path = Path(dataset)
+    if not dataset_path.is_absolute():
+        dataset = str((DETECTION_MODULE_DIR / dataset_path).resolve())
+
+    output_dir_raw = params.get("output_dir", str(DEFAULT_OUTPUT_DIR))
+    output_dir_path = Path(output_dir_raw)
+    if not output_dir_path.is_absolute():
+        output_dir_raw = str((DETECTION_MODULE_DIR / output_dir_path).resolve())
+
     # Detect framework
     framework = params.get("framework") or detect_framework(model)
     logger.info("Framework: %s", framework)
@@ -214,7 +244,7 @@ def main():
         "epochs": params.get("epochs", 10),
         "batch_size": params.get("batch_size", 16),
         "learning_rate": params.get("learning_rate", 0.001),
-        "output_dir": params.get("output_dir", "outputs"),
+        "output_dir": output_dir_raw,
         "device": params.get("device", "auto"),
         "seed": params.get("seed", 42),
         "tensorboard": params.get("tensorboard", False),
@@ -229,6 +259,11 @@ def main():
         "weight_decay": params.get("weight_decay", 0.0001),
         "warmup_ratio": params.get("warmup_ratio", 0.1),
         "lr_scheduler_type": params.get("lr_scheduler_type", "linear"),
+        "warmup_epochs": params.get("warmup_epochs", 3.0),
+        "warmup_momentum": params.get("warmup_momentum", 0.8),
+        "lrf": params.get("lrf", 0.01),
+        "cos_lr": params.get("cos_lr", False),
+        "dropout": params.get("dropout", 0.0),
     }
 
     # Create framework-specific config

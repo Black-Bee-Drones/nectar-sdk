@@ -844,7 +844,35 @@ detector = Detector("model.pt", framework="custom")
 
 ## CLI
 
-### Predict
+### Unified CLI
+
+The detection module provides a unified CLI with subcommands:
+
+```bash
+# Training
+python -m nectar.ai.detection.cli.main train --config configs/yolo_example.yaml
+
+# Prediction
+python -m nectar.ai.detection.cli.main predict --model yolov8n.pt --input image.jpg
+
+# Evaluation
+python -m nectar.ai.detection.cli.main eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
+
+# Dataset management
+python -m nectar.ai.detection.cli.main dataset download --source visdrone --output datasets/visdrone
+python -m nectar.ai.detection.cli.main dataset convert --input datasets/coco --output datasets/yolo --format yolo
+python -m nectar.ai.detection.cli.main dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
+python -m nectar.ai.detection.cli.main dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
+python -m nectar.ai.detection.cli.main dataset analyze --input datasets/my_dataset
+python -m nectar.ai.detection.cli.main dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
+python -m nectar.ai.detection.cli.main dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
+python -m nectar.ai.detection.cli.main dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset
+python -m nectar.ai.detection.cli.main dataset upload-images --api-key KEY --project my-project --directory images/
+```
+
+### Individual CLI Commands
+
+#### Predict
 
 ```bash
 python -m nectar.ai.detection.cli.predict \
@@ -853,7 +881,7 @@ python -m nectar.ai.detection.cli.predict \
     --output results/
 ```
 
-### Train
+#### Train
 
 Using CLI arguments:
 
@@ -871,13 +899,164 @@ python -m nectar.ai.detection.cli.train \
     --config configs/yolo_example.yaml
 ```
 
-### Evaluate
+#### Evaluate
 
 ```bash
 python -m nectar.ai.detection.cli.evaluate \
     --model-path best.pt \
     --framework ultralytics \
     --dataset-path /path/to/dataset
+```
+
+## Dataset Management
+
+The detection module provides dataset management utilities for format conversion, subset creation, stratification, augmentation, and analysis.
+
+### Format Detection and Conversion
+
+Datasets are automatically detected and converted between COCO and YOLO formats as needed:
+
+```python
+from nectar.ai.detection.datasets import FormatDetector, FormatConverter
+
+# Auto-detect format
+detector = FormatDetector("datasets/my_dataset")
+format_type = detector.detect()  # "coco" or "yolo"
+
+# Convert format
+converter = FormatConverter("datasets/coco", "datasets/yolo")
+yaml_path = converter.convert(target_format="yolo")
+```
+
+### Balanced Subset Creation
+
+Create balanced subsets maintaining class distribution:
+
+```python
+from nectar.ai.detection.datasets import SubsetCreator
+
+creator = SubsetCreator("datasets/full", "datasets/subset", seed=42)
+subset_path = creator.create(
+    max_train_samples=1000,
+    max_eval_samples=200,
+    max_test_samples=100,
+)
+```
+
+### Dataset Stratification
+
+Split unsplit datasets into train/val/test with balanced class distribution:
+
+```python
+from nectar.ai.detection.datasets import Stratifier
+
+stratifier = Stratifier("datasets/unsplit", "datasets/split", seed=42)
+split_path = stratifier.stratify(
+    train_ratio=0.8,
+    val_ratio=0.2,
+    test_ratio=0.0,
+)
+```
+
+### Augmentation Configuration
+
+Build augmentation configs from presets or custom transforms:
+
+```python
+from nectar.ai.detection.datasets import AugmentationBuilder, AUG_CONSERVATIVE
+
+# Use preset
+builder = AugmentationBuilder(preset="conservative")
+
+# Custom config
+builder = AugmentationBuilder(config={
+    "HorizontalFlip": {"p": 0.5},
+    "Rotate": {"limit": 15, "p": 0.3},
+})
+
+# Save to file
+builder.to_yaml("augmentations.yaml")
+```
+
+### Dataset Analysis
+
+Analyze dataset distribution and generate visualizations:
+
+```python
+from nectar.ai.detection.datasets import DatasetAnalyzer
+
+analyzer = DatasetAnalyzer("datasets/my_dataset", output_dir="analysis/")
+results = analyzer.analyze()
+# Generates plots and statistics report
+```
+
+### Dataset Handlers
+
+Download datasets from various sources using the handler registry:
+
+```python
+from nectar.ai.detection.datasets import DatasetHandlerRegistry
+
+# VisDrone
+handler_class = DatasetHandlerRegistry.get("visdrone")
+handler = handler_class("datasets/visdrone")
+handler.download_and_convert(output_format="coco")
+
+# Roboflow
+handler_class = DatasetHandlerRegistry.get("roboflow")
+handler = handler_class("datasets/roboflow", api_key="YOUR_KEY")
+handler.download(workspace="workspace", project="project", version=1, format_type="yolo")
+```
+
+### Dataset Merging
+
+Merge two datasets (YOLO or COCO format) with balanced sampling:
+
+```python
+from nectar.ai.detection.datasets import DatasetMerger
+
+# Auto-detect formats and merge (output format matches first dataset)
+merger = DatasetMerger("datasets/dataset1", "datasets/dataset2", "datasets/merged", seed=42)
+merger.merge({
+    "train": {"d1": 1000, "d2": 5000},
+    "valid": {"d1": "all", "d2": 500},
+    "test": {"d1": 200, "d2": 200}
+})
+
+# Specify output format explicitly
+merger = DatasetMerger(
+    "datasets/dataset1",
+    "datasets/dataset2",
+    "datasets/merged",
+    output_format="coco",  # or "yolo", "auto"
+    seed=42
+)
+```
+
+### Dataset Upload
+
+Upload datasets to HuggingFace Hub or Roboflow:
+
+```python
+from nectar.ai.detection.datasets import HuggingFaceDatasetUploader, RoboflowUploader
+
+# HuggingFace dataset upload
+hf_uploader = HuggingFaceDatasetUploader(
+    repo_id="user/my-dataset",
+    private=True,
+)
+hf_uploader.upload_dataset(
+    dataset_path="datasets/my_dataset",
+    commit_message="Upload dataset v1.0"
+)
+
+# Roboflow dataset upload (for annotation workflow)
+roboflow_uploader = RoboflowUploader(api_key="YOUR_KEY")
+roboflow_uploader.upload_directory(
+    directory_path="images/",
+    project_name="my-project",
+    batch_name="batch-1"
+)
 ```
 
 ## Config Files
@@ -962,6 +1141,19 @@ detection/
 │   ├── soft_nms.py      # SoftNMSStrategy
 │   ├── wbf.py           # WBFStrategy
 │   └── nmm.py           # NMMStrategy
+├── datasets/           # Dataset management utilities
+│   ├── format.py       # FormatDetector, FormatConverter
+│   ├── subset.py       # SubsetCreator
+│   ├── stratify.py     # Stratifier
+│   ├── augment.py      # AugmentationBuilder
+│   ├── analyze.py      # DatasetAnalyzer
+│   ├── merge.py        # DatasetMerger
+│   ├── handlers.py     # DatasetHandlerRegistry
+│   ├── handlers/       # Dataset download handlers
+│   │   ├── base.py     # BaseDatasetHandler
+│   │   ├── visdrone.py # VisDroneHandler
+│   │   └── roboflow.py # RoboflowHandler
+│   └── upload.py       # RoboflowUploader, HuggingFaceDatasetUploader
 └── utils/
     ├── device.py        # get_device
     └── huggingface.py   # HuggingFaceUploader
