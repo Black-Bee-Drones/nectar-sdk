@@ -16,19 +16,38 @@ find_package(rclpy REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(realsense2 REQUIRED)
 
 # =============================================================================
-# C++ Include directories (for future C++ nodes)
+# C++ Include directories
 # =============================================================================
-# include_directories(include)
+include_directories(
+  ${OpenCV_INCLUDE_DIRS}
+  ${realsense2_INCLUDE_DIRS}
+)
 
 # =============================================================================
-# C++ Executables (add C++ nodes here when ready)
+# C++ Executables
 # =============================================================================
-# Example:
-# add_executable(cpp_node src/cpp_node.cpp)
-# ament_target_dependencies(cpp_node rclcpp std_msgs)
-# install(TARGETS cpp_node DESTINATION lib/${PROJECT_NAME})
+
+# depth_cluster_node — BFS depth clustering obstacle detector for RealSense.
+# Publishes on /<namespace>/obstacle_detected|distance|direction topics
+# consumed by ROSObstacleDetector.
+add_executable(depth_cluster_node
+  nectar/control/obstacles/depth_cluster.cpp
+)
+ament_target_dependencies(depth_cluster_node
+  rclcpp
+  std_msgs
+)
+target_link_libraries(depth_cluster_node
+  ${OpenCV_LIBS}
+  ${realsense2_LIBRARY}
+)
+install(TARGETS depth_cluster_node
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 
 ament_python_install_package(${PROJECT_NAME})

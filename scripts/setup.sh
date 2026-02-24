@@ -210,6 +210,7 @@ cmd_docker_run() {
         --net=host \
         --privileged \
         $gpu_flag \
+        --volume="${PROJECT_DIR}:/home/ros2_ws/src/nectar-sdk:rw" \
         --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
         --volume="$xauth:/root/.Xauthority:rw" \
         --device-cgroup-rule='c 81:* rmw' \
