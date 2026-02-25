@@ -94,13 +94,13 @@ def cmd_subset(args):
 
 
 def cmd_augment(args):
-    """Build augmentation configuration."""
+    """Apply augmentations to a dataset, generating new augmented images."""
     if args.preset:
         builder = AugmentationBuilder(preset=args.preset)
     elif args.config:
         builder = AugmentationBuilder.from_yaml(args.config)
     else:
-        builder = AugmentationBuilder()
+        builder = AugmentationBuilder(preset="conservative")
 
     if args.add_transform:
         for transform_spec in args.add_transform:
@@ -118,22 +118,19 @@ def cmd_augment(args):
                 sys.exit(1)
             builder.add_transform(name, params)
 
-    if args.output:
-        if args.output.endswith(".json"):
-            builder.to_json(args.output)
-        else:
-            builder.to_yaml(args.output)
-        logger.info(f"Augmentation config saved to: {args.output}")
-    else:
-        import json
+    if not args.input or not args.output:
+        logger.error("--input and --output are required for augmentation")
+        sys.exit(1)
 
-        print(json.dumps(builder.to_dict(), indent=2))
+    splits = [s.strip() for s in args.splits.split(",")] if args.splits else ["train"]
+    result_path = builder.apply(args.input, args.output, args.num_augmented, splits)
+    logger.info("Augmented dataset saved to: %s", result_path)
 
 
 def cmd_analyze(args):
     """Analyze dataset distribution."""
     analyzer = DatasetAnalyzer(args.input, output_dir=args.output)
-    results = analyzer.analyze()
+    analyzer.analyze()
     logger.info(f"Analysis complete. Results saved to: {args.output}")
 
 
@@ -301,17 +298,31 @@ def main():
     subset_parser.add_argument("--max-test-samples", type=int, help="Max test samples")
     subset_parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
-    augment_parser = subparsers.add_parser("augment", help="Build augmentation config")
+    augment_parser = subparsers.add_parser("augment", help="Apply augmentations to dataset")
+    augment_parser.add_argument("--input", required=True, help="Input dataset path")
+    augment_parser.add_argument(
+        "--output", required=True, help="Output directory for augmented dataset"
+    )
+    augment_parser.add_argument(
+        "--num-augmented",
+        type=int,
+        default=2,
+        help="Augmented copies per image (default: 2)",
+    )
+    augment_parser.add_argument(
+        "--splits",
+        default="train",
+        help="Splits to augment, comma-separated (default: train)",
+    )
     augment_parser.add_argument(
         "--preset",
         choices=["conservative", "aggressive", "aerial", "industrial"],
-        help="Preset name",
+        help="Augmentation preset",
     )
-    augment_parser.add_argument("--config", help="Load from YAML config")
+    augment_parser.add_argument("--config", help="Load augmentation config from YAML")
     augment_parser.add_argument(
         "--add-transform", action="append", help="Add transform (name:json_params)"
     )
-    augment_parser.add_argument("--output", help="Output file path")
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze dataset")
     analyze_parser.add_argument("--input", required=True, help="Input dataset directory")
