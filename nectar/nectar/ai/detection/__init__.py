@@ -58,13 +58,6 @@ from nectar.ai.detection.core.exceptions import (
     TrainingError,
 )
 
-# Protocols and base classes
-from nectar.ai.detection.core.protocols import (
-    DetectorProtocol,
-    MergingStrategy,
-    TrainableProtocol,
-)
-
 # Registry and factory
 from nectar.ai.detection.core.registry import (
     DetectorFactory,
@@ -98,8 +91,10 @@ from nectar.ai.detection.models import (
 
 # Post-processing
 from nectar.ai.detection.postprocess import (
+    BaseMergingStrategy,
     NMMStrategy,
     NMSStrategy,
+    PerClassConfidenceFilter,
     SoftNMSStrategy,
     WBFStrategy,
 )
@@ -135,10 +130,6 @@ __all__ = [
     "TrainingMetrics",
     "EvaluationMetrics",
     "TrainingResult",
-    # Protocols
-    "DetectorProtocol",
-    "TrainableProtocol",
-    "MergingStrategy",
     # Base
     "BaseDetectionModel",
     # Registry
@@ -171,10 +162,12 @@ __all__ = [
     # Evaluation
     "ObjectDetectionEvaluator",
     # Post-processing
+    "BaseMergingStrategy",
     "NMSStrategy",
     "SoftNMSStrategy",
     "WBFStrategy",
     "NMMStrategy",
+    "PerClassConfidenceFilter",
     # Utilities
     "HuggingFaceUploader",
     "get_device",
