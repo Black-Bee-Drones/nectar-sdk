@@ -13,6 +13,7 @@ from nectar.vision.camera.config import (
     ROSConfig,
     ROSDepthConfig,
 )
+from nectar.vision.camera.config_builder import ConfigBuilder
 from nectar.vision.camera.drivers import (
     C920Cam,
     FileImageCam,
@@ -42,6 +43,7 @@ __all__ = [
     "OakDConfig",
     "QoSReliability",
     "QoSDurability",
+    "ConfigBuilder",
     "CameraFactory",
     "ImageHandler",
     "FileImageCam",
