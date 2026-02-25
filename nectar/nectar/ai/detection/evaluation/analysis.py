@@ -189,11 +189,6 @@ def compute_curves(
     Returns (px, py_precision, py_recall, py_f1, ap_per_class) where
     px is the confidence axis (1000 points) and py_* are (num_classes, 1000).
     """
-    try:
-        import supervision as sv
-    except ImportError as exc:
-        raise ImportError("supervision is required") from exc
-
     px = np.linspace(0, 1, 1000)
     py_p = np.zeros((num_classes, len(px)))
     py_r = np.zeros((num_classes, len(px)))

@@ -14,6 +14,13 @@ try:
 except ImportError:
     sv = None
 
+_GRAY = "#cecece"
+_PURPLE = "#a559aa"
+_TEAL = "#59a89c"
+_GOLD = "#f0c571"
+_RED = "#e02b35"
+_DARK_BLUE = "#082a54"
+
 
 def _smooth(y: np.ndarray, f: float = 0.05) -> np.ndarray:
     n = max(round(len(y) * f), 1)
@@ -47,7 +54,7 @@ def plot_pr_curve(
         1 - px,
         mean_y,
         linewidth=3,
-        color="#3b82f6",
+        color=_DARK_BLUE,
         label=f"all classes {ap.mean():.3f} mAP@0.5",
     )
     ax.set_xlabel("Recall")
@@ -88,7 +95,7 @@ def plot_confidence_curve(
         px,
         mean_y,
         linewidth=3,
-        color="#3b82f6",
+        color=_DARK_BLUE,
         label=f"all classes {best_val:.2f} at {best_conf:.3f}",
     )
     ax.set_xlabel("Confidence")
@@ -162,7 +169,13 @@ def plot_error_analysis(
             if cm_ext[i, j] > 0:
                 color = "white" if cm_ext[i, j] > cm_ext.max() / 2 else "black"
                 axes[0, 0].text(
-                    j, i, str(cm_ext[i, j]), ha="center", va="center", color=color, fontsize=7
+                    j,
+                    i,
+                    str(cm_ext[i, j]),
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=7,
                 )
 
     # 2. Normalized CM
@@ -207,11 +220,14 @@ def plot_error_analysis(
     error_df = error_df.sort_values("Total", ascending=False)
     x = np.arange(len(error_df))
     w = 0.35
+    axes[1, 0].bar(x - w / 2, error_df["FP"], w, label="False Positives", color=_RED, alpha=0.85)
     axes[1, 0].bar(
-        x - w / 2, error_df["FP"], w, label="False Positives", color="#ef4444", alpha=0.85
-    )
-    axes[1, 0].bar(
-        x + w / 2, error_df["FN"], w, label="False Negatives", color="#3b82f6", alpha=0.85
+        x + w / 2,
+        error_df["FN"],
+        w,
+        label="False Negatives",
+        color=_DARK_BLUE,
+        alpha=0.85,
     )
     axes[1, 0].set_xticks(x)
     axes[1, 0].set_xticklabels(error_df["Class"], rotation=45, ha="right", fontsize=8)
@@ -230,7 +246,7 @@ def plot_error_analysis(
     if top:
         pair_labels = [f"{class_names[t][:12]} -> {class_names[p][:12]}" for t, p, _ in top]
         counts = [c for _, _, c in top]
-        axes[1, 1].barh(range(len(pair_labels)), counts, color="#ef4444", alpha=0.85)
+        axes[1, 1].barh(range(len(pair_labels)), counts, color=_RED, alpha=0.85)
         axes[1, 1].set_yticks(range(len(pair_labels)))
         axes[1, 1].set_yticklabels(pair_labels, fontsize=8)
         axes[1, 1].set_xlabel("Count", fontsize=10, fontweight="bold")
@@ -261,10 +277,10 @@ def plot_performance_analysis(
 
     def _color(ap):
         if ap >= 0.8:
-            return "#22c55e"
+            return _TEAL
         if ap >= 0.5:
-            return "#f59e0b"
-        return "#ef4444"
+            return _GOLD
+        return _RED
 
     colors = [_color(v) for v in df_sorted["ap50"]]
     bars = axes[0].barh(
@@ -284,8 +300,8 @@ def plot_performance_analysis(
             fontsize=9,
             fontweight="bold",
         )
-    axes[0].axvline(x=0.5, color="#f59e0b", linestyle="--", alpha=0.5, label="0.5")
-    axes[0].axvline(x=0.8, color="#22c55e", linestyle="--", alpha=0.5, label="0.8")
+    axes[0].axvline(x=0.5, color=_GOLD, linestyle="--", alpha=0.5, label="0.5")
+    axes[0].axvline(x=0.8, color=_TEAL, linestyle="--", alpha=0.5, label="0.8")
     axes[0].set_xlabel("AP@50", fontsize=12, fontweight="bold")
     axes[0].set_title("Class Performance", fontsize=13, fontweight="bold")
     axes[0].set_xlim([0, 1.05])
@@ -318,7 +334,9 @@ def plot_performance_analysis(
         axes[1].set_xlabel("Recall", fontsize=12, fontweight="bold")
         axes[1].set_ylabel("Precision", fontsize=12, fontweight="bold")
         axes[1].set_title(
-            "Precision-Recall Balance (size/color = AP@50)", fontsize=13, fontweight="bold"
+            "Precision-Recall Balance (size/color = AP@50)",
+            fontsize=13,
+            fontweight="bold",
         )
         axes[1].set_xlim([0, 1.05])
         axes[1].set_ylim([0, 1.05])
@@ -343,7 +361,7 @@ def plot_metrics_summary(metrics: Dict[str, float], output_dir: Path) -> str:
         "Recall": metrics.get("recall", 0),
         "F1": metrics.get("f1_score", 0),
     }
-    colors = ["#3b82f6", "#f59e0b", "#22c55e", "#ef4444", "#8b5cf6"]
+    colors = [_DARK_BLUE, _GOLD, _TEAL, _RED, _PURPLE]
     bars = ax.bar(items.keys(), items.values(), color=colors, edgecolor="black", linewidth=0.3)
     for bar, v in zip(bars, items.values()):
         ax.text(
@@ -398,7 +416,7 @@ def plot_prediction_samples(
                 f"{classes[int(c)] if int(c) < len(classes) else '?'}: {conf:.2f}"
                 for c, conf in zip(
                     pred.class_id,
-                    pred.confidence if pred.confidence is not None else np.ones(len(pred)),
+                    (pred.confidence if pred.confidence is not None else np.ones(len(pred))),
                 )
             ]
             pred_img = box_ann.annotate(pred_img, pred)
