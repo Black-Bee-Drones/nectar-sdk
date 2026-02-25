@@ -14,7 +14,6 @@ flowchart TB
         BDM["BaseDetectionModel"]
         Types["Detection / DetectionResult<br/>DetectionInput / Prediction"]
         Configs["TrainingConfig / EvaluationConfig<br/>TrainingMetrics / EvaluationMetrics<br/>TrainingResult"]
-        Protocols["DetectorProtocol<br/>TrainableProtocol<br/>MergingStrategy"]
         Registry["ModelRegistry<br/>DetectorFactory"]
         Exceptions["DetectionError<br/>ModelNotLoadedError<br/>TrainingError<br/>EvaluationError<br/>..."]
     end
@@ -37,6 +36,7 @@ flowchart TB
         SoftNMS["SoftNMSStrategy"]
         WBF["WBFStrategy"]
         NMM["NMMStrategy"]
+        PCF["PerClassConfidenceFilter"]
     end
 
     subgraph Evaluation["Evaluation"]
@@ -62,7 +62,6 @@ flowchart TB
 
     BDM -->|uses| Types
     BDM -->|uses| Configs
-    BDM -->|uses| Protocols
     BDM -->|uses| Slicing
     BDM -->|raises| Exceptions
 
@@ -748,6 +747,15 @@ config = EvaluationConfig(
 )
 
 evaluator = ObjectDetectionEvaluator(detector.model, config)
+
+# Optional: add post-processing strategies
+from nectar.ai.detection.postprocess import NMSStrategy, PerClassConfidenceFilter
+
+evaluator.set_post_processor(
+    merge_strategy=NMSStrategy(iou_threshold=0.5),
+    filter_strategy=PerClassConfidenceFilter(csv_path="pr_analysis_results.csv"),
+)
+
 metrics = evaluator.evaluate()
 
 print(f"mAP@50: {metrics.map50:.4f}")
@@ -781,40 +789,58 @@ classDiagram
         <<abstract>>
         +iou_threshold float
         +name str
-        +merge_boxes(detections)* Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections)* Tuple
+        +_compute_iou_pair(box1, box2)$ float
+        +_compute_iou_batch(box, boxes)$ ndarray
     }
 
     class NMSStrategy {
-        +iou_threshold float
         +class_agnostic bool
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections) Tuple
     }
 
     class SoftNMSStrategy {
-        +iou_threshold float
         +sigma float
         +score_threshold float
-        +_compute_iou(box, boxes) ndarray
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections) Tuple
     }
 
     class WBFStrategy {
-        +iou_threshold float
         +skip_box_threshold float
-        +_compute_iou(box1, box2) float
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +conf_type str
+        +merge_boxes(detections) Tuple
     }
 
     class NMMStrategy {
-        +iou_threshold float
-        +_compute_iou(box1, box2) float
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections) Tuple
+    }
+
+    class PerClassConfidenceFilter {
+        +threshold_mapping Dict
+        +default_threshold float
+        +filter(detections) sv.Detections
     }
 
     BaseMergingStrategy <|-- NMSStrategy
     BaseMergingStrategy <|-- SoftNMSStrategy
     BaseMergingStrategy <|-- WBFStrategy
     BaseMergingStrategy <|-- NMMStrategy
+```
+
+### Per-Class Confidence Filtering
+
+Load optimal thresholds from PR analysis results:
+
+```python
+from nectar.ai.detection.postprocess import PerClassConfidenceFilter
+
+# From PR analysis CSV
+filter = PerClassConfidenceFilter(csv_path="evaluation/pr_analysis_results.csv")
+
+# Or manually
+filter = PerClassConfidenceFilter(threshold_mapping={0: 0.3, 1: 0.5}, default_threshold=0.25)
+
+filtered = filter.filter(detections)
 ```
 
 ## Extension
@@ -906,6 +932,16 @@ python -m nectar.ai.detection.cli.evaluate \
     --model-path best.pt \
     --framework ultralytics \
     --dataset-path /path/to/dataset
+
+# With post-processing
+python -m nectar.ai.detection.cli.evaluate \
+    --model-path best.pt \
+    --framework ultralytics \
+    --dataset-path /path/to/dataset \
+    --merge-strategy nms \
+    --merge-iou-threshold 0.5 \
+    --use-per-class-filter \
+    --per-class-thresholds evaluation/pr_analysis_results.csv
 ```
 
 ## Dataset Management
@@ -958,24 +994,28 @@ split_path = stratifier.stratify(
 )
 ```
 
-### Augmentation Configuration
+### Augmentation
 
-Build augmentation configs from presets or custom transforms:
+Build augmentation configs and apply to datasets:
 
 ```python
-from nectar.ai.detection.datasets import AugmentationBuilder, AUG_CONSERVATIVE
+from nectar.ai.detection.datasets import AugmentationBuilder
 
-# Use preset
-builder = AugmentationBuilder(preset="conservative")
+# Use preset and apply to dataset
+builder = AugmentationBuilder(preset="aerial")
+builder.apply(
+    input_path="datasets/my_dataset",
+    output_path="datasets/my_dataset_augmented",
+    num_augmented=2,
+    splits=["train"],
+)
 
-# Custom config
+# Custom transforms
 builder = AugmentationBuilder(config={
     "HorizontalFlip": {"p": 0.5},
     "Rotate": {"limit": 15, "p": 0.3},
 })
-
-# Save to file
-builder.to_yaml("augmentations.yaml")
+builder.apply("datasets/input", "datasets/output", num_augmented=3)
 ```
 
 ### Dataset Analysis
@@ -1123,7 +1163,8 @@ detection/
 │   ├── base.py          # BaseDetectionModel
 │   ├── types.py         # Detection, DetectionResult
 │   ├── configs.py       # TrainingConfig, EvaluationConfig
-│   └── protocols.py     # DetectorProtocol, TrainableProtocol
+│   ├── registry.py      # ModelRegistry, DetectorFactory
+│   └── exceptions.py    # DetectionError, ...
 ├── models/
 │   ├── ultralytics.py   # UltralyticsModel
 │   ├── transformers.py  # TransformersModel
@@ -1132,15 +1173,19 @@ detection/
 ├── training/
 │   └── config.py        # Framework-specific configs
 ├── evaluation/
-│   └── evaluator.py     # ObjectDetectionEvaluator
+│   ├── evaluator.py     # ObjectDetectionEvaluator
+│   ├── analysis.py      # PR curves, error statistics
+│   └── visualizations.py # Plots (PR, P, R, F1, confusion matrix, ...)
 ├── slicing/
 │   ├── config.py        # SlicingConfig
 │   └── inference.py     # SlicingInference
 ├── postprocess/
+│   ├── base.py          # BaseMergingStrategy
 │   ├── nms.py           # NMSStrategy
 │   ├── soft_nms.py      # SoftNMSStrategy
 │   ├── wbf.py           # WBFStrategy
-│   └── nmm.py           # NMMStrategy
+│   ├── nmm.py           # NMMStrategy
+│   └── filtering.py     # PerClassConfidenceFilter
 ├── datasets/           # Dataset management utilities
 │   ├── format.py       # FormatDetector, FormatConverter
 │   ├── subset.py       # SubsetCreator
