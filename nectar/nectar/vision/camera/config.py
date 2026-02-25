@@ -70,6 +70,7 @@ class IMX219Config(CameraConfig):
     fps: int = 30
     flip: int = 0
     name: str = "imx219_cam"
+    brightness: Optional[float] = None
 
 
 @dataclass(frozen=True)

@@ -40,7 +40,7 @@ install(PROGRAMS
   nectar/vision/nodes/click_color_calibration_node.py
   nectar/vision/camera/calibration/calibration.py
   nectar/vision/nodes/line_detection_node.py
-  nectar/vision/nodes/webcam_publisher_node.py
+  nectar/vision/nodes/camera_publisher_node.py
   nectar/examples/vision/camera_example.py
   nectar/examples/vision/depth_example.py
   nectar/examples/ai/detector_example.py

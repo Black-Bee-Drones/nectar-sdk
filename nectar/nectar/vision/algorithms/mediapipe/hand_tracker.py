@@ -8,17 +8,9 @@ from typing import List, Optional, Tuple
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.vision import (
-    HandLandmarksConnections,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_styles as mp_styles,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_utils as mp_drawing,
-)
 
 
 class HandLandmark(IntEnum):
@@ -175,8 +167,11 @@ class HandTracker:
         self._detection_result: Optional[vision.HandLandmarkerResult] = None
         self._is_running = False
 
-        # drawing utilities (Tasks API)
-        self._hand_connections = HandLandmarksConnections.HAND_CONNECTIONS
+        # MediaPipe 0.10.18 drawing utilities
+        self._mp_hands = mp.solutions.hands
+        self._mp_drawing = mp.solutions.drawing_utils
+        self._mp_drawing_styles = mp.solutions.drawing_styles
+        self._hand_connections = self._mp_hands.HAND_CONNECTIONS
 
         self._depth_coeffs = np.polyfit(self._DEPTH_CALIB_X, self._DEPTH_CALIB_Y, 2)
 
@@ -304,13 +299,19 @@ class HandTracker:
         for idx, hand_landmarks in enumerate(self._detection_result.hand_landmarks):
             handedness = self._detection_result.handedness[idx]
 
-            # Draw landmarks and connections (Tasks API)
-            mp_drawing.draw_landmarks(
+            hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+            hand_landmarks_proto.landmark.extend(
+                [
+                    landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
+                    for landmark in hand_landmarks
+                ]
+            )
+            self._mp_drawing.draw_landmarks(
                 image,
-                hand_landmarks,
+                hand_landmarks_proto,
                 self._hand_connections,
-                mp_styles.get_default_hand_landmarks_style(),
-                mp_styles.get_default_hand_connections_style(),
+                self._mp_drawing_styles.get_default_hand_landmarks_style(),
+                self._mp_drawing_styles.get_default_hand_connections_style(),
             )
 
             # Draw handedness label
