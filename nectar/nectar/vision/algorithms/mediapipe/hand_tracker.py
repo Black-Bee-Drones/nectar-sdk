@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import urllib.request
 from dataclasses import dataclass
@@ -6,11 +8,21 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
-from mediapipe.framework.formats import landmark_pb2
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
+
+try:
+    import mediapipe as mp
+    from mediapipe.framework.formats import landmark_pb2
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    mp = None
+    landmark_pb2 = None
+    python = None
+    vision = None
+    MEDIAPIPE_AVAILABLE = False
 
 
 class HandLandmark(IntEnum):
@@ -162,12 +174,17 @@ class HandTracker:
     _DEPTH_CALIB_Y = np.array([20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100])
 
     def __init__(self, config: Optional[HandTrackerConfig] = None):
+        if not MEDIAPIPE_AVAILABLE:
+            raise ImportError(
+                "mediapipe is required for HandTracker. "
+                "Install with: pip install nectar-sdk[vision]"
+            )
+
         self._config = config or HandTrackerConfig()
         self._detector: Optional[vision.HandLandmarker] = None
         self._detection_result: Optional[vision.HandLandmarkerResult] = None
         self._is_running = False
 
-        # MediaPipe 0.10.18 drawing utilities
         self._mp_hands = mp.solutions.hands
         self._mp_drawing = mp.solutions.drawing_utils
         self._mp_drawing_styles = mp.solutions.drawing_styles

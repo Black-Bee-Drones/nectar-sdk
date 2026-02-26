@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -5,11 +7,21 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
-from mediapipe.framework.formats import landmark_pb2
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
+
+try:
+    import mediapipe as mp
+    from mediapipe.framework.formats import landmark_pb2
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    mp = None
+    landmark_pb2 = None
+    python = None
+    vision = None
+    MEDIAPIPE_AVAILABLE = False
 
 
 class FaceLandmarkRegion:
@@ -312,6 +324,12 @@ class FaceMeshTracker:
     )
 
     def __init__(self, config: Optional[FaceMeshTrackerConfig] = None):
+        if not MEDIAPIPE_AVAILABLE:
+            raise ImportError(
+                "mediapipe is required for FaceMeshTracker. "
+                "Install with: pip install nectar-sdk[vision]"
+            )
+
         self._config = config or FaceMeshTrackerConfig()
         self._detector: Optional[vision.FaceLandmarker] = None
         self._detection_result: Optional[vision.FaceLandmarkerResult] = None
