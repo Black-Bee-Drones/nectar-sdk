@@ -200,8 +200,11 @@ class UltralyticsModel(BaseDetectionModel):
         # Create dataset subset if max samples specified
         if config.max_train_samples is not None or config.max_eval_samples is not None:
             subset_output_dir = output_dir / "datasets" / "subset"
+            dataset_dir = config.dataset_path
+            if Path(dataset_dir).suffix in [".yaml", ".yml"]:
+                dataset_dir = str(Path(dataset_dir).parent)
             subset_creator = SubsetCreator(
-                config.dataset_path,
+                dataset_dir,
                 str(subset_output_dir),
                 seed=config.seed,
                 verbose=True,
@@ -221,13 +224,11 @@ class UltralyticsModel(BaseDetectionModel):
         if ultralytics_settings:
             ultralytics_settings.update({"tensorboard": config.tensorboard})
 
-        # Build training arguments - use framework-specific config if available
         if hasattr(config, "to_ultralytics_args"):
             train_args = config.to_ultralytics_args()
             train_args["project"] = str(output_dir.parent)
             train_args["name"] = output_dir.name
         else:
-            # Fallback for base TrainingConfig
             train_args = {
                 "data": config.dataset_path,
                 "epochs": config.epochs,
