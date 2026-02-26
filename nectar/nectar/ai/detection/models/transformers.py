@@ -196,15 +196,19 @@ class TransformersModel(BaseDetectionModel):
         target_format = "coco"
 
         if detected_format != target_format:
-            self.logger.info(f"Converting dataset from {detected_format} to {target_format}")
             converted_dir = output_dir / "datasets" / "converted"
-            converter = FormatConverter(config.dataset_path, str(converted_dir), verbose=True)
-            converter.convert(target_format=target_format, copy_images=True)
+            if (converted_dir / "train" / "_annotations.coco.json").exists():
+                self.logger.info("Using existing COCO conversion: %s", converted_dir)
+            else:
+                self.logger.info(f"Converting dataset from {detected_format} to {target_format}")
+                converter = FormatConverter(config.dataset_path, str(converted_dir), verbose=True)
+                converter.convert(target_format=target_format, copy_images=False)
             config.dataset_path = str(converted_dir)
 
         # Create subset if max_samples specified
         if config.max_train_samples is not None or config.max_eval_samples is not None:
             subset_dir = output_dir / "datasets" / "subset"
+            source_dir = Path(config.dataset_path)
             subset_creator = SubsetCreator(
                 config.dataset_path, str(subset_dir), seed=config.seed, verbose=True
             )
@@ -213,6 +217,14 @@ class TransformersModel(BaseDetectionModel):
                 max_eval_samples=config.max_eval_samples,
                 max_test_samples=config.max_test_samples,
             )
+            # Symlink missing splits so evaluation can find them
+            for split in ["train", "valid", "val", "test"]:
+                subset_split = subset_dir / split
+                source_split = source_dir / split
+                if not subset_split.exists() and source_split.exists():
+                    import os
+
+                    os.symlink(source_split.resolve(), subset_split)
             config.dataset_path = subset_path
 
         # Load dataset
@@ -348,17 +360,17 @@ class TransformersModel(BaseDetectionModel):
             )
             dataset_path = Path(stratified_path)
 
-        # Load Roboflow format (train/valid/test with _annotations.coco.json)
         train_dir = dataset_path / "train"
         train_annotations = train_dir / "_annotations.coco.json"
 
         val_dir = dataset_path / "valid"
         if not val_dir.exists():
+            val_dir = dataset_path / "val"
+        if not val_dir.exists():
             val_dir = dataset_path / "validation"
 
         val_annotations = val_dir / "_annotations.coco.json"
 
-        # Check if required files exist
         if not train_dir.exists() or not train_annotations.exists():
             raise TrainingError(
                 f"Dataset not in expected format. Expected Roboflow COCO format at {train_dir} "
@@ -422,11 +434,9 @@ class TransformersModel(BaseDetectionModel):
     @staticmethod
     def _collate_fn(batch):
         """Collate function for DataLoader."""
-        pixel_values = torch.stack([x["pixel_values"] for x in batch])
-        encoding = {"pixel_values": pixel_values}
-        labels = [x["labels"] for x in batch]
-        encoding["labels"] = labels
-        return encoding
+        from .dataset import collate_fn
+
+        return collate_fn(batch)
 
     def _extract_training_metrics(self, train_result) -> Dict[str, Any]:
         """Extract metrics from training result."""

@@ -245,7 +245,7 @@ def main():
         "dataset_path": dataset,
         "epochs": params.get("epochs", 10),
         "batch_size": params.get("batch_size", 16),
-        "learning_rate": params.get("learning_rate", 0.001),
+        "learning_rate": float(params.get("learning_rate", 0.001)),
         "output_dir": output_dir_raw,
         "device": params.get("device", "auto"),
         "seed": params.get("seed", 42),
