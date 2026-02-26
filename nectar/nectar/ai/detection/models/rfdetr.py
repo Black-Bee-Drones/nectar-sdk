@@ -22,7 +22,7 @@ except ImportError:
 
 try:
     from rfdetr import RFDETRBase, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
-    from rfdetr.assets.model_weights import download_pretrain_weights
+    from rfdetr.main import download_pretrain_weights
     from rfdetr.util.coco_classes import COCO_CLASSES
 
     RFDETR_AVAILABLE = True
@@ -40,11 +40,12 @@ try:
         "rfdetr-medium": "rf-detr-medium.pth",
         "rfdetr-large": "rf-detr-large-2026.pth",
     }
-except ImportError:
+except ImportError as _rfdetr_err:
     RFDETR_AVAILABLE = False
     COCO_CLASSES = []
     RFDETR_MODELS = {}
     _DEFAULT_PRETRAIN_WEIGHTS = {}
+    logging.getLogger(__name__).debug("rfdetr import failed: %s", _rfdetr_err)
 
 from PIL import Image
 
@@ -250,10 +251,18 @@ class RFDETRModel(BaseDetectionModel):
             target_format = "coco"
 
             if detected_format != target_format:
-                self.logger.info(f"Converting dataset from {detected_format} to {target_format}")
                 converted_dir = output_dir / "datasets" / "converted"
-                converter = FormatConverter(config.dataset_path, str(converted_dir), verbose=True)
-                converter.convert(target_format=target_format, copy_images=True)
+                # Skip if already converted
+                if (converted_dir / "train" / "_annotations.coco.json").exists():
+                    self.logger.info("Using existing COCO conversion: %s", converted_dir)
+                else:
+                    self.logger.info(
+                        f"Converting dataset from {detected_format} to {target_format}"
+                    )
+                    converter = FormatConverter(
+                        config.dataset_path, str(converted_dir), verbose=True
+                    )
+                    converter.convert(target_format=target_format, copy_images=False)
                 config.dataset_path = str(converted_dir)
 
         self.update_class_names_from_dataset(config.dataset_path)
@@ -289,22 +298,17 @@ class RFDETRModel(BaseDetectionModel):
         # Setup callbacks
         self._setup_callbacks(config, output_dir, is_main_process)
 
-        # Validate image size
-        imgsz_raw = getattr(config, "imgsz", None)
-        imgsz = None
-        if isinstance(imgsz_raw, list):
-            if len(imgsz_raw) != 2:
-                raise ValueError("imgsz as a list must have two values [h, w]")
-            if imgsz_raw[0] != imgsz_raw[1]:
-                self.logger.warning(
-                    f"RF-DETR expects a single resolution value, but got non-square size {imgsz_raw}. "
-                    f"Using height ({imgsz_raw[0]}) as resolution."
-                )
-            imgsz = imgsz_raw[0]
-        elif isinstance(imgsz_raw, int):
-            imgsz = imgsz_raw
-        else:
-            imgsz = 728  # Default
+        # Resolve resolution: prefer config.resolution, fallback to config.imgsz
+        resolution = getattr(config, "resolution", None)
+        if resolution is None:
+            imgsz_raw = getattr(config, "imgsz", None)
+            if isinstance(imgsz_raw, list):
+                resolution = imgsz_raw[0]
+            elif isinstance(imgsz_raw, int):
+                resolution = imgsz_raw
+            else:
+                resolution = 560
+        imgsz = int(resolution)
 
         if imgsz:
             if imgsz % 56 != 0:
@@ -326,6 +330,7 @@ class RFDETRModel(BaseDetectionModel):
                 device = f"cuda:{local_rank}"
 
         # Build training arguments
+        lr_encoder = getattr(config, "lr_encoder", None)
         train_args = {
             "dataset_dir": dataset_path,
             "output_dir": str(output_dir),
@@ -333,9 +338,9 @@ class RFDETRModel(BaseDetectionModel):
             "warmup_epochs": getattr(config, "warmup_epochs", 1),
             "batch_size": config.batch_size,
             "grad_accum_steps": config.gradient_accumulation_steps,
-            "lr": config.learning_rate,
+            "lr": float(config.learning_rate),
             "lr_scheduler": getattr(config, "lr_scheduler_type", "step"),
-            "lr_encoder": getattr(config, "lr_encoder", None),
+            "lr_encoder": float(lr_encoder) if lr_encoder is not None else None,
             "resolution": imgsz,
             "weight_decay": config.weight_decay,
             "device": device,
@@ -584,6 +589,14 @@ class RFDETRModel(BaseDetectionModel):
             max_eval_samples=config.max_eval_samples,
             max_test_samples=config.max_test_samples,
         )
+
+        # Symlink any source splits missing from the subset.
+        for split in ["train", "valid", "test"]:
+            subset_split = subset_dir / split
+            source_split = source_dir / split
+            if not subset_split.exists() and source_split.exists():
+                os.symlink(source_split.resolve(), subset_split)
+                self.logger.info("Linked missing split: %s -> %s", split, source_split)
 
         return subset_path
 
