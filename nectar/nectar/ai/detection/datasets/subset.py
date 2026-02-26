@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import random
 import shutil
 from collections import Counter, defaultdict
@@ -205,7 +206,7 @@ class SubsetCreator:
         """Create subset for COCO format dataset."""
         split_limits = {
             "train": max_train_samples,
-            "val": max_eval_samples,
+            "valid": max_eval_samples,
             "test": max_test_samples,
         }
 
@@ -214,6 +215,8 @@ class SubsetCreator:
                 continue
 
             split_dir = self.dataset_path / split
+            if not split_dir.exists() and split == "valid":
+                split_dir = self.dataset_path / "val"
             ann_file = split_dir / "_annotations.coco.json"
 
             if not ann_file.exists():
@@ -253,7 +256,11 @@ class SubsetCreator:
                 total_class_counts[ann["category_id"]] += 1
 
             selected_images = self._balanced_sample_coco(
-                images, image_to_classes, class_to_images, total_class_counts, max_samples
+                images,
+                image_to_classes,
+                class_to_images,
+                total_class_counts,
+                max_samples,
             )
             selected_image_ids = {img["id"] for img in selected_images}
 
@@ -272,17 +279,17 @@ class SubsetCreator:
         with open(subset_ann_file, "w") as f:
             json.dump(subset_data, f, indent=2)
 
-        images_dir = split_dir / "images"
-        if not images_dir.exists():
-            images_dir = split_dir
+        # Locate source images: try split_dir directly, then split_dir/images
+        images_dir = split_dir
+        if not (split_dir / selected_images[0]["file_name"]).exists():
+            images_dir = split_dir / "images"
 
-        subset_images_dir = subset_split_dir / "images"
-        subset_images_dir.mkdir(parents=True, exist_ok=True)
-
-        for img in tqdm(selected_images, desc=f"Copying {split}"):
+        # Place images directly in split dir (rfdetr expects train/file.jpg, not train/images/file.jpg)
+        for img in tqdm(selected_images, desc=f"Linking {split}"):
             src = images_dir / img["file_name"]
-            if src.exists():
-                shutil.copy2(src, subset_images_dir / img["file_name"])
+            dst = subset_split_dir / img["file_name"]
+            if src.exists() and not dst.exists():
+                os.symlink(src.resolve(), dst)
 
     def _balanced_sample(
         self,

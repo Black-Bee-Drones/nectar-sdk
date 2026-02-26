@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import shutil
 from collections import defaultdict
 from pathlib import Path
@@ -404,9 +405,13 @@ class FormatConverter:
 
         class_names = yaml_data["names"]
         if isinstance(class_names, list):
-            categories = [{"id": i, "name": n} for i, n in enumerate(class_names)]
+            categories = [
+                {"id": i, "name": n, "supercategory": "object"} for i, n in enumerate(class_names)
+            ]
         else:
-            categories = [{"id": int(k), "name": v} for k, v in class_names.items()]
+            categories = [
+                {"id": int(k), "name": v, "supercategory": "object"} for k, v in class_names.items()
+            ]
 
         if splits is None:
             splits = [
@@ -428,7 +433,8 @@ class FormatConverter:
             images_dir = self.source_dir / split / "images"
             labels_dir = self.source_dir / split / "labels"
 
-            target_split = self.target_dir / split
+            target_name = "valid" if split == "val" else split
+            target_split = self.target_dir / target_name
             target_split.mkdir(parents=True, exist_ok=True)
 
             coco_data = {"images": [], "annotations": [], "categories": categories}
@@ -498,8 +504,12 @@ class FormatConverter:
                     )
                     annotation_id += 1
 
-                if copy_images:
-                    shutil.copy2(img_path, target_split / img_path.name)
+                target_img = target_split / img_path.name
+                if not target_img.exists():
+                    if copy_images:
+                        shutil.copy2(img_path, target_img)
+                    else:
+                        os.symlink(img_path.resolve(), target_img)
 
             annotation_path = target_split / "_annotations.coco.json"
             with open(annotation_path, "w") as f:

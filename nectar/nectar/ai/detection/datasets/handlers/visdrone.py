@@ -338,7 +338,10 @@ class VisDroneHandler(BaseDatasetHandler):
         target_split = self.output_dir / split
         target_split.mkdir(parents=True, exist_ok=True)
 
-        categories = [{"id": i, "name": name} for i, name in self.VISDRONE_CLASSES.items()]
+        categories = [
+            {"id": i, "name": name, "supercategory": "object"}
+            for i, name in self.VISDRONE_CLASSES.items()
+        ]
 
         coco_data = {"images": [], "annotations": [], "categories": categories}
 
