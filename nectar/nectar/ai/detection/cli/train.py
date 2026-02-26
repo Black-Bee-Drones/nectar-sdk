@@ -26,14 +26,12 @@ def parse_args():
         "--dataset-format", type=str, default="yolo", help="Dataset format (yolo, coco)"
     )
 
-    from nectar.ai.detection.core.configs import DEFAULT_OUTPUT_DIR
-
     # Training parameters
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=str(DEFAULT_OUTPUT_DIR),
-        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})",
+        default="outputs",
+        help="Output directory (default: outputs)",
     )
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
@@ -136,8 +134,6 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
 
     result = config.copy()
 
-    from nectar.ai.detection.core.configs import DEFAULT_OUTPUT_DIR
-
     parser_defaults = {
         "epochs": 10,
         "batch_size": 16,
@@ -145,7 +141,16 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
         "imgsz": 640,
         "device": "auto",
         "seed": 42,
-        "output_dir": str(DEFAULT_OUTPUT_DIR),
+        "output_dir": "outputs",
+        "dataset_format": "yolo",
+        "mixed_precision": "no",
+        "gradient_accumulation_steps": 1,
+        "weight_decay": 0.0001,
+        "warmup_ratio": 0.1,
+        "lr_scheduler_type": "linear",
+        "eval_split": "test",
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.5,
     }
 
     for arg_name, value in vars(args).items():
@@ -209,20 +214,17 @@ def main():
         logger.error("Dataset is required (--dataset or config data.dataset_path)")
         sys.exit(1)
 
-    # Resolve relative paths relative to detection module directory
-    from nectar.ai.detection.core.configs import (
-        DEFAULT_OUTPUT_DIR,
-        DETECTION_MODULE_DIR,
-    )
+    # Resolve relative paths from CWD
+    base_dir = Path.cwd()
 
     dataset_path = Path(dataset)
     if not dataset_path.is_absolute():
-        dataset = str((DETECTION_MODULE_DIR / dataset_path).resolve())
+        dataset = str((base_dir / dataset_path).resolve())
 
-    output_dir_raw = params.get("output_dir", str(DEFAULT_OUTPUT_DIR))
+    output_dir_raw = params.get("output_dir", "outputs")
     output_dir_path = Path(output_dir_raw)
     if not output_dir_path.is_absolute():
-        output_dir_raw = str((DETECTION_MODULE_DIR / output_dir_path).resolve())
+        output_dir_raw = str((base_dir / output_dir_path).resolve())
 
     # Detect framework
     framework = params.get("framework") or detect_framework(model)
@@ -264,6 +266,9 @@ def main():
         "lrf": params.get("lrf", 0.01),
         "cos_lr": params.get("cos_lr", False),
         "dropout": params.get("dropout", 0.0),
+        "max_train_samples": params.get("max_train_samples"),
+        "max_eval_samples": params.get("max_eval_samples"),
+        "max_test_samples": params.get("max_test_samples"),
     }
 
     # Create framework-specific config
