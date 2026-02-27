@@ -84,7 +84,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
           conf_threshold: 0.25
           ...
     """
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     # Flatten config sections
@@ -98,7 +98,10 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
     if "eval" in config:
         for k, v in config["eval"].items():
-            if k not in flat:
+            # Prefix eval-specific keys to avoid conflicts with train keys
+            if k in ("batch_size", "device", "output_dir", "num_samples"):
+                flat[f"eval_{k}"] = v
+            elif k not in flat:
                 flat[k] = v
 
     return flat
@@ -239,6 +242,8 @@ def main():
         TransformersTrainingConfig,
         UltralyticsTrainingConfig,
     )
+    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.detection.utils.tensorboard import TensorBoardManager
 
     # Build training config
     common_args = {
@@ -295,6 +300,12 @@ def main():
     logger.info("Dataset: %s", dataset)
     logger.info("Output: %s", params.get("output_dir"))
 
+    # Start TensorBoard server if requested
+    tb_manager = TensorBoardManager()
+    if params.get("start_tensorboard") and params.get("tensorboard"):
+        tb_port = params.get("tensorboard_port", 6006)
+        tb_manager.start_server(log_dir=output_dir_raw, port=tb_port)
+
     detector = Detector(model, framework=framework, device=params.get("device", "auto"))
     detector.load()
 
@@ -305,21 +316,56 @@ def main():
         logger.info("Training completed")
         logger.info("Model saved: %s", result.get("model_path", "N/A"))
 
+        if params.get("push_to_hub") and params.get("hub_model_id"):
+            logger.info("Uploading training outputs to HuggingFace Hub...")
+            try:
+                uploader = HuggingFaceUploader(
+                    repo_id=params["hub_model_id"],
+                    local_dir=output_dir_raw,
+                    repo_type="model",
+                )
+
+                ignore_patterns = [
+                    "*.tmp",
+                    "*.bak",
+                    "__pycache__",
+                    "*.git*",
+                    "*.pyc",
+                    ".ipynb_checkpoints",
+                    "datasets/**",
+                ]
+
+                uploader.upload(
+                    commit_message="Upload complete training results",
+                    ignore_patterns=ignore_patterns,
+                )
+                logger.info(
+                    "Successfully uploaded training outputs to %s",
+                    params["hub_model_id"],
+                )
+            except Exception as e:
+                logger.error("Failed to upload training outputs: %s", e)
+
         # Evaluate if requested
         if params.get("evaluate"):
             eval_split = params.get("eval_split", "test")
+            eval_batch = params.get("eval_batch_size", params.get("batch_size", 1))
+            eval_device = params.get("eval_device", params.get("device", "auto"))
+            eval_samples = params.get("eval_num_samples", params.get("max_test_samples"))
+            eval_output = params.get("eval_output_dir", str(Path(output_dir_raw) / "evaluation"))
             logger.info("Evaluating on %s split", eval_split)
 
             eval_config = EvaluationConfig(
                 model_path=result["model_path"],
                 dataset_path=dataset,
                 framework=framework,
-                output_dir=str(Path(output_dir_raw) / "evaluation"),
+                output_dir=eval_output,
                 split=eval_split,
                 conf_threshold=params.get("conf_threshold", 0.25),
                 iou_threshold=params.get("iou_threshold", 0.5),
-                device=params.get("device", "auto"),
-                batch_size=params.get("batch_size", 16),
+                device=eval_device,
+                batch_size=eval_batch,
+                num_samples=eval_samples,
                 imgsz=params.get("imgsz"),
             )
 
@@ -329,9 +375,42 @@ def main():
             logger.info("mAP@50: %.4f", metrics.map50)
             logger.info("mAP@50-95: %.4f", metrics.map50_95)
 
+            # Upload evaluation results to HuggingFace Hub if enabled
+            if params.get("push_to_hub") and params.get("hub_model_id"):
+                logger.info("Uploading evaluation results to HuggingFace Hub...")
+                try:
+                    eval_uploader = HuggingFaceUploader(
+                        repo_id=params["hub_model_id"],
+                        local_dir=eval_output,
+                        repo_type="model",
+                    )
+
+                    ignore_patterns = [
+                        "*.tmp",
+                        "*.bak",
+                        "__pycache__",
+                        "*.git*",
+                        "*.pyc",
+                        ".ipynb_checkpoints",
+                    ]
+
+                    eval_uploader.upload(
+                        commit_message="Add evaluation results",
+                        path_in_repo="evaluation",
+                        ignore_patterns=ignore_patterns,
+                    )
+                    logger.info(
+                        "Successfully uploaded evaluation results to %s in 'evaluation' folder",
+                        params["hub_model_id"],
+                    )
+                except Exception as e:
+                    logger.error("Failed to upload evaluation results: %s", e)
+
     except Exception as e:
         logger.error("Training failed: %s", e)
         raise
+    finally:
+        tb_manager.stop_server()
 
 
 if __name__ == "__main__":
