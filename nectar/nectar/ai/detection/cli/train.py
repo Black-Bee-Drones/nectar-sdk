@@ -1,10 +1,13 @@
 """CLI for training detection models."""
 
 import argparse
+import json
 import logging
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -221,16 +224,13 @@ def main():
 
     args = parse_args()
 
-    # Load config if provided
     config = {}
     if args.config:
         logger.info("Loading config: %s", args.config)
         config = load_config(args.config)
 
-    # Merge with CLI args
     params = merge_config_with_args(config, args)
 
-    # Validate required params
     model = params.get("model")
     dataset = params.get("dataset_path")
 
@@ -241,7 +241,6 @@ def main():
         logger.error("Dataset is required (--dataset or config data.dataset_path)")
         sys.exit(1)
 
-    # Resolve relative paths from CWD
     base_dir = Path.cwd()
 
     dataset_path = Path(dataset)
@@ -253,11 +252,9 @@ def main():
     if not output_dir_path.is_absolute():
         output_dir_raw = str((base_dir / output_dir_path).resolve())
 
-    # Detect framework
     framework = params.get("framework") or detect_framework(model)
     logger.info("Framework: %s", framework)
 
-    # Import framework-specific config and model
     from nectar.ai.detection import Detector
     from nectar.ai.detection.core.configs import EvaluationConfig
     from nectar.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
@@ -269,7 +266,6 @@ def main():
     from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
     from nectar.ai.detection.utils.tensorboard import TensorBoardManager
 
-    # Build training config
     common_args = {
         "dataset_path": dataset,
         "epochs": params.get("epochs", 10),
@@ -308,9 +304,7 @@ def main():
         "resume": params.get("resume", False),
     }
 
-    # Create framework-specific config
     if framework == "ultralytics":
-        # Ultralytics-specific parameters
         common_args.update(
             {
                 "warmup_epochs": params.get("warmup_epochs", 3.0),
@@ -323,10 +317,8 @@ def main():
         )
         training_config = UltralyticsTrainingConfig(model=model, **common_args)
     elif framework == "transformers":
-        # Transformers-specific parameters (already in common_args)
         training_config = TransformersTrainingConfig(model=model, **common_args)
     elif framework == "rfdetr":
-        # RF-DETR specific parameters
         common_args.update(
             {
                 "resolution": params.get("resolution", params.get("imgsz", 560)),
@@ -365,12 +357,18 @@ def main():
         logger.error("Unsupported framework: %s", framework)
         sys.exit(1)
 
-    # Create detector and train
+    output_dir_path = Path(output_dir_raw)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    config_save_path = output_dir_path / "experiment.config.yaml"
+    training_config.to_yaml(str(config_save_path))
+    logger.info("Saved experiment config: %s", config_save_path)
+
+    run_name = output_dir_path.name
+
     logger.info("Model: %s", model)
     logger.info("Dataset: %s", dataset)
     logger.info("Output: %s", params.get("output_dir"))
 
-    # Start TensorBoard server if requested
     tb_manager = TensorBoardManager()
     if params.get("start_tensorboard") and params.get("tensorboard"):
         tb_port = params.get("tensorboard_port", 6006)
@@ -380,10 +378,17 @@ def main():
     detector.load()
 
     logger.info("Starting training...")
+    training_start_time = time.time()
+
+    eval_metrics: Optional[Any] = None
+    eval_output_dir: Optional[str] = None
+    eval_time: Optional[float] = None
+    eval_split: Optional[str] = None
 
     try:
         result = detector.train(training_config)
-        logger.info("Training completed")
+        training_time = time.time() - training_start_time
+        logger.info("Training completed in %.2f seconds", training_time)
         logger.info("Model saved: %s", result.get("model_path", "N/A"))
 
         if params.get("push_to_hub") and params.get("hub_model_id"):
@@ -418,11 +423,13 @@ def main():
 
         # Evaluate if requested
         if params.get("evaluate"):
+            eval_start_time = time.time()
             eval_split = params.get("eval_split", "test")
             eval_batch = params.get("eval_batch_size", params.get("batch_size", 1))
             eval_device = params.get("eval_device", params.get("device", "auto"))
             eval_samples = params.get("eval_num_samples", params.get("max_test_samples"))
             eval_output = params.get("eval_output_dir", str(Path(output_dir_raw) / "evaluation"))
+            eval_output_dir = eval_output
             logger.info("Evaluating on %s split", eval_split)
 
             eval_config = EvaluationConfig(
@@ -440,10 +447,12 @@ def main():
             )
 
             evaluator = ObjectDetectionEvaluator(detector.model, eval_config)
-            metrics = evaluator.evaluate()
+            eval_metrics = evaluator.evaluate()
+            eval_time = time.time() - eval_start_time
 
-            logger.info("mAP@50: %.4f", metrics.map50)
-            logger.info("mAP@50-95: %.4f", metrics.map50_95)
+            logger.info("mAP@50: %.4f", eval_metrics.map50)
+            logger.info("mAP@50-95: %.4f", eval_metrics.map50_95)
+            logger.info("Evaluation completed in %.2f seconds", eval_time)
 
             # Upload evaluation results to HuggingFace Hub if enabled
             if params.get("push_to_hub") and params.get("hub_model_id"):
@@ -475,6 +484,40 @@ def main():
                     )
                 except Exception as e:
                     logger.error("Failed to upload evaluation results: %s", e)
+
+        # Save run information
+        run_info = {
+            "run_name": run_name,
+            "timestamp": datetime.now().isoformat(),
+            "framework": framework,
+            "model": model,
+            "dataset_path": dataset,
+            "config": training_config.to_dict(),
+            "training": {
+                "model_path": result.get("model_path", "N/A"),
+                "training_time_seconds": training_time,
+                "metrics": result.get("metrics", {}),
+            },
+        }
+
+        if eval_metrics:
+            run_info["evaluation"] = {
+                "split": eval_split,
+                "metrics": eval_metrics.to_dict(),
+                "evaluation_time_seconds": eval_time,
+                "output_dir": eval_output_dir,
+            }
+
+        if params.get("push_to_hub") and params.get("hub_model_id"):
+            run_info["huggingface"] = {
+                "repo_id": params["hub_model_id"],
+                "uploaded": True,
+            }
+
+        run_info_path = output_dir_path / f"{run_name}_run_info.json"
+        with open(run_info_path, "w", encoding="utf-8") as f:
+            json.dump(run_info, f, indent=2, default=str)
+        logger.info("Saved run information: %s", run_info_path)
 
     except Exception as e:
         logger.error("Training failed: %s", e)
