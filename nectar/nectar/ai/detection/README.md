@@ -14,7 +14,6 @@ flowchart TB
         BDM["BaseDetectionModel"]
         Types["Detection / DetectionResult<br/>DetectionInput / Prediction"]
         Configs["TrainingConfig / EvaluationConfig<br/>TrainingMetrics / EvaluationMetrics<br/>TrainingResult"]
-        Registry["ModelRegistry<br/>DetectorFactory"]
         Exceptions["DetectionError<br/>ModelNotLoadedError<br/>TrainingError<br/>EvaluationError<br/>..."]
     end
 
@@ -55,7 +54,6 @@ flowchart TB
     Detector -->|creates| UM
     Detector -->|creates| TM
     Detector -->|creates| RM
-    Detector -->|uses| Registry
 
     UM -->|extends| BDM
     TM -->|extends| BDM
@@ -414,26 +412,6 @@ classDiagram
         +from_batch_detections(batch_detections, class_names)$ Prediction
     }
 
-    class ModelRegistry {
-        <<singleton>>
-        -_models Dict~str,Type~
-        -_factories Dict~str,Callable~
-        +register(name)$ Callable
-        +register_factory(name, factory_func)$
-        +get(name)$ Type
-        +create(name, model_name, config)$ BaseDetectionModel
-        +list_models()$ List~str~
-        +is_registered(name)$ bool
-        +clear()$
-    }
-
-    class DetectorFactory {
-        <<static>>
-        +create(framework, model_source, config)$ BaseDetectionModel
-        +from_pretrained(model_id, framework)$ BaseDetectionModel
-        +from_checkpoint(checkpoint_path, framework)$ BaseDetectionModel
-    }
-
     class SlicingConfig {
         <<dataclass>>
         +strategy SlicingStrategy
@@ -503,9 +481,6 @@ classDiagram
     DetectionResult --> DetectionInput
     Prediction o-- DetectionResult
     Prediction --> DetectionInput
-
-    DetectorFactory --> ModelRegistry
-    ModelRegistry --> BaseDetectionModel
 
     SlicingInference o-- SlicingConfig
     SlicingInference --> SlicingStrategy
@@ -1193,7 +1168,6 @@ detection/
 │   ├── base.py          # BaseDetectionModel
 │   ├── types.py         # Detection, DetectionResult
 │   ├── configs.py       # TrainingConfig, EvaluationConfig
-│   ├── registry.py      # ModelRegistry, DetectorFactory
 │   └── exceptions.py    # DetectionError, ...
 ├── models/
 │   ├── ultralytics.py   # UltralyticsModel

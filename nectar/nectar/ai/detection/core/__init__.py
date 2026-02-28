@@ -20,7 +20,6 @@ from nectar.ai.detection.core.exceptions import (
     ModelNotLoadedError,
     TrainingError,
 )
-from nectar.ai.detection.core.registry import ModelRegistry, registry
 from nectar.ai.detection.core.types import (
     BatchImageType,
     Detection,
@@ -46,9 +45,6 @@ __all__ = [
     "TrainingResult",
     # Base
     "BaseDetectionModel",
-    # Registry
-    "ModelRegistry",
-    "registry",
     # Exceptions
     "DetectionError",
     "ModelNotLoadedError",
