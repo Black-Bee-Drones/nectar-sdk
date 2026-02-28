@@ -58,7 +58,6 @@ from nectar.ai.detection.core.exceptions import (
     TrainingError,
 )
 
-
 # Core types and data classes
 from nectar.ai.detection.core.types import (
     BatchImageType,
