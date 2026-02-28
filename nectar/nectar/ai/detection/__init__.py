@@ -58,12 +58,6 @@ from nectar.ai.detection.core.exceptions import (
     TrainingError,
 )
 
-# Registry and factory
-from nectar.ai.detection.core.registry import (
-    DetectorFactory,
-    ModelRegistry,
-    registry,
-)
 
 # Core types and data classes
 from nectar.ai.detection.core.types import (
@@ -132,10 +126,6 @@ __all__ = [
     "TrainingResult",
     # Base
     "BaseDetectionModel",
-    # Registry
-    "ModelRegistry",
-    "DetectorFactory",
-    "registry",
     # Exceptions
     "DetectionError",
     "ModelNotLoadedError",
