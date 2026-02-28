@@ -947,6 +947,7 @@ nectar-od dataset download --source visdrone --output datasets/visdrone
 nectar-od dataset convert --input datasets/coco --output datasets/yolo --format yolo
 nectar-od dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
 nectar-od dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
+nectar-od dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train
 nectar-od dataset analyze --input datasets/my_dataset
 nectar-od dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
 nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
