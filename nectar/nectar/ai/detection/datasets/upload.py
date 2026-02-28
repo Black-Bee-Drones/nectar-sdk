@@ -1,10 +1,15 @@
-"""Roboflow image uploader for dataset management."""
+"""Dataset uploaders for Roboflow and HuggingFace."""
 
+import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+
+from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+
+logger = logging.getLogger(__name__)
 
 
 class RoboflowUploader:
@@ -305,6 +310,135 @@ def main():
         verbose=True,
         max_workers=args.max_workers,
     )
+
+
+class HuggingFaceDatasetUploader:
+    """
+    Upload datasets to HuggingFace Hub.
+
+    Wraps HuggingFaceUploader with dataset-specific defaults and convenience methods.
+
+    Parameters
+    ----------
+    repo_id : str
+        HuggingFace Hub repository ID (username/repo_name).
+    token : Optional[str], optional
+        HuggingFace API token. Uses HF_TOKEN env var if not provided.
+    private : bool, optional
+        Make repository private. Defaults to True.
+
+    Examples
+    --------
+    >>> uploader = HuggingFaceDatasetUploader(
+    ...     repo_id="user/my-dataset",
+    ...     private=True,
+    ... )
+    >>> uploader.upload_dataset(
+    ...     dataset_path="datasets/my_dataset",
+    ...     commit_message="Upload dataset"
+    ... )
+    """
+
+    def __init__(
+        self,
+        repo_id: str,
+        token: Optional[str] = None,
+        private: bool = True,
+    ):
+        """Initialize uploader."""
+        self.repo_id = repo_id
+        self.token = token
+        self.private = private
+        self._uploader = None
+
+    def _get_uploader(self, dataset_path: str) -> HuggingFaceUploader:
+        """Get or create HuggingFaceUploader instance."""
+        if self._uploader is None:
+            self._uploader = HuggingFaceUploader(
+                repo_id=self.repo_id,
+                local_dir=dataset_path,
+                token=self.token,
+                repo_type="dataset",
+                private=self.private,
+            )
+        else:
+            self._uploader.local_dir = Path(dataset_path)
+        return self._uploader
+
+    def ensure_repo_exists(self) -> bool:
+        """
+        Ensure repository exists, creating if needed.
+
+        Returns
+        -------
+        bool
+            True if repository exists or was created.
+        """
+        uploader = HuggingFaceUploader(
+            repo_id=self.repo_id,
+            local_dir=".",
+            token=self.token,
+            repo_type="dataset",
+            private=self.private,
+        )
+        return uploader.ensure_repo_exists()
+
+    def upload_dataset(
+        self,
+        dataset_path: str,
+        commit_message: str = "Upload dataset",
+        ignore_patterns: Optional[List[str]] = None,
+    ) -> Dict:
+        """
+        Upload dataset directory to HuggingFace Hub.
+
+        Parameters
+        ----------
+        dataset_path : str
+            Path to dataset directory.
+        commit_message : str, optional
+            Commit message. Defaults to "Upload dataset".
+        ignore_patterns : Optional[List[str]], optional
+            Patterns to ignore (e.g., ["*.log", "__pycache__"]).
+
+        Returns
+        -------
+        Dict
+            Upload response.
+        """
+        dataset_dir = Path(dataset_path).expanduser().resolve()
+
+        if not dataset_dir.exists():
+            raise FileNotFoundError(f"Dataset directory not found: {dataset_path}")
+
+        default_ignore = [
+            "*.pyc",
+            "__pycache__",
+            "*.log",
+            ".git",
+            ".gitignore",
+            ".DS_Store",
+            "*.tmp",
+            "*.swp",
+            ".vscode",
+            ".idea",
+        ]
+
+        ignore = (ignore_patterns or []) + default_ignore
+
+        uploader = self._get_uploader(str(dataset_dir))
+        logger.info(f"Uploading dataset to HuggingFace Hub: {self.repo_id}")
+
+        try:
+            response = uploader.upload(
+                commit_message=commit_message,
+                ignore_patterns=ignore,
+            )
+            logger.info(f"Successfully uploaded dataset to {self.repo_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to upload dataset: {e}")
+            raise
 
 
 if __name__ == "__main__":

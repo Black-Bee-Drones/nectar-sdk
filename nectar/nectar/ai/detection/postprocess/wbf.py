@@ -1,5 +1,6 @@
-"""
-Weighted Boxes Fusion strategy.
+"""Weighted Boxes Fusion strategy.
+
+Reference: https://arxiv.org/abs/1910.13302
 """
 
 from typing import List, Tuple
@@ -18,135 +19,70 @@ class WBFStrategy(BaseMergingStrategy):
     """
     Weighted Boxes Fusion.
 
-    Fuses overlapping boxes by computing weighted average of
-    coordinates based on confidence scores.
+    Fuses overlapping boxes by weighted coordinate averaging.
+    Uses cluster-based matching: a new box joins a cluster if it
+    overlaps with *any* box already in the cluster.
 
     Parameters
     ----------
     iou_threshold : float
         IoU threshold for fusion. Defaults to 0.5.
     skip_box_threshold : float
-        Minimum confidence to consider. Defaults to 0.0001.
-
-    Examples
-    --------
-    >>> strategy = WBFStrategy(iou_threshold=0.5)
-    >>> merged, groups, count = strategy.merge_boxes(detections)
+        Minimum confidence to consider. Defaults to 0.0.
+    conf_type : str
+        Score fusion method: "avg" or "max". Defaults to "avg".
     """
 
     def __init__(
         self,
         iou_threshold: float = 0.5,
-        skip_box_threshold: float = 0.0001,
+        skip_box_threshold: float = 0.0,
+        conf_type: str = "avg",
     ):
-        """Initialize WBF strategy."""
         super().__init__(iou_threshold)
         self.skip_box_threshold = skip_box_threshold
-
-    def _compute_iou(self, box1: np.ndarray, box2: np.ndarray) -> float:
-        """Compute IoU between two boxes."""
-        x1 = max(box1[0], box2[0])
-        y1 = max(box1[1], box2[1])
-        x2 = min(box1[2], box2[2])
-        y2 = min(box1[3], box2[3])
-
-        if x2 < x1 or y2 < y1:
-            return 0.0
-
-        intersection = (x2 - x1) * (y2 - y1)
-        area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
-        area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
-        union = area1 + area2 - intersection
-
-        return intersection / union if union > 0 else 0.0
+        self.conf_type = conf_type
 
     def merge_boxes(
         self, detections: "sv.Detections"
     ) -> Tuple["sv.Detections", List[List[int]], int]:
-        """
-        Apply Weighted Boxes Fusion.
-
-        Parameters
-        ----------
-        detections : sv.Detections
-            Input detections.
-
-        Returns
-        -------
-        Tuple[sv.Detections, List[List[int]], int]
-            Fused detections, fusion groups, number fused.
-        """
         if sv is None:
             raise ImportError("supervision is required")
-
         if len(detections) == 0:
             return detections, [], 0
 
-        boxes = detections.xyxy
-        scores = detections.confidence if detections.confidence is not None else np.ones(len(boxes))
-        class_ids = detections.class_id if detections.class_id is not None else np.zeros(len(boxes))
+        boxes = detections.xyxy.copy()
+        scores = (
+            detections.confidence.copy()
+            if detections.confidence is not None
+            else np.ones(len(boxes))
+        )
+        classes = (
+            detections.class_id.copy()
+            if detections.class_id is not None
+            else np.zeros(len(boxes), dtype=int)
+        )
 
-        # Filter low confidence
-        mask = scores >= self.skip_box_threshold
-        boxes = boxes[mask]
-        scores = scores[mask]
-        class_ids = class_ids[mask]
-
-        if len(boxes) == 0:
+        mask = scores > self.skip_box_threshold
+        if not mask.any():
             return sv.Detections.empty(), [], len(detections)
 
-        # Sort by score
-        order = scores.argsort()[::-1]
-        boxes = boxes[order]
-        scores = scores[order]
-        class_ids = class_ids[order]
+        boxes, scores, classes = boxes[mask], scores[mask], classes[mask]
+        original_indices = np.where(mask)[0]
 
-        # Group boxes by class
-        unique_classes = np.unique(class_ids)
-        fused_boxes = []
-        fused_scores = []
-        fused_class_ids = []
-        all_groups = []
+        fused_boxes, fused_scores, fused_classes, merge_groups = [], [], [], []
 
-        for cls in unique_classes:
-            cls_mask = class_ids == cls
+        for cls_id in np.unique(classes):
+            cls_mask = classes == cls_id
             cls_boxes = boxes[cls_mask]
             cls_scores = scores[cls_mask]
-            cls_indices = np.where(cls_mask)[0]
+            cls_indices = original_indices[cls_mask]
 
-            used = set()
-            for i in range(len(cls_boxes)):
-                if i in used:
-                    continue
-
-                # Find matching boxes
-                matches = [i]
-                for j in range(i + 1, len(cls_boxes)):
-                    if j in used:
-                        continue
-                    iou = self._compute_iou(cls_boxes[i], cls_boxes[j])
-                    if iou > self.iou_threshold:
-                        matches.append(j)
-                        used.add(j)
-
-                # Weighted fusion
-                match_boxes = cls_boxes[matches]
-                match_scores = cls_scores[matches]
-
-                weights = match_scores
-                total_weight = weights.sum()
-
-                if total_weight > 0:
-                    fused_box = (match_boxes * weights[:, np.newaxis]).sum(axis=0) / total_weight
-                    fused_score = match_scores.mean()
-                else:
-                    fused_box = match_boxes[0]
-                    fused_score = match_scores[0]
-
-                fused_boxes.append(fused_box)
-                fused_scores.append(fused_score)
-                fused_class_ids.append(cls)
-                all_groups.append([int(cls_indices[m]) for m in matches])
+            fb, fs, groups = self._fuse_class(cls_boxes, cls_scores, cls_indices)
+            fused_boxes.extend(fb)
+            fused_scores.extend(fs)
+            fused_classes.extend([cls_id] * len(fb))
+            merge_groups.extend(groups)
 
         if not fused_boxes:
             return sv.Detections.empty(), [], len(detections)
@@ -154,8 +90,62 @@ class WBFStrategy(BaseMergingStrategy):
         result = sv.Detections(
             xyxy=np.array(fused_boxes),
             confidence=np.array(fused_scores),
-            class_id=np.array(fused_class_ids, dtype=int),
+            class_id=np.array(fused_classes, dtype=int),
         )
+        return result, merge_groups, len(detections) - len(result)
 
-        num_fused = len(detections) - len(result)
-        return result, all_groups, num_fused
+    def _fuse_class(
+        self, boxes: np.ndarray, scores: np.ndarray, indices: np.ndarray
+    ) -> Tuple[List[np.ndarray], List[float], List[List[int]]]:
+        if len(boxes) == 0:
+            return [], [], []
+
+        order = scores.argsort()[::-1]
+        boxes, scores, indices = boxes[order], scores[order], indices[order]
+
+        fused_boxes, fused_scores, merge_groups = [], [], []
+        used = np.zeros(len(boxes), dtype=bool)
+
+        for i in range(len(boxes)):
+            if used[i]:
+                continue
+
+            cluster_boxes = [boxes[i]]
+            cluster_scores = [float(scores[i])]
+            cluster_indices = [int(indices[i])]
+            used[i] = True
+
+            for j in range(i + 1, len(boxes)):
+                if used[j]:
+                    continue
+                if self._matches_cluster(boxes[j], cluster_boxes):
+                    cluster_boxes.append(boxes[j])
+                    cluster_scores.append(float(scores[j]))
+                    cluster_indices.append(int(indices[j]))
+                    used[j] = True
+
+            fused_boxes.append(self._fuse_coordinates(cluster_boxes, cluster_scores))
+            fused_scores.append(self._fuse_score(cluster_scores))
+            merge_groups.append(cluster_indices)
+
+        return fused_boxes, fused_scores, merge_groups
+
+    def _matches_cluster(self, box: np.ndarray, cluster: List[np.ndarray]) -> bool:
+        for cluster_box in cluster:
+            if self._compute_iou_pair(box, cluster_box) > self.iou_threshold:
+                return True
+        return False
+
+    @staticmethod
+    def _fuse_coordinates(boxes: List[np.ndarray], scores: List[float]) -> np.ndarray:
+        boxes_arr = np.array(boxes)
+        weights = np.array(scores)
+        total = weights.sum()
+        if total == 0:
+            return boxes_arr[0]
+        return (boxes_arr * weights[:, np.newaxis]).sum(axis=0) / total
+
+    def _fuse_score(self, scores: List[float]) -> float:
+        if self.conf_type == "max":
+            return max(scores)
+        return float(np.mean(scores))

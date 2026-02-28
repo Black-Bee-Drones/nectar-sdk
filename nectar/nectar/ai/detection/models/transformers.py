@@ -40,6 +40,8 @@ from nectar.ai.detection.core.base import BaseDetectionModel
 from nectar.ai.detection.core.configs import TrainingConfig
 from nectar.ai.detection.core.exceptions import ModelNotLoadedError, TrainingError
 from nectar.ai.detection.core.types import DetectionInput, Prediction
+from nectar.ai.detection.datasets.format import FormatConverter, FormatDetector
+from nectar.ai.detection.datasets.subset import SubsetCreator
 from nectar.ai.detection.utils.device import get_device
 
 logger = logging.getLogger(__name__)
@@ -183,6 +185,48 @@ class TransformersModel(BaseDetectionModel):
         output_dir.mkdir(parents=True, exist_ok=True)
         run_name = output_dir.name
 
+        # Auto-detect and convert format if needed (Transformers needs COCO)
+        detector = FormatDetector(config.dataset_path)
+        detected_format = detector.detect()
+
+        if detected_format == "unknown":
+            self.logger.warning("Could not auto-detect format, assuming COCO")
+            detected_format = "coco"
+
+        target_format = "coco"
+
+        if detected_format != target_format:
+            converted_dir = output_dir / "datasets" / "converted"
+            if (converted_dir / "train" / "_annotations.coco.json").exists():
+                self.logger.info("Using existing COCO conversion: %s", converted_dir)
+            else:
+                self.logger.info(f"Converting dataset from {detected_format} to {target_format}")
+                converter = FormatConverter(config.dataset_path, str(converted_dir), verbose=True)
+                converter.convert(target_format=target_format, copy_images=False)
+            config.dataset_path = str(converted_dir)
+
+        # Create subset if max_samples specified
+        if config.max_train_samples is not None or config.max_eval_samples is not None:
+            subset_dir = output_dir / "datasets" / "subset"
+            source_dir = Path(config.dataset_path)
+            subset_creator = SubsetCreator(
+                config.dataset_path, str(subset_dir), seed=config.seed, verbose=True
+            )
+            subset_path = subset_creator.create(
+                max_train_samples=config.max_train_samples,
+                max_eval_samples=config.max_eval_samples,
+                max_test_samples=config.max_test_samples,
+            )
+            # Symlink missing splits so evaluation can find them
+            for split in ["train", "valid", "val", "test"]:
+                subset_split = subset_dir / split
+                source_split = source_dir / split
+                if not subset_split.exists() and source_split.exists():
+                    import os
+
+                    os.symlink(source_split.resolve(), subset_split)
+            config.dataset_path = subset_path
+
         # Load dataset
         train_dataset, val_dataset, id2label, label2id = self._load_coco_dataset(config)
 
@@ -231,8 +275,14 @@ class TransformersModel(BaseDetectionModel):
                 dataloader_pin_memory=False,
                 remove_unused_columns=False,
                 warmup_ratio=getattr(config, "warmup_ratio", 0.1),
+                warmup_steps=getattr(config, "warmup_steps", 0),
                 weight_decay=getattr(config, "weight_decay", 0.0001),
+                lr_scheduler_type=getattr(config, "lr_scheduler_type", "linear"),
+                max_grad_norm=getattr(config, "max_grad_norm", 1.0),
             )
+            optimizer = getattr(config, "optimizer_type", None)
+            if optimizer is not None:
+                training_args.optim = optimizer
 
         trainer = Trainer(
             model=self.model,
@@ -244,8 +294,19 @@ class TransformersModel(BaseDetectionModel):
             callbacks=callbacks,
         )
 
+        # Check if we're resuming from a checkpoint
+        resume_from_checkpoint = None
+        if not config.from_scratch and config.model and "checkpoint" in config.model:
+            resume_from_checkpoint = config.model
+            if getattr(config, "resume", False):
+                self.logger.info(f"Resuming from checkpoint: {resume_from_checkpoint}")
+                self.logger.info(
+                    "This will load optimizer and scheduler states to continue training "
+                    "from the same point"
+                )
+
         try:
-            train_result = trainer.train()
+            train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
             trainer.save_model()
             trainer.save_state()
@@ -258,26 +319,77 @@ class TransformersModel(BaseDetectionModel):
             raise TrainingError(str(e)) from e
 
     def _load_coco_dataset(self, config: TrainingConfig):
-        """Load COCO format dataset."""
+        """
+        Load COCO format dataset from the given path.
+
+        Expects Roboflow format (train/valid/test with _annotations.coco.json).
+        Standard COCO format (images/ + dataset.json) should be converted first
+        using FormatConverter or Stratifier.
+        """
         from .dataset import CocoDetectionDataset
 
         dataset_path = Path(config.dataset_path)
 
-        # Find annotations
+        # Check for standard COCO format - should be converted first
+        images_dir = dataset_path / "images"
+        dataset_json = dataset_path / "dataset.json"
+        if not dataset_json.exists():
+            potential_files = list(dataset_path.glob("*.json"))
+            if potential_files:
+                dataset_json = potential_files[0]
+
+        if images_dir.exists() and dataset_json.exists():
+            self.logger.info(
+                f"Standard COCO format detected at {dataset_path}. "
+                f"Creating splits using Stratifier..."
+            )
+            from nectar.ai.detection.datasets.stratify import Stratifier
+
+            stratified_dir = Path(config.output_dir) / "datasets" / "stratified"
+            stratifier = Stratifier(
+                str(dataset_path),
+                str(stratified_dir),
+                seed=config.seed,
+                verbose=True,
+            )
+            train_ratio = getattr(config, "train_split", 0.8)
+            val_ratio = getattr(config, "val_split", 0.2)
+            test_ratio = getattr(config, "test_split", 0.0)
+            stratified_path = stratifier.stratify(
+                train_ratio, val_ratio, test_ratio, target_format="coco"
+            )
+            dataset_path = Path(stratified_path)
+
         train_dir = dataset_path / "train"
+        train_annotations = train_dir / "_annotations.coco.json"
+
         val_dir = dataset_path / "valid"
+        if not val_dir.exists():
+            val_dir = dataset_path / "val"
         if not val_dir.exists():
             val_dir = dataset_path / "validation"
 
-        train_ann = train_dir / "_annotations.coco.json"
-        val_ann = val_dir / "_annotations.coco.json"
+        val_annotations = val_dir / "_annotations.coco.json"
 
-        if not train_ann.exists():
-            raise TrainingError(f"Training annotations not found: {train_ann}")
+        if not train_dir.exists() or not train_annotations.exists():
+            raise TrainingError(
+                f"Dataset not in expected format. Expected Roboflow COCO format at {train_dir} "
+                f"with _annotations.coco.json. "
+                f"If you have standard COCO format (images/ + dataset.json), "
+                f"use Stratifier to create splits first."
+            )
 
+        if not val_dir.exists() or not val_annotations.exists():
+            self.logger.warning(
+                f"Validation data not found at {val_dir}, using training data for validation"
+            )
+            val_dir = train_dir
+            val_annotations = train_annotations
+
+        # Create datasets
         train_dataset = CocoDetectionDataset(
             img_dir=str(train_dir),
-            annotations_file=str(train_ann),
+            annotations_file=str(train_annotations),
             image_processor=self.processor,
             train=True,
             max_samples=config.max_train_samples,
@@ -286,7 +398,7 @@ class TransformersModel(BaseDetectionModel):
 
         val_dataset = CocoDetectionDataset(
             img_dir=str(val_dir),
-            annotations_file=str(val_ann),
+            annotations_file=str(val_annotations),
             image_processor=self.processor,
             train=False,
             max_samples=config.max_eval_samples,
@@ -322,11 +434,9 @@ class TransformersModel(BaseDetectionModel):
     @staticmethod
     def _collate_fn(batch):
         """Collate function for DataLoader."""
-        pixel_values = torch.stack([x["pixel_values"] for x in batch])
-        encoding = {"pixel_values": pixel_values}
-        labels = [x["labels"] for x in batch]
-        encoding["labels"] = labels
-        return encoding
+        from .dataset import collate_fn
+
+        return collate_fn(batch)
 
     def _extract_training_metrics(self, train_result) -> Dict[str, Any]:
         """Extract metrics from training result."""

@@ -40,17 +40,17 @@ vision = [
 ]
 
 ai = [
-    "ultralytics==8.4.14",
+    "ultralytics==8.4.17",
     "huggingface-hub==0.32.4",
     "transformers==4.53.3",
     "timm==1.0.24",
     "accelerate==1.12.0",
     "datasets==3.6.0",
-    "rfdetr==1.4.1",
+    "rfdetr==1.5.1",
     "supervision==0.27.0",
     "tensorboard==2.20.0",
     "roboflow==1.2.13",
-    "albumentations==2.0.8",
+    "albumentations>=1.4.0",
 ]
 
 interface = [
@@ -73,6 +73,9 @@ all = [
 full = [
     "nectar-sdk[all,ai]",
 ]
+
+[project.scripts]
+nectar-od = "nectar.ai.detection.cli.main:main"
 
 [tool.ruff]
 target-version = "py310"

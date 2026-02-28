@@ -110,47 +110,35 @@ class CocoDetectionDataset(Dataset):
         # Find image file
         img_path = self._find_image_path(img_info["file_name"])
         image = Image.open(img_path).convert("RGB")
-        width, height = image.size
 
         # Get annotations
         anns = self.img_id_to_anns.get(img_id, [])
 
-        # Build target
-        boxes = []
-        class_labels = []
-        areas = []
-
+        # Build COCO-wrapped annotations (required by modern transformers processors)
+        coco_annotations = []
         for ann in anns:
-            x, y, w, h = ann["bbox"]
+            coco_annotations.append(
+                {
+                    "image_id": img_id,
+                    "category_id": self.old_to_new_id.get(ann["category_id"], 0),
+                    "bbox": ann["bbox"],  # [x, y, w, h] COCO format
+                    "area": ann.get("area", ann["bbox"][2] * ann["bbox"][3]),
+                    "iscrowd": 0,
+                }
+            )
 
-            # Convert to center format (normalized)
-            x_center = (x + w / 2) / width
-            y_center = (y + h / 2) / height
-            w_norm = w / width
-            h_norm = h / height
+        target = {"image_id": img_id, "annotations": coco_annotations}
 
-            boxes.append([x_center, y_center, w_norm, h_norm])
-            class_labels.append(self.old_to_new_id.get(ann["category_id"], 0))
-            areas.append(ann.get("area", w * h))
-
-        target = {
-            "boxes": np.array(boxes, dtype=np.float32),
-            "class_labels": np.array(class_labels, dtype=np.int64),
-            "image_id": img_id,
-            "area": np.array(areas, dtype=np.float32),
-            "iscrowd": np.zeros(len(boxes), dtype=np.int64),
-            "orig_size": np.array([height, width], dtype=np.int64),
-            "size": np.array([height, width], dtype=np.int64),
-        }
-
-        # Process with image processor
-        encoding = self.image_processor(images=image, annotations=[target], return_tensors="pt")
+        # Process with image processor (pass numpy array for compatibility)
+        result = self.image_processor(
+            images=np.array(image), annotations=target, return_tensors="pt"
+        )
 
         # Remove batch dimension
-        pixel_values = encoding["pixel_values"].squeeze(0)
-        labels = encoding["labels"][0] if "labels" in encoding else target
-
-        return {"pixel_values": pixel_values, "labels": labels}
+        return {
+            k: v[0] if isinstance(v, (list, torch.Tensor)) and len(v) > 0 else v
+            for k, v in result.items()
+        }
 
     def _find_image_path(self, filename: str) -> Path:
         """Find image file in directory."""
@@ -172,10 +160,15 @@ class CocoDetectionDataset(Dataset):
 
 
 def collate_fn(batch: List[Dict]) -> Dict[str, Any]:
-    """Collate function for DataLoader."""
+    """Collate function for DataLoader with pixel_mask support."""
     pixel_values = torch.stack([x["pixel_values"] for x in batch])
-    labels = [x["labels"] for x in batch]
-    return {"pixel_values": pixel_values, "labels": labels}
+    encoding = {"pixel_values": pixel_values}
+
+    if "pixel_mask" in batch[0]:
+        encoding["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
+
+    encoding["labels"] = [x["labels"] for x in batch]
+    return encoding
 
 
 class DetectionDataset:

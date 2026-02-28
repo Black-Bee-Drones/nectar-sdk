@@ -58,20 +58,6 @@ from nectar.ai.detection.core.exceptions import (
     TrainingError,
 )
 
-# Protocols and base classes
-from nectar.ai.detection.core.protocols import (
-    DetectorProtocol,
-    MergingStrategy,
-    TrainableProtocol,
-)
-
-# Registry and factory
-from nectar.ai.detection.core.registry import (
-    DetectorFactory,
-    ModelRegistry,
-    registry,
-)
-
 # Core types and data classes
 from nectar.ai.detection.core.types import (
     BatchImageType,
@@ -98,8 +84,10 @@ from nectar.ai.detection.models import (
 
 # Post-processing
 from nectar.ai.detection.postprocess import (
+    BaseMergingStrategy,
     NMMStrategy,
     NMSStrategy,
+    PerClassConfidenceFilter,
     SoftNMSStrategy,
     WBFStrategy,
 )
@@ -113,8 +101,6 @@ from nectar.ai.detection.slicing import (
 
 # Utilities
 from nectar.ai.detection.utils import (
-    DatasetConverter,
-    DatasetMerger,
     DeviceManager,
     HuggingFaceUploader,
     get_device,
@@ -137,16 +123,8 @@ __all__ = [
     "TrainingMetrics",
     "EvaluationMetrics",
     "TrainingResult",
-    # Protocols
-    "DetectorProtocol",
-    "TrainableProtocol",
-    "MergingStrategy",
     # Base
     "BaseDetectionModel",
-    # Registry
-    "ModelRegistry",
-    "DetectorFactory",
-    "registry",
     # Exceptions
     "DetectionError",
     "ModelNotLoadedError",
@@ -173,14 +151,14 @@ __all__ = [
     # Evaluation
     "ObjectDetectionEvaluator",
     # Post-processing
+    "BaseMergingStrategy",
     "NMSStrategy",
     "SoftNMSStrategy",
     "WBFStrategy",
     "NMMStrategy",
+    "PerClassConfidenceFilter",
     # Utilities
     "HuggingFaceUploader",
     "get_device",
     "DeviceManager",
-    "DatasetConverter",
-    "DatasetMerger",
 ]

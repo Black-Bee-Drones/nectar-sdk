@@ -6,8 +6,7 @@ Deep learning inference and model management for aerial robotics.
 
 ```
 ai/
-├── detection/          # Object detection (see detection/README.md)
-└── utils/              # Utilities (RoboflowUploader)
+└── detection/          # Object detection (see detection/README.md)
 ```
 
 ## Architecture
@@ -23,9 +22,8 @@ flowchart TB
             Evaluation["Evaluation<br/>(ObjectDetectionEvaluator)"]
             Slicing["Slicing<br/>(SlicingInference, SlicingConfig)"]
             PostProcess["Post-process<br/>(NMS, SoftNMS, WBF, NMM)"]
-            Utils["Utils<br/>(DeviceManager, HuggingFaceUploader, DatasetConverter, DatasetMerger)"]
+            Utils["Utils<br/>(DeviceManager, HuggingFaceUploader)"]
         end
-        Utils["utils/<br/>(RoboflowUploader)"]
     end
 
     subgraph External["External"]
@@ -169,16 +167,15 @@ print(f"mAP@50: {metrics.map50:.4f}")
 ### RoboflowUploader
 
 ```python
-from nectar.ai.utils import RoboflowUploader
+from nectar.ai.detection.datasets.upload import RoboflowUploader
 
-uploader = RoboflowUploader(
-    api_key="rf_api_key",
-    workspace="workspace",
-    project="project",
+uploader = RoboflowUploader(api_key="rf_api_key", workspace="workspace")
+
+uploader.upload_directory(
+    directory_path="images/",
+    project_name="my-project",
+    batch_name="batch-1",
 )
-
-uploader.upload_image("image.jpg", "annotation.txt")
-count = uploader.upload_batch("images/", "labels/")
 ```
 
 ### ModelLoader

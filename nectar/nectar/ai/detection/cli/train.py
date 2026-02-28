@@ -1,10 +1,13 @@
 """CLI for training detection models."""
 
 import argparse
+import json
 import logging
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -27,7 +30,12 @@ def parse_args():
     )
 
     # Training parameters
-    parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="outputs",
+        help="Output directory (default: outputs)",
+    )
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate")
@@ -79,7 +87,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
           conf_threshold: 0.25
           ...
     """
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     # Flatten config sections
@@ -93,8 +101,15 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
     if "eval" in config:
         for k, v in config["eval"].items():
-            if k not in flat:
+            # Prefix eval-specific keys to avoid conflicts with train keys
+            if k in ("batch_size", "device", "output_dir", "num_samples"):
+                flat[f"eval_{k}"] = v
+            elif k not in flat:
                 flat[k] = v
+
+    # Normalize parameter name variations
+    if "gradient_checkpoint" in flat and "gradient_checkpointing" not in flat:
+        flat["gradient_checkpointing"] = flat.pop("gradient_checkpoint")
 
     return flat
 
@@ -105,7 +120,6 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
 
     CLI arguments take precedence over config file.
     """
-    # Map CLI arg names to config keys
     arg_to_config = {
         "dataset": "dataset_path",
         "learning_rate": "learning_rate",
@@ -122,33 +136,69 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
         "iou_threshold": "iou_threshold",
         "dataset_format": "dataset_format",
         "mixed_precision": "mixed_precision",
+        "epochs": "epochs",
+        "imgsz": "imgsz",
+        "model": "model",
+        "framework": "framework",
+        # RF-DETR specific
+        "resolution": "resolution",
+        "lr_encoder": "lr_encoder",
+        "use_ema": "use_ema",
+        "gradient_checkpointing": "gradient_checkpointing",
+        "drop_path": "drop_path",
+        "drop_mode": "drop_mode",
+        "drop_schedule": "drop_schedule",
+        "freeze_encoder": "freeze_encoder",
+        "layer_norm": "layer_norm",
+        "rms_norm": "rms_norm",
+        "multi_scale": "multi_scale",
+        "ema_decay": "ema_decay",
+        "sync_bn": "sync_bn",
+        "num_workers": "num_workers",
+        # Ultralytics specific
+        "warmup_epochs": "warmup_epochs",
+        "warmup_momentum": "warmup_momentum",
+        "cos_lr": "cos_lr",
+        "dropout": "dropout",
     }
 
     result = config.copy()
 
+    parser_defaults = {
+        "epochs": 10,
+        "batch_size": 16,
+        "learning_rate": 0.001,
+        "imgsz": 640,
+        "device": "auto",
+        "seed": 42,
+        "output_dir": "outputs",
+        "dataset_format": "yolo",
+        "mixed_precision": "no",
+        "gradient_accumulation_steps": 1,
+        "weight_decay": 0.0001,
+        "warmup_ratio": 0.1,
+        "lr_scheduler_type": "linear",
+        "eval_split": "test",
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.5,
+    }
+
     for arg_name, value in vars(args).items():
-        if value is None:
+        if value is None or arg_name == "config":
             continue
 
-        # Skip config path
-        if arg_name == "config":
-            continue
+        config_key = arg_to_config.get(arg_name, arg_name)
 
-        # Handle boolean flags
         if isinstance(value, bool):
             if value:
-                config_key = arg_to_config.get(arg_name, arg_name)
                 result[config_key] = value
             continue
 
-        # Map arg name to config key
-        config_key = arg_to_config.get(arg_name, arg_name)
+        default_value = parser_defaults.get(arg_name)
+        if default_value is not None and value == default_value and config_key in config:
+            continue
 
-        # CLI overrides config
-        if arg_name in vars(args) and value != getattr(parse_args.__defaults__, arg_name, None):
-            result[config_key] = value
-        elif config_key not in result:
-            result[config_key] = value
+        result[config_key] = value
 
     return result
 
@@ -174,16 +224,13 @@ def main():
 
     args = parse_args()
 
-    # Load config if provided
     config = {}
     if args.config:
         logger.info("Loading config: %s", args.config)
         config = load_config(args.config)
 
-    # Merge with CLI args
     params = merge_config_with_args(config, args)
 
-    # Validate required params
     model = params.get("model")
     dataset = params.get("dataset_path")
 
@@ -194,11 +241,20 @@ def main():
         logger.error("Dataset is required (--dataset or config data.dataset_path)")
         sys.exit(1)
 
-    # Detect framework
+    base_dir = Path.cwd()
+
+    dataset_path = Path(dataset)
+    if not dataset_path.is_absolute():
+        dataset = str((base_dir / dataset_path).resolve())
+
+    output_dir_raw = params.get("output_dir", "outputs")
+    output_dir_path = Path(output_dir_raw)
+    if not output_dir_path.is_absolute():
+        output_dir_raw = str((base_dir / output_dir_path).resolve())
+
     framework = params.get("framework") or detect_framework(model)
     logger.info("Framework: %s", framework)
 
-    # Import framework-specific config and model
     from nectar.ai.detection import Detector
     from nectar.ai.detection.core.configs import EvaluationConfig
     from nectar.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
@@ -207,14 +263,15 @@ def main():
         TransformersTrainingConfig,
         UltralyticsTrainingConfig,
     )
+    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.detection.utils.tensorboard import TensorBoardManager
 
-    # Build training config
     common_args = {
         "dataset_path": dataset,
         "epochs": params.get("epochs", 10),
         "batch_size": params.get("batch_size", 16),
-        "learning_rate": params.get("learning_rate", 0.001),
-        "output_dir": params.get("output_dir", "outputs"),
+        "learning_rate": float(params.get("learning_rate", 0.001)),
+        "output_dir": output_dir_raw,
         "device": params.get("device", "auto"),
         "seed": params.get("seed", 42),
         "tensorboard": params.get("tensorboard", False),
@@ -224,73 +281,240 @@ def main():
         "mixed_precision": params.get("mixed_precision", "no"),
         "gradient_accumulation_steps": params.get("gradient_accumulation_steps", 1),
         "early_stopping_patience": params.get("early_stopping_patience"),
+        "early_stopping_delta": params.get("early_stopping_delta", 0.0),
+        "early_stopping_metric": params.get("early_stopping_metric", "eval_loss"),
+        "early_stopping_mode": params.get("early_stopping_mode", "min"),
         "from_scratch": params.get("from_scratch", False),
         "imgsz": params.get("imgsz", 640),
         "weight_decay": params.get("weight_decay", 0.0001),
         "warmup_ratio": params.get("warmup_ratio", 0.1),
+        "warmup_steps": params.get("warmup_steps", 10),
         "lr_scheduler_type": params.get("lr_scheduler_type", "linear"),
+        "max_grad_norm": params.get("max_grad_norm", 1.0),
+        "optimizer_type": params.get("optimizer_type"),
+        "save_period": params.get("save_period", 1),
+        "max_train_samples": params.get("max_train_samples"),
+        "max_eval_samples": params.get("max_eval_samples"),
+        "max_test_samples": params.get("max_test_samples"),
+        "train_split": params.get("train_split", 0.8),
+        "val_split": params.get("val_split", 0.2),
+        "test_split": params.get("test_split", 0.0),
+        "dataset_format": params.get("dataset_format"),
+        "gc_per_accumulation": params.get("gc_per_accumulation", True),
+        "resume": params.get("resume", False),
     }
 
-    # Create framework-specific config
     if framework == "ultralytics":
+        common_args.update(
+            {
+                "warmup_epochs": params.get("warmup_epochs", 3.0),
+                "warmup_momentum": params.get("warmup_momentum", 0.8),
+                "lrf": params.get("lrf", 0.01),
+                "cos_lr": params.get("cos_lr", False),
+                "dropout": params.get("dropout", 0.0),
+                "freeze": params.get("freeze"),
+            }
+        )
         training_config = UltralyticsTrainingConfig(model=model, **common_args)
     elif framework == "transformers":
         training_config = TransformersTrainingConfig(model=model, **common_args)
     elif framework == "rfdetr":
-        # Add RF-DETR specific params
-        common_args["resolution"] = params.get("resolution", params.get("imgsz", 560))
-        if "lr_encoder" in params:
-            common_args["lr_encoder"] = params["lr_encoder"]
-        if "use_ema" in params:
-            common_args["use_ema"] = params["use_ema"]
-        if "gradient_checkpointing" in params:
-            common_args["gradient_checkpointing"] = params["gradient_checkpointing"]
+        common_args.update(
+            {
+                "resolution": params.get("resolution", params.get("imgsz", 560)),
+                "lr_encoder": params.get("lr_encoder"),
+                "use_ema": params.get("use_ema", True),
+                "gradient_checkpointing": params.get("gradient_checkpointing")
+                or params.get("gradient_checkpoint", False),
+                "drop_path": params.get("drop_path", 0.0),
+                "drop_mode": params.get("drop_mode", "standard"),
+                "drop_schedule": params.get("drop_schedule", "constant"),
+                "cutoff_epoch": params.get("cutoff_epoch", 0),
+                "freeze_encoder": params.get("freeze_encoder", False),
+                "layer_norm": params.get("layer_norm", False),
+                "rms_norm": params.get("rms_norm", False),
+                "backbone_lora": params.get("backbone_lora", False),
+                "multi_scale": params.get("multi_scale", False),
+                "force_no_pretrain": params.get("force_no_pretrain", False),
+                "ema_decay": params.get("ema_decay", 0.9997),
+                "ema_tau": params.get("ema_tau", 0.0),
+                "lr_vit_layer_decay": params.get("lr_vit_layer_decay", 0.8),
+                "lr_component_decay": params.get("lr_component_decay", 1.0),
+                "sync_bn": params.get("sync_bn", True),
+                "num_workers": params.get("num_workers", 2),
+                "set_cost_class": params.get("set_cost_class", 2.0),
+                "set_cost_bbox": params.get("set_cost_bbox", 5.0),
+                "set_cost_giou": params.get("set_cost_giou", 2.0),
+                "start_epoch": params.get("start_epoch", 0),
+                "early_stopping_use_ema": params.get("early_stopping_use_ema", False),
+                "warmup_epochs": params.get("warmup_epochs", 3.0),
+                "dropout": params.get("dropout", 0.0),
+                "rfdetr_size": params.get("rfdetr_size"),
+            }
+        )
         training_config = RFDETRTrainingConfig(model=model, **common_args)
     else:
         logger.error("Unsupported framework: %s", framework)
         sys.exit(1)
 
-    # Create detector and train
+    output_dir_path = Path(output_dir_raw)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    config_save_path = output_dir_path / "experiment.config.yaml"
+    training_config.to_yaml(str(config_save_path))
+    logger.info("Saved experiment config: %s", config_save_path)
+
+    run_name = output_dir_path.name
+
     logger.info("Model: %s", model)
     logger.info("Dataset: %s", dataset)
     logger.info("Output: %s", params.get("output_dir"))
+
+    tb_manager = TensorBoardManager()
+    if params.get("start_tensorboard") and params.get("tensorboard"):
+        tb_port = params.get("tensorboard_port", 6006)
+        tb_manager.start_server(log_dir=output_dir_raw, port=tb_port)
 
     detector = Detector(model, framework=framework, device=params.get("device", "auto"))
     detector.load()
 
     logger.info("Starting training...")
+    training_start_time = time.time()
+
+    eval_metrics: Optional[Any] = None
+    eval_output_dir: Optional[str] = None
+    eval_time: Optional[float] = None
+    eval_split: Optional[str] = None
 
     try:
         result = detector.train(training_config)
-        logger.info("Training completed")
+        training_time = time.time() - training_start_time
+        logger.info("Training completed in %.2f seconds", training_time)
         logger.info("Model saved: %s", result.get("model_path", "N/A"))
+
+        ignore_patterns = [
+            "*.tmp",
+            "*.bak",
+            "__pycache__",
+            "*.git*",
+            "*.pyc",
+            ".ipynb_checkpoints",
+            "datasets/**",
+        ]
+
+        if params.get("push_to_hub") and params.get("hub_model_id"):
+            logger.info("Uploading training outputs to HuggingFace Hub...")
+            try:
+                uploader = HuggingFaceUploader(
+                    repo_id=params["hub_model_id"],
+                    local_dir=output_dir_raw,
+                    repo_type="model",
+                )
+
+                uploader.upload(
+                    commit_message="Upload complete training results",
+                    ignore_patterns=ignore_patterns,
+                )
+                logger.info(
+                    "Successfully uploaded training outputs to %s",
+                    params["hub_model_id"],
+                )
+            except Exception as e:
+                logger.error("Failed to upload training outputs: %s", e)
 
         # Evaluate if requested
         if params.get("evaluate"):
+            eval_start_time = time.time()
             eval_split = params.get("eval_split", "test")
+            eval_batch = params.get("eval_batch_size", params.get("batch_size", 1))
+            eval_device = params.get("eval_device", params.get("device", "auto"))
+            eval_samples = params.get("eval_num_samples", params.get("max_test_samples"))
+            eval_output = params.get("eval_output_dir", str(Path(output_dir_raw) / "evaluation"))
+            eval_output_dir = eval_output
             logger.info("Evaluating on %s split", eval_split)
 
             eval_config = EvaluationConfig(
                 model_path=result["model_path"],
                 dataset_path=dataset,
                 framework=framework,
-                output_dir=str(Path(params.get("output_dir")) / "evaluation"),
+                output_dir=eval_output,
                 split=eval_split,
                 conf_threshold=params.get("conf_threshold", 0.25),
                 iou_threshold=params.get("iou_threshold", 0.5),
-                device=params.get("device", "auto"),
-                batch_size=params.get("batch_size", 16),
+                device=eval_device,
+                batch_size=eval_batch,
+                num_samples=eval_samples,
+                imgsz=params.get("imgsz"),
             )
 
             evaluator = ObjectDetectionEvaluator(detector.model, eval_config)
-            metrics = evaluator.evaluate()
+            eval_metrics = evaluator.evaluate()
+            eval_time = time.time() - eval_start_time
 
-            logger.info("mAP@50: %.4f", metrics.map50)
-            logger.info("mAP@50-95: %.4f", metrics.map50_95)
+            logger.info("mAP@50: %.4f", eval_metrics.map50)
+            logger.info("mAP@50-95: %.4f", eval_metrics.map50_95)
+            logger.info("Evaluation completed in %.2f seconds", eval_time)
+
+            # Upload evaluation results to HuggingFace Hub if enabled
+            if params.get("push_to_hub") and params.get("hub_model_id"):
+                logger.info("Uploading evaluation results to HuggingFace Hub...")
+                try:
+                    eval_uploader = HuggingFaceUploader(
+                        repo_id=params["hub_model_id"],
+                        local_dir=eval_output,
+                        repo_type="model",
+                    )
+
+                    eval_uploader.upload(
+                        commit_message="Add evaluation results",
+                        path_in_repo="evaluation",
+                        ignore_patterns=ignore_patterns,
+                    )
+                    logger.info(
+                        "Successfully uploaded evaluation results to %s in 'evaluation' folder",
+                        params["hub_model_id"],
+                    )
+                except Exception as e:
+                    logger.error("Failed to upload evaluation results: %s", e)
+
+        # Save run information
+        run_info = {
+            "run_name": run_name,
+            "timestamp": datetime.now().isoformat(),
+            "framework": framework,
+            "model": model,
+            "dataset_path": dataset,
+            "config": training_config.to_dict(),
+            "training": {
+                "model_path": result.get("model_path", "N/A"),
+                "training_time_seconds": training_time,
+                "metrics": result.get("metrics", {}),
+            },
+        }
+
+        if eval_metrics:
+            run_info["evaluation"] = {
+                "split": eval_split,
+                "metrics": eval_metrics.to_dict(),
+                "evaluation_time_seconds": eval_time,
+                "output_dir": eval_output_dir,
+            }
+
+        if params.get("push_to_hub") and params.get("hub_model_id"):
+            run_info["huggingface"] = {
+                "repo_id": params["hub_model_id"],
+                "uploaded": True,
+            }
+
+        run_info_path = output_dir_path / f"{run_name}_run_info.json"
+        with open(run_info_path, "w", encoding="utf-8") as f:
+            json.dump(run_info, f, indent=2, default=str)
+        logger.info("Saved run information: %s", run_info_path)
 
     except Exception as e:
         logger.error("Training failed: %s", e)
         raise
+    finally:
+        tb_manager.stop_server()
 
 
 if __name__ == "__main__":

@@ -14,8 +14,6 @@ flowchart TB
         BDM["BaseDetectionModel"]
         Types["Detection / DetectionResult<br/>DetectionInput / Prediction"]
         Configs["TrainingConfig / EvaluationConfig<br/>TrainingMetrics / EvaluationMetrics<br/>TrainingResult"]
-        Protocols["DetectorProtocol<br/>TrainableProtocol<br/>MergingStrategy"]
-        Registry["ModelRegistry<br/>DetectorFactory"]
         Exceptions["DetectionError<br/>ModelNotLoadedError<br/>TrainingError<br/>EvaluationError<br/>..."]
     end
 
@@ -37,6 +35,7 @@ flowchart TB
         SoftNMS["SoftNMSStrategy"]
         WBF["WBFStrategy"]
         NMM["NMMStrategy"]
+        PCF["PerClassConfidenceFilter"]
     end
 
     subgraph Evaluation["Evaluation"]
@@ -49,12 +48,12 @@ flowchart TB
         RF["rfdetr"]
         SV["supervision"]
         HFH["huggingface_hub"]
+        TB["tensorboard"]
     end
 
     Detector -->|creates| UM
     Detector -->|creates| TM
     Detector -->|creates| RM
-    Detector -->|uses| Registry
 
     UM -->|extends| BDM
     TM -->|extends| BDM
@@ -62,7 +61,6 @@ flowchart TB
 
     BDM -->|uses| Types
     BDM -->|uses| Configs
-    BDM -->|uses| Protocols
     BDM -->|uses| Slicing
     BDM -->|raises| Exceptions
 
@@ -77,6 +75,7 @@ flowchart TB
     ODE -->|uses| SV
     PostProcess -->|uses| SV
     ML -->|uses| HFH
+    Detector -->|uses| TB
 ```
 
 ## Quick Start
@@ -84,12 +83,25 @@ flowchart TB
 ```python
 from nectar.ai.detection import Detector
 
+# Inference
 detector = Detector("yolov8n.pt")
 detector.load()
-
 result = detector.detect(image)
 for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
+
+# Training
+from nectar.ai.detection import TrainingConfig
+config = TrainingConfig(
+    dataset_path="/path/to/dataset",
+    epochs=100,
+    batch_size=16,
+    output_dir="outputs/",
+    tensorboard=True,
+    push_to_hub=True,
+    hub_model_id="user/model-name",
+)
+result = detector.train(config)
 ```
 
 ## Detector
@@ -400,26 +412,6 @@ classDiagram
         +from_batch_detections(batch_detections, class_names)$ Prediction
     }
 
-    class ModelRegistry {
-        <<singleton>>
-        -_models Dict~str,Type~
-        -_factories Dict~str,Callable~
-        +register(name)$ Callable
-        +register_factory(name, factory_func)$
-        +get(name)$ Type
-        +create(name, model_name, config)$ BaseDetectionModel
-        +list_models()$ List~str~
-        +is_registered(name)$ bool
-        +clear()$
-    }
-
-    class DetectorFactory {
-        <<static>>
-        +create(framework, model_source, config)$ BaseDetectionModel
-        +from_pretrained(model_id, framework)$ BaseDetectionModel
-        +from_checkpoint(checkpoint_path, framework)$ BaseDetectionModel
-    }
-
     class SlicingConfig {
         <<dataclass>>
         +strategy SlicingStrategy
@@ -489,9 +481,6 @@ classDiagram
     DetectionResult --> DetectionInput
     Prediction o-- DetectionResult
     Prediction --> DetectionInput
-
-    DetectorFactory --> ModelRegistry
-    ModelRegistry --> BaseDetectionModel
 
     SlicingInference o-- SlicingConfig
     SlicingInference --> SlicingStrategy
@@ -569,15 +558,23 @@ config = TrainingConfig(
     learning_rate=0.001,
     output_dir="outputs/",
     tensorboard=True,
+    start_tensorboard=True,  # Auto-start TensorBoard server
     push_to_hub=True,
     hub_model_id="user/model-name",
 )
 
 result = detector.train(config)
+# Training outputs and evaluation results automatically uploaded to HF Hub
 print(f"Model saved: {result['model_path']}")
 ```
 
 ### Training Flow
+
+Training automatically handles:
+- TensorBoard server lifecycle (start/stop)
+- HuggingFace Hub uploads (checkpoints during training, final outputs, evaluation results)
+- Dataset format conversion (YOLO ↔ COCO)
+- Balanced subset creation
 
 ```mermaid
 sequenceDiagram
@@ -586,8 +583,10 @@ sequenceDiagram
     participant Model as BaseDetectionModel
     participant Framework as External Framework
     participant HF as HuggingFaceUploader
+    participant TB as TensorBoardManager
 
     User->>Detector: train(TrainingConfig)
+    Detector->>TB: start_server() if start_tensorboard
     Detector->>Model: train(config)
     Model->>Framework: train(**args)
 
@@ -600,6 +599,13 @@ sequenceDiagram
 
     Framework-->>Model: Training complete
     Model-->>Detector: {"model_path", "metrics"}
+    Detector->>HF: upload(training outputs)
+    opt Evaluate
+        Detector->>Model: evaluate()
+        Model-->>Detector: metrics
+        Detector->>HF: upload(evaluation results)
+    end
+    Detector->>TB: stop_server()
     Detector-->>User: Result dict
 ```
 
@@ -748,6 +754,15 @@ config = EvaluationConfig(
 )
 
 evaluator = ObjectDetectionEvaluator(detector.model, config)
+
+# Optional: add post-processing strategies
+from nectar.ai.detection.postprocess import NMSStrategy, PerClassConfidenceFilter
+
+evaluator.set_post_processor(
+    merge_strategy=NMSStrategy(iou_threshold=0.5),
+    filter_strategy=PerClassConfidenceFilter(csv_path="pr_analysis_results.csv"),
+)
+
 metrics = evaluator.evaluate()
 
 print(f"mAP@50: {metrics.map50:.4f}")
@@ -781,34 +796,36 @@ classDiagram
         <<abstract>>
         +iou_threshold float
         +name str
-        +merge_boxes(detections)* Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections)* Tuple
+        +_compute_iou_pair(box1, box2)$ float
+        +_compute_iou_batch(box, boxes)$ ndarray
     }
 
     class NMSStrategy {
-        +iou_threshold float
         +class_agnostic bool
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections) Tuple
     }
 
     class SoftNMSStrategy {
-        +iou_threshold float
         +sigma float
         +score_threshold float
-        +_compute_iou(box, boxes) ndarray
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections) Tuple
     }
 
     class WBFStrategy {
-        +iou_threshold float
         +skip_box_threshold float
-        +_compute_iou(box1, box2) float
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +conf_type str
+        +merge_boxes(detections) Tuple
     }
 
     class NMMStrategy {
-        +iou_threshold float
-        +_compute_iou(box1, box2) float
-        +merge_boxes(detections) Tuple~sv.Detections,List~List~int~~,int~
+        +merge_boxes(detections) Tuple
+    }
+
+    class PerClassConfidenceFilter {
+        +threshold_mapping Dict
+        +default_threshold float
+        +filter(detections) sv.Detections
     }
 
     BaseMergingStrategy <|-- NMSStrategy
@@ -816,6 +833,50 @@ classDiagram
     BaseMergingStrategy <|-- WBFStrategy
     BaseMergingStrategy <|-- NMMStrategy
 ```
+
+### Per-Class Confidence Filtering
+
+Load optimal thresholds from PR analysis results:
+
+```python
+from nectar.ai.detection.postprocess import PerClassConfidenceFilter
+
+# From PR analysis CSV
+filter = PerClassConfidenceFilter(csv_path="evaluation/pr_analysis_results.csv")
+
+# Or manually
+filter = PerClassConfidenceFilter(threshold_mapping={0: 0.3, 1: 0.5}, default_threshold=0.25)
+
+filtered = filter.filter(detections)
+```
+
+## Utilities
+
+### TensorBoard Management
+
+```python
+from nectar.ai.detection.utils import TensorBoardManager
+
+manager = TensorBoardManager()
+manager.start_server(log_dir="outputs", port=6006)
+# ... training ...
+manager.stop_server()
+```
+
+### HuggingFace Hub Upload
+
+```python
+from nectar.ai.detection.utils import HuggingFaceUploader
+
+uploader = HuggingFaceUploader(
+    repo_id="user/model-name",
+    local_dir="outputs/",
+    repo_type="model",
+)
+uploader.upload(commit_message="Upload training results")
+```
+
+Training automatically uploads outputs and evaluation results to HuggingFace Hub when `push_to_hub=True` and `hub_model_id` is set.
 
 ## Extension
 
@@ -844,50 +905,214 @@ detector = Detector("model.pt", framework="custom")
 
 ## CLI
 
-### Predict
+The detection module provides a unified CLI via `nectar-od`:
 
 ```bash
-python -m nectar.ai.detection.cli.predict \
-    --model yolov8n.pt \
-    --input image.jpg \
-    --output results/
+# Training
+nectar-od train --config configs/yolo_example.yaml
+
+# Prediction
+nectar-od predict --model yolov8n.pt --input image.jpg --output results/
+
+# Evaluation
+nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
+
+# Dataset management
+nectar-od dataset download --source visdrone --output datasets/visdrone
+nectar-od dataset convert --input datasets/coco --output datasets/yolo --format yolo
+nectar-od dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
+nectar-od dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
+nectar-od dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train
+nectar-od dataset analyze --input datasets/my_dataset
+nectar-od dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
+nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
+nectar-od dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset
+nectar-od dataset upload-images --api-key KEY --project my-project --directory images/
 ```
 
-### Train
-
-Using CLI arguments:
+### Training
 
 ```bash
-python -m nectar.ai.detection.cli.train \
-    --model yolov8n.pt \
-    --dataset /path/to/dataset \
-    --epochs 100
+# Using config file (recommended)
+nectar-od train --config configs/yolo_example.yaml
+
+# Using CLI arguments
+nectar-od train --model yolov8n.pt --dataset /path/to/dataset --epochs 100 --batch-size 16
 ```
 
-Using config file:
+### Evaluation
 
 ```bash
-python -m nectar.ai.detection.cli.train \
-    --config configs/yolo_example.yaml
+nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
+
+# With post-processing
+nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset \
+    --merge-strategy nms --merge-iou-threshold 0.5 \
+    --use-per-class-filter --per-class-thresholds evaluation/pr_analysis_results.csv
 ```
 
-### Evaluate
+## Dataset Management
 
-```bash
-python -m nectar.ai.detection.cli.evaluate \
-    --model-path best.pt \
-    --framework ultralytics \
-    --dataset-path /path/to/dataset
+The detection module provides dataset management utilities for format conversion, subset creation, stratification, augmentation, and analysis.
+
+### Format Detection and Conversion
+
+Datasets are automatically detected and converted between COCO and YOLO formats as needed:
+
+```python
+from nectar.ai.detection.datasets import FormatDetector, FormatConverter
+
+# Auto-detect format
+detector = FormatDetector("datasets/my_dataset")
+format_type = detector.detect()  # "coco" or "yolo"
+
+# Convert format
+converter = FormatConverter("datasets/coco", "datasets/yolo")
+yaml_path = converter.convert(target_format="yolo")
+```
+
+### Balanced Subset Creation
+
+Create balanced subsets maintaining class distribution:
+
+```python
+from nectar.ai.detection.datasets import SubsetCreator
+
+creator = SubsetCreator("datasets/full", "datasets/subset", seed=42)
+subset_path = creator.create(
+    max_train_samples=1000,
+    max_eval_samples=200,
+    max_test_samples=100,
+)
+```
+
+### Dataset Stratification
+
+Split unsplit datasets into train/val/test with balanced class distribution:
+
+```python
+from nectar.ai.detection.datasets import Stratifier
+
+stratifier = Stratifier("datasets/unsplit", "datasets/split", seed=42)
+split_path = stratifier.stratify(
+    train_ratio=0.8,
+    val_ratio=0.2,
+    test_ratio=0.0,
+)
+```
+
+### Augmentation
+
+Build augmentation configs and apply to datasets:
+
+```python
+from nectar.ai.detection.datasets import AugmentationBuilder
+
+# Use preset and apply to dataset
+builder = AugmentationBuilder(preset="aerial")
+builder.apply(
+    input_path="datasets/my_dataset",
+    output_path="datasets/my_dataset_augmented",
+    num_augmented=2,
+    splits=["train"],
+)
+
+# Custom transforms
+builder = AugmentationBuilder(config={
+    "HorizontalFlip": {"p": 0.5},
+    "Rotate": {"limit": 15, "p": 0.3},
+})
+builder.apply("datasets/input", "datasets/output", num_augmented=3)
+```
+
+### Dataset Analysis
+
+Analyze dataset distribution and generate visualizations:
+
+```python
+from nectar.ai.detection.datasets import DatasetAnalyzer
+
+analyzer = DatasetAnalyzer("datasets/my_dataset", output_dir="analysis/")
+results = analyzer.analyze()
+# Generates plots and statistics report
+```
+
+### Dataset Handlers
+
+Download datasets from various sources using the handler registry:
+
+```python
+from nectar.ai.detection.datasets import DatasetHandlerRegistry
+
+# VisDrone
+handler_class = DatasetHandlerRegistry.get("visdrone")
+handler = handler_class("datasets/visdrone")
+handler.download_and_convert(output_format="coco")
+
+# Roboflow
+handler_class = DatasetHandlerRegistry.get("roboflow")
+handler = handler_class("datasets/roboflow", api_key="YOUR_KEY")
+handler.download(workspace="workspace", project="project", version=1, format_type="yolo")
+```
+
+### Dataset Merging
+
+Merge two datasets (YOLO or COCO format) with balanced sampling:
+
+```python
+from nectar.ai.detection.datasets import DatasetMerger
+
+# Auto-detect formats and merge (output format matches first dataset)
+merger = DatasetMerger("datasets/dataset1", "datasets/dataset2", "datasets/merged", seed=42)
+merger.merge({
+    "train": {"d1": 1000, "d2": 5000},
+    "valid": {"d1": "all", "d2": 500},
+    "test": {"d1": 200, "d2": 200}
+})
+
+# Specify output format explicitly
+merger = DatasetMerger(
+    "datasets/dataset1",
+    "datasets/dataset2",
+    "datasets/merged",
+    output_format="coco",  # or "yolo", "auto"
+    seed=42
+)
+```
+
+### Dataset Upload
+
+Upload datasets to HuggingFace Hub or Roboflow:
+
+```python
+from nectar.ai.detection.datasets import HuggingFaceDatasetUploader, RoboflowUploader
+
+# HuggingFace dataset upload
+hf_uploader = HuggingFaceDatasetUploader(
+    repo_id="user/my-dataset",
+    private=True,
+)
+hf_uploader.upload_dataset(
+    dataset_path="datasets/my_dataset",
+    commit_message="Upload dataset v1.0"
+)
+
+# Roboflow dataset upload (for annotation workflow)
+roboflow_uploader = RoboflowUploader(api_key="YOUR_KEY")
+roboflow_uploader.upload_directory(
+    directory_path="images/",
+    project_name="my-project",
+    batch_name="batch-1"
+)
 ```
 
 ## Config Files
 
-YAML config files for training (see `configs/` for examples):
+YAML config files for training:
 
 ```yaml
-# configs/detr_example.yaml
 data:
-  dataset_path: /path/to/coco/dataset
+  dataset_path: /path/to/dataset
   dataset_format: coco
 
 train:
@@ -899,28 +1124,27 @@ train:
   output_dir: outputs/detr
   device: cuda
   tensorboard: true
-  push_to_hub: false
-  multi_gpu: false
-  mixed_precision: "no"
+  start_tensorboard: true
+  push_to_hub: true
+  hub_model_id: user/model-name
+  mixed_precision: fp16
+  max_train_samples: 1000
+  max_eval_samples: 200
 
 eval:
   evaluate: true
   eval_split: test
   conf_threshold: 0.25
   iou_threshold: 0.5
+  batch_size: 2
+  device: auto
+  num_samples: 100
 ```
 
-Shell scripts with config support:
+Usage:
 
 ```bash
-# Transformers (DETR)
-./scripts/train_transformers.sh --config configs/detr_example.yaml
-
-# RF-DETR
-./scripts/train_rfdetr.sh --config configs/rfdetr_example.yaml
-
-# Ultralytics (YOLO)
-./scripts/train_ultralytics.sh --config configs/yolo_example.yaml
+nectar-od train --config configs/detr_example.yaml
 ```
 
 ## Module Structure
@@ -944,7 +1168,7 @@ detection/
 │   ├── base.py          # BaseDetectionModel
 │   ├── types.py         # Detection, DetectionResult
 │   ├── configs.py       # TrainingConfig, EvaluationConfig
-│   └── protocols.py     # DetectorProtocol, TrainableProtocol
+│   └── exceptions.py    # DetectionError, ...
 ├── models/
 │   ├── ultralytics.py   # UltralyticsModel
 │   ├── transformers.py  # TransformersModel
@@ -953,16 +1177,33 @@ detection/
 ├── training/
 │   └── config.py        # Framework-specific configs
 ├── evaluation/
-│   └── evaluator.py     # ObjectDetectionEvaluator
+│   ├── evaluator.py     # ObjectDetectionEvaluator
+│   ├── analysis.py      # PR curves, error statistics
+│   └── visualizations.py # Plots (PR, P, R, F1, confusion matrix, ...)
 ├── slicing/
 │   ├── config.py        # SlicingConfig
 │   └── inference.py     # SlicingInference
 ├── postprocess/
+│   ├── base.py          # BaseMergingStrategy
 │   ├── nms.py           # NMSStrategy
 │   ├── soft_nms.py      # SoftNMSStrategy
 │   ├── wbf.py           # WBFStrategy
-│   └── nmm.py           # NMMStrategy
+│   ├── nmm.py           # NMMStrategy
+│   └── filtering.py     # PerClassConfidenceFilter
+├── datasets/           # Dataset management utilities
+│   ├── format.py       # FormatDetector, FormatConverter
+│   ├── subset.py       # SubsetCreator
+│   ├── stratify.py     # Stratifier
+│   ├── augment.py      # AugmentationBuilder
+│   ├── analyze.py      # DatasetAnalyzer
+│   ├── merge.py        # DatasetMerger
+│   ├── handlers.py     # DatasetHandlerRegistry
+│   ├── handlers/       # Dataset download handlers
+│   │   ├── base.py     # BaseDatasetHandler
+│   │   ├── visdrone.py # VisDroneHandler
+│   │   └── roboflow.py # RoboflowHandler
+│   └── upload.py       # RoboflowUploader, HuggingFaceDatasetUploader
 └── utils/
-    ├── device.py        # get_device
-    └── huggingface.py   # HuggingFaceUploader
-```
+    ├── device.py        # DeviceManager, get_device
+    ├── huggingface.py   # HuggingFaceUploader
+    └── tensorboard.py   # TensorBoardManager
