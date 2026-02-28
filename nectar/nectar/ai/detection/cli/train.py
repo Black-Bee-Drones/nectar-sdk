@@ -391,6 +391,16 @@ def main():
         logger.info("Training completed in %.2f seconds", training_time)
         logger.info("Model saved: %s", result.get("model_path", "N/A"))
 
+        ignore_patterns = [
+            "*.tmp",
+            "*.bak",
+            "__pycache__",
+            "*.git*",
+            "*.pyc",
+            ".ipynb_checkpoints",
+            "datasets/**",
+        ]
+
         if params.get("push_to_hub") and params.get("hub_model_id"):
             logger.info("Uploading training outputs to HuggingFace Hub...")
             try:
@@ -399,16 +409,6 @@ def main():
                     local_dir=output_dir_raw,
                     repo_type="model",
                 )
-
-                ignore_patterns = [
-                    "*.tmp",
-                    "*.bak",
-                    "__pycache__",
-                    "*.git*",
-                    "*.pyc",
-                    ".ipynb_checkpoints",
-                    "datasets/**",
-                ]
 
                 uploader.upload(
                     commit_message="Upload complete training results",
@@ -463,15 +463,6 @@ def main():
                         local_dir=eval_output,
                         repo_type="model",
                     )
-
-                    ignore_patterns = [
-                        "*.tmp",
-                        "*.bak",
-                        "__pycache__",
-                        "*.git*",
-                        "*.pyc",
-                        ".ipynb_checkpoints",
-                    ]
 
                     eval_uploader.upload(
                         commit_message="Add evaluation results",
