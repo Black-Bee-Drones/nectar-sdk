@@ -922,7 +922,7 @@ nectar-od dataset download --source visdrone --output datasets/visdrone
 nectar-od dataset convert --input datasets/coco --output datasets/yolo --format yolo
 nectar-od dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
 nectar-od dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
-nectar-od dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train
+nectar-od dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train --num-workers 8
 nectar-od dataset analyze --input datasets/my_dataset
 nectar-od dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
 nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
@@ -1003,7 +1003,7 @@ split_path = stratifier.stratify(
 
 ### Augmentation
 
-Build augmentation configs and apply to datasets:
+Build augmentation configs and apply to datasets with parallel processing:
 
 ```python
 from nectar.ai.detection.datasets import AugmentationBuilder
@@ -1015,6 +1015,7 @@ builder.apply(
     output_path="datasets/my_dataset_augmented",
     num_augmented=2,
     splits=["train"],
+    num_workers=8,
 )
 
 # Custom transforms
@@ -1023,6 +1024,61 @@ builder = AugmentationBuilder(config={
     "Rotate": {"limit": 15, "p": 0.3},
 })
 builder.apply("datasets/input", "datasets/output", num_augmented=3)
+```
+
+**Augmentation Behavior:**
+
+- `num_augmented`: Number of augmented copies generated per original image.
+  - Example: 1000 original images + `num_augmented=2` → 1000 original + 2000 augmented = 3000 total
+
+- `max_original_samples`: Limits how many original images are selected for augmentation (not total generated).
+  - Example: 1000 original images + `max_original_samples=500` + `num_augmented=2`:
+    - All 1000 original images are kept in output
+    - 500 original images are augmented (each produces 2 copies)
+    - Total: 1000 original + 1000 augmented = 2000 images
+
+- `augmentation_ratio`: Adds augmented data as fraction of train size.
+  - Example: `augmentation_ratio=0.25` with 1000 images → adds ~250 augmented images (25% of original)
+  - Automatically calculates `max_original_samples` based on ratio
+
+- `prioritize_rare_classes`: When using `max_original_samples`, prioritizes images containing underrepresented categories to balance the dataset.
+
+**CLI Usage:**
+
+```bash
+# Basic augmentation (2 copies per image)
+nectar-od dataset augment \
+  --input datasets/visdrone \
+  --output datasets/visdrone-augmented \
+  --preset aerial \
+  --num-augmented 2 \
+  --splits train \
+  --num-workers 8
+
+# Limit augmentation to 1000 original images
+nectar-od dataset augment \
+  --input datasets/visdrone \
+  --output datasets/visdrone-augmented \
+  --preset aerial \
+  --num-augmented 2 \
+  --max-original-samples 1000
+
+# Add 25% extra data via augmentation ratio
+nectar-od dataset augment \
+  --input datasets/visdrone \
+  --output datasets/visdrone-augmented \
+  --preset aerial \
+  --num-augmented 2 \
+  --augmentation-ratio 0.25
+
+# Prioritize rare classes when limiting samples
+nectar-od dataset augment \
+  --input datasets/visdrone \
+  --output datasets/visdrone-augmented \
+  --preset aerial \
+  --num-augmented 2 \
+  --max-original-samples 1000 \
+  --prioritize-rare-classes
 ```
 
 ### Dataset Analysis
