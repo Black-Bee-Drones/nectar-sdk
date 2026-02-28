@@ -2,12 +2,18 @@
 
 import json
 import logging
+import os
+import random
 import shutil
+from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
+import numpy as np
 import yaml
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +62,184 @@ PRESETS = {
     "aerial": AUG_AERIAL,
     "industrial": AUG_INDUSTRIAL,
 }
+
+
+def _build_compose_from_config(config: Dict, bbox_format: str = "coco"):
+    """Build albumentations compose from config dict."""
+    import albumentations as A
+
+    transforms = []
+    for name, params in config.items():
+        if not hasattr(A, name):
+            raise ValueError(f"Unknown albumentations transform: {name}")
+        transforms.append(getattr(A, name)(**params))
+
+    label_fields = ["class_labels"]
+    if bbox_format == "yolo":
+        return A.Compose(
+            transforms,
+            bbox_params=A.BboxParams(format="yolo", label_fields=label_fields, min_visibility=0.3),
+        )
+    return A.Compose(
+        transforms,
+        bbox_params=A.BboxParams(format="coco", label_fields=label_fields, min_visibility=0.3),
+    )
+
+
+def _augment_coco_image_worker(
+    img_info: Dict,
+    split_dir: str,
+    out_dir: str,
+    img_id_to_anns: Dict,
+    aug_config: Dict,
+    num_augmented: int,
+    start_img_id: int,
+    start_ann_id: int,
+) -> Tuple[List[Dict], List[Dict]]:
+    """Worker function to augment a single COCO image."""
+    split_dir = Path(split_dir)
+    out_dir = Path(out_dir)
+    compose = _build_compose_from_config(aug_config, "coco")
+    new_images = []
+    new_annotations = []
+
+    src_img = split_dir / img_info["file_name"]
+    if not src_img.exists():
+        src_img = split_dir / "images" / img_info["file_name"]
+
+    try:
+        image = cv2.imread(str(src_img))
+        if image is None:
+            return [], []
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    except Exception:
+        return [], []
+
+    anns = img_id_to_anns.get(img_info["id"], [])
+    if not anns:
+        return [], []
+
+    bboxes_xywh = [ann["bbox"] for ann in anns]
+    bboxes_pascal = [[x, y, x + w, y + h] for x, y, w, h in bboxes_xywh]
+
+    image_height, image_width = image.shape[:2]
+    normalized_bboxes = []
+    for x1, y1, x2, y2 in bboxes_pascal:
+        normalized_bboxes.append(
+            [
+                x1 / image_width,
+                y1 / image_height,
+                x2 / image_width,
+                y2 / image_height,
+            ]
+        )
+
+    class_labels = [ann["category_id"] for ann in anns]
+
+    results = []
+    for i in range(num_augmented):
+        try:
+            augmented = compose(image=image, bboxes=normalized_bboxes, class_labels=class_labels)
+            aug_image = augmented["image"]
+            aug_bboxes = augmented["bboxes"]
+
+            if not aug_bboxes:
+                continue
+
+            results.append((i, aug_image, aug_bboxes, augmented["class_labels"]))
+        except Exception:
+            continue
+
+    for i, aug_image, aug_bboxes, aug_class_ids in results:
+        aug_img_id = start_img_id + i
+        aug_name = f"{Path(img_info['file_name']).stem}_aug{i}{Path(img_info['file_name']).suffix}"
+        save_path = out_dir / aug_name
+
+        cv2.imwrite(str(save_path), cv2.cvtColor(aug_image, cv2.COLOR_RGB2BGR))
+
+        new_images.append(
+            {
+                "id": aug_img_id,
+                "file_name": aug_name,
+                "width": aug_image.shape[1],
+                "height": aug_image.shape[0],
+            }
+        )
+
+        aug_height, aug_width = aug_image.shape[:2]
+        for j, (bbox, class_id) in enumerate(zip(aug_bboxes, aug_class_ids)):
+            x1_norm, y1_norm, x2_norm, y2_norm = bbox
+            x1 = x1_norm * aug_width
+            y1 = y1_norm * aug_height
+            x2 = x2_norm * aug_width
+            y2 = y2_norm * aug_height
+
+            new_annotations.append(
+                {
+                    "id": start_ann_id + i * len(aug_bboxes) + j,
+                    "image_id": aug_img_id,
+                    "category_id": class_id,
+                    "bbox": [x1, y1, x2 - x1, y2 - y1],
+                    "area": (x2 - x1) * (y2 - y1),
+                    "iscrowd": 0,
+                }
+            )
+
+    return new_images, new_annotations
+
+
+def _augment_yolo_image_worker(
+    img_path: str,
+    label_path: str,
+    out_images: str,
+    out_labels: str,
+    aug_config: Dict,
+    num_augmented: int,
+) -> int:
+    """Worker function to augment a single YOLO image."""
+    img_path = Path(img_path)
+    label_path = Path(label_path)
+    out_images = Path(out_images)
+    out_labels = Path(out_labels)
+    compose = _build_compose_from_config(aug_config, "yolo")
+    try:
+        shutil.copy2(img_path, out_images / img_path.name)
+        if label_path.exists():
+            shutil.copy2(label_path, out_labels / label_path.name)
+
+        image = cv2.imread(str(img_path))
+        if image is None:
+            return 0
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        bboxes, class_labels = [], []
+        if label_path.exists():
+            with open(label_path) as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) >= 5:
+                        class_labels.append(int(parts[0]))
+                        bboxes.append([float(x) for x in parts[1:5]])
+
+        count = 0
+        for aug_idx in range(num_augmented):
+            try:
+                result = compose(image=image, bboxes=bboxes, class_labels=class_labels)
+            except Exception:
+                continue
+
+            aug_name = f"{img_path.stem}_aug{aug_idx}{img_path.suffix}"
+            aug_img = cv2.cvtColor(result["image"], cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_images / aug_name), aug_img)
+
+            aug_label_path = out_labels / f"{img_path.stem}_aug{aug_idx}.txt"
+            with open(aug_label_path, "w") as f:
+                for cls_id, bbox in zip(result["class_labels"], result["bboxes"]):
+                    f.write(f"{cls_id} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f}\n")
+            count += 1
+        return count
+    except Exception:
+        return 0
 
 
 class AugmentationBuilder:
@@ -255,6 +439,11 @@ class AugmentationBuilder:
         output_path: Union[str, Path],
         num_augmented: int = 2,
         splits: Optional[List[str]] = None,
+        num_workers: Optional[int] = None,
+        augmentation_ratio: Optional[float] = None,
+        max_original_samples: Optional[int] = None,
+        prioritize_rare_classes: bool = False,
+        seed: int = 42,
     ) -> str:
         """
         Apply augmentations to a dataset, generating new augmented images.
@@ -266,9 +455,28 @@ class AugmentationBuilder:
         output_path : str or Path
             Output directory for augmented dataset.
         num_augmented : int
-            Number of augmented copies per image.
+            Number of augmented copies per original image.
+            Example: With 1000 original images and num_augmented=2,
+            generates 2000 augmented images (2 per original).
         splits : list of str, optional
             Splits to augment. Defaults to ["train"].
+        num_workers : int, optional
+            Number of parallel workers. Defaults to min(32, os.cpu_count()).
+        augmentation_ratio : float, optional
+            Add augmented data as fraction of train size (e.g. 0.25 = 25% extra).
+            Calculates max_original_samples automatically.
+            Overrides max_original_samples if provided.
+        max_original_samples : int, optional
+            Maximum number of original images to select for augmentation.
+            Limits which original images are augmented, not total generated.
+            Example: With 1000 images, max_original_samples=500, num_augmented=2:
+            - All 1000 original images are kept
+            - 500 original images are augmented (each produces 2 copies)
+            - Total: 1000 original + 1000 augmented = 2000 images
+        prioritize_rare_classes : bool
+            Prioritize images with rare categories when capping samples.
+        seed : int
+            Random seed for reproducibility.
 
         Returns
         -------
@@ -277,25 +485,59 @@ class AugmentationBuilder:
         """
         from nectar.ai.detection.datasets.format import FormatDetector
 
+        random.seed(seed)
+        np.random.seed(seed)
+
         input_path = Path(input_path)
         output_path = Path(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
+
+        if num_workers is None:
+            num_workers = min(32, os.cpu_count() or 1)
 
         fmt = FormatDetector(str(input_path)).detect()
         if splits is None:
             splits = ["train"]
 
         if fmt == "yolo":
-            return self._apply_yolo(input_path, output_path, num_augmented, splits)
+            return self._apply_yolo(
+                input_path,
+                output_path,
+                num_augmented,
+                splits,
+                num_workers,
+                augmentation_ratio,
+                max_original_samples,
+                prioritize_rare_classes,
+                seed,
+            )
         elif fmt == "coco":
-            return self._apply_coco(input_path, output_path, num_augmented, splits)
+            return self._apply_coco(
+                input_path,
+                output_path,
+                num_augmented,
+                splits,
+                num_workers,
+                augmentation_ratio,
+                max_original_samples,
+                prioritize_rare_classes,
+                seed,
+            )
         else:
             raise ValueError(f"Cannot detect dataset format at {input_path}")
 
     def _apply_yolo(
-        self, input_path: Path, output_path: Path, num_augmented: int, splits: List[str]
+        self,
+        input_path: Path,
+        output_path: Path,
+        num_augmented: int,
+        splits: List[str],
+        num_workers: int,
+        augmentation_ratio: Optional[float],
+        max_original_samples: Optional[int],
+        prioritize_rare_classes: bool,
+        seed: int,
     ) -> str:
-        compose = self._build_compose("yolo")
         yaml_path = input_path / "data.yaml"
         with open(yaml_path) as f:
             dataset_config = yaml.safe_load(f)
@@ -330,46 +572,63 @@ class AugmentationBuilder:
                 for p in sorted(images_dir.iterdir())
                 if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
             ]
+
+            images_to_augment = image_files
+            if split == "train":
+                if augmentation_ratio is not None:
+                    num_train = len(image_files)
+                    max_original_samples = max(
+                        1,
+                        min(
+                            num_train,
+                            int(round(augmentation_ratio * num_train / num_augmented)),
+                        ),
+                    )
+                    logger.info(
+                        "Augmentation ratio %.2f: augmenting %d images (x%d) -> ~%d extra (~%.0f%% of %d)",
+                        augmentation_ratio,
+                        max_original_samples,
+                        num_augmented,
+                        max_original_samples * num_augmented,
+                        100 * augmentation_ratio,
+                        num_train,
+                    )
+
+                if max_original_samples and len(image_files) > max_original_samples:
+                    if prioritize_rare_classes:
+                        images_to_augment = self._select_rare_class_yolo_images(
+                            image_files, labels_dir, max_original_samples
+                        )
+                    else:
+                        images_to_augment = random.sample(image_files, max_original_samples)
+
             logger.info(
-                "Augmenting %d images in %s split (%dx)", len(image_files), split, num_augmented
+                "Augmenting %d images in %s split (%dx)",
+                len(images_to_augment),
+                split,
+                num_augmented,
             )
 
-            for img_path in image_files:
-                label_path = labels_dir / f"{img_path.stem}.txt"
-                shutil.copy2(img_path, out_images / img_path.name)
-                if label_path.exists():
-                    shutil.copy2(label_path, out_labels / label_path.name)
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = []
+                for img_path in images_to_augment:
+                    label_path = labels_dir / f"{img_path.stem}.txt"
+                    futures.append(
+                        executor.submit(
+                            _augment_yolo_image_worker,
+                            str(img_path),
+                            str(label_path),
+                            str(out_images),
+                            str(out_labels),
+                            self.config,
+                            num_augmented,
+                        )
+                    )
 
-                image = cv2.imread(str(img_path))
-                if image is None:
-                    continue
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-                bboxes, class_labels = [], []
-                if label_path.exists():
-                    with open(label_path) as f:
-                        for line in f:
-                            parts = line.strip().split()
-                            if len(parts) >= 5:
-                                class_labels.append(int(parts[0]))
-                                bboxes.append([float(x) for x in parts[1:5]])
-
-                for aug_idx in range(num_augmented):
-                    try:
-                        result = compose(image=image, bboxes=bboxes, class_labels=class_labels)
-                    except Exception:
-                        continue
-
-                    aug_name = f"{img_path.stem}_aug{aug_idx}{img_path.suffix}"
-                    aug_img = cv2.cvtColor(result["image"], cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(str(out_images / aug_name), aug_img)
-
-                    aug_label_path = out_labels / f"{img_path.stem}_aug{aug_idx}.txt"
-                    with open(aug_label_path, "w") as f:
-                        for cls_id, bbox in zip(result["class_labels"], result["bboxes"]):
-                            f.write(
-                                f"{cls_id} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f}\n"
-                            )
+                for future in tqdm(
+                    as_completed(futures), total=len(futures), desc=f"Augmenting {split}"
+                ):
+                    future.result()
 
         # Copy non-augmented splits
         for split in dataset_config:
@@ -415,10 +674,17 @@ class AugmentationBuilder:
         return str(output_path)
 
     def _apply_coco(
-        self, input_path: Path, output_path: Path, num_augmented: int, splits: List[str]
+        self,
+        input_path: Path,
+        output_path: Path,
+        num_augmented: int,
+        splits: List[str],
+        num_workers: int,
+        augmentation_ratio: Optional[float],
+        max_original_samples: Optional[int],
+        prioritize_rare_classes: bool,
+        seed: int,
     ) -> str:
-        compose = self._build_compose("coco")
-
         for split_dir in sorted(input_path.iterdir()):
             if not split_dir.is_dir():
                 continue
@@ -437,70 +703,120 @@ class AugmentationBuilder:
                 shutil.copytree(split_dir, out_dir, dirs_exist_ok=True)
                 continue
 
-            img_id_to_anns = {}
+            img_id_to_anns = defaultdict(list)
             for ann in coco_data["annotations"]:
-                img_id_to_anns.setdefault(ann["image_id"], []).append(ann)
+                img_id_to_anns[ann["image_id"]].append(ann)
 
-            new_images = list(coco_data["images"])
-            new_annotations = list(coco_data["annotations"])
-            next_img_id = max((img["id"] for img in coco_data["images"]), default=0) + 1
-            next_ann_id = max((ann["id"] for ann in coco_data["annotations"]), default=0) + 1
+            all_images = coco_data["images"]
+            all_annotations = coco_data["annotations"]
+
+            images_to_augment = all_images
+            if split == "train":
+                if augmentation_ratio is not None:
+                    num_train = len(all_images)
+                    max_original_samples = max(
+                        1,
+                        min(
+                            num_train,
+                            int(round(augmentation_ratio * num_train / num_augmented)),
+                        ),
+                    )
+                    logger.info(
+                        "Augmentation ratio %.2f: augmenting %d images (x%d) -> ~%d extra (~%.0f%% of %d)",
+                        augmentation_ratio,
+                        max_original_samples,
+                        num_augmented,
+                        max_original_samples * num_augmented,
+                        100 * augmentation_ratio,
+                        num_train,
+                    )
+
+                if max_original_samples and len(all_images) > max_original_samples:
+                    if prioritize_rare_classes:
+                        images_to_augment = self._select_rare_class_images(
+                            all_images, all_annotations, max_original_samples
+                        )
+                    else:
+                        images_with_ann_count = [
+                            (img, len(img_id_to_anns.get(img["id"], []))) for img in all_images
+                        ]
+                        images_with_ann_count.sort(key=lambda x: x[1], reverse=True)
+                        top_images = [
+                            img for img, _ in images_with_ann_count[: max_original_samples // 2]
+                        ]
+                        remaining = [
+                            img for img, _ in images_with_ann_count[max_original_samples // 2 :]
+                        ]
+                        random_images = random.sample(
+                            remaining, max_original_samples - len(top_images)
+                        )
+                        images_to_augment = top_images + random_images
+                        random.shuffle(images_to_augment)
+
+            new_images = list(all_images)
+            new_annotations = list(all_annotations)
+            next_img_id = max((img["id"] for img in all_images), default=0) + 1
+            next_ann_id = max((ann["id"] for ann in all_annotations), default=0) + 1
 
             logger.info(
                 "Augmenting %d images in %s split (%dx)",
-                len(coco_data["images"]),
+                len(images_to_augment),
                 split,
                 num_augmented,
             )
 
-            for img_info in coco_data["images"]:
-                src_img = split_dir / img_info["file_name"]
-                if not src_img.exists():
-                    src_img = split_dir / "images" / img_info["file_name"]
-                shutil.copy2(src_img, out_dir / img_info["file_name"])
+            with ProcessPoolExecutor(max_workers=min(32, num_workers)) as executor:
+                copy_futures = []
+                for img_info in all_images:
+                    src_img = split_dir / img_info["file_name"]
+                    if not src_img.exists():
+                        src_img = split_dir / "images" / img_info["file_name"]
+                    dst_img = out_dir / img_info["file_name"]
+                    if src_img.exists() and not dst_img.exists():
+                        copy_futures.append(executor.submit(shutil.copy2, src_img, dst_img))
 
-                image = cv2.imread(str(src_img))
-                if image is None:
-                    continue
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                for _ in tqdm(
+                    as_completed(copy_futures),
+                    total=len(copy_futures),
+                    desc=f"Copying original {split} images",
+                ):
+                    pass
 
-                anns = img_id_to_anns.get(img_info["id"], [])
-                bboxes = [ann["bbox"] for ann in anns]
-                class_labels = [ann["category_id"] for ann in anns]
-
-                for aug_idx in range(num_augmented):
-                    try:
-                        result = compose(image=image, bboxes=bboxes, class_labels=class_labels)
-                    except Exception:
-                        continue
-
-                    aug_name = f"{Path(img_info['file_name']).stem}_aug{aug_idx}{Path(img_info['file_name']).suffix}"
-                    aug_img = cv2.cvtColor(result["image"], cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(str(out_dir / aug_name), aug_img)
-
-                    aug_img_id = next_img_id
-                    next_img_id += 1
-                    new_images.append(
-                        {
-                            "id": aug_img_id,
-                            "file_name": aug_name,
-                            "width": result["image"].shape[1],
-                            "height": result["image"].shape[0],
-                        }
-                    )
-
-                    for cls_id, bbox in zip(result["class_labels"], result["bboxes"]):
-                        new_annotations.append(
-                            {
-                                "id": next_ann_id,
-                                "image_id": aug_img_id,
-                                "category_id": cls_id,
-                                "bbox": list(bbox),
-                                "area": bbox[2] * bbox[3],
-                                "iscrowd": 0,
-                            }
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = []
+                for img_info in images_to_augment:
+                    futures.append(
+                        executor.submit(
+                            _augment_coco_image_worker,
+                            img_info,
+                            str(split_dir),
+                            str(out_dir),
+                            dict(img_id_to_anns),
+                            self.config,
+                            num_augmented,
+                            next_img_id,
+                            next_ann_id,
                         )
-                        next_ann_id += 1
+                    )
+                    next_img_id += num_augmented
+                    next_ann_id += num_augmented * 100
+
+                all_new_images = []
+                all_new_annotations = []
+                for future in tqdm(
+                    as_completed(futures),
+                    total=len(futures),
+                    desc=f"Augmenting {split}",
+                ):
+                    new_imgs, new_anns = future.result()
+                    all_new_images.extend(new_imgs)
+                    all_new_annotations.extend(new_anns)
+
+            new_images.extend(all_new_images)
+            new_annotations.extend(all_new_annotations)
+
+            for i, ann in enumerate(new_annotations):
+                ann["id"] = i + 1
 
             out_ann = out_dir / "_annotations.coco.json"
             with open(out_ann, "w") as f:
@@ -516,6 +832,117 @@ class AugmentationBuilder:
 
         logger.info("Augmented COCO dataset at %s", output_path)
         return str(output_path)
+
+    def _select_rare_class_images(
+        self, all_images: List[Dict], all_annotations: List[Dict], max_samples: int
+    ) -> List[Dict]:
+        category_counts = Counter()
+        image_categories = defaultdict(set)
+
+        for ann in all_annotations:
+            category_counts[ann["category_id"]] += 1
+            image_categories[ann["image_id"]].add(ann["category_id"])
+
+        image_rarity_scores = []
+        for img in all_images:
+            img_id = img["id"]
+            categories_in_image = image_categories.get(img_id, set())
+
+            if not categories_in_image:
+                rarity_score = float("inf")
+            else:
+                rarity_score = sum(category_counts.get(cat_id, 1) for cat_id in categories_in_image)
+                rarity_score = rarity_score / len(categories_in_image)
+
+            image_rarity_scores.append((img, rarity_score))
+
+        image_rarity_scores.sort(key=lambda x: x[1])
+        valid_scored = [(img, score) for img, score in image_rarity_scores if score != float("inf")]
+
+        rare_sample_size = int(max_samples * 0.7)
+        random_sample_size = max_samples - rare_sample_size
+
+        if len(valid_scored) >= rare_sample_size:
+            rare_images = [img for img, _ in valid_scored[:rare_sample_size]]
+            remaining = [img for img, _ in valid_scored[rare_sample_size:]]
+            if len(remaining) >= random_sample_size:
+                random_images = random.sample(remaining, random_sample_size)
+            else:
+                random_images = remaining
+                additional_needed = random_sample_size - len(random_images)
+                if additional_needed > 0:
+                    extra_rare = [
+                        img
+                        for img, _ in valid_scored[
+                            len(rare_images) : len(rare_images) + additional_needed
+                        ]
+                    ]
+                    random_images.extend(extra_rare)
+            selected = rare_images + random_images
+        else:
+            selected = [img for img, _ in valid_scored[:max_samples]]
+
+        random.shuffle(selected)
+        return selected
+
+    def _select_rare_class_yolo_images(
+        self, image_files: List[Path], labels_dir: Path, max_samples: int
+    ) -> List[Path]:
+        category_counts = Counter()
+        image_categories = defaultdict(set)
+
+        for img_path in image_files:
+            label_path = labels_dir / f"{img_path.stem}.txt"
+            if not label_path.exists():
+                continue
+            with open(label_path) as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) >= 5:
+                        cat_id = int(parts[0])
+                        category_counts[cat_id] += 1
+                        image_categories[img_path].add(cat_id)
+
+        image_rarity_scores = []
+        for img_path in image_files:
+            categories_in_image = image_categories.get(img_path, set())
+
+            if not categories_in_image:
+                rarity_score = float("inf")
+            else:
+                rarity_score = sum(category_counts.get(cat_id, 1) for cat_id in categories_in_image)
+                rarity_score = rarity_score / len(categories_in_image)
+
+            image_rarity_scores.append((img_path, rarity_score))
+
+        image_rarity_scores.sort(key=lambda x: x[1])
+        valid_scored = [(img, score) for img, score in image_rarity_scores if score != float("inf")]
+
+        rare_sample_size = int(max_samples * 0.7)
+        random_sample_size = max_samples - rare_sample_size
+
+        if len(valid_scored) >= rare_sample_size:
+            rare_images = [img for img, _ in valid_scored[:rare_sample_size]]
+            remaining = [img for img, _ in valid_scored[rare_sample_size:]]
+            if len(remaining) >= random_sample_size:
+                random_images = random.sample(remaining, random_sample_size)
+            else:
+                random_images = remaining
+                additional_needed = random_sample_size - len(random_images)
+                if additional_needed > 0:
+                    extra_rare = [
+                        img
+                        for img, _ in valid_scored[
+                            len(rare_images) : len(rare_images) + additional_needed
+                        ]
+                    ]
+                    random_images.extend(extra_rare)
+            selected = rare_images + random_images
+        else:
+            selected = [img for img, _ in valid_scored[:max_samples]]
+
+        random.shuffle(selected)
+        return selected
 
     def validate(self) -> bool:
         """

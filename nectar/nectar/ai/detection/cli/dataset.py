@@ -123,7 +123,17 @@ def cmd_augment(args):
         sys.exit(1)
 
     splits = [s.strip() for s in args.splits.split(",")] if args.splits else ["train"]
-    result_path = builder.apply(args.input, args.output, args.num_augmented, splits)
+    result_path = builder.apply(
+        args.input,
+        args.output,
+        args.num_augmented,
+        splits,
+        num_workers=args.num_workers,
+        augmentation_ratio=args.augmentation_ratio,
+        max_original_samples=args.max_original_samples,
+        prioritize_rare_classes=args.prioritize_rare_classes,
+        seed=args.seed,
+    )
     logger.info("Augmented dataset saved to: %s", result_path)
 
 
@@ -322,6 +332,32 @@ def main():
     augment_parser.add_argument("--config", help="Load augmentation config from YAML")
     augment_parser.add_argument(
         "--add-transform", action="append", help="Add transform (name:json_params)"
+    )
+    augment_parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers (default: min(32, cpu_count))",
+    )
+    augment_parser.add_argument(
+        "--augmentation-ratio",
+        type=float,
+        default=None,
+        help="Add augmented data as fraction of train size (e.g. 0.25 = 25%% extra). Overrides max-original-samples.",
+    )
+    augment_parser.add_argument(
+        "--max-original-samples",
+        type=int,
+        default=None,
+        help="Maximum number of original images to augment",
+    )
+    augment_parser.add_argument(
+        "--prioritize-rare-classes",
+        action="store_true",
+        help="Prioritize images with rare categories when capping samples",
+    )
+    augment_parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility"
     )
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze dataset")
