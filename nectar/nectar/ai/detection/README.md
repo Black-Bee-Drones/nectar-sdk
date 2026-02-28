@@ -49,6 +49,7 @@ flowchart TB
         RF["rfdetr"]
         SV["supervision"]
         HFH["huggingface_hub"]
+        TB["tensorboard"]
     end
 
     Detector -->|creates| UM
@@ -76,6 +77,7 @@ flowchart TB
     ODE -->|uses| SV
     PostProcess -->|uses| SV
     ML -->|uses| HFH
+    Detector -->|uses| TB
 ```
 
 ## Quick Start
@@ -83,12 +85,25 @@ flowchart TB
 ```python
 from nectar.ai.detection import Detector
 
+# Inference
 detector = Detector("yolov8n.pt")
 detector.load()
-
 result = detector.detect(image)
 for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
+
+# Training
+from nectar.ai.detection import TrainingConfig
+config = TrainingConfig(
+    dataset_path="/path/to/dataset",
+    epochs=100,
+    batch_size=16,
+    output_dir="outputs/",
+    tensorboard=True,
+    push_to_hub=True,
+    hub_model_id="user/model-name",
+)
+result = detector.train(config)
 ```
 
 ## Detector
@@ -568,15 +583,23 @@ config = TrainingConfig(
     learning_rate=0.001,
     output_dir="outputs/",
     tensorboard=True,
+    start_tensorboard=True,  # Auto-start TensorBoard server
     push_to_hub=True,
     hub_model_id="user/model-name",
 )
 
 result = detector.train(config)
+# Training outputs and evaluation results automatically uploaded to HF Hub
 print(f"Model saved: {result['model_path']}")
 ```
 
 ### Training Flow
+
+Training automatically handles:
+- TensorBoard server lifecycle (start/stop)
+- HuggingFace Hub uploads (checkpoints during training, final outputs, evaluation results)
+- Dataset format conversion (YOLO ↔ COCO)
+- Balanced subset creation
 
 ```mermaid
 sequenceDiagram
@@ -585,8 +608,10 @@ sequenceDiagram
     participant Model as BaseDetectionModel
     participant Framework as External Framework
     participant HF as HuggingFaceUploader
+    participant TB as TensorBoardManager
 
     User->>Detector: train(TrainingConfig)
+    Detector->>TB: start_server() if start_tensorboard
     Detector->>Model: train(config)
     Model->>Framework: train(**args)
 
@@ -599,6 +624,13 @@ sequenceDiagram
 
     Framework-->>Model: Training complete
     Model-->>Detector: {"model_path", "metrics"}
+    Detector->>HF: upload(training outputs)
+    opt Evaluate
+        Detector->>Model: evaluate()
+        Model-->>Detector: metrics
+        Detector->>HF: upload(evaluation results)
+    end
+    Detector->>TB: stop_server()
     Detector-->>User: Result dict
 ```
 
@@ -843,6 +875,34 @@ filter = PerClassConfidenceFilter(threshold_mapping={0: 0.3, 1: 0.5}, default_th
 filtered = filter.filter(detections)
 ```
 
+## Utilities
+
+### TensorBoard Management
+
+```python
+from nectar.ai.detection.utils import TensorBoardManager
+
+manager = TensorBoardManager()
+manager.start_server(log_dir="outputs", port=6006)
+# ... training ...
+manager.stop_server()
+```
+
+### HuggingFace Hub Upload
+
+```python
+from nectar.ai.detection.utils import HuggingFaceUploader
+
+uploader = HuggingFaceUploader(
+    repo_id="user/model-name",
+    local_dir="outputs/",
+    repo_type="model",
+)
+uploader.upload(commit_message="Upload training results")
+```
+
+Training automatically uploads outputs and evaluation results to HuggingFace Hub when `push_to_hub=True` and `hub_model_id` is set.
+
 ## Extension
 
 ### Adding a Framework
@@ -870,78 +930,49 @@ detector = Detector("model.pt", framework="custom")
 
 ## CLI
 
-### Unified CLI
-
-The detection module provides a unified CLI with subcommands:
+The detection module provides a unified CLI via `nectar-od`:
 
 ```bash
 # Training
-python -m nectar.ai.detection.cli.main train --config configs/yolo_example.yaml
+nectar-od train --config configs/yolo_example.yaml
 
 # Prediction
-python -m nectar.ai.detection.cli.main predict --model yolov8n.pt --input image.jpg
+nectar-od predict --model yolov8n.pt --input image.jpg --output results/
 
 # Evaluation
-python -m nectar.ai.detection.cli.main eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
+nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
 
 # Dataset management
-python -m nectar.ai.detection.cli.main dataset download --source visdrone --output datasets/visdrone
-python -m nectar.ai.detection.cli.main dataset convert --input datasets/coco --output datasets/yolo --format yolo
-python -m nectar.ai.detection.cli.main dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
-python -m nectar.ai.detection.cli.main dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
-python -m nectar.ai.detection.cli.main dataset analyze --input datasets/my_dataset
-python -m nectar.ai.detection.cli.main dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
-python -m nectar.ai.detection.cli.main dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
-python -m nectar.ai.detection.cli.main dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset
-python -m nectar.ai.detection.cli.main dataset upload-images --api-key KEY --project my-project --directory images/
+nectar-od dataset download --source visdrone --output datasets/visdrone
+nectar-od dataset convert --input datasets/coco --output datasets/yolo --format yolo
+nectar-od dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
+nectar-od dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
+nectar-od dataset analyze --input datasets/my_dataset
+nectar-od dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
+nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
+nectar-od dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset
+nectar-od dataset upload-images --api-key KEY --project my-project --directory images/
 ```
 
-### Individual CLI Commands
-
-#### Predict
+### Training
 
 ```bash
-python -m nectar.ai.detection.cli.predict \
-    --model yolov8n.pt \
-    --input image.jpg \
-    --output results/
+# Using config file (recommended)
+nectar-od train --config configs/yolo_example.yaml
+
+# Using CLI arguments
+nectar-od train --model yolov8n.pt --dataset /path/to/dataset --epochs 100 --batch-size 16
 ```
 
-#### Train
-
-Using CLI arguments:
+### Evaluation
 
 ```bash
-python -m nectar.ai.detection.cli.train \
-    --model yolov8n.pt \
-    --dataset /path/to/dataset \
-    --epochs 100
-```
-
-Using config file:
-
-```bash
-python -m nectar.ai.detection.cli.train \
-    --config configs/yolo_example.yaml
-```
-
-#### Evaluate
-
-```bash
-python -m nectar.ai.detection.cli.evaluate \
-    --model-path best.pt \
-    --framework ultralytics \
-    --dataset-path /path/to/dataset
+nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
 
 # With post-processing
-python -m nectar.ai.detection.cli.evaluate \
-    --model-path best.pt \
-    --framework ultralytics \
-    --dataset-path /path/to/dataset \
-    --merge-strategy nms \
-    --merge-iou-threshold 0.5 \
-    --use-per-class-filter \
-    --per-class-thresholds evaluation/pr_analysis_results.csv
+nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset \
+    --merge-strategy nms --merge-iou-threshold 0.5 \
+    --use-per-class-filter --per-class-thresholds evaluation/pr_analysis_results.csv
 ```
 
 ## Dataset Management
@@ -1101,12 +1132,11 @@ roboflow_uploader.upload_directory(
 
 ## Config Files
 
-YAML config files for training (see `configs/` for examples):
+YAML config files for training:
 
 ```yaml
-# configs/detr_example.yaml
 data:
-  dataset_path: /path/to/coco/dataset
+  dataset_path: /path/to/dataset
   dataset_format: coco
 
 train:
@@ -1118,28 +1148,27 @@ train:
   output_dir: outputs/detr
   device: cuda
   tensorboard: true
-  push_to_hub: false
-  multi_gpu: false
-  mixed_precision: "no"
+  start_tensorboard: true
+  push_to_hub: true
+  hub_model_id: user/model-name
+  mixed_precision: fp16
+  max_train_samples: 1000
+  max_eval_samples: 200
 
 eval:
   evaluate: true
   eval_split: test
   conf_threshold: 0.25
   iou_threshold: 0.5
+  batch_size: 2
+  device: auto
+  num_samples: 100
 ```
 
-Shell scripts with config support:
+Usage:
 
 ```bash
-# Transformers (DETR)
-./scripts/train_transformers.sh --config configs/detr_example.yaml
-
-# RF-DETR
-./scripts/train_rfdetr.sh --config configs/rfdetr_example.yaml
-
-# Ultralytics (YOLO)
-./scripts/train_ultralytics.sh --config configs/yolo_example.yaml
+nectar-od train --config configs/detr_example.yaml
 ```
 
 ## Module Structure
@@ -1200,6 +1229,6 @@ detection/
 │   │   └── roboflow.py # RoboflowHandler
 │   └── upload.py       # RoboflowUploader, HuggingFaceDatasetUploader
 └── utils/
-    ├── device.py        # get_device
-    └── huggingface.py   # HuggingFaceUploader
-```
+    ├── device.py        # DeviceManager, get_device
+    ├── huggingface.py   # HuggingFaceUploader
+    └── tensorboard.py   # TensorBoardManager
