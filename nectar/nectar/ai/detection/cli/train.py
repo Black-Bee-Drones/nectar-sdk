@@ -104,6 +104,10 @@ def load_config(config_path: str) -> Dict[str, Any]:
             elif k not in flat:
                 flat[k] = v
 
+    # Normalize parameter name variations
+    if "gradient_checkpoint" in flat and "gradient_checkpointing" not in flat:
+        flat["gradient_checkpointing"] = flat.pop("gradient_checkpoint")
+
     return flat
 
 
@@ -133,6 +137,26 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
         "imgsz": "imgsz",
         "model": "model",
         "framework": "framework",
+        # RF-DETR specific
+        "resolution": "resolution",
+        "lr_encoder": "lr_encoder",
+        "use_ema": "use_ema",
+        "gradient_checkpointing": "gradient_checkpointing",
+        "drop_path": "drop_path",
+        "drop_mode": "drop_mode",
+        "drop_schedule": "drop_schedule",
+        "freeze_encoder": "freeze_encoder",
+        "layer_norm": "layer_norm",
+        "rms_norm": "rms_norm",
+        "multi_scale": "multi_scale",
+        "ema_decay": "ema_decay",
+        "sync_bn": "sync_bn",
+        "num_workers": "num_workers",
+        # Ultralytics specific
+        "warmup_epochs": "warmup_epochs",
+        "warmup_momentum": "warmup_momentum",
+        "cos_lr": "cos_lr",
+        "dropout": "dropout",
     }
 
     result = config.copy()
@@ -261,35 +285,81 @@ def main():
         "mixed_precision": params.get("mixed_precision", "no"),
         "gradient_accumulation_steps": params.get("gradient_accumulation_steps", 1),
         "early_stopping_patience": params.get("early_stopping_patience"),
+        "early_stopping_delta": params.get("early_stopping_delta", 0.0),
+        "early_stopping_metric": params.get("early_stopping_metric", "eval_loss"),
+        "early_stopping_mode": params.get("early_stopping_mode", "min"),
         "from_scratch": params.get("from_scratch", False),
         "imgsz": params.get("imgsz", 640),
         "weight_decay": params.get("weight_decay", 0.0001),
         "warmup_ratio": params.get("warmup_ratio", 0.1),
+        "warmup_steps": params.get("warmup_steps", 10),
         "lr_scheduler_type": params.get("lr_scheduler_type", "linear"),
-        "warmup_epochs": params.get("warmup_epochs", 3.0),
-        "warmup_momentum": params.get("warmup_momentum", 0.8),
-        "lrf": params.get("lrf", 0.01),
-        "cos_lr": params.get("cos_lr", False),
-        "dropout": params.get("dropout", 0.0),
+        "max_grad_norm": params.get("max_grad_norm", 1.0),
+        "optimizer_type": params.get("optimizer_type"),
+        "save_period": params.get("save_period", 1),
         "max_train_samples": params.get("max_train_samples"),
         "max_eval_samples": params.get("max_eval_samples"),
         "max_test_samples": params.get("max_test_samples"),
+        "train_split": params.get("train_split", 0.8),
+        "val_split": params.get("val_split", 0.2),
+        "test_split": params.get("test_split", 0.0),
+        "dataset_format": params.get("dataset_format"),
+        "gc_per_accumulation": params.get("gc_per_accumulation", True),
+        "resume": params.get("resume", False),
     }
 
     # Create framework-specific config
     if framework == "ultralytics":
+        # Ultralytics-specific parameters
+        common_args.update(
+            {
+                "warmup_epochs": params.get("warmup_epochs", 3.0),
+                "warmup_momentum": params.get("warmup_momentum", 0.8),
+                "lrf": params.get("lrf", 0.01),
+                "cos_lr": params.get("cos_lr", False),
+                "dropout": params.get("dropout", 0.0),
+                "freeze": params.get("freeze"),
+            }
+        )
         training_config = UltralyticsTrainingConfig(model=model, **common_args)
     elif framework == "transformers":
+        # Transformers-specific parameters (already in common_args)
         training_config = TransformersTrainingConfig(model=model, **common_args)
     elif framework == "rfdetr":
-        # Add RF-DETR specific params
-        common_args["resolution"] = params.get("resolution", params.get("imgsz", 560))
-        if "lr_encoder" in params:
-            common_args["lr_encoder"] = params["lr_encoder"]
-        if "use_ema" in params:
-            common_args["use_ema"] = params["use_ema"]
-        if "gradient_checkpointing" in params:
-            common_args["gradient_checkpointing"] = params["gradient_checkpointing"]
+        # RF-DETR specific parameters
+        common_args.update(
+            {
+                "resolution": params.get("resolution", params.get("imgsz", 560)),
+                "lr_encoder": params.get("lr_encoder"),
+                "use_ema": params.get("use_ema", True),
+                "gradient_checkpointing": params.get("gradient_checkpointing")
+                or params.get("gradient_checkpoint", False),
+                "drop_path": params.get("drop_path", 0.0),
+                "drop_mode": params.get("drop_mode", "standard"),
+                "drop_schedule": params.get("drop_schedule", "constant"),
+                "cutoff_epoch": params.get("cutoff_epoch", 0),
+                "freeze_encoder": params.get("freeze_encoder", False),
+                "layer_norm": params.get("layer_norm", False),
+                "rms_norm": params.get("rms_norm", False),
+                "backbone_lora": params.get("backbone_lora", False),
+                "multi_scale": params.get("multi_scale", False),
+                "force_no_pretrain": params.get("force_no_pretrain", False),
+                "ema_decay": params.get("ema_decay", 0.9997),
+                "ema_tau": params.get("ema_tau", 0.0),
+                "lr_vit_layer_decay": params.get("lr_vit_layer_decay", 0.8),
+                "lr_component_decay": params.get("lr_component_decay", 1.0),
+                "sync_bn": params.get("sync_bn", True),
+                "num_workers": params.get("num_workers", 2),
+                "set_cost_class": params.get("set_cost_class", 2.0),
+                "set_cost_bbox": params.get("set_cost_bbox", 5.0),
+                "set_cost_giou": params.get("set_cost_giou", 2.0),
+                "start_epoch": params.get("start_epoch", 0),
+                "early_stopping_use_ema": params.get("early_stopping_use_ema", False),
+                "warmup_epochs": params.get("warmup_epochs", 3.0),
+                "dropout": params.get("dropout", 0.0),
+                "rfdetr_size": params.get("rfdetr_size"),
+            }
+        )
         training_config = RFDETRTrainingConfig(model=model, **common_args)
     else:
         logger.error("Unsupported framework: %s", framework)
