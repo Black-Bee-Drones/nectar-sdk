@@ -314,7 +314,7 @@ class DatasetAnalyzer:
                 img = box_ann.annotate(img, dets)
                 img = label_ann.annotate(img, dets, det_labels)
 
-            cells.append(cv2.resize(img, (cell_size, cell_size)))
+            cells.append(cv2.resize(img, (cell_size, cell_size), interpolation=cv2.INTER_AREA))
 
         while len(cells) < rows * cols:
             cells.append(np.zeros((cell_size, cell_size, 3), dtype=np.uint8))
@@ -391,7 +391,7 @@ class DatasetAnalyzer:
         if not centers:
             return
 
-        grid_size = 50
+        grid_size = 100
         heatmap = np.zeros((grid_size, grid_size))
         for cx, cy in centers:
             gx = min(int(cx * grid_size), grid_size - 1)
@@ -400,7 +400,7 @@ class DatasetAnalyzer:
                 heatmap[gy, gx] += 1
 
         fig, ax = plt.subplots(figsize=(8, 7))
-        im = ax.imshow(heatmap, cmap="Blues", aspect="equal", interpolation="bilinear")
+        im = ax.imshow(heatmap, cmap="managua", aspect="equal", interpolation="lanczos")
         ax.set_xticks([0, grid_size // 2, grid_size - 1])
         ax.set_xticklabels(["0", "0.5", "1.0"])
         ax.set_yticks([0, grid_size // 2, grid_size - 1])
@@ -427,7 +427,7 @@ class DatasetAnalyzer:
 
         fig, ax = plt.subplots(figsize=(10, 7))
         scatter = ax.scatter(
-            widths, heights, c=aspects, cmap="coolwarm", alpha=0.5, s=15, edgecolors="none"
+            widths, heights, c=aspects, cmap="managua", alpha=0.5, s=15, edgecolors="none"
         )
 
         med_w = np.median(widths)
