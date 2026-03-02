@@ -12,6 +12,7 @@ except ImportError:
 
 from PIL import Image
 
+from nectar.ai.detection.datasets.format import FormatConverter
 from nectar.ai.detection.datasets.handlers.base import BaseDatasetHandler
 
 
@@ -107,11 +108,13 @@ class VisDroneHandler(BaseDatasetHandler):
         """
         splits = kwargs.get("splits", ["train", "val", "test"])
         source_dir = kwargs.get("source_dir")
+        num_workers = kwargs.get("num_workers")
 
         if format == "yolo":
             return self.convert_to_yolo(source_dir=source_dir, splits=splits)
         elif format == "coco":
-            self.convert_to_coco(source_dir=source_dir, splits=splits)
+            self.convert_to_yolo(source_dir=source_dir, splits=splits)
+            self._convert_yolo_to_coco(splits=splits, num_workers=num_workers)
             return None
         else:
             raise ValueError(f"Unsupported format: {format}")
@@ -155,6 +158,7 @@ class VisDroneHandler(BaseDatasetHandler):
         self,
         source_dir: Optional[Path] = None,
         splits: Optional[List[str]] = None,
+        num_workers: Optional[int] = None,
     ) -> Dict[str, str]:
         """
         Convert VisDrone annotations to COCO format.
@@ -165,6 +169,8 @@ class VisDroneHandler(BaseDatasetHandler):
             Source directory. Auto-detects if None.
         splits : List[str], optional
             Splits to convert. Defaults to ["train", "val", "test"].
+        num_workers : int, optional
+            Number of parallel workers for format conversion. Defaults to min(CPU count, 8).
 
         Returns
         -------
@@ -174,19 +180,8 @@ class VisDroneHandler(BaseDatasetHandler):
         if splits is None:
             splits = ["train", "val", "test"]
 
-        if source_dir is None:
-            source_dir = self._find_source_dir()
-
-        self._print(f"Converting VisDrone to COCO format from {source_dir}")
-
-        result_paths = {}
-
-        for split in splits:
-            ann_path = self._convert_split_to_coco(source_dir, split)
-            result_paths[split] = str(ann_path)
-
-        self._print(f"COCO format saved to: {self.output_dir}")
-        return result_paths
+        self.convert_to_yolo(source_dir=source_dir, splits=splits)
+        return self._convert_yolo_to_coco(splits=splits, num_workers=num_workers)
 
     def download_and_convert(
         self,
@@ -194,6 +189,7 @@ class VisDroneHandler(BaseDatasetHandler):
         splits: Optional[List[str]] = None,
         download: bool = True,
         threads: int = 4,
+        num_workers: Optional[int] = None,
     ) -> Tuple[str, Dict[str, str]]:
         """
         Download and convert VisDrone dataset.
@@ -208,6 +204,8 @@ class VisDroneHandler(BaseDatasetHandler):
             Download dataset. Defaults to True.
         threads : int, optional
             Download threads. Defaults to 4.
+        num_workers : int, optional
+            Number of parallel workers for format conversion. Defaults to min(CPU count, 8).
 
         Returns
         -------
@@ -225,13 +223,83 @@ class VisDroneHandler(BaseDatasetHandler):
         yaml_path = ""
         coco_paths = {}
 
-        if output_format in ["yolo", "both"]:
+        # Always convert to YOLO first (VisDrone native -> YOLO)
+        # Then use FormatConverter for YOLO -> COCO if needed
+        if output_format in ["yolo", "both", "coco"]:
             yaml_path = self.convert_to_yolo(source_dir=source_dir, splits=splits)
 
         if output_format in ["coco", "both"]:
-            coco_paths = self.convert_to_coco(source_dir=source_dir, splits=splits)
+            coco_paths = self._convert_yolo_to_coco(splits=splits, num_workers=num_workers)
+
+        if download:
+            self._cleanup_raw_data()
 
         return yaml_path, coco_paths
+
+    def _convert_yolo_to_coco(
+        self,
+        splits: List[str],
+        num_workers: Optional[int] = None,
+    ) -> Dict[str, str]:
+        """
+        Convert YOLO format to COCO format using FormatConverter.
+
+        This is a helper method that encapsulates the YOLO->COCO conversion logic
+        used by convert(), convert_to_coco(), and download_and_convert().
+
+        Parameters
+        ----------
+        splits : List[str]
+            Splits to convert.
+        num_workers : int, optional
+            Number of parallel workers for format conversion. Defaults to min(CPU count, 8).
+
+        Returns
+        -------
+        Dict[str, str]
+            Mapping of split names to annotation file paths.
+        """
+        temp_coco_dir = self.output_dir.parent / f"{self.output_dir.name}_coco"
+        temp_coco_dir.mkdir(parents=True, exist_ok=True)
+
+        converter = FormatConverter(
+            str(self.output_dir),
+            str(temp_coco_dir),
+            verbose=self.verbose,
+            num_workers=num_workers,
+        )
+        converter.convert(target_format="coco", copy_images=False, num_workers=num_workers)
+
+        for split_dir in temp_coco_dir.iterdir():
+            if split_dir.is_dir():
+                target_split = self.output_dir / split_dir.name
+                target_split.mkdir(parents=True, exist_ok=True)
+
+                coco_ann = split_dir / "_annotations.coco.json"
+                if coco_ann.exists():
+                    with open(coco_ann, encoding="utf-8") as f:
+                        coco_data = json.load(f)
+
+                    for img in coco_data["images"]:
+                        if not img["file_name"].startswith("images/"):
+                            img["file_name"] = f"images/{img['file_name']}"
+
+                    target_ann = target_split / "_annotations.coco.json"
+                    with open(target_ann, "w", encoding="utf-8") as f:
+                        json.dump(coco_data, f, indent=2)
+
+        if temp_coco_dir.exists():
+            shutil.rmtree(temp_coco_dir)
+
+        result_paths = {}
+        for split in splits:
+            split_name = "valid" if split == "val" else split
+            ann_path = self.output_dir / split_name / "_annotations.coco.json"
+            if ann_path.exists():
+                result_paths[split_name] = str(ann_path)
+
+        self._print(f"COCO format saved to: {self.output_dir}")
+        return result_paths
 
     def _find_source_dir(self) -> Path:
         """Find source directory with VisDrone data."""
@@ -262,8 +330,9 @@ class VisDroneHandler(BaseDatasetHandler):
             self._print(f"Warning: {source_split} not found, skipping")
             return
 
-        images_dir = self.output_dir / split / "images"
-        labels_dir = self.output_dir / split / "labels"
+        target_split_name = "valid" if split == "val" else split
+        images_dir = self.output_dir / target_split_name / "images"
+        labels_dir = self.output_dir / target_split_name / "labels"
         images_dir.mkdir(parents=True, exist_ok=True)
         labels_dir.mkdir(parents=True, exist_ok=True)
 
@@ -323,98 +392,6 @@ class VisDroneHandler(BaseDatasetHandler):
 
                 shutil.copy2(img_path, images_dir / img_name)
 
-    def _convert_split_to_coco(self, source_dir: Path, split: str) -> Path:
-        """Convert a single split to COCO format."""
-        split_map = {
-            "train": "VisDrone2019-DET-train",
-            "val": "VisDrone2019-DET-val",
-            "test": "VisDrone2019-DET-test-dev",
-        }
-
-        source_split = source_dir / split_map.get(split, f"VisDrone2019-DET-{split}")
-        if not source_split.exists():
-            raise FileNotFoundError(f"Source split not found: {source_split}")
-
-        target_split = self.output_dir / split
-        target_split.mkdir(parents=True, exist_ok=True)
-
-        categories = [
-            {"id": i, "name": name, "supercategory": "object"}
-            for i, name in self.VISDRONE_CLASSES.items()
-        ]
-
-        coco_data = {"images": [], "annotations": [], "categories": categories}
-
-        source_images = source_split / "images"
-        source_annotations = source_split / "annotations"
-
-        if not source_annotations.exists():
-            raise FileNotFoundError(f"Annotations not found: {source_annotations}")
-
-        ann_files = list(source_annotations.glob("*.txt"))
-        if tqdm:
-            ann_files = tqdm(ann_files, desc=f"Converting {split}")
-
-        annotation_id = 1
-
-        for img_idx, ann_file in enumerate(ann_files, 1):
-            img_name = ann_file.with_suffix(".jpg").name
-            img_path = source_images / img_name
-
-            if not img_path.exists():
-                continue
-
-            try:
-                img = Image.open(img_path)
-                img_width, img_height = img.size
-            except Exception as e:
-                self._print(f"Warning: {img_path} - {e}")
-                continue
-
-            coco_data["images"].append(
-                {
-                    "id": img_idx,
-                    "file_name": img_name,
-                    "width": img_width,
-                    "height": img_height,
-                }
-            )
-
-            with open(ann_file, encoding="utf-8") as f:
-                for row in f.read().strip().splitlines():
-                    parts = row.split(",")
-                    if len(parts) < 6:
-                        continue
-
-                    if parts[4] == "0":
-                        continue
-
-                    x, y, w, h = map(int, parts[:4])
-                    cls = int(parts[5]) - 1
-
-                    if cls < 0 or cls >= len(self.VISDRONE_CLASSES):
-                        continue
-
-                    coco_data["annotations"].append(
-                        {
-                            "id": annotation_id,
-                            "image_id": img_idx,
-                            "category_id": cls,
-                            "bbox": [x, y, w, h],
-                            "area": w * h,
-                            "iscrowd": 0,
-                        }
-                    )
-                    annotation_id += 1
-
-            shutil.copy2(img_path, target_split / img_name)
-
-        ann_path = target_split / "_annotations.coco.json"
-        with open(ann_path, "w", encoding="utf-8") as f:
-            json.dump(coco_data, f, indent=2)
-
-        return ann_path
-
     def _create_yolo_yaml(self) -> Path:
         """Create YOLO data.yaml file."""
         yaml_data = {
@@ -425,7 +402,9 @@ class VisDroneHandler(BaseDatasetHandler):
 
         if (self.output_dir / "train").exists():
             yaml_data["train"] = "train/images"
-        if (self.output_dir / "val").exists():
+        if (self.output_dir / "valid").exists():
+            yaml_data["val"] = "valid/images"
+        elif (self.output_dir / "val").exists():
             yaml_data["val"] = "val/images"
         if (self.output_dir / "test").exists():
             yaml_data["test"] = "test/images"
@@ -444,6 +423,23 @@ class VisDroneHandler(BaseDatasetHandler):
             raise ImportError("yaml required. Install: pip install pyyaml") from exc
 
         return yaml_path
+
+    def _cleanup_raw_data(self) -> None:
+        """Remove zip files and raw extracted directories to save disk space."""
+        for zip_file in self.output_dir.glob("*.zip"):
+            try:
+                zip_file.unlink()
+                self._print(f"Removed zip file: {zip_file.name}")
+            except Exception as e:
+                self._print(f"Warning: Failed to remove {zip_file.name}: {e}")
+
+        for d in self.output_dir.iterdir():
+            if d.is_dir() and d.name.startswith("VisDrone2019"):
+                try:
+                    shutil.rmtree(d)
+                    self._print(f"Removed raw directory: {d.name}")
+                except Exception as e:
+                    self._print(f"Warning: Failed to remove {d.name}: {e}")
 
 
 def main():
