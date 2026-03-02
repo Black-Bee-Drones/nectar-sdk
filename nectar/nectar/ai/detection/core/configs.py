@@ -5,7 +5,62 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-DETECTION_MODULE_DIR = Path(__file__).parent.parent
+
+def _find_git_root(start_path: Path) -> Optional[Path]:
+    """
+    Find the git repository root by walking up from start_path.
+
+    Parameters
+    ----------
+    start_path : Path
+        Starting path to search from.
+
+    Returns
+    -------
+    Optional[Path]
+        Git root path if found, None otherwise.
+    """
+    current = start_path.resolve()
+    while current != current.parent:
+        if (current / ".git").exists():
+            return current
+        current = current.parent
+    return None
+
+
+def _get_source_detection_module_dir() -> Path:
+    """
+    Get the detection module directory from source location if available.
+
+    Attempts to find the source location by:
+    1. Finding the git repository root
+    2. Looking for nectar/nectar/ai/detection/ relative to git root
+    3. Falling back to installed location if source not found
+
+    Returns
+    -------
+    Path
+        Path to detection module directory (source or installed).
+    """
+    installed_dir = Path(__file__).parent.parent
+
+    git_root = _find_git_root(Path(__file__))
+    if git_root is None:
+        return installed_dir
+
+    source_candidates = [
+        git_root / "nectar" / "nectar" / "ai" / "detection",
+        git_root / "nectar" / "ai" / "detection",
+    ]
+
+    for candidate in source_candidates:
+        if candidate.exists() and (candidate / "__init__.py").exists():
+            return candidate
+
+    return installed_dir
+
+
+DETECTION_MODULE_DIR = _get_source_detection_module_dir()
 DEFAULT_DATA_DIR = DETECTION_MODULE_DIR / "data"
 DEFAULT_OUTPUT_DIR = DETECTION_MODULE_DIR / "outputs"
 
