@@ -5,14 +5,165 @@ import logging
 import os
 import shutil
 from collections import defaultdict
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 from PIL import Image
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def _process_coco_image_to_yolo(args: Tuple) -> Optional[Tuple[str, str, bool]]:
+    """Worker function for COCO to YOLO conversion"""
+    (
+        img_data,
+        img_id,
+        image_annotations,
+        categories_dict,
+        image_source_dir_str,
+        target_labels_str,
+        target_images_str,
+        copy_images,
+    ) = args
+
+    try:
+        image_source_dir = Path(image_source_dir_str)
+        target_labels = Path(target_labels_str)
+        target_images = Path(target_images_str)
+
+        img_filename = img_data["file_name"]
+        img_width, img_height = img_data["width"], img_data["height"]
+
+        if img_id not in image_annotations:
+            return None
+
+        yolo_annotations = []
+        for ann in image_annotations[img_id]:
+            if "bbox" not in ann:
+                continue
+
+            cat_id = ann["category_id"]
+            yolo_class = categories_dict[cat_id]["id"]
+
+            x, y, w, h = ann["bbox"]
+            x_center = (x + w / 2) / img_width
+            y_center = (y + h / 2) / img_height
+            width = w / img_width
+            height = h / img_height
+
+            yolo_annotations.append(f"{yolo_class} {x_center} {y_center} {width} {height}")
+
+        if not yolo_annotations:
+            return None
+
+        base_name = Path(img_filename).stem
+        label_path = target_labels / f"{base_name}.txt"
+        label_path.write_text("\n".join(yolo_annotations), encoding="utf-8")
+
+        if copy_images:
+            src = image_source_dir / Path(img_filename).name
+            if src.exists():
+                dst = target_images / Path(img_filename).name
+                shutil.copy2(src, dst)
+                return (str(label_path), str(dst), True)
+
+        return (str(label_path), None, True)
+    except Exception as e:
+        logger.warning(f"Error processing {img_data.get('file_name', 'unknown')}: {e}")
+        return None
+
+
+def _process_yolo_image_to_coco(args: Tuple) -> Optional[Dict]:
+    """Worker function for YOLO to COCO conversion"""
+    (
+        img_path_str,
+        img_idx,
+        labels_dir_str,
+        target_split_str,
+        copy_images,
+    ) = args
+
+    try:
+        img_path = Path(img_path_str)
+        labels_dir = Path(labels_dir_str)
+        target_split = Path(target_split_str)
+
+        img_id = img_idx + 1
+
+        with Image.open(img_path) as img:
+            img_width, img_height = img.size
+
+        label_path = labels_dir / f"{img_path.stem}.txt"
+        if not label_path.exists():
+            return {
+                "image": {
+                    "id": img_id,
+                    "file_name": img_path.name,
+                    "width": img_width,
+                    "height": img_height,
+                },
+                "annotations": [],
+                "copy_success": False,
+            }
+
+        with open(label_path, encoding="utf-8") as f:
+            yolo_annotations = f.read().strip().split("\n")
+
+        annotations = []
+        for yolo_ann in yolo_annotations:
+            if not yolo_ann.strip():
+                continue
+
+            parts = yolo_ann.strip().split()
+            if len(parts) < 5:
+                continue
+
+            class_id = int(parts[0])
+            x_center = float(parts[1])
+            y_center = float(parts[2])
+            width = float(parts[3])
+            height = float(parts[4])
+
+            x = (x_center - width / 2) * img_width
+            y = (y_center - height / 2) * img_height
+            w = width * img_width
+            h = height * img_height
+
+            annotations.append(
+                {
+                    "image_id": img_id,
+                    "category_id": class_id,
+                    "bbox": [x, y, w, h],
+                    "area": w * h,
+                }
+            )
+
+        target_img = target_split / img_path.name
+        copy_success = False
+        if not target_img.exists():
+            if copy_images:
+                shutil.copy2(img_path, target_img)
+                copy_success = True
+            else:
+                os.symlink(img_path.resolve(), target_img)
+                copy_success = True
+
+        return {
+            "image": {
+                "id": img_id,
+                "file_name": img_path.name,
+                "width": img_width,
+                "height": img_height,
+            },
+            "annotations": annotations,
+            "copy_success": copy_success,
+        }
+    except Exception as e:
+        logger.warning(f"Error processing {img_path_str}: {e}")
+        return None
 
 
 class FormatDetector:
@@ -147,10 +298,17 @@ class FormatConverter:
         Print progress information. Defaults to True.
     """
 
-    def __init__(self, source_dir: str, target_dir: str, verbose: bool = True):
+    def __init__(
+        self,
+        source_dir: str,
+        target_dir: str,
+        verbose: bool = True,
+        num_workers: Optional[int] = None,
+    ):
         self.source_dir = Path(source_dir)
         self.target_dir = Path(target_dir)
         self.verbose = verbose
+        self.num_workers = num_workers if num_workers is not None else min(cpu_count(), 8)
         self.target_dir.mkdir(parents=True, exist_ok=True)
 
     def _print(self, message: str) -> None:
@@ -162,6 +320,7 @@ class FormatConverter:
         target_format: str,
         splits: Optional[List[str]] = None,
         copy_images: bool = True,
+        num_workers: Optional[int] = None,
     ) -> str:
         """
         Convert dataset to target format.
@@ -174,6 +333,8 @@ class FormatConverter:
             Splits to convert. Auto-detects if None.
         copy_images : bool, optional
             Copy images to target. Defaults to True.
+        num_workers : int, optional
+            Number of parallel workers. Defaults to min(CPU count, 8).
 
         Returns
         -------
@@ -190,14 +351,21 @@ class FormatConverter:
             self._print(f"Dataset already in {target_format} format")
             return str(self.target_dir)
 
+        workers = num_workers if num_workers is not None else self.num_workers
+
         if target_format == "yolo":
-            return self.coco_to_yolo(splits=splits, copy_images=copy_images)
+            return self.coco_to_yolo(splits=splits, copy_images=copy_images, num_workers=workers)
         elif target_format == "coco":
-            return self.yolo_to_coco(splits=splits, copy_images=copy_images)
+            return self.yolo_to_coco(splits=splits, copy_images=copy_images, num_workers=workers)
         else:
             raise ValueError(f"Unsupported target format: {target_format}")
 
-    def coco_to_yolo(self, splits: Optional[List[str]] = None, copy_images: bool = True) -> str:
+    def coco_to_yolo(
+        self,
+        splits: Optional[List[str]] = None,
+        copy_images: bool = True,
+        num_workers: Optional[int] = None,
+    ) -> str:
         """
         Convert COCO format to YOLO format.
 
@@ -207,6 +375,8 @@ class FormatConverter:
             Splits to convert. Auto-detects if None.
         copy_images : bool, optional
             Copy images to target. Defaults to True.
+        num_workers : int, optional
+            Number of parallel workers. Defaults to min(CPU count, 8).
 
         Returns
         -------
@@ -266,42 +436,32 @@ class FormatConverter:
             for ann in coco_data["annotations"]:
                 image_annotations[ann["image_id"]].append(ann)
 
-            for img in tqdm(coco_data["images"], desc=f"Converting {split}"):
-                img_id = img["id"]
-                img_filename = img["file_name"]
-                img_width, img_height = img["width"], img["height"]
+            workers = num_workers if num_workers is not None else self.num_workers
+            process_args = [
+                (
+                    img,
+                    img["id"],
+                    image_annotations,
+                    categories_dict,
+                    str(image_source_dir),
+                    str(target_labels),
+                    str(target_images),
+                    copy_images,
+                )
+                for img in coco_data["images"]
+            ]
 
-                if img_id not in image_annotations:
-                    continue
-
-                yolo_annotations = []
-                for ann in image_annotations[img_id]:
-                    if "bbox" not in ann:
-                        continue
-
-                    cat_id = ann["category_id"]
-                    yolo_class = categories_dict[cat_id]["id"]
-
-                    x, y, w, h = ann["bbox"]
-                    x_center = (x + w / 2) / img_width
-                    y_center = (y + h / 2) / img_height
-                    width = w / img_width
-                    height = h / img_height
-
-                    yolo_annotations.append(f"{yolo_class} {x_center} {y_center} {width} {height}")
-
-                if not yolo_annotations:
-                    continue
-
-                base_name = Path(img_filename).stem
-                label_path = target_labels / f"{base_name}.txt"
-                with open(label_path, "w") as f:
-                    f.write("\n".join(yolo_annotations))
-
-                if copy_images:
-                    src = image_source_dir / Path(img_filename).name
-                    if src.exists():
-                        shutil.copy2(src, target_images / Path(img_filename).name)
+            if workers > 1 and len(process_args) > 10:
+                with Pool(workers) as pool:
+                    for _ in tqdm(
+                        pool.imap(_process_coco_image_to_yolo, process_args),
+                        total=len(process_args),
+                        desc=f"Converting {split}",
+                    ):
+                        pass
+            else:
+                for args in tqdm(process_args, desc=f"Converting {split}"):
+                    _process_coco_image_to_yolo(args)
 
         yaml_path = self._create_yolo_yaml()
         self._print(f"Saved: {yaml_path}")
@@ -376,7 +536,10 @@ class FormatConverter:
                     shutil.copy2(img_path, target_images / img_filename)
 
     def yolo_to_coco(
-        self, splits: Optional[List[str]] = None, copy_images: bool = True
+        self,
+        splits: Optional[List[str]] = None,
+        copy_images: bool = True,
+        num_workers: Optional[int] = None,
     ) -> Dict[str, str]:
         """
         Convert YOLO format to COCO format.
@@ -387,6 +550,8 @@ class FormatConverter:
             Splits to convert. Auto-detects if None.
         copy_images : bool, optional
             Copy images to target. Defaults to True.
+        num_workers : int, optional
+            Number of parallel workers. Defaults to min(CPU count, 8).
 
         Returns
         -------
@@ -445,71 +610,47 @@ class FormatConverter:
                 if p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp"]
             ]
 
-            annotation_id = 1
-
-            for img_idx, img_path in enumerate(tqdm(image_paths, desc=f"Converting {split}")):
-                img_id = img_idx + 1
-
-                try:
-                    with Image.open(img_path) as img:
-                        img_width, img_height = img.size
-                except Exception as e:
-                    self._print(f"Warning: {img_path} - {e}")
-                    continue
-
-                coco_data["images"].append(
-                    {
-                        "id": img_id,
-                        "file_name": img_path.name,
-                        "width": img_width,
-                        "height": img_height,
-                    }
+            workers = num_workers if num_workers is not None else self.num_workers
+            process_args = [
+                (
+                    str(img_path),
+                    img_idx,
+                    str(labels_dir),
+                    str(target_split),
+                    copy_images,
                 )
+                for img_idx, img_path in enumerate(image_paths)
+            ]
 
-                label_path = labels_dir / f"{img_path.stem}.txt"
-                if not label_path.exists():
+            if workers > 1 and len(process_args) > 10:
+                with Pool(workers) as pool:
+                    results = list(
+                        tqdm(
+                            pool.imap(_process_yolo_image_to_coco, process_args),
+                            total=len(process_args),
+                            desc=f"Converting {split}",
+                        )
+                    )
+            else:
+                results = [
+                    _process_yolo_image_to_coco(args)
+                    for args in tqdm(process_args, desc=f"Converting {split}")
+                ]
+
+            annotation_id = 1
+            for result in results:
+                if result is None:
                     continue
 
-                with open(label_path) as f:
-                    yolo_annotations = f.read().strip().split("\n")
+                coco_data["images"].append(result["image"])
 
-                for yolo_ann in yolo_annotations:
-                    if not yolo_ann.strip():
-                        continue
-
-                    parts = yolo_ann.strip().split()
-                    if len(parts) < 5:
-                        continue
-
-                    class_id = int(parts[0])
-                    x_center = float(parts[1])
-                    y_center = float(parts[2])
-                    width = float(parts[3])
-                    height = float(parts[4])
-
-                    x = (x_center - width / 2) * img_width
-                    y = (y_center - height / 2) * img_height
-                    w = width * img_width
-                    h = height * img_height
-
-                    coco_data["annotations"].append(
-                        {
-                            "id": annotation_id,
-                            "image_id": img_id,
-                            "category_id": class_id,
-                            "bbox": [x, y, w, h],
-                            "area": w * h,
-                            "iscrowd": 0,
-                        }
-                    )
+                img_id = result["image"]["id"]
+                for ann in result["annotations"]:
+                    ann["id"] = annotation_id
+                    ann["image_id"] = img_id
+                    ann["iscrowd"] = 0
+                    coco_data["annotations"].append(ann)
                     annotation_id += 1
-
-                target_img = target_split / img_path.name
-                if not target_img.exists():
-                    if copy_images:
-                        shutil.copy2(img_path, target_img)
-                    else:
-                        os.symlink(img_path.resolve(), target_img)
 
             annotation_path = target_split / "_annotations.coco.json"
             with open(annotation_path, "w") as f:
