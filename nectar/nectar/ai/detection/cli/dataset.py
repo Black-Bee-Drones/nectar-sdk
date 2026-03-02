@@ -27,7 +27,13 @@ def cmd_download(args):
         logger.info(f"Available sources: {DatasetHandlerRegistry.list_handlers()}")
         sys.exit(1)
 
-    output_dir = Path(args.output)
+    from nectar.ai.detection.core.configs import DEFAULT_DATA_DIR
+
+    output_dir = Path(args.output).resolve()
+    default_data_dir = Path(DEFAULT_DATA_DIR).resolve()
+    if output_dir == default_data_dir:
+        output_dir = output_dir / handler_name
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if handler_name == "visdrone":
@@ -37,6 +43,7 @@ def cmd_download(args):
             splits=args.splits,
             download=True,
             threads=args.threads,
+            num_workers=getattr(args, "num_workers", None),
         )
     elif handler_name == "roboflow":
         handler = handler_class(str(output_dir), args.api_key)
@@ -65,8 +72,12 @@ def cmd_convert(args):
         logger.info(f"Dataset already in {target_format} format")
         return
 
-    converter = FormatConverter(args.input, args.output)
-    converter.convert(target_format=target_format, copy_images=args.copy_images)
+    converter = FormatConverter(args.input, args.output, num_workers=args.num_workers)
+    converter.convert(
+        target_format=target_format,
+        copy_images=args.copy_images,
+        num_workers=args.num_workers,
+    )
     logger.info(f"Converted to {target_format} format: {args.output}")
 
 
@@ -257,7 +268,7 @@ def main():
     download_parser.add_argument(
         "--output",
         default=str(DEFAULT_DATA_DIR),
-        help=f"Output directory (default: {DEFAULT_DATA_DIR})",
+        help=f"Output directory (default: {DEFAULT_DATA_DIR}/<source>)",
     )
     download_parser.add_argument(
         "--format",
@@ -278,6 +289,12 @@ def main():
     download_parser.add_argument(
         "--version", type=int, help="Roboflow version (for roboflow source)"
     )
+    download_parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers for format conversion (default: min(CPU count, 8))",
+    )
 
     convert_parser = subparsers.add_parser("convert", help="Convert dataset format")
     convert_parser.add_argument("--input", required=True, help="Input dataset directory")
@@ -287,6 +304,12 @@ def main():
     )
     convert_parser.add_argument(
         "--copy-images", action="store_true", default=True, help="Copy images"
+    )
+    convert_parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers (default: min(CPU count, 8))",
     )
 
     stratify_parser = subparsers.add_parser("stratify", help="Stratify dataset into splits")
