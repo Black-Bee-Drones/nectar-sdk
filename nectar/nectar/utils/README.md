@@ -118,6 +118,43 @@ vertices = (
 grid = GPSCalculate.generate_point_grid(vertices, grid_shape=(10, 10))
 ```
 
+### Haversine vs Geodesic Precision
+
+`PositionUtils.get_body_distance()` uses `Geodesic.WGS84.Inverse` ([Karney 2013](https://doi.org/10.1007/s00190-012-0578-z)) for GPS distance and bearing. Haversine (spherical, R=6371km) remains in `GPSCalculate` for general use.
+
+Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. Full benchmark: [`test/benchmark_geodesic_vs_haversine.py`](../../test/benchmark_geodesic_vs_haversine.py)
+
+**Distance error** (against exact known distances):
+
+| Distance | Geodesic Error | Haversine Error | Haversine % |
+|----------|---------------:|----------------:|------------:|
+| 1m N | 0.80 nm | 0.35 cm | 0.353% |
+| 1m E | 0.09 nm | 0.18 cm | 0.181% |
+| 5m N | 0.10 nm | 1.77 cm | 0.353% |
+| 10m E | 0.14 nm | 1.81 cm | 0.181% |
+| 50m N | 0.16 nm | 17.66 cm | 0.353% |
+| 100m E | 0.02 nm | 18.08 cm | 0.181% |
+| 1km | 0.00 nm | 1.23 m | 0.123% |
+| 5km | 0.00 nm | 17.68 m | 0.354% |
+| 100km | 0.00 nm | 121.91 m | 0.122% |
+| 500km | 0.00 nm | 2138.93 m | 0.428% |
+
+Haversine error is (0.1%–0.43%), driven by Earth's flattening (1/298). It underestimates equatorial distances (~0.11%) and polar distances (~0.45%) because the actual radius of curvature differs from the mean sphere.
+
+**Bearing error**: Geodesic is exact (0.000000°). Haversine < 0.2° for typical cases.
+
+**Timing** (mean over 10,000 iterations):
+
+| Scale | Haversine+Bearing | Geodesic.Inverse | Ratio |
+|-------|------------------:|-----------------:|------:|
+| 1m | 18 µs | 37 µs | 2.1x |
+| 10m | 17 µs | 93 µs | 5.4x |
+| 1km | 22 µs | 38 µs | 1.7x |
+| 100km | 18 µs | 93 µs | 5.1x |
+| 5570km | 18 µs | 152 µs | 8.4x |
+
+Both are negligible for a 100Hz PID loop (10ms budget). Geodesic worst case is < 200µs.
+
 ## Position Utilities
 
 Coordinate transformations, rotation conversions, and ROS message utilities.
@@ -137,14 +174,14 @@ Static utility class for position and orientation operations.
 
 ```python
 from nectar.utils.position_utils import PositionUtils
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import PositionTarget
 
 # Calculate body frame distance
 dx_body, dy_body, dz_body = PositionUtils.get_body_distance(
     target=target_position,  # PositionTarget or GeoPoseStamped
-    current=current_pose,     # PoseWithCovarianceStamped or NavSatFix
-    heading=45.0  # degrees
+    current=current_pose,     # PoseStamped, PoseWithCovarianceStamped, or NavSatFix
+    heading=45.0  # degrees (required for NavSatFix)
 )
 
 # Extract yaw from pose
@@ -170,15 +207,15 @@ vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
 ### Supported Message Types
 
 **PositionUtils.get_body_distance()**:
-- `target`: `PositionTarget` (indoor) or `GeoPoseStamped` (outdoor)
-- `current`: `PoseWithCovarianceStamped` (indoor) or `NavSatFix` (outdoor)
+- `target`: `PositionTarget` (local) or `GeoPoseStamped` (GPS)
+- `current`: `PoseStamped` or `PoseWithCovarianceStamped` (local) or `NavSatFix` (GPS)
 
 **PositionUtils.get_yaw_from_pose()**:
-- `PoseWithCovarianceStamped`, `GeoPoseStamped`, or `PositionTarget`
+- `PoseStamped`, `PoseWithCovarianceStamped`, `GeoPoseStamped`, or `PositionTarget`
 
 **PositionUtils.convert_position_to_target()**:
-- `PoseWithCovarianceStamped` → `PositionTarget` (indoor)
-- `NavSatFix` → `GeoPoseStamped` (outdoor, requires heading)
+- `PoseStamped` / `PoseWithCovarianceStamped` → `PositionTarget` (local)
+- `NavSatFix` → `GeoPoseStamped` (GPS, requires heading)
 
 ## Dependencies
 
