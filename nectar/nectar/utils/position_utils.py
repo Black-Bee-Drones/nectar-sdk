@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from geographic_msgs.msg import GeoPoseStamped
 from geographiclib.geodesic import Geodesic
@@ -123,8 +125,8 @@ class PositionUtils:
     @staticmethod
     def convert_position_to_target(
         pose: PoseStamped | PoseWithCovarianceStamped | NavSatFix,
-        heading: float = None,
-        lidar: float = None,
+        heading: Optional[float] = None,
+        lidar: Optional[float] = None,
     ) -> PositionTarget | GeoPoseStamped:
         """
         Convert position messages to their corresponding target types.

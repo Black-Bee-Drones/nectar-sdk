@@ -165,7 +165,7 @@ class MavrosNavigator:
         Publishes target to MAVROS topics and monitors distance until reached.
 
         For PositionTarget: publishes to local setpoint topic, checks
-        Euclidean distance using local/vision pose.
+        Euclidean distance using EKF local position.
 
         For GeoPoseStamped: publishes to GPS setpoint topic, checks
         geodesic distance using GPS and relative altitude.
