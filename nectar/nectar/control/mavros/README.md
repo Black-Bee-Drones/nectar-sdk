@@ -70,11 +70,13 @@ classDiagram
         -_gps Optional~NavSatFix~
         -_heading Optional~Float64~
         -_rel_alt Optional~Float64~
-        -_vision_pos Optional~PoseWithCovarianceStamped~
+        -_vision_pos Optional~PoseStamped~
+        -_local_pos Optional~PoseStamped~
         -_rng_alt Optional~Range~
         -_imu Optional~Imu~
         -_pid_config Optional~PositionPIDConfig~
         -_takeoff_position Optional
+        -_takeoff_local Optional~PositionTarget~
         -_initial_altitude float
         -_initial_heading float
         -_pose_source PoseSource
@@ -86,10 +88,11 @@ classDiagram
         +gps NavSatFix
         +heading float
         +rel_alt float
-        +vision_pos Optional~PoseWithCovarianceStamped~
+        +vision_pos Optional~PoseStamped~
+        +local_pos Optional~PoseStamped~
         +lidar_available bool
         +pid_config Optional~PositionPIDConfig~
-        +position Union~PoseWithCovarianceStamped,NavSatFix~
+        +position Union~PoseStamped,NavSatFix~
         +position_as_target Optional~Union~PositionTarget,GeoPoseStamped~~
         +from_config(config, node)$ MavrosDrone
         +get_altitude(source) Optional~float~
@@ -110,22 +113,28 @@ classDiagram
         +set_param(param_id, value) bool
         +do_servo(aux_out, pwm_value) bool
         +rtl(altitude, precision, strategy, land) bool
-        -_compute_target(x, y, z, yaw, reference)
-        -_compute_local_target(x, y, z, yaw, reference)
-        -_compute_gps_target(x, y, z, yaw, reference)
-        -_compute_setpoint_target(x, y, z, yaw, reference)
-        -_compute_gps_setpoint_target(x, y, z, yaw, reference)
-        -_compute_target_rel_alt(z, reference) float
-        -_validate_position_sensors()
+        -_compute_pid_target(x, y, z, yaw, reference, strategy)
+        -_get_local_position() tuple
+        -_get_takeoff_for_strategy(strategy)
+        -_validate_position_sensors(strategy)
         -_call_service(service, request, success_msg, fail_msg, sync, timeout)
+    }
+
+    class TargetComputer {
+        <<static>>
+        +compute_local_target(pos, yaw, x, y, z, yaw, ref, takeoff)$ PositionTarget
+        +compute_gps_target(gps, heading, x, y, z, yaw, ref, takeoff)$ GeoPoseStamped
+        +compute_gps_setpoint(gps, heading, x, y, z, yaw, ref, takeoff, rel_alt, init_alt)$ GeoPoseStamped
+        +compute_target_rel_alt(rel_alt, z, reference)$ float
+        +gps_to_local_target(lat, lon, alt, gps, local, rel_alt, hdg)$ PositionTarget
     }
 
     class MavrosNavigator {
         -_drone MavrosDrone
-        +navigate_pid(target, active_axes, yaw, timeout, precision, altitude_source, altitude_target) bool
+        +navigate_pid(target, active_axes, yaw, timeout, precision, altitude_source, altitude_target, use_local) bool
         +navigate_setpoint(target, timeout, precision, check_alt) bool
         +resolve_altitude_target(z, reference, altitude_source) float
-        -_compute_errors(target, yaw, altitude_source, altitude_target) tuple
+        -_compute_errors(target, yaw, altitude_source, altitude_target, use_local) tuple
         -_resolve_altitude_error(dz_default, altitude_source, altitude_target) float
         -_resolve_lidar_target(z, reference) float
         -_resolve_rel_alt_target(z, reference) float
@@ -160,6 +169,7 @@ classDiagram
 
     BaseDrone <|-- MavrosDrone
     MavrosDrone *-- MavrosNavigator
+    MavrosDrone ..> TargetComputer : uses
     MavrosNavigator ..> PIDController : creates
     MavrosNavigator ..> GPSUtils : uses
     MavrosNavigator ..> PositionUtils : uses
@@ -203,13 +213,14 @@ drone.mavros_state             # State: FCU state (mode, armed, connected)
 drone.gps                      # NavSatFix: GPS data (outdoor only)
 drone.heading                  # float: Compass heading degrees (outdoor only)
 drone.rel_alt                  # float: Relative altitude (outdoor only)
-drone.vision_pos               # PoseWithCovarianceStamped: Vision pose (indoor only)
+drone.vision_pos               # PoseStamped: Vision pose (indoor only, normalized)
+drone.local_pos                # PoseStamped: EKF local position (always available)
 drone.lidar_available          # bool: Whether lidar data has been received
 drone.get_altitude()           # float: Best available altitude (lidar > vision Z > rel_alt)
 drone.get_altitude(AltitudeSource.LIDAR)   # float: Lidar rangefinder reading
 drone.get_altitude(AltitudeSource.VISION)  # float: Vision pose Z
 drone.get_altitude(AltitudeSource.REL_ALT) # float: GPS relative altitude
-drone.position                 # Union[PoseWithCovarianceStamped, NavSatFix]
+drone.position                 # Union[PoseStamped, NavSatFix]: Raw position
 drone.pid_config               # PositionPIDConfig: Current PID configuration
 ```
 
@@ -237,21 +248,21 @@ Navigation logic is encapsulated in `MavrosNavigator` (composition), keeping `Ma
 
 | Entry Point | PoseSource | Strategy | Reference | AltitudeSource | Notes |
 |------------|-----------|----------|-----------|----------------|-------|
-| `move_to` | VISION | PID | BODY | AUTO, VISION | Default indoor |
-| `move_to` | VISION | PID | BODY | LIDAR | Terrain following |
-| `move_to` | VISION | PID | TAKEOFF | AUTO, VISION | Absolute from takeoff |
-| `move_to` | VISION | PID | TAKEOFF | LIDAR | Absolute height AGL |
-| `move_to` | VISION | SETPOINT | BODY, TAKEOFF | N/A | FCU handles altitude |
-| `move_to` | GPS | PID | BODY | AUTO, LIDAR | Lidar preferred outdoor |
-| `move_to` | GPS | PID | BODY | REL_ALT | Relative altitude |
-| `move_to` | GPS | PID | TAKEOFF | AUTO, LIDAR | Absolute height AGL |
-| `move_to` | GPS | PID | TAKEOFF | REL_ALT | Relative altitude |
-| `move_to` | GPS | SETPOINT | BODY, TAKEOFF | N/A | AMSL-corrected target |
-| `move_to` | any | any | WORLD | any | Not supported |
-| `move_to_gps` | GPS | PID | N/A | REL_ALT | GPS waypoint with PID |
-| `move_to_gps` | GPS | SETPOINT | N/A | N/A | GPS setpoint to FCU |
-| `move_to_gps` | VISION | any | N/A | any | Not supported |
-| `move_velocity` | any | N/A | BODY, WORLD, TAKEOFF | N/A | Direct velocity |
+| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | Default indoor — raw vision pose |
+| `move_to` | VISION | PID_LOCAL | BODY, TAKEOFF | AUTO, VISION, LIDAR | EKF local pose (unified frame) |
+| `move_to` | VISION | SETPOINT | BODY, TAKEOFF | N/A | Local setpoint via setpoint_raw/local |
+| `move_to` | VISION | ~~SETPOINT_GLOBAL~~ | — | — | ❌ No GPS indoors |
+| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | Default outdoor — raw GPS |
+| `move_to` | GPS | PID_LOCAL | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | EKF local pose (unified frame) |
+| `move_to` | GPS | SETPOINT | BODY, TAKEOFF | N/A | Local setpoint via setpoint_raw/local |
+| `move_to` | GPS | SETPOINT_GLOBAL | BODY, TAKEOFF | N/A | GPS setpoint with AMSL (long range) |
+| `move_to` | any | any | WORLD | any | ❌ Not supported |
+| `move_to_gps` | GPS | PID | N/A | REL_ALT | GPS waypoint with raw GPS PID |
+| `move_to_gps` | GPS | PID_LOCAL | N/A | REL_ALT | GPS waypoint with EKF local PID |
+| `move_to_gps` | GPS | ~~SETPOINT~~ | — | — | ❌ GPS input needs global output |
+| `move_to_gps` | GPS | SETPOINT_GLOBAL | N/A | N/A | GPS setpoint to FCU |
+| `move_to_gps` | VISION | any | N/A | any | ❌ Not supported |
+| `move_velocity` | any | N/A | BODY, WORLD, TAKEOFF | N/A | Direct velocity command |
 
 ### Navigation Examples
 
@@ -469,7 +480,9 @@ drone.rtl(altitude=15.0, strategy=RTLStrategy.ARDUPILOT, land=True)
 | `/mavros/state` | State | FCU connection and mode |
 | `/mavros/rangefinder/rangefinder` | Range | Lidar altitude |
 | `/mavros/imu/data` | Imu | IMU measurements |
-| `/mavros/vision_pose/pose_cov` | PoseWithCovarianceStamped | Vision pose (indoor) |
+| `/mavros/local_position/pose` | PoseStamped | EKF local position (always) |
+| `/mavros/vision_pose/pose_cov` | PoseWithCovarianceStamped | Vision pose (indoor, auto-detected) |
+| `/mavros/vision_pose/pose` | PoseStamped | Vision pose (indoor, auto-detected) |
 | `/mavros/global_position/global` | NavSatFix | GPS position (outdoor) |
 | `/mavros/global_position/rel_alt` | Float64 | Relative altitude (outdoor) |
 | `/mavros/global_position/compass_hdg` | Float64 | Compass heading (outdoor) |
