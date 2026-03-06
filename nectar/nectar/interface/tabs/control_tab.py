@@ -218,6 +218,8 @@ class MoveToWorker(QObject):
         self._z: Optional[float] = None
         self._yaw: Optional[float] = None
         self._reference = None
+        self._strategy = None
+        self._altitude_source = None
         self._timeout: float = 60.0
         self._precision: float = 0.2
         self._cancelled: bool = False
@@ -232,6 +234,8 @@ class MoveToWorker(QObject):
         reference,
         timeout: float,
         precision: float,
+        strategy=None,
+        altitude_source=None,
     ) -> None:
         self._drone = drone
         self._x = x
@@ -239,6 +243,8 @@ class MoveToWorker(QObject):
         self._z = z
         self._yaw = yaw
         self._reference = reference
+        self._strategy = strategy
+        self._altitude_source = altitude_source
         self._timeout = timeout
         self._precision = precision
         self._cancelled = False
@@ -266,7 +272,7 @@ class MoveToWorker(QObject):
             target_str = ", ".join(parts) if parts else "none"
             self.progress.emit(f"Moving: {target_str}")
 
-            success = self._drone.move_to(
+            kwargs = dict(
                 x=self._x,
                 y=self._y,
                 z=self._z,
@@ -275,6 +281,11 @@ class MoveToWorker(QObject):
                 timeout=self._timeout,
                 precision=self._precision,
             )
+            if self._strategy is not None:
+                kwargs["strategy"] = self._strategy
+            if self._altitude_source is not None:
+                kwargs["altitude_source"] = self._altitude_source
+            success = self._drone.move_to(**kwargs)
             if self._cancelled:
                 self.finished.emit(False, "Cancelled")
             elif success:
@@ -626,8 +637,8 @@ class ControlTab(QWidget):
 
         layout.addLayout(grid)
 
-        options_layout = QHBoxLayout()
-        options_layout.setSpacing(12)
+        row1 = QHBoxLayout()
+        row1.setSpacing(12)
 
         ref_lbl = QLabel("Ref:")
         ref_lbl.setProperty("secondary", True)
@@ -635,6 +646,33 @@ class ControlTab(QWidget):
         self._pos_reference_combo.addItems(["Body", "Takeoff"])
         self._pos_reference_combo.setCurrentIndex(0)
         self._pos_reference_combo.setFixedWidth(90)
+
+        strat_lbl = QLabel("Strategy:")
+        strat_lbl.setProperty("secondary", True)
+        self._pos_strategy_combo = QComboBox()
+        self._pos_strategy_combo.addItems(["PID", "PID Local", "Setpoint", "Setpoint Global"])
+        self._pos_strategy_combo.setCurrentIndex(0)
+        self._pos_strategy_combo.setFixedWidth(120)
+
+        alt_src_lbl = QLabel("Alt:")
+        alt_src_lbl.setProperty("secondary", True)
+        self._pos_alt_source_combo = QComboBox()
+        self._pos_alt_source_combo.addItems(["Auto", "Lidar", "Vision", "Rel Alt"])
+        self._pos_alt_source_combo.setCurrentIndex(0)
+        self._pos_alt_source_combo.setFixedWidth(80)
+
+        row1.addWidget(ref_lbl)
+        row1.addWidget(self._pos_reference_combo)
+        row1.addWidget(strat_lbl)
+        row1.addWidget(self._pos_strategy_combo)
+        row1.addWidget(alt_src_lbl)
+        row1.addWidget(self._pos_alt_source_combo)
+        row1.addStretch()
+
+        layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(12)
 
         prec_lbl = QLabel("Prec:")
         prec_lbl.setProperty("secondary", True)
@@ -656,15 +694,13 @@ class ControlTab(QWidget):
         self._pos_timeout_spin.setSuffix(" s")
         self._pos_timeout_spin.setFixedWidth(80)
 
-        options_layout.addWidget(ref_lbl)
-        options_layout.addWidget(self._pos_reference_combo)
-        options_layout.addWidget(prec_lbl)
-        options_layout.addWidget(self._pos_precision_spin)
-        options_layout.addWidget(timeout_lbl)
-        options_layout.addWidget(self._pos_timeout_spin)
-        options_layout.addStretch()
+        row2.addWidget(prec_lbl)
+        row2.addWidget(self._pos_precision_spin)
+        row2.addWidget(timeout_lbl)
+        row2.addWidget(self._pos_timeout_spin)
+        row2.addStretch()
 
-        layout.addLayout(options_layout)
+        layout.addLayout(row2)
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(8)
@@ -693,6 +729,8 @@ class ControlTab(QWidget):
             self._pos_z_check,
             self._pos_yaw_check,
             self._pos_reference_combo,
+            self._pos_strategy_combo,
+            self._pos_alt_source_combo,
             self._pos_precision_spin,
             self._pos_timeout_spin,
             self._pos_go_btn,
@@ -1263,14 +1301,35 @@ class ControlTab(QWidget):
         if not self._drone or self._moveto_running:
             return
 
-        from nectar.control.types import MoveReference
+        from nectar.control.types import (
+            AltitudeSource,
+            MoveReference,
+            NavigationStrategy,
+        )
 
         reference_map = {
             "Body": MoveReference.BODY,
             "Takeoff": MoveReference.TAKEOFF,
         }
+        strategy_map = {
+            "PID": NavigationStrategy.PID,
+            "PID Local": NavigationStrategy.PID_LOCAL,
+            "Setpoint": NavigationStrategy.SETPOINT,
+            "Setpoint Global": NavigationStrategy.SETPOINT_GLOBAL,
+        }
+        alt_source_map = {
+            "Auto": AltitudeSource.AUTO,
+            "Lidar": AltitudeSource.LIDAR,
+            "Vision": AltitudeSource.VISION,
+            "Rel Alt": AltitudeSource.REL_ALT,
+        }
+
         ref_name = self._pos_reference_combo.currentText()
         reference = reference_map.get(ref_name, MoveReference.BODY)
+        strat_name = self._pos_strategy_combo.currentText()
+        strategy = strategy_map.get(strat_name, NavigationStrategy.PID)
+        alt_name = self._pos_alt_source_combo.currentText()
+        altitude_source = alt_source_map.get(alt_name, AltitudeSource.AUTO)
 
         x = self._pos_x_spin.value() if self._pos_x_check.isChecked() else None
         y = self._pos_y_spin.value() if self._pos_y_check.isChecked() else None
@@ -1294,7 +1353,8 @@ class ControlTab(QWidget):
             if yaw is not None:
                 parts.append(f"yaw={yaw:.0f}")
             self._node.get_logger().info(
-                f"Position control: {', '.join(parts)} ref={ref_name} prec={precision:.2f}m"
+                f"Position control: {', '.join(parts)} ref={ref_name} "
+                f"strategy={strat_name} alt={alt_name} prec={precision:.2f}m"
             )
 
         self._moveto_running = True
@@ -1303,7 +1363,18 @@ class ControlTab(QWidget):
 
         self._moveto_thread = QThread()
         self._moveto_worker = MoveToWorker()
-        self._moveto_worker.setup(self._drone, x, y, z, yaw, reference, timeout, precision)
+        self._moveto_worker.setup(
+            self._drone,
+            x,
+            y,
+            z,
+            yaw,
+            reference,
+            timeout,
+            precision,
+            strategy,
+            altitude_source,
+        )
         self._moveto_worker.moveToThread(self._moveto_thread)
 
         self._moveto_thread.started.connect(self._moveto_worker.run)
@@ -1434,7 +1505,7 @@ class ControlTab(QWidget):
         if is_indoor:
             vision_pos = getattr(self._drone, "vision_pos", None)
             if vision_pos:
-                pos = vision_pos.pose.pose.position
+                pos = vision_pos.pose.position
                 self._pos_x_label.setText(f"X: {pos.x:.2f}m")
                 self._pos_y_label.setText(f"Y: {pos.y:.2f}m")
                 self._pos_z_label.setText(f"Z: {pos.z:.2f}m")
