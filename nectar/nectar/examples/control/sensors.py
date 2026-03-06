@@ -37,6 +37,15 @@ class SensorsExample(Node):
         altitude = self.drone.get_altitude()
         lidar = self.drone.get_altitude(AltitudeSource.LIDAR)
 
+        # EKF local position
+        local = self.drone.local_pos
+        local_str = (
+            f"x={local.pose.position.x:.2f}, y={local.pose.position.y:.2f}, "
+            f"z={local.pose.position.z:.2f}"
+            if local
+            else "N/A"
+        )
+
         if self.source == "gps":
             gps = self.drone.gps
             heading = self.drone.heading
@@ -45,15 +54,15 @@ class SensorsExample(Node):
             self.get_logger().info(
                 f"GPS: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, "
                 f"alt={gps.altitude:.1f}m | heading={heading:.1f}° | "
-                f"rel_alt={rel_alt:.2f}m | altitude={altitude} | lidar={lidar}"
+                f"rel_alt={rel_alt:.2f}m | lidar={lidar} | local=[{local_str}]"
             )
         else:
             vision = self.drone.vision_pos
             if vision:
-                pos = vision.pose.pose.position
+                pos = vision.pose.position
                 self.get_logger().info(
                     f"Vision: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f} | "
-                    f"altitude={altitude} | lidar={lidar}"
+                    f"altitude={altitude} | lidar={lidar} | local=[{local_str}]"
                 )
             else:
                 self.get_logger().warn("No vision data")
