@@ -366,8 +366,10 @@ class BaseDrone(ABC):
 
         strategy : NavigationStrategy (enum), default=PID
             Navigation algorithm:
-            - PID: velocity-based control with feedback loop
-            - SETPOINT: direct position setpoint publishing
+            - PID: velocity-based control with raw sensors (vision/GPS)
+            - PID_LOCAL: velocity-based control with EKF local position
+            - SETPOINT: local position setpoint (setpoint_raw/local)
+            - SETPOINT_GLOBAL: GPS global setpoint (outdoor only)
 
         altitude_source : AltitudeSource (enum), default=AUTO
             Altitude sensor source for PID navigation:

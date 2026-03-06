@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from nectar.control.types import NavigationStrategy, PoseSource
+from nectar.control.types import PoseSource
 
 
 @dataclass(frozen=True)
@@ -14,7 +14,6 @@ class DroneConfig:
 class MavrosConfig(DroneConfig):
     name: str = "mavros_drone"
     pose_source: PoseSource = PoseSource.GPS
-    default_nav_strategy: NavigationStrategy = NavigationStrategy.PID
     expect_lidar: bool = True
     sensor_timeout: float = 10.0
     lidar_topic: str = "/mavros/rangefinder/rangefinder"
@@ -24,6 +23,7 @@ class MavrosConfig(DroneConfig):
     rel_alt_topic: str = "/mavros/global_position/rel_alt"
     imu_topic: str = "/mavros/imu/data"
     state_topic: str = "/mavros/state"
+    local_position_topic: str = "/mavros/local_position/pose"
     pid_config_file: Optional[str] = None
     connection_string: str = "serial:///dev/ttyUSB0:921600"
 
