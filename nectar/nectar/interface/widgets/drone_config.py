@@ -69,26 +69,30 @@ class DroneConfigPanel(QWidget):
 
     def _create_mavros_panel(self) -> QFrame:
         panel = QFrame()
-        panel.setStyleSheet(f"""
+        panel.setStyleSheet(
+            f"""
             QFrame {{
                 background-color: {COLORS.surface_elevated};
                 border: 1px solid {COLORS.border};
                 border-radius: 4px;
                 padding: 4px;
             }}
-        """)
+        """
+        )
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
         # Header
         header = QLabel("MAVROS")
-        header.setStyleSheet(f"""
+        header.setStyleSheet(
+            f"""
             color: {COLORS.accent};
             font-weight: 600;
             font-size: 10px;
             letter-spacing: 1px;
-        """)
+        """
+        )
         layout.addWidget(header)
 
         # Pose source
@@ -97,16 +101,6 @@ class DroneConfigPanel(QWidget):
         self._mavros_pose_source.currentIndexChanged.connect(self._on_config_changed)
         layout.addLayout(
             self._create_config_row("Pose:", self._mavros_pose_source, "Position estimation source")
-        )
-
-        # Navigation strategy
-        self._mavros_nav_strategy = QComboBox()
-        self._mavros_nav_strategy.addItems(["PID", "Setpoint"])
-        self._mavros_nav_strategy.currentIndexChanged.connect(self._on_config_changed)
-        layout.addLayout(
-            self._create_config_row(
-                "Navigation:", self._mavros_nav_strategy, "Navigation control strategy"
-            )
         )
 
         # LiDAR checkbox
@@ -132,26 +126,30 @@ class DroneConfigPanel(QWidget):
 
     def _create_bebop_panel(self) -> QFrame:
         panel = QFrame()
-        panel.setStyleSheet(f"""
+        panel.setStyleSheet(
+            f"""
             QFrame {{
                 background-color: {COLORS.surface_elevated};
                 border: 1px solid {COLORS.border};
                 border-radius: 4px;
                 padding: 4px;
             }}
-        """)
+        """
+        )
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
         # Header
         header = QLabel("BEBOP")
-        header.setStyleSheet(f"""
+        header.setStyleSheet(
+            f"""
             color: {COLORS.accent};
             font-weight: 600;
             font-size: 10px;
             letter-spacing: 1px;
-        """)
+        """
+        )
         layout.addWidget(header)
 
         # IP Address
@@ -203,23 +201,16 @@ class DroneConfigPanel(QWidget):
         return self._get_bebop_config()
 
     def _get_mavros_config(self) -> Dict[str, Any]:
-        from nectar.control import NavigationStrategy, PoseSource
+        from nectar.control import PoseSource
 
         pose_source_map = {
             0: PoseSource.GPS,
             1: PoseSource.VISION,
         }
-        nav_strategy_map = {
-            0: NavigationStrategy.PID,
-            1: NavigationStrategy.SETPOINT,
-        }
 
         return {
             "pose_source": pose_source_map.get(
                 self._mavros_pose_source.currentIndex(), PoseSource.GPS
-            ),
-            "default_nav_strategy": nav_strategy_map.get(
-                self._mavros_nav_strategy.currentIndex(), NavigationStrategy.PID
             ),
             "use_lidar": self._mavros_use_lidar.isChecked(),
             "connection_string": self._mavros_connection.text().strip()
@@ -247,7 +238,7 @@ class DroneConfigPanel(QWidget):
             self._set_bebop_config(config)
 
     def _set_mavros_config(self, config: Dict[str, Any]) -> None:
-        from nectar.control import NavigationStrategy, PoseSource
+        from nectar.control import PoseSource
 
         if "pose_source" in config:
             pose_source = config["pose_source"]
@@ -255,13 +246,6 @@ class DroneConfigPanel(QWidget):
                 self._mavros_pose_source.setCurrentIndex(0)
             else:
                 self._mavros_pose_source.setCurrentIndex(1)
-
-        if "default_nav_strategy" in config:
-            strategy = config["default_nav_strategy"]
-            if strategy == NavigationStrategy.PID:
-                self._mavros_nav_strategy.setCurrentIndex(0)
-            else:
-                self._mavros_nav_strategy.setCurrentIndex(1)
 
         if "use_lidar" in config:
             self._mavros_use_lidar.setChecked(config["use_lidar"])
@@ -293,8 +277,7 @@ class DroneConfigPanel(QWidget):
             return MavrosConfig(
                 start_driver=False,
                 pose_source=config_dict["pose_source"],
-                default_nav_strategy=config_dict["default_nav_strategy"],
-                use_lidar=config_dict["use_lidar"],
+                expect_lidar=config_dict["use_lidar"],
                 connection_string=config_dict["connection_string"],
             )
         else:
