@@ -14,7 +14,9 @@ class PoseSource(Enum):
 
 class NavigationStrategy(Enum):
     PID = auto()
+    PID_LOCAL = auto()
     SETPOINT = auto()
+    SETPOINT_GLOBAL = auto()
 
 
 class RTLStrategy(Enum):
