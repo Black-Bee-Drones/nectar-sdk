@@ -294,25 +294,34 @@ drone.move_to(x=0.0, y=0.0, z=1.0,
               altitude_source=AltitudeSource.LIDAR)  # hold 1.0m AGL at takeoff XY
 ```
 
-**Indoor -- let FCU handle position (SETPOINT)**:
+**EKF local position (PID_LOCAL) -- unified indoor/outdoor**:
 ```python
-# FCU receives target position directly; no PID loop on our side
+# Uses /mavros/local_position/pose for PID feedback (same code indoor and outdoor)
+drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.PID_LOCAL)
+```
+
+**Local setpoint (SETPOINT) -- FCU handles position control**:
+```python
+# Publishes target to setpoint_raw/local. Works indoor and outdoor.
 drone.move_to(x=2.0, y=1.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
 ```
 
 **Outdoor -- GPS waypoint navigation**:
 ```python
-# Navigate to absolute GPS coordinates; altitude is relative (above home)
+# PID with raw GPS (default)
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0, precision=1.0)
 
-# Let FCU handle navigation via setpoint
+# GPS global setpoint (long range, FCU handles navigation)
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
-                  strategy=NavigationStrategy.SETPOINT)
+                  strategy=NavigationStrategy.SETPOINT_GLOBAL)
+
+# PID with EKF local position
+drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
+                  strategy=NavigationStrategy.PID_LOCAL)
 ```
 
-**Outdoor -- relative movement with PID**:
+**Outdoor -- relative movement with PID + lidar**:
 ```python
-# Move 5m forward from current GPS position using PID + lidar for altitude
 drone.move_to(x=5.0, y=0.0, z=0.0, altitude_source=AltitudeSource.LIDAR)
 ```
 

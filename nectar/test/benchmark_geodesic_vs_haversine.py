@@ -18,7 +18,6 @@ Run: python -m pytest nectar/test/benchmark_geodesic_vs_haversine.py -v -s
 
 import time
 
-import numpy as np
 from geographiclib.geodesic import Geodesic
 
 from nectar.utils.gps_calculate import GPSCalculate
@@ -107,7 +106,7 @@ def test_precision_with_exact_distances():
         )
 
     print("-" * 110)
-    print(f"Geodesic.Inverse round-trip error: always < 1e-5 m (sub-micrometer)")
+    print("Geodesic.Inverse round-trip error: always < 1e-5 m (sub-micrometer)")
     print(f"Haversine max error: {max_hav_pct:.4f}%")
 
     assert max_hav_pct < 0.6, f"Haversine error exceeded 0.6%: {max_hav_pct:.4f}%"
@@ -182,9 +181,7 @@ def test_drone_scale_errors():
 
     lat2, lon2 = _place_point(-27.0, -48.5, 45.0, 100.0)
     hav_100 = GPSCalculate.haversine(-27.0, -48.5, lat2, lon2)
-    assert (
-        abs(hav_100 - 100.0) < 1.0
-    ), f"Haversine 100m error > 1m: {abs(hav_100 - 100.0):.4f}m"
+    assert abs(hav_100 - 100.0) < 1.0, f"Haversine 100m error > 1m: {abs(hav_100 - 100.0):.4f}m"
 
 
 def test_timing_comparison():
