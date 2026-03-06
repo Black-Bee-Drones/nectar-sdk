@@ -13,7 +13,7 @@ Reference:
   https://doi.org/10.1007/s00190-012-0578-z
   GeographicLib accuracy: ~15 nanometers on WGS84 ellipsoid.
 
-Run: python -m pytest nectar/test/benchmark_geodesic_vs_haversine.py -v -s
+Run: python scripts/benchmark_geodesic_vs_haversine.py
 """
 
 import time
@@ -181,7 +181,9 @@ def test_drone_scale_errors():
 
     lat2, lon2 = _place_point(-27.0, -48.5, 45.0, 100.0)
     hav_100 = GPSCalculate.haversine(-27.0, -48.5, lat2, lon2)
-    assert abs(hav_100 - 100.0) < 1.0, f"Haversine 100m error > 1m: {abs(hav_100 - 100.0):.4f}m"
+    assert abs(hav_100 - 100.0) < 1.0, (
+        f"Haversine 100m error > 1m: {abs(hav_100 - 100.0):.4f}m"
+    )
 
 
 def test_timing_comparison():

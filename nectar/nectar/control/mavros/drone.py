@@ -924,11 +924,17 @@ class MavrosDrone(BaseDrone):
         Parameters
         ----------
         x : float, optional
-            Forward (+) or backward (-) in meters. None disables X control.
+            Forward (+) or backward (-) in meters.
+            For PID strategies, None disables X axis control.
+            For SETPOINT strategies, None means zero offset (hold current).
         y : float, optional
-            Left (+) or right (-) in meters. None disables Y control.
+            Left (+) or right (-) in meters.
+            For PID strategies, None disables Y axis control.
+            For SETPOINT strategies, None means zero offset (hold current).
         z : float, optional
-            Up (+) or down (-) in meters. None disables altitude control.
+            Up (+) or down (-) in meters.
+            For PID strategies, None disables altitude control.
+            For SETPOINT strategies, None means zero offset (hold current).
         yaw : float, optional
             Yaw angle in degrees. None maintains current yaw.
         reference : MoveReference, default=BODY
