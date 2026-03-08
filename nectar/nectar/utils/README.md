@@ -122,7 +122,7 @@ grid = GPSCalculate.generate_point_grid(vertices, grid_shape=(10, 10))
 
 `PositionUtils.get_body_distance()` uses `Geodesic.WGS84.Inverse` ([Karney 2013](https://doi.org/10.1007/s00190-012-0578-z)) for GPS distance and bearing. Haversine (spherical, R=6371km) remains in `GPSCalculate` for general use.
 
-Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. Full benchmark: [`scripts/benchmark_geodesic_vs_haversine.py`](../../../scripts/benchmark_geodesic_vs_haversine.py)
+Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. Full benchmark: [`scripts/benchmark_geodesic_vs_haversine.py`](../../../scripts/experiments/benchmark_geodesic_vs_haversine.py)
 
 **Distance error** (against exact known distances):
 
