@@ -36,10 +36,6 @@ ROS 2 software development kit for autonomous aerial systems. Provides unified i
   - [Existing ROS 2 Workspace](#existing-ros-2-workspace)
   - [Install by Module](#install-by-module)
   - [Docker](#docker)
-- [Quick Start](#quick-start)
-  - [Drone Control](#drone-control-1)
-  - [Camera Capture](#camera-capture)
-  - [Object Detection](#object-detection)
 - [Architecture](#architecture)
   - [Design Patterns](#design-patterns)
 - [Documentation](#documentation)
@@ -63,6 +59,19 @@ Protocol-based drone interface with factory instantiation. `DroneFactory` create
 - Return-to-launch with PID or ArduPilot-native RTL modes
 - Per-axis PID tuning via YAML with runtime updates
 
+```python
+from nectar.control import DroneFactory, MavrosConfig, BebopConfig, PoseSource
+
+# Same interface, different platforms
+drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS), node)
+# drone  = DroneFactory.create("bebop", BebopConfig(), node)
+
+drone.takeoff(altitude=2.0)
+drone.move_to(x=5.0, y=0.0, z=0.0, precision=0.3)
+drone.move_to_gps(lat=-22.413, lon=-45.449, alt=15.0)
+drone.land()
+```
+
 [Control overview](nectar/nectar/control/README.md) · [MAVROS details](nectar/nectar/control/mavros/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md)
 
 ### [Computer Vision](nectar/nectar/vision/README.md)
@@ -76,6 +85,25 @@ Camera abstraction and image processing. `CameraFactory` auto-detects the source
 - Distance estimation via six regression models (linear, polynomial, exponential, logarithmic, inverse power, robust)
 - Hand and face tracking via [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions)
 
+```python
+from nectar.vision import CameraFactory, ImageHandler, OpenCVConfig, Aruco
+
+# One factory, any camera
+camera = CameraFactory.from_source("webcam", config=OpenCVConfig(width=1280, height=720))
+camera = CameraFactory.from_source("realsense")
+camera = CameraFactory.from_source("/camera/image_raw", node=node)  # ROS 2 topic
+
+# Timer-based capture with processing callback
+aruco = Aruco(marker_dict=5, tag_size=0.05)
+
+handler = ImageHandler(
+    node=self, image_source="webcam",
+    image_processing_callback=lambda frame: aruco.pose_estimate(frame, draw=True),
+    show_result="Camera",
+)
+handler.run()
+```
+
 [Vision overview](nectar/nectar/vision/README.md) — camera classes, algorithm API, node parameters, calibration, module structure
 
 ### [AI / Detection](nectar/nectar/ai/README.md)
@@ -87,6 +115,22 @@ Object detection across three frameworks through `Detector`, a single factory-ba
 - Slicing inference for high-resolution images with four post-processing strategies (NMS, Soft-NMS, WBF, NMM)
 - Model evaluation with mAP, precision, recall via [supervision](https://github.com/roboflow/supervision)
 - CLI tools for predict, train, and evaluate workflows
+
+```python
+from nectar.ai.detection import Detector
+
+detector = Detector("yolov8n.pt")                         # Ultralytics YOLO
+detector = Detector("facebook/detr-resnet-50")             # HuggingFace DETR
+detector = Detector("rf-detr-nano.pth")                    # RF-DETR
+
+detector.load()
+result = detector.detect(image, conf=0.5)
+
+for det in result:
+    print(f"{det.class_name}: {det.confidence:.2f} at {det.bbox}")
+
+annotated = detector.draw_detections(image, result)
+```
 
 [AI overview](nectar/nectar/ai/README.md) · [Detection details](nectar/nectar/ai/detection/README.md) — class diagram, core types, framework configs, slicing, CLI, extension guide
 
@@ -171,72 +215,6 @@ See [`docker/README.md`](docker/README.md) for GPU, RealSense, and advanced opti
 
 All versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh). See [`docs/INSTALL.md`](docs/INSTALL.md) for the full guide.
 
-## Quick Start
-
-### Drone Control
-
-```python
-import rclpy
-from rclpy.node import Node
-from nectar.control import DroneFactory, MavrosConfig, PoseSource
-
-rclpy.init()
-node = Node("flight_node")
-
-config = MavrosConfig(pose_source=PoseSource.GPS)
-drone = DroneFactory.create("mavros", config, node)
-
-drone.takeoff(altitude=2.0)
-drone.move_to(x=5.0, y=0.0, z=0.0, precision=0.3)
-drone.land()
-
-drone.cleanup()
-rclpy.shutdown()
-```
-
-### Camera Capture
-
-```python
-import rclpy
-from rclpy.node import Node
-from nectar.vision import ImageHandler, OpenCVConfig
-
-class CameraNode(Node):
-    def __init__(self):
-        super().__init__("camera_node")
-
-        config = OpenCVConfig(width=1280, height=720, fps=30)
-        self.handler = ImageHandler(
-            node=self,
-            image_source="webcam",
-            config=config,
-            image_processing_callback=self.process,
-            show_result="Camera"
-        )
-        self.handler.run()
-
-    def process(self, frame):
-        pass
-
-rclpy.init()
-rclpy.spin(CameraNode())
-```
-
-### Object Detection
-
-```python
-from nectar.ai.detection import Detector
-
-detector = Detector("yolov8n.pt")  # auto-detects framework
-detector.load()
-
-result = detector.detect(image, conf=0.5)
-for det in result:
-    print(f"{det.class_name}: {det.confidence:.2f} at {det.bbox}")
-
-annotated = detector.draw_detections(image, result)
-```
-
 ## Architecture
 
 *High-level architecture diagram showing main components and relationships. For detailed class diagrams, see module-specific READMEs: [Control](nectar/nectar/control/README.md), [Vision](nectar/nectar/vision/README.md), [AI](nectar/nectar/ai/README.md), [Interface](nectar/nectar/interface/README.md).*
@@ -256,33 +234,48 @@ classDiagram
             +arm() bool
             +takeoff(altitude) bool
             +land() bool
-            +move_to(x, y, z, reference, strategy) bool
-            +move_to_gps(lat, lon, alt) bool
-            +move_velocity(vx, vy, vz, reference)
-            +rtl(strategy) bool
+            +move_to(x, y, z, yaw, reference, strategy) bool
+            +move_to_gps(lat, lon, alt, heading, strategy) bool
+            +move_velocity(vx, vy, vz, vyaw, reference)
+            +rtl(altitude, strategy, land) bool
             +emergency_stop()
         }
         class BaseDrone {
             <<abstract>>
-            #_obstacle_manager ObstacleManager
             +add_obstacle_detector(name, detector, strategy)
-            +enable_obstacle_detector(name)
+            +start_driver_process() bool
+            +delay(seconds)
             +cleanup()
         }
         class MavrosDrone {
             -_navigator MavrosNavigator
             -_pose_source PoseSource
             +set_mode(mode) bool
-            +set_pid_config(config)
-            +publish_setpoint(target)
             +get_altitude(source) Optional~float~
+            +set_pid_config(config)
         }
         class BebopDrone {
             +flip(direction)
             +camera_control(tilt, pan)
         }
+        class DroneConfig {
+            <<dataclass>>
+            +name str
+            +start_driver bool
+        }
+        class MavrosConfig {
+            <<dataclass>>
+            +pose_source PoseSource
+            +expect_lidar bool
+            +connection_string str
+        }
+        class BebopConfig {
+            <<dataclass>>
+            +ip str
+            +namespace str
+        }
         class MavrosNavigator {
-            +navigate_pid(target, precision) bool
+            +navigate_pid(target, precision, altitude_source) bool
             +navigate_setpoint(target, precision) bool
         }
         class PIDController {
@@ -290,21 +283,44 @@ classDiagram
             +reset()
             +tune(kp, ki, kd)
         }
-        class ObstacleManager {
-            +should_continue_navigation(drone) bool
-            +get_axis_control() tuple
-            +add(name, handler)
-            +enable(name)
-        }
-        class AvoidanceStrategy {
-            <<abstract>>
-            +execute(drone, info) bool
-        }
         class GPSUtils {
             <<static>>
             +geoid_height(lat, lon)$ float
             +create_gps_setpoint(lat, lon, alt, heading)$ GeoPoseStamped
             +check_reached(cur, tgt, precision)$ tuple
+        }
+        class ObstacleManager {
+            +should_continue_navigation(drone) bool
+            +get_axis_control() tuple~bool,bool,bool~
+            +add(name, handler)
+            +enable(name)
+        }
+        class ObstacleHandler {
+            -_detector ObstacleDetector
+            -_strategy AvoidanceStrategy
+            +should_continue(drone) bool
+            +get_axis_modifiers() tuple~bool,bool,bool~
+        }
+        class ObstacleDetector {
+            <<protocol>>
+            +is_enabled bool
+            +update() ObstacleInfo
+            +enable()
+            +disable()
+        }
+        class AvoidanceStrategy {
+            <<abstract>>
+            +execute(drone, info) bool
+            +reset()
+        }
+        class PauseStrategy
+        class DisableAxisStrategy {
+            +disable_x bool
+            +disable_y bool
+            +disable_z bool
+        }
+        class SequenceStrategy {
+            -_sequence_func Callable
         }
     }
 
@@ -327,28 +343,12 @@ classDiagram
             +get_depth_frame() Optional~ndarray~
             +get_distance(u, v) Optional~float~
         }
-        class OpenCVCam {
-            +start()
-            +get_frame() Optional~ndarray~
-        }
-        class RealsenseCam {
-            +start()
-            +get_frame() Optional~ndarray~
-            +get_depth_frame() Optional~ndarray~
-        }
-        class OakdCam {
-            +start()
-            +get_frame() Optional~ndarray~
-            +get_depth_frame() Optional~ndarray~
-        }
-        class ROSCam {
-            +start()
-            +get_frame() Optional~ndarray~
-        }
+        class OpenCVCam
+        class RealsenseCam
+        class OakdCam
+        class ROSCam
         class ROSDepthCam {
             -_color_cam ROSCam
-            +get_frame() Optional~ndarray~
-            +get_depth_frame() Optional~ndarray~
         }
         class ImageHandler {
             +node Node
@@ -358,15 +358,13 @@ classDiagram
             +cleanup()
         }
         class Aruco {
-            +marker_dict int
-            +tag_size float
             +detect(img, draw) tuple
             +pose_estimate(img, draw) tuple
         }
         class ColorDetector {
             +filterColor(img)
+            +initTrackbars()
             +saveColorValues()
-            +get_color_values(name) list
         }
         class LineDetector {
             -color_detector ColorDetector
@@ -381,11 +379,6 @@ classDiagram
             -_model EstimationModel
             +estimate(value) float
             +compare_methods(value) Dict
-        }
-        class ModelCalibrator {
-            +fit_all() Dict
-            +best_model(criterion) CalibrationResult
-            +save_params(path)
         }
         class EstimationModel {
             <<abstract>>
@@ -408,41 +401,35 @@ classDiagram
         class Detector {
             +model_source str
             +framework Framework
+            +is_loaded bool
             +load() bool
             +detect(image, conf) DetectionResult
+            +detect_batch(images) List~DetectionResult~
             +train(config) TrainingResult
             +evaluate(config) EvaluationMetrics
             +draw_detections(image, result) ndarray
             +register(framework, builder)$
             +enable_slicing(config)
         }
+        class Framework {
+            <<enum>>
+            ULTRALYTICS
+            TRANSFORMERS
+            RFDETR
+        }
         class BaseDetectionModel {
             <<abstract>>
             +model_name str
-            +framework str
             +is_loaded bool
             +load_model(path)
-            +detect(image, conf, iou) DetectionResult
+            +detect(image, conf) DetectionResult
             +train(config) TrainingResult
             +save(path) str
+            +evaluate(config) EvaluationMetrics
         }
-        class UltralyticsModel {
-            +load_model(path)
-            +train(config) TrainingResult
-        }
-        class TransformersModel {
-            +load_model(path)
-            +train(config) TrainingResult
-        }
-        class RFDETRModel {
-            +load_model(path)
-            +train(config) TrainingResult
-        }
-        class ModelRegistry {
-            <<singleton>>
-            +register(name, model_class)$
-            +create(name, model_name)$ BaseDetectionModel
-        }
+        class UltralyticsModel
+        class TransformersModel
+        class RFDETRModel
         class Detection {
             <<dataclass>>
             +xyxy ndarray
@@ -453,9 +440,23 @@ classDiagram
         class DetectionResult {
             <<dataclass>>
             +detections List~Detection~
+            +inference_time float
             +filter_by_confidence(threshold) DetectionResult
             +filter_by_class_id(class_ids) DetectionResult
             +to_supervision() sv.Detections
+        }
+        class TrainingConfig {
+            <<dataclass>>
+            +dataset_path str
+            +epochs int
+            +batch_size int
+            +push_to_hub bool
+        }
+        class EvaluationConfig {
+            <<dataclass>>
+            +model_path str
+            +dataset_path str
+            +conf_threshold float
         }
         class SlicingInference {
             -config SlicingConfig
@@ -465,12 +466,10 @@ classDiagram
             <<abstract>>
             +merge_boxes(detections) Tuple
         }
-        class NMSStrategy {
-            +merge_boxes(detections) Tuple
-        }
-        class WBFStrategy {
-            +merge_boxes(detections) Tuple
-        }
+        class NMSStrategy
+        class SoftNMSStrategy
+        class WBFStrategy
+        class NMMStrategy
         class ObjectDetectionEvaluator {
             +evaluate() EvaluationMetrics
         }
@@ -515,29 +514,38 @@ classDiagram
             <<static>>
             +get_body_distance(target, current, heading)$ tuple
             +get_yaw_from_pose(pose)$ float
-            +convert_position_to_target(pose, heading, lidar)$ Union
             +transform_takeoff_to_body_velocities(vx, vy, vz, current_yaw, takeoff_yaw)$ tuple
         }
         class ProcessUtils {
             <<static>>
-            +start_process(command, name, gui) bool
+            +start_process(command, name) bool
             +kill_process(name) bool
             +is_node_running(node_pattern) bool
             +wait_for_node(node_pattern, timeout) bool
         }
     }
 
+    %% Control
     Drone <|.. BaseDrone : implements
     BaseDrone <|-- MavrosDrone
     BaseDrone <|-- BebopDrone
     DroneFactory ..> BaseDrone : creates
+    DroneConfig <|-- MavrosConfig
+    DroneConfig <|-- BebopConfig
+    BaseDrone o-- DroneConfig
     MavrosDrone *-- MavrosNavigator
     MavrosNavigator ..> PIDController : creates
     MavrosNavigator ..> GPSUtils : uses
     MavrosNavigator ..> PositionUtils : uses
     BaseDrone o-- ObstacleManager
-    ObstacleManager ..> AvoidanceStrategy
+    ObstacleManager o-- ObstacleHandler
+    ObstacleHandler *-- ObstacleDetector
+    ObstacleHandler *-- AvoidanceStrategy
+    AvoidanceStrategy <|-- PauseStrategy
+    AvoidanceStrategy <|-- DisableAxisStrategy
+    AvoidanceStrategy <|-- SequenceStrategy
 
+    %% Vision
     AbstractCam <|-- DepthCam
     AbstractCam <|-- OpenCVCam
     AbstractCam <|-- ROSCam
@@ -547,33 +555,32 @@ classDiagram
     ROSDepthCam *-- ROSCam
     CameraFactory ..> AbstractCam : creates
     ImageHandler o-- AbstractCam
-    ImageHandler ..> CameraFactory
+    ImageHandler ..> CameraFactory : uses
     LineDetector o-- ILineEstimationMethod
     LineDetector o-- ColorDetector
     DistanceEstimator o-- EstimationModel
-    DistanceEstimator ..> ModelCalibrator : uses
 
+    %% AI
+    Detector --> Framework
+    Detector ..> BaseDetectionModel : creates
     BaseDetectionModel <|-- UltralyticsModel
     BaseDetectionModel <|-- TransformersModel
     BaseDetectionModel <|-- RFDETRModel
-    Detector ..> BaseDetectionModel : creates
-    Detector ..> ModelRegistry : uses
-    ModelRegistry ..> BaseDetectionModel : creates
     BaseDetectionModel ..> DetectionResult : returns
     DetectionResult o-- Detection
     BaseDetectionModel ..> SlicingInference : uses
     SlicingInference ..> BaseMergingStrategy : uses
     BaseMergingStrategy <|-- NMSStrategy
+    BaseMergingStrategy <|-- SoftNMSStrategy
     BaseMergingStrategy <|-- WBFStrategy
+    BaseMergingStrategy <|-- NMMStrategy
     BaseDetectionModel ..> ObjectDetectionEvaluator : uses
 
+    %% Interface
     NectarApp *-- ROSExecutor
     NectarApp *-- ControlTab
     NectarApp *-- VisionTab
     NectarApp *-- ROSTab
-    ControlTab ..> ROSExecutor : uses
-    VisionTab ..> ROSExecutor : uses
-    ROSTab ..> ROSExecutor : uses
 ```
 
 ### Design Patterns
@@ -721,9 +728,11 @@ We welcome contributions. Please see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.
 2. Follow [Conventional Commits](https://www.conventionalcommits.org) for commit messages
 3. Read our [Code of Conduct](docs/CODE_OF_CONDUCT.md)
 
+<div align="center">
 <a href="https://github.com/Black-Bee-Drones/nectar-sdk/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=Black-Bee-Drones/nectar-sdk&max=100" alt="Contributors" />
 </a>
+</div>
 
 ## Black Bee Drones
 
