@@ -123,6 +123,31 @@ class PositionUtils:
         return yaw
 
     @staticmethod
+    def compute_yaw_error(target_yaw: float, current_yaw: float, threshold: float = 0.0) -> float:
+        """
+        Compute shortest-path yaw error.
+
+        Parameters
+        ----------
+        target_yaw : float
+            Target yaw in radians.
+        current_yaw : float
+            Current yaw in radians.
+        threshold : float, default=0.0
+            Deadband in radians. Errors smaller than this return 0.0.
+
+        Returns
+        -------
+        float
+            Yaw error in radians, wrapped to [-pi, pi].
+        """
+        dyaw = target_yaw - current_yaw
+        dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
+        if threshold > 0.0 and abs(dyaw) < threshold:
+            return 0.0
+        return dyaw
+
+    @staticmethod
     def convert_position_to_target(
         pose: PoseStamped | PoseWithCovarianceStamped | NavSatFix,
         heading: Optional[float] = None,
