@@ -13,7 +13,7 @@ Reference:
   https://doi.org/10.1007/s00190-012-0578-z
   GeographicLib accuracy: ~15 nanometers on WGS84 ellipsoid.
 
-Run: python scripts/benchmark_geodesic_vs_haversine.py
+Run: python scripts/experiments/benchmark_geodesic_vs_haversine.py
 """
 
 import time
