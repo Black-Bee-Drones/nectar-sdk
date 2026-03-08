@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nectar.control.mavros.drone import MavrosDrone
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
+YAW_THRESHOLD = np.radians(3)
 
 
 class MavrosNavigator:
@@ -45,6 +46,7 @@ class MavrosNavigator:
         precision: float,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
         altitude_target: Optional[float] = None,
+        use_local: bool = False,
     ) -> bool:
         """
         PID velocity-based navigation loop.
@@ -68,8 +70,8 @@ class MavrosNavigator:
             Which sensor to read for altitude error computation.
         altitude_target : float, optional
             Absolute target value in the altitude source's frame.
-            When set, overrides the default dz from position comparison.
-            For LIDAR: desired lidar reading. For REL_ALT: desired relative altitude.
+        use_local : bool, default=False
+            If True, use EKF local position for error computation (PID_LOCAL).
 
         Returns
         -------
@@ -100,7 +102,9 @@ class MavrosNavigator:
 
             disable_x, disable_y, disable_z = drone.obstacle_manager.get_axis_control()
 
-            dx, dy, dz, dyaw = self._compute_errors(target, yaw, altitude_source, altitude_target)
+            dx, dy, dz, dyaw = self._compute_errors(
+                target, yaw, altitude_source, altitude_target, use_local
+            )
 
             axes = {
                 "x": (x_active and not disable_x, dx, pid_x),
@@ -138,7 +142,7 @@ class MavrosNavigator:
             drone.move_velocity(vel["x"], vel["y"], vel["z"], vyaw)
 
             if distance <= precision:
-                if yaw is not None and abs(dyaw) > np.radians(3):
+                if yaw is not None and abs(dyaw) > YAW_THRESHOLD:
                     continue
                 drone.move_velocity(0.0, 0.0, 0.0, 0.0)
                 logger.info(f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m")
@@ -159,11 +163,10 @@ class MavrosNavigator:
         """
         Direct setpoint navigation loop.
 
-        Publishes target to MAVROS topics and monitors
-        distance until the target is reached or timeout.
+        Publishes target to MAVROS topics and monitors distance until reached.
 
         For PositionTarget: publishes to local setpoint topic, checks
-        Euclidean distance using vision pose.
+        Euclidean distance using EKF local position.
 
         For GeoPoseStamped: publishes to GPS setpoint topic, checks
         geodesic distance using GPS and relative altitude.
@@ -178,7 +181,6 @@ class MavrosNavigator:
             Arrival threshold in meters.
         check_alt : float, optional
             For GPS targets: relative altitude for arrival checking.
-            Not needed for local targets.
 
         Returns
         -------
@@ -188,17 +190,20 @@ class MavrosNavigator:
         drone = self._drone
         logger = drone.node.get_logger()
         is_gps = isinstance(target, GeoPoseStamped)
+        target_yaw = PositionUtils.get_yaw_from_pose(target)
 
         if is_gps:
             tp = target.pose.position
             logger.info(
                 f"Setpoint nav \u2192 GPS target: lat={tp.latitude:.6f}, "
-                f"lon={tp.longitude:.6f}, alt={check_alt or 0:.1f}m"
+                f"lon={tp.longitude:.6f}, alt={check_alt or 0:.1f}m, "
+                f"yaw={np.degrees(target_yaw):.1f}\u00b0"
             )
         else:
             tp = target.position
             logger.info(
-                f"Setpoint nav \u2192 local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
+                f"Setpoint nav \u2192 local target: x={tp.x:.2f}, y={tp.y:.2f}, "
+                f"z={tp.z:.2f}, yaw={np.degrees(target_yaw):.1f}\u00b0"
             )
 
         start = drone.node.get_clock().now()
@@ -214,12 +219,17 @@ class MavrosNavigator:
             else:
                 reached, distance = self._check_reached_local(target, precision)
 
+            curr_yaw = self._get_current_yaw(use_local=not is_gps)
+            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw)
+
             logger.info(
-                f"Distance: {distance:.2f}m",
+                f"Distance: {distance:.2f}m | dyaw={np.degrees(dyaw):.1f}\u00b0",
                 throttle_duration_sec=0.5,
             )
 
             if reached:
+                if abs(dyaw) > YAW_THRESHOLD:
+                    continue
                 logger.info(f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
@@ -248,8 +258,7 @@ class MavrosNavigator:
         Returns
         -------
         float or None
-            Absolute target value in the altitude source's frame, or None
-            if default position-based altitude comparison should be used.
+            Absolute target value, or None for default position-based altitude.
 
         Raises
         ------
@@ -300,18 +309,38 @@ class MavrosNavigator:
             return z
         return current_rel + z
 
+    def _get_current_yaw(self, use_local: bool = False) -> float:
+        """
+        Get current yaw from the appropriate sensor source.
+
+        Parameters
+        ----------
+        use_local : bool, default=False
+            If True, use EKF local position. Otherwise, use vision (indoor)
+            or compass heading (outdoor).
+
+        Returns
+        -------
+        float
+            Current yaw in radians.
+        """
+        drone = self._drone
+        if use_local:
+            return PositionUtils.get_yaw_from_pose(drone.local_pos)
+        if drone.is_indoor:
+            return PositionUtils.get_yaw_from_pose(drone.vision_pos)
+        return np.radians(drone.heading)
+
     def _compute_errors(
         self,
         target: Union[PositionTarget, GeoPoseStamped],
         yaw: Optional[float],
         altitude_source: AltitudeSource,
         altitude_target: Optional[float],
+        use_local: bool = False,
     ) -> tuple[float, float, float, float]:
         """
         Compute body-frame navigation errors.
-
-        Uses PositionUtils.get_body_distance for dx, dy, and default dz.
-        Overrides dz when altitude_target is set for the given altitude_source.
 
         Parameters
         ----------
@@ -323,15 +352,27 @@ class MavrosNavigator:
             Altitude sensor source.
         altitude_target : float, optional
             Absolute target altitude in the source's frame.
+        use_local : bool, default=False
+            Use EKF local position instead of raw sensors.
 
         Returns
         -------
         tuple[float, float, float, float]
             (dx, dy, dz, dyaw) errors in body frame.
         """
-        hdg = None if self._drone.is_indoor else self._drone.heading
+        drone = self._drone
 
-        dx, dy, dz = PositionUtils.get_body_distance(target, self._drone.position, hdg)
+        if use_local:
+            current = drone.local_pos
+            hdg = None
+        elif drone.is_indoor:
+            current = drone.vision_pos
+            hdg = None
+        else:
+            current = drone.position
+            hdg = drone.heading
+
+        dx, dy, dz = PositionUtils.get_body_distance(target, current, hdg)
 
         # Override dz when an explicit altitude target is provided
         if altitude_target is not None:
@@ -339,14 +380,9 @@ class MavrosNavigator:
 
         # Compute yaw error
         if yaw is not None:
-            if self._drone.is_indoor:
-                curr_yaw = PositionUtils.get_yaw_from_pose(self._drone.vision_pos)
-            else:
-                curr_yaw = np.radians(hdg)
-            dyaw = PositionUtils.get_yaw_from_pose(target) - curr_yaw
-            dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
-            if abs(dyaw) < np.radians(3):
-                dyaw = 0.0
+            curr_yaw = self._get_current_yaw(use_local)
+            target_yaw = PositionUtils.get_yaw_from_pose(target)
+            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw, YAW_THRESHOLD)
         else:
             dyaw = 0.0
 
@@ -384,7 +420,7 @@ class MavrosNavigator:
 
     def _check_reached_local(self, target: PositionTarget, precision: float) -> tuple[bool, float]:
         """
-        Check arrival for local (vision) targets.
+        Check arrival for local targets using EKF local position.
 
         Parameters
         ----------
@@ -396,9 +432,13 @@ class MavrosNavigator:
         Returns
         -------
         tuple[bool, float]
-            (reached, distance)
+            (reached, distance). Returns (False, inf) if local_pos unavailable.
         """
-        current = self._drone.vision_pos.pose.pose.position
+        local = self._drone.local_pos
+        if local is None:
+            return False, float("inf")
+
+        current = local.pose.position
         dx = target.position.x - current.x
         dy = target.position.y - current.y
         dz = target.position.z - current.z
@@ -420,7 +460,6 @@ class MavrosNavigator:
             GPS navigation target.
         check_alt : float, optional
             Target relative altitude for vertical check.
-            If None, only horizontal distance is checked.
         precision : float
             Arrival threshold in meters.
 
@@ -455,7 +494,6 @@ class MavrosNavigator:
         Returns
         -------
         PIDController
-            Configured PID controller.
         """
         cfg = getattr(self._drone.pid_config, axis, None)
         if cfg is None:
@@ -476,16 +514,21 @@ class MavrosNavigator:
     ) -> None:
         """Log navigation target details."""
         logger = self._drone.node.get_logger()
+        target_yaw = np.degrees(PositionUtils.get_yaw_from_pose(target))
 
         if isinstance(target, GeoPoseStamped):
             tp = target.pose.position
             logger.info(
                 f"PID nav: GPS target: lat={tp.latitude:.6f}, "
-                f"lon={tp.longitude:.6f}, alt={tp.altitude:.1f}m"
+                f"lon={tp.longitude:.6f}, alt={tp.altitude:.1f}m, "
+                f"yaw={target_yaw:.1f}\u00b0"
             )
         else:
             tp = target.position
-            logger.info(f"PID nav: local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}")
+            logger.info(
+                f"PID nav: local target: x={tp.x:.2f}, y={tp.y:.2f}, "
+                f"z={tp.z:.2f}, yaw={target_yaw:.1f}\u00b0"
+            )
 
         if altitude_target is not None:
             logger.info(

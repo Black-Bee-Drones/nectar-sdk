@@ -146,7 +146,6 @@ classDiagram
         +name str
         +start_driver bool
         +pose_source PoseSource
-        +default_nav_strategy NavigationStrategy
         +expect_lidar bool
         +sensor_timeout float
         +connection_string str
@@ -158,6 +157,7 @@ classDiagram
         +rel_alt_topic str
         +lidar_topic str
         +imu_topic str
+        +local_position_topic str
     }
 
     class BebopConfig {
@@ -263,10 +263,10 @@ Type-safe dataclass hierarchy.
 ```python
 MavrosConfig(
     pose_source: PoseSource = PoseSource.GPS,     # GPS or VISION
-    default_nav_strategy: NavigationStrategy = NavigationStrategy.PID,
     expect_lidar: bool = True,
     connection_string: str = "serial:///dev/ttyUSB0:921600",
     pid_config_file: Optional[str] = None,
+    local_position_topic: str = "/mavros/local_position/pose",
     # ... topic configurations with sensible defaults
 )
 ```
@@ -320,8 +320,10 @@ drone.move_to(
 ```
 
 **Navigation Strategies**:
-- `PID`: Velocity-based control with feedback loop (precise, configurable)
-- `SETPOINT`: Direct position setpoint publishing (FCU handles control)
+- `PID`: Velocity control with raw sensors — vision pose (indoor) or GPS (outdoor)
+- `PID_LOCAL`: Velocity control with EKF local position — unified indoor/outdoor frame
+- `SETPOINT`: Local position setpoint via `setpoint_raw/local` — works indoor and outdoor
+- `SETPOINT_GLOBAL`: GPS global setpoint via `setpoint_position/global` — outdoor only, long range
 
 **Altitude Sources** (PID only):
 - `AUTO`: Position-based altitude (vision Z indoor, GPS altitude outdoor)
@@ -600,7 +602,7 @@ See individual module READMEs for detailed documentation.
 **Enums**:
 - `PoseSource`: GPS, VISION
 - `MoveReference`: BODY, WORLD, TAKEOFF
-- `NavigationStrategy`: PID, SETPOINT
+- `NavigationStrategy`: PID, PID_LOCAL, SETPOINT, SETPOINT_GLOBAL
 - `RTLStrategy`: PID, ARDUPILOT
 - `AltitudeSource`: AUTO, LIDAR, VISION, REL_ALT
 - `ObstacleDirection`: FRONT, BACK, LEFT, RIGHT, UP, DOWN

@@ -4,7 +4,7 @@ from typing import Optional, Union
 import numpy as np
 import rclpy
 from geographic_msgs.msg import GeoPoseStamped
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from mavros_msgs.msg import GlobalPositionTarget, PositionTarget, State
 from mavros_msgs.srv import CommandBool, CommandHome, CommandLong, CommandTOL, SetMode
 from rcl_interfaces.msg import Parameter
@@ -14,7 +14,6 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix, Range
 from std_msgs.msg import Float64
-from tf_transformations import quaternion_from_euler
 
 from nectar.control.base import BaseDrone
 from nectar.control.config import DroneConfig, MavrosConfig
@@ -26,6 +25,7 @@ from nectar.control.exceptions import (
 from nectar.control.factory import DroneFactory
 from nectar.control.mavros.gps_utils import GPSUtils
 from nectar.control.mavros.navigator import MavrosNavigator
+from nectar.control.mavros.target_computer import TargetComputer
 from nectar.control.pid import PIDConfig, PositionPIDConfig
 from nectar.control.types import (
     AltitudeSource,
@@ -34,7 +34,6 @@ from nectar.control.types import (
     PoseSource,
     RTLStrategy,
 )
-from nectar.utils.gps_calculate import GPSCalculate
 from nectar.utils.position_utils import PositionUtils
 from nectar.utils.process import ProcessUtils
 
@@ -56,11 +55,13 @@ class MavrosDrone(BaseDrone):
         self._gps: Optional[NavSatFix] = None
         self._heading: Optional[Float64] = None
         self._rel_alt: Optional[Float64] = None
-        self._vision_pos: Optional[PoseWithCovarianceStamped] = None
+        self._vision_pos: Optional[PoseStamped] = None
+        self._local_pos: Optional[PoseStamped] = None
         self._rng_alt: Optional[Range] = None
         self._imu: Optional[Imu] = None
         self._pid_config: Optional[PositionPIDConfig] = None
         self._takeoff_position = None
+        self._takeoff_local: Optional[PositionTarget] = None
         self._initial_altitude: float = 0.0
         self._initial_heading: float = 0.0
         self._pose_source = config.pose_source
@@ -190,17 +191,34 @@ class MavrosDrone(BaseDrone):
         return self._rel_alt.data if self._rel_alt else 0.0
 
     @property
-    def vision_pos(self) -> Optional[PoseWithCovarianceStamped]:
+    def vision_pos(self) -> Optional[PoseStamped]:
         """
         Vision-based pose estimate from external source (T265, d435i, etc.).
 
+        Normalized to PoseStamped regardless of whether the vision topic
+        publishes PoseStamped or PoseWithCovarianceStamped.
+
         Returns
         -------
-        Optional[PoseWithCovarianceStamped]
+        Optional[PoseStamped]
             Vision pose message. See:
-            https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
+            https://docs.ros.org/en/api/geometry_msgs/html/msg/PoseStamped.html
         """
         return self._vision_pos
+
+    @property
+    def local_pos(self) -> Optional[PoseStamped]:
+        """
+        EKF-fused local position from /mavros/local_position/pose.
+
+        Available in both indoor and outdoor modes. Provides a unified
+        local NED frame
+
+        Returns
+        -------
+        Optional[PoseStamped]
+        """
+        return self._local_pos
 
     @property
     def lidar_available(self) -> bool:
@@ -235,7 +253,7 @@ class MavrosDrone(BaseDrone):
             return self._rng_alt.range if self._rng_alt else None
         if source == AltitudeSource.VISION:
             if self._vision_pos is not None:
-                return self._vision_pos.pose.pose.position.z
+                return self._vision_pos.pose.position.z
             return None
         if source == AltitudeSource.REL_ALT:
             if not self.is_indoor and self._rel_alt is not None:
@@ -245,23 +263,23 @@ class MavrosDrone(BaseDrone):
         if self._rng_alt is not None:
             return self._rng_alt.range
         if self._vision_pos is not None:
-            return self._vision_pos.pose.pose.position.z
+            return self._vision_pos.pose.position.z
         if self._rel_alt is not None:
             return self._rel_alt.data
         return None
 
     @property
-    def position(self) -> Union[PoseWithCovarianceStamped, NavSatFix]:
+    def position(self) -> Union[PoseStamped, NavSatFix]:
         """
-        Current position as vision pose (indoor) or GPS (outdoor).
+        Current raw position as vision pose (indoor) or GPS (outdoor).
 
         Returns
         -------
-        Union[PoseWithCovarianceStamped, NavSatFix]
-            - Indoor: PoseWithCovarianceStamped. See:
-              https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
-            - Outdoor: NavSatFix. See:
-              https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
+        Union[PoseStamped, NavSatFix]
+            - Indoor: PoseStamped (vision pose).
+              https://docs.ros.org/en/api/geometry_msgs/html/msg/PoseStamped.html
+            - Outdoor: NavSatFix (GPS).
+              https://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
         """
         if self.is_indoor:
             return self._vision_pos
@@ -317,13 +335,29 @@ class MavrosDrone(BaseDrone):
             qos_profile_sensor_data,
         )
 
+        # EKF local position
+        self._create_subscriber(
+            PoseStamped,
+            config.local_position_topic,
+            lambda msg: setattr(self, "_local_pos", msg),
+            qos_profile_sensor_data,
+        )
+
         if self._pose_source == PoseSource.VISION:
-            self._create_subscriber(
-                PoseWithCovarianceStamped,
-                config.vision_topic,
-                lambda msg: setattr(self, "_vision_pos", msg),
-                qos_profile_sensor_data,
-            )
+            if "pose_cov" in config.vision_topic:
+                self._create_subscriber(
+                    PoseWithCovarianceStamped,
+                    config.vision_topic,
+                    self._on_vision_pose_cov,
+                    qos_profile_sensor_data,
+                )
+            else:
+                self._create_subscriber(
+                    PoseStamped,
+                    config.vision_topic,
+                    lambda msg: setattr(self, "_vision_pos", msg),
+                    qos_profile_sensor_data,
+                )
         else:
             self._create_subscriber(
                 NavSatFix,
@@ -343,6 +377,13 @@ class MavrosDrone(BaseDrone):
                 lambda msg: setattr(self, "_heading", msg),
                 qos_profile_sensor_data,
             )
+
+    def _on_vision_pose_cov(self, msg: PoseWithCovarianceStamped) -> None:
+        """Normalize PoseWithCovarianceStamped to PoseStamped."""
+        ps = PoseStamped()
+        ps.header = msg.header
+        ps.pose = msg.pose.pose
+        self._vision_pos = ps
 
     def _setup_publishers(self) -> None:
         """Initialize ROS2 publishers for setpoint commands."""
@@ -827,7 +868,9 @@ class MavrosDrone(BaseDrone):
 
             self._validate_position_sensors()
 
-            if self.is_indoor:
+            if self._local_pos is not None:
+                current_yaw = PositionUtils.get_yaw_from_pose(self._local_pos)
+            elif self.is_indoor:
                 current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
             else:
                 current_yaw = np.radians(self.heading)
@@ -878,54 +921,34 @@ class MavrosDrone(BaseDrone):
         """
         Move the drone to a position relative to its current location and heading.
 
-        The movement is relative to the drone's current orientation (BODY) or
-        the takeoff position and heading (TAKEOFF).
-
         Parameters
         ----------
         x : float, optional
-            Distance to move forward (+) or backward (-) in meters,
-            relative to the reference heading.
-
-            If None, disables control in the X axis.
-
+            Forward (+) or backward (-) in meters.
+            For PID strategies, None disables X axis control.
+            For SETPOINT strategies, None means zero offset (hold current).
         y : float, optional
-            Distance to move left (+) or right (-) in meters,
-            relative to the reference heading.
-
-            If None, disables control in the Y axis.
-
+            Left (+) or right (-) in meters.
+            For PID strategies, None disables Y axis control.
+            For SETPOINT strategies, None means zero offset (hold current).
         z : float, optional
-            Distance to move up (+) or down (-) in meters,
-            relative to the reference altitude.
-
-            If None, disables altitude control.
-
+            Up (+) or down (-) in meters.
+            For PID strategies, None disables altitude control.
+            For SETPOINT strategies, None means zero offset (hold current).
         yaw : float, optional
-            Desired yaw angle in degrees.
-
-            If None, maintains current yaw.
-
+            Yaw angle in degrees. None maintains current yaw.
         reference : MoveReference, default=BODY
-            Movement reference frame:
-
-            - BODY: x, y, z are relative distances from the current position
-              and heading.
-            - TAKEOFF: x, y, z are absolute coordinates from the takeoff
-              position and heading. Requires takeoff position to be set.
-
-            Note: WORLD reference is not supported in move_to.
-
+            BODY: relative to current position/heading.
+            TAKEOFF: absolute from takeoff position/heading.
         timeout : float, optional, default=60.0
-            Maximum navigation time in seconds. None for no timeout.
-
+            Maximum navigation time in seconds.
         precision : float, default=0.2
-            Acceptable radius in meters for reaching the target position.
-
+            Arrival threshold in meters.
         strategy : NavigationStrategy, default=PID
-            PID: closed-loop velocity control to reach the target.
-            SETPOINT: direct position setpoint publishing (indoor only).
-
+            PID: velocity control with raw sensors (vision/GPS).
+            PID_LOCAL: velocity control with EKF local position.
+            SETPOINT: local position setpoint (setpoint_raw/local).
+            SETPOINT_GLOBAL: GPS global setpoint (outdoor only).
         altitude_source : AltitudeSource, default=AUTO
             Altitude sensor source for PID navigation:
 
@@ -937,44 +960,74 @@ class MavrosDrone(BaseDrone):
         Returns
         -------
         bool
-            True if target reached within precision, False on timeout.
+            True if target reached within precision.
 
         Raises
         ------
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
         CapabilityNotSupportedError
-            If reference=WORLD in position control.
+            If reference=WORLD or SETPOINT_GLOBAL indoors.
         SensorNotAvailableError
-            If altitude_source=LIDAR but lidar is not available.
+            If required position, altitude sensors are not available.
         """
-        if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
-            raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
-
         if reference == MoveReference.WORLD:
             raise CapabilityNotSupportedError(
                 "WORLD reference in position control", self._config.name
             )
 
-        self._validate_position_sensors()
+        if reference == MoveReference.TAKEOFF:
+            takeoff = self._get_takeoff_for_strategy(strategy)
+            if takeoff is None:
+                raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
+
+        self._validate_position_sensors(strategy)
 
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
             f"strategy={strategy.name} precision={precision}m "
             f"alt_source={altitude_source.name}"
         )
-
         self.delay(0.05)
 
-        if strategy == NavigationStrategy.SETPOINT:
-            target = self._compute_setpoint_target(x, y, z, yaw, reference)
-            check_alt = None
-            if isinstance(target, GeoPoseStamped):
-                check_alt = self._compute_target_rel_alt(z, reference)
+        # SETPOINT_GLOBAL: GPS setpoint with AMSL correction (outdoor only)
+        if strategy == NavigationStrategy.SETPOINT_GLOBAL:
+            if self.is_indoor:
+                raise CapabilityNotSupportedError("SETPOINT_GLOBAL", "indoor mode")
+            target = TargetComputer.compute_gps_setpoint(
+                self._gps,
+                self.heading,
+                x,
+                y,
+                z,
+                yaw,
+                reference,
+                self._takeoff_position if reference == MoveReference.TAKEOFF else None,
+                self.rel_alt,
+                self._initial_altitude,
+            )
+            check_alt = TargetComputer.compute_target_rel_alt(self.rel_alt, z, reference)
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt)
 
-        # PID navigation
-        target = self._compute_target(x, y, z, yaw, reference)
+        # SETPOINT: local position setpoint
+        if strategy == NavigationStrategy.SETPOINT:
+            pos, yaw_rad = self._get_local_position()
+            takeoff = self._takeoff_local if reference == MoveReference.TAKEOFF else None
+            target = TargetComputer.compute_local_target(
+                pos,
+                yaw_rad,
+                x,
+                y,
+                z,
+                yaw,
+                reference,
+                takeoff,
+            )
+            return self._navigator.navigate_setpoint(target, timeout, precision)
+
+        # PID strategies (PID or PID_LOCAL)
+        use_local = strategy == NavigationStrategy.PID_LOCAL
+        target = self._compute_pid_target(x, y, z, yaw, reference, strategy)
         active_axes = (x is not None, y is not None, z is not None)
         alt_target = self._navigator.resolve_altitude_target(z, reference, altitude_source)
 
@@ -986,6 +1039,7 @@ class MavrosDrone(BaseDrone):
             precision=precision,
             altitude_source=altitude_source,
             altitude_target=alt_target,
+            use_local=use_local,
         )
 
     def move_to_gps(
@@ -1005,46 +1059,41 @@ class MavrosDrone(BaseDrone):
         ----------
         latitude : float
             Target latitude in degrees (WGS84).
-
         longitude : float
             Target longitude in degrees (WGS84).
-
         altitude : float, optional
-            Target altitude above ground in meters (relative, not AMSL).
-
-            If None, maintains current altitude.
-
+            Target altitude above ground in meters (relative). None keeps current.
         heading : float, optional
-            Desired heading in degrees (0 = North, clockwise positive).
-
-            If None, maintains current heading.
-
+            Heading in degrees (0=North). None keeps current.
         timeout : float, optional, default=60.0
-            Maximum time allowed in seconds to reach the target.
-
-            If None, no timeout is applied.
-
+            Maximum navigation time in seconds.
         precision : float, default=0.5
-            Acceptable radius in meters for reaching the target position.
-
+            Arrival threshold in meters.
         strategy : NavigationStrategy, default=PID
-            PID: closed-loop velocity control to reach the target.
-            SETPOINT: direct GPS position setpoint publishing.
+            PID: velocity control with raw GPS.
+            PID_LOCAL: velocity control with EKF local position.
+            SETPOINT_GLOBAL: GPS global setpoint publishing.
 
         Returns
         -------
         bool
-            True if target reached within precision, False on timeout.
+            True if target reached within precision.
 
         Raises
         ------
         CapabilityNotSupportedError
-            If called in indoor mode (pose_source=VISION).
+            If indoor mode, or SETPOINT (local) used with GPS coordinates.
         """
         if self.is_indoor:
             raise CapabilityNotSupportedError("GPS navigation", "indoor mode")
 
-        self._validate_position_sensors()
+        if strategy == NavigationStrategy.SETPOINT:
+            raise CapabilityNotSupportedError(
+                "SETPOINT (local) for GPS waypoints — use SETPOINT_GLOBAL",
+                self._config.name,
+            )
+
+        self._validate_position_sensors(strategy)
 
         alt = altitude if altitude is not None else self.rel_alt
         hdg = heading if heading is not None else self.heading
@@ -1054,11 +1103,37 @@ class MavrosDrone(BaseDrone):
             f"hdg={hdg:.1f}\u00b0 strategy={strategy.name} precision={precision}m"
         )
 
-        target = GPSUtils.create_gps_setpoint(latitude, longitude, alt, hdg, self._initial_altitude)
-
-        if strategy == NavigationStrategy.SETPOINT:
+        # SETPOINT_GLOBAL: publish GPS setpoint to /mavros/setpoint_position/global
+        if strategy == NavigationStrategy.SETPOINT_GLOBAL:
+            target = GPSUtils.create_gps_setpoint(
+                latitude, longitude, alt, hdg, self._initial_altitude
+            )
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt=alt)
 
+        # PID_LOCAL: convert GPS target to local NED and use EKF position
+        if strategy == NavigationStrategy.PID_LOCAL:
+            target = TargetComputer.gps_to_local_target(
+                latitude,
+                longitude,
+                alt,
+                self._gps,
+                self._local_pos,
+                self.rel_alt,
+                hdg,
+            )
+            return self._navigator.navigate_pid(
+                target=target,
+                active_axes=(True, True, True),
+                yaw=None,
+                timeout=timeout,
+                precision=precision,
+                altitude_source=AltitudeSource.REL_ALT,
+                altitude_target=alt,
+                use_local=True,
+            )
+
+        # PID: raw GPS with geodesic error computation
+        target = GPSUtils.create_gps_setpoint(latitude, longitude, alt, hdg, self._initial_altitude)
         return self._navigator.navigate_pid(
             target=target,
             active_axes=(True, True, True),
@@ -1069,207 +1144,98 @@ class MavrosDrone(BaseDrone):
             altitude_target=alt,
         )
 
-    def _compute_target(
+    def _compute_pid_target(
         self,
         x: Optional[float],
         y: Optional[float],
         z: Optional[float],
         yaw: Optional[float],
         reference: MoveReference,
+        strategy: NavigationStrategy,
     ) -> Union[PositionTarget, GeoPoseStamped]:
-        if self.is_indoor:
-            return self._compute_local_target(x, y, z, yaw, reference)
-        return self._compute_gps_target(x, y, z, yaw, reference)
-
-    def _compute_local_target(
-        self,
-        x: Optional[float],
-        y: Optional[float],
-        z: Optional[float],
-        yaw: Optional[float],
-        reference: MoveReference,
-    ) -> PositionTarget:
-        if reference == MoveReference.BODY:
-            pos = self._vision_pos.pose.pose.position
-            current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
-        else:
-            pos = self._takeoff_position.position
-            current_yaw = self._takeoff_position.yaw
-
-        dx = (x or 0) * np.cos(current_yaw) - (y or 0) * np.sin(current_yaw)
-        dy = (x or 0) * np.sin(current_yaw) + (y or 0) * np.cos(current_yaw)
-        dz = z or 0
-
-        msg = PositionTarget()
-        msg.header.frame_id = "map"
-        msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
-        msg.type_mask = (
-            PositionTarget.IGNORE_AFX
-            | PositionTarget.IGNORE_AFY
-            | PositionTarget.IGNORE_AFZ
-            | PositionTarget.IGNORE_YAW_RATE
-            | PositionTarget.IGNORE_VX
-            | PositionTarget.IGNORE_VY
-            | PositionTarget.IGNORE_VZ
-        )
-        msg.position.x = float(pos.x + dx)
-        msg.position.y = float(pos.y + dy)
-        msg.position.z = float(pos.z + dz)
-        msg.yaw = float(current_yaw + np.radians(yaw) if yaw is not None else current_yaw)
-        return msg
-
-    def _compute_gps_target(
-        self,
-        x: Optional[float],
-        y: Optional[float],
-        z: Optional[float],
-        yaw: Optional[float],
-        reference: MoveReference,
-    ) -> GeoPoseStamped:
-        if reference == MoveReference.BODY:
-            hdg = self.heading
-            lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
-                z or 0,
-                self._gps.latitude,
-                self._gps.longitude,
-                self._gps.altitude,
-                hdg,
-            )
-        else:
-            hdg = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position))
-            lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
-                z or 0,
-                self._takeoff_position.pose.position.latitude,
-                self._takeoff_position.pose.position.longitude,
-                self._takeoff_position.pose.position.altitude,
-                hdg,
-            )
-
-        target_yaw = hdg + (yaw if yaw is not None else 0)
-        quat = quaternion_from_euler(0, 0, np.radians(target_yaw))
-
-        msg = GeoPoseStamped()
-        msg.pose.position.latitude = float(lat)
-        msg.pose.position.longitude = float(lon)
-        msg.pose.position.altitude = float(alt)
-        msg.pose.orientation.x = float(quat[0])
-        msg.pose.orientation.y = float(quat[1])
-        msg.pose.orientation.z = float(quat[2])
-        msg.pose.orientation.w = float(quat[3])
-        return msg
-
-    def _compute_setpoint_target(
-        self,
-        x: Optional[float],
-        y: Optional[float],
-        z: Optional[float],
-        yaw: Optional[float],
-        reference: MoveReference,
-    ) -> Union[PositionTarget, GeoPoseStamped]:
-        """
-        Compute target for SETPOINT navigation.
-
-        Parameters
-        ----------
-        x, y, z, yaw, reference
-            Same as ``_compute_target``.
-
-        Returns
-        -------
-        PositionTarget | GeoPoseStamped
-            Setpoint-ready target message.
-        """
-        if self.is_indoor:
-            return self._compute_local_target(x, y, z, yaw, reference)
-        return self._compute_gps_setpoint_target(x, y, z, yaw, reference)
-
-    def _compute_gps_setpoint_target(
-        self,
-        x: Optional[float],
-        y: Optional[float],
-        z: Optional[float],
-        yaw: Optional[float],
-        reference: MoveReference,
-    ) -> GeoPoseStamped:
-        """
-        Compute GPS target with AMSL altitude correction for SETPOINT publishing.
-
-        Uses ``GPSUtils.create_gps_setpoint`` to apply EGM96 geoid correction
-        so the altitude published to MAVROS is in AMSL as required.
-
-        Parameters
-        ----------
-        x, y, z, yaw, reference
-            Same as ``_compute_gps_target``.
-
-        Returns
-        -------
-        GeoPoseStamped
-            GPS target with AMSL-corrected altitude.
-        """
-        if reference == MoveReference.BODY:
-            hdg = self.heading
-            lat, lon, _ = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
-                0,
-                self._gps.latitude,
-                self._gps.longitude,
-                self._gps.altitude,
-                hdg,
-            )
-        else:
-            hdg = np.degrees(PositionUtils.get_yaw_from_pose(self._takeoff_position))
-            lat, lon, _ = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
-                0,
-                self._takeoff_position.pose.position.latitude,
-                self._takeoff_position.pose.position.longitude,
-                self._takeoff_position.pose.position.altitude,
-                hdg,
-            )
-
-        target_rel_alt = self._compute_target_rel_alt(z, reference)
-        target_hdg = hdg + (yaw if yaw is not None else 0)
-
-        return GPSUtils.create_gps_setpoint(
-            lat, lon, target_rel_alt, target_hdg, self._initial_altitude
+        """Compute target for PID navigation based on strategy and pose source."""
+        takeoff = (
+            self._get_takeoff_for_strategy(strategy) if reference == MoveReference.TAKEOFF else None
         )
 
-    def _compute_target_rel_alt(self, z: Optional[float], reference: MoveReference) -> float:
-        """
-        Compute target relative altitude for GPS setpoint navigation.
+        if strategy == NavigationStrategy.PID_LOCAL:
+            pos = self._local_pos.pose.position
+            yaw_rad = PositionUtils.get_yaw_from_pose(self._local_pos)
+            return TargetComputer.compute_local_target(
+                pos,
+                yaw_rad,
+                x,
+                y,
+                z,
+                yaw,
+                reference,
+                takeoff,
+            )
 
-        Parameters
-        ----------
-        z : float, optional
-            Altitude offset in meters. None treated as 0.
-        reference : MoveReference
-            BODY: offset from current rel_alt. TAKEOFF: absolute rel_alt.
+        if self.is_indoor:
+            pos = self._vision_pos.pose.position
+            yaw_rad = PositionUtils.get_yaw_from_pose(self._vision_pos)
+            return TargetComputer.compute_local_target(
+                pos,
+                yaw_rad,
+                x,
+                y,
+                z,
+                yaw,
+                reference,
+                takeoff,
+            )
 
-        Returns
-        -------
-        float
-            Target relative altitude in meters.
-        """
-        if reference == MoveReference.TAKEOFF:
-            return z or 0
-        return self.rel_alt + (z or 0)
+        # Outdoor PID with raw GPS
+        return TargetComputer.compute_gps_target(
+            self._gps,
+            self.heading,
+            x,
+            y,
+            z,
+            yaw,
+            reference,
+            takeoff,
+        )
 
-    def _validate_position_sensors(self) -> None:
+    def _get_local_position(self) -> tuple:
+        """Get position and yaw from local_position for SETPOINT."""
+        if self._local_pos is None:
+            raise SensorNotAvailableError(
+                "Local position",
+                "SETPOINT requires /mavros/local_position/pose",
+            )
+        return self._local_pos.pose.position, PositionUtils.get_yaw_from_pose(self._local_pos)
+
+    def _get_takeoff_for_strategy(self, strategy: NavigationStrategy):
+        """Get the appropriate takeoff position for a navigation strategy."""
+        if strategy in (NavigationStrategy.PID_LOCAL, NavigationStrategy.SETPOINT):
+            return self._takeoff_local
+        return self._takeoff_position
+
+    def _validate_position_sensors(
+        self, strategy: NavigationStrategy = NavigationStrategy.PID
+    ) -> None:
         """
         Validate that position sensors are available for navigation.
+
+        Parameters
+        ----------
+        strategy : NavigationStrategy, default=PID
+            Strategy determines which sensors are required.
 
         Raises
         ------
         SensorNotAvailableError
             If required position sensor data is missing.
         """
+        if strategy in (NavigationStrategy.PID_LOCAL, NavigationStrategy.SETPOINT):
+            if self._local_pos is None:
+                raise SensorNotAvailableError(
+                    "Local position",
+                    "PID_LOCAL/SETPOINT requires /mavros/local_position/pose",
+                )
+            return
         if self.is_indoor:
             if self._vision_pos is None:
                 raise SensorNotAvailableError("Vision pose", "navigation requires sensor data")
@@ -1476,6 +1442,9 @@ class MavrosDrone(BaseDrone):
         """
         Store current position as takeoff reference.
 
+        Sets both raw takeoff position (for PID/SETPOINT_GLOBAL)
+        and local takeoff position (for PID_LOCAL/SETPOINT).
+
         Returns
         -------
         bool
@@ -1487,6 +1456,13 @@ class MavrosDrone(BaseDrone):
                 self._node.get_logger().error("Cannot set takeoff position: No position data")
                 return False
             self._takeoff_position = pos
+
+            # Local takeoff
+            if self._local_pos is not None:
+                self._takeoff_local = PositionUtils.convert_position_to_target(self._local_pos)
+            else:
+                self._takeoff_local = pos if isinstance(pos, PositionTarget) else None
+
             self._node.get_logger().info("Takeoff position set")
             return True
         except (SensorNotAvailableError, ValueError, AttributeError) as e:
@@ -1499,41 +1475,51 @@ class MavrosDrone(BaseDrone):
 
         Parameters
         ----------
-        pose : PoseWithCovarianceStamped | NavSatFix | PositionTarget | GeoPoseStamped, optional
+        pose : PoseStamped | PoseWithCovarianceStamped | NavSatFix | PositionTarget | GeoPoseStamped, optional
             Position to use as takeoff reference. If None, uses current position.
-
-            - PoseWithCovarianceStamped: See:
-              https://docs.ros.org/en/humble/p/geometry_msgs/msg/PoseWithCovarianceStamped.html
-            - NavSatFix: See:
-              https://docs.ros.org/en/humble/p/sensor_msgs/msg/NavSatFix.html
-            - PositionTarget: See:
-              https://docs.ros.org/en/humble/p/mavros_msgs/msg/PositionTarget.html
-            - GeoPoseStamped: See:
-              https://docs.ros.org/en/humble/p/geographic_msgs/msg/GeoPoseStamped.html
         heading : float, optional
-            Heading in degrees for NavSatFix. Required if pose is NavSatFix.
+            Heading in degrees. Required if pose is NavSatFix.
 
         Raises
         ------
         ValueError
-            If pose type invalid for current mode.
+            If pose type is not supported.
         """
         if pose is None:
             self._takeoff_position = self.position_as_target
-        elif self.is_indoor:
-            if isinstance(pose, PoseWithCovarianceStamped):
-                self._takeoff_position = PositionUtils.convert_position_to_target(pose)
-            elif isinstance(pose, PositionTarget):
+            if self._local_pos is not None:
+                self._takeoff_local = PositionUtils.convert_position_to_target(self._local_pos)
+            elif isinstance(self._takeoff_position, PositionTarget):
+                self._takeoff_local = self._takeoff_position
+        elif isinstance(pose, (PoseStamped, PoseWithCovarianceStamped)):
+            target = PositionUtils.convert_position_to_target(pose)
+            self._takeoff_local = target
+            if self.is_indoor:
+                self._takeoff_position = target
+            else:
+                self._node.get_logger().warn(
+                    "Local pose provided outdoors: only _takeoff_local updated. "
+                    "GPS takeoff position unchanged (use NavSatFix or GeoPoseStamped)."
+                )
+        elif isinstance(pose, PositionTarget):
+            self._takeoff_local = pose
+            if self.is_indoor:
                 self._takeoff_position = pose
             else:
-                raise ValueError("Invalid pose type for indoor mode")
+                self._node.get_logger().warn(
+                    "PositionTarget provided outdoors: only _takeoff_local updated. "
+                    "GPS takeoff position unchanged (use NavSatFix or GeoPoseStamped)."
+                )
+        elif isinstance(pose, NavSatFix) and heading is not None:
+            self._takeoff_position = PositionUtils.convert_position_to_target(pose, heading)
+            if self._local_pos is not None:
+                self._takeoff_local = PositionUtils.convert_position_to_target(self._local_pos)
+        elif isinstance(pose, GeoPoseStamped):
+            self._takeoff_position = pose
+            if self._local_pos is not None:
+                self._takeoff_local = PositionUtils.convert_position_to_target(self._local_pos)
         else:
-            if isinstance(pose, NavSatFix) and heading is not None:
-                self._takeoff_position = PositionUtils.convert_position_to_target(pose, heading)
-            elif isinstance(pose, GeoPoseStamped):
-                self._takeoff_position = pose
-            else:
-                raise ValueError("Invalid pose type for outdoor mode")
+            raise ValueError(f"Invalid pose type: {type(pose).__name__}")
         self._node.get_logger().info("Takeoff position set")
 
     def set_pid_config(self, config) -> None:
