@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nectar.control.mavros.drone import MavrosDrone
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
+YAW_THRESHOLD = np.radians(3)
 
 
 class MavrosNavigator:
@@ -141,7 +142,7 @@ class MavrosNavigator:
             drone.move_velocity(vel["x"], vel["y"], vel["z"], vyaw)
 
             if distance <= precision:
-                if yaw is not None and abs(dyaw) > np.radians(3):
+                if yaw is not None and abs(dyaw) > YAW_THRESHOLD:
                     continue
                 drone.move_velocity(0.0, 0.0, 0.0, 0.0)
                 logger.info(f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m")
@@ -189,17 +190,20 @@ class MavrosNavigator:
         drone = self._drone
         logger = drone.node.get_logger()
         is_gps = isinstance(target, GeoPoseStamped)
+        target_yaw = PositionUtils.get_yaw_from_pose(target)
 
         if is_gps:
             tp = target.pose.position
             logger.info(
                 f"Setpoint nav \u2192 GPS target: lat={tp.latitude:.6f}, "
-                f"lon={tp.longitude:.6f}, alt={check_alt or 0:.1f}m"
+                f"lon={tp.longitude:.6f}, alt={check_alt or 0:.1f}m, "
+                f"yaw={np.degrees(target_yaw):.1f}\u00b0"
             )
         else:
             tp = target.position
             logger.info(
-                f"Setpoint nav \u2192 local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}"
+                f"Setpoint nav \u2192 local target: x={tp.x:.2f}, y={tp.y:.2f}, "
+                f"z={tp.z:.2f}, yaw={np.degrees(target_yaw):.1f}\u00b0"
             )
 
         start = drone.node.get_clock().now()
@@ -215,12 +219,17 @@ class MavrosNavigator:
             else:
                 reached, distance = self._check_reached_local(target, precision)
 
+            curr_yaw = self._get_current_yaw(use_local=not is_gps)
+            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw)
+
             logger.info(
-                f"Distance: {distance:.2f}m",
+                f"Distance: {distance:.2f}m | dyaw={np.degrees(dyaw):.1f}\u00b0",
                 throttle_duration_sec=0.5,
             )
 
             if reached:
+                if abs(dyaw) > YAW_THRESHOLD:
+                    continue
                 logger.info(f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
@@ -300,6 +309,28 @@ class MavrosNavigator:
             return z
         return current_rel + z
 
+    def _get_current_yaw(self, use_local: bool = False) -> float:
+        """
+        Get current yaw from the appropriate sensor source.
+
+        Parameters
+        ----------
+        use_local : bool, default=False
+            If True, use EKF local position. Otherwise, use vision (indoor)
+            or compass heading (outdoor).
+
+        Returns
+        -------
+        float
+            Current yaw in radians.
+        """
+        drone = self._drone
+        if use_local:
+            return PositionUtils.get_yaw_from_pose(drone.local_pos)
+        if drone.is_indoor:
+            return PositionUtils.get_yaw_from_pose(drone.vision_pos)
+        return np.radians(drone.heading)
+
     def _compute_errors(
         self,
         target: Union[PositionTarget, GeoPoseStamped],
@@ -349,16 +380,9 @@ class MavrosNavigator:
 
         # Compute yaw error
         if yaw is not None:
-            if use_local:
-                curr_yaw = PositionUtils.get_yaw_from_pose(drone.local_pos)
-            elif drone.is_indoor:
-                curr_yaw = PositionUtils.get_yaw_from_pose(drone.vision_pos)
-            else:
-                curr_yaw = np.radians(hdg)
-            dyaw = PositionUtils.get_yaw_from_pose(target) - curr_yaw
-            dyaw = (dyaw + np.pi) % (2 * np.pi) - np.pi
-            if abs(dyaw) < np.radians(3):
-                dyaw = 0.0
+            curr_yaw = self._get_current_yaw(use_local)
+            target_yaw = PositionUtils.get_yaw_from_pose(target)
+            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw, YAW_THRESHOLD)
         else:
             dyaw = 0.0
 
@@ -490,16 +514,21 @@ class MavrosNavigator:
     ) -> None:
         """Log navigation target details."""
         logger = self._drone.node.get_logger()
+        target_yaw = np.degrees(PositionUtils.get_yaw_from_pose(target))
 
         if isinstance(target, GeoPoseStamped):
             tp = target.pose.position
             logger.info(
                 f"PID nav: GPS target: lat={tp.latitude:.6f}, "
-                f"lon={tp.longitude:.6f}, alt={tp.altitude:.1f}m"
+                f"lon={tp.longitude:.6f}, alt={tp.altitude:.1f}m, "
+                f"yaw={target_yaw:.1f}\u00b0"
             )
         else:
             tp = target.position
-            logger.info(f"PID nav: local target: x={tp.x:.2f}, y={tp.y:.2f}, z={tp.z:.2f}")
+            logger.info(
+                f"PID nav: local target: x={tp.x:.2f}, y={tp.y:.2f}, "
+                f"z={tp.z:.2f}, yaw={target_yaw:.1f}\u00b0"
+            )
 
         if altitude_target is not None:
             logger.info(
