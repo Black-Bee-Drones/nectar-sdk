@@ -167,6 +167,7 @@ Static utility class for position and orientation operations.
 |--------|-------------|
 | `get_body_distance(target, current, heading)` | Calculate distance from current to target in body frame coordinates |
 | `get_yaw_from_pose(pose)` | Extract yaw angle from ROS pose message (radians) |
+| `compute_yaw_error(target_yaw, current_yaw, threshold)` | Compute shortest-path yaw error in radians with optional deadband |
 | `convert_position_to_target(pose, heading, lidar)` | Convert position messages to target message types |
 | `transform_takeoff_to_body_velocities(vx, vy, vz, current_yaw, takeoff_yaw)` | Transform velocities from takeoff frame to body frame |
 
@@ -186,6 +187,11 @@ dx_body, dy_body, dz_body = PositionUtils.get_body_distance(
 
 # Extract yaw from pose
 yaw = PositionUtils.get_yaw_from_pose(pose_message)  # radians
+
+# Compute yaw error (shortest path, wrapped to [-pi, pi])
+import numpy as np
+dyaw = PositionUtils.compute_yaw_error(target_yaw=1.0, current_yaw=0.5)  # radians
+dyaw = PositionUtils.compute_yaw_error(1.0, 0.5, threshold=np.radians(3))  # with deadband
 
 # Convert position to target message
 target = PositionUtils.convert_position_to_target(
@@ -212,6 +218,10 @@ vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
 
 **PositionUtils.get_yaw_from_pose()**:
 - `PoseStamped`, `PoseWithCovarianceStamped`, `GeoPoseStamped`, or `PositionTarget`
+
+**PositionUtils.compute_yaw_error()**:
+- `target_yaw`, `current_yaw`: floats in radians
+- `threshold`: optional deadband in radians (errors below this return 0.0)
 
 **PositionUtils.convert_position_to_target()**:
 - `PoseStamped` / `PoseWithCovarianceStamped` → `PositionTarget` (local)

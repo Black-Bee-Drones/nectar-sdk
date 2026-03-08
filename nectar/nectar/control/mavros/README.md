@@ -134,6 +134,7 @@ classDiagram
         +navigate_pid(target, active_axes, yaw, timeout, precision, altitude_source, altitude_target, use_local) bool
         +navigate_setpoint(target, timeout, precision, check_alt) bool
         +resolve_altitude_target(z, reference, altitude_source) float
+        -_get_current_yaw(use_local) float
         -_compute_errors(target, yaw, altitude_source, altitude_target, use_local) tuple
         -_resolve_altitude_error(dz_default, altitude_source, altitude_target) float
         -_resolve_lidar_target(z, reference) float
@@ -366,9 +367,16 @@ flowchart TD
     H --> J["_compute_errors"]
     J --> K["_resolve_altitude_error"]
     K --> L["move_velocity"]
+    L --> yawPID{"Position + yaw converged?"}
+    yawPID -->|No| H
+    yawPID -->|Yes| donePID["Target reached"]
     I --> M{"Target type?"}
     M -->|PositionTarget| N["publish_setpoint + _check_reached_local"]
     M -->|GeoPoseStamped| O["publish_setpoint + _check_reached_gps"]
+    N --> yawSP{"Position + yaw converged?"}
+    O --> yawSP
+    yawSP -->|No| I
+    yawSP -->|Yes| doneSP["Setpoint reached"]
 ```
 
 ### PID Navigation
@@ -397,6 +405,8 @@ Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. H
 **Indoor** (PositionTarget): Publishes to `/mavros/setpoint_raw/local`, checks Euclidean distance using vision pose.
 
 **Outdoor** (GeoPoseStamped): Publishes to `/mavros/setpoint_position/global` with AMSL-corrected altitude, checks geodesic distance using GPS and relative altitude.
+
+**Yaw convergence**: Both PID and setpoint navigation verify that the target yaw has been reached (within `YAW_THRESHOLD = 3°`) before declaring arrival. Yaw error is computed via `PositionUtils.compute_yaw_error()` and logged alongside distance each iteration.
 
 ### Velocity Control
 
