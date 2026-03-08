@@ -968,6 +968,8 @@ class MavrosDrone(BaseDrone):
             If reference=TAKEOFF but takeoff position not set.
         CapabilityNotSupportedError
             If reference=WORLD or SETPOINT_GLOBAL indoors.
+        SensorNotAvailableError
+            If required position, altitude sensors are not available.
         """
         if reference == MoveReference.WORLD:
             raise CapabilityNotSupportedError(
@@ -1491,11 +1493,23 @@ class MavrosDrone(BaseDrone):
                 self._takeoff_local = self._takeoff_position
         elif isinstance(pose, (PoseStamped, PoseWithCovarianceStamped)):
             target = PositionUtils.convert_position_to_target(pose)
-            self._takeoff_position = target
             self._takeoff_local = target
+            if self.is_indoor:
+                self._takeoff_position = target
+            else:
+                self._node.get_logger().warn(
+                    "Local pose provided outdoors: only _takeoff_local updated. "
+                    "GPS takeoff position unchanged (use NavSatFix or GeoPoseStamped)."
+                )
         elif isinstance(pose, PositionTarget):
-            self._takeoff_position = pose
             self._takeoff_local = pose
+            if self.is_indoor:
+                self._takeoff_position = pose
+            else:
+                self._node.get_logger().warn(
+                    "PositionTarget provided outdoors: only _takeoff_local updated. "
+                    "GPS takeoff position unchanged (use NavSatFix or GeoPoseStamped)."
+                )
         elif isinstance(pose, NavSatFix) and heading is not None:
             self._takeoff_position = PositionUtils.convert_position_to_target(pose, heading)
             if self._local_pos is not None:
