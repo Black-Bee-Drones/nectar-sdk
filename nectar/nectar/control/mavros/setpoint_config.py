@@ -53,6 +53,7 @@ class SetpointNavConfig:
     radius: float = 0.2
 
     def __post_init__(self) -> None:
+        self.guid_options = int(self.guid_options)
         self.speed = float(self.speed)
         self.speed_up = float(self.speed_up)
         self.speed_down = float(self.speed_down)
