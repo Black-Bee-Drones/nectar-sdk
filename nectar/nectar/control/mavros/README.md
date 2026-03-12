@@ -75,6 +75,7 @@ classDiagram
         -_rng_alt Optional~Range~
         -_imu Optional~Imu~
         -_pid_config Optional~PositionPIDConfig~
+        -_setpoint_config Optional~SetpointNavConfig~
         -_takeoff_position Optional
         -_takeoff_local Optional~PositionTarget~
         -_initial_altitude float
@@ -92,6 +93,7 @@ classDiagram
         +local_pos Optional~PoseStamped~
         +lidar_available bool
         +pid_config Optional~PositionPIDConfig~
+        +setpoint_config Optional~SetpointNavConfig~
         +position Union~PoseStamped,NavSatFix~
         +position_as_target Optional~Union~PositionTarget,GeoPoseStamped~~
         +from_config(config, node)$ MavrosDrone
@@ -109,6 +111,8 @@ classDiagram
         +set_home() bool
         +set_takeoff_position(pose, heading)
         +set_pid_config(config)
+        +set_setpoint_config(config)
+        +set_speed(speed, speed_type) bool
         +set_mode(mode) bool
         +set_param(param_id, value) bool
         +do_servo(aux_out, pwm_value) bool
@@ -161,6 +165,18 @@ classDiagram
         +from_yaml(file_path)$ PositionPIDConfig
     }
 
+    class SetpointNavConfig {
+        <<dataclass>>
+        +use_wpnav bool
+        +speed float
+        +speed_up float
+        +speed_down float
+        +accel float
+        +radius float
+        +from_yaml(file_path)$ SetpointNavConfig
+        +from_dict(config_dict)$ SetpointNavConfig
+    }
+
     class BaseDrone {
         <<abstract>>
         +add_obstacle_detector()
@@ -175,6 +191,7 @@ classDiagram
     MavrosNavigator ..> GPSUtils : uses
     MavrosNavigator ..> PositionUtils : uses
     MavrosDrone o-- PositionPIDConfig
+    MavrosDrone o-- SetpointNavConfig
 ```
 
 ## MavrosDrone
@@ -189,6 +206,7 @@ config = MavrosConfig(
     expect_lidar=True,                      # Wait for lidar at startup
     connection_string="serial:///dev/ttyUSB0:921600",
     pid_config_file=None,                   # Optional custom PID config
+    setpoint_config_file=None,              # Optional custom setpoint nav config
 )
 
 drone = DroneFactory.create("mavros", config, node)
@@ -223,6 +241,7 @@ drone.get_altitude(AltitudeSource.VISION)  # float: Vision pose Z
 drone.get_altitude(AltitudeSource.REL_ALT) # float: GPS relative altitude
 drone.position                 # Union[PoseStamped, NavSatFix]: Raw position
 drone.pid_config               # PositionPIDConfig: Current PID configuration
+drone.setpoint_config          # SetpointNavConfig: Current setpoint nav configuration
 ```
 
 ### Takeoff
@@ -407,6 +426,95 @@ Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. H
 **Outdoor** (GeoPoseStamped): Publishes to `/mavros/setpoint_position/global` with AMSL-corrected altitude, checks geodesic distance using GPS and relative altitude.
 
 **Yaw convergence**: Both PID and setpoint navigation verify that the target yaw has been reached (within `YAW_THRESHOLD = 3°`) before declaring arrival. Yaw error is computed via `PositionUtils.compute_yaw_error()` and logged alongside distance each iteration.
+
+#### ArduPilot GUIDED Mode Position Controllers
+
+When the SDK publishes a `PositionTarget` to `/mavros/setpoint_raw/local`, MAVROS translates it into a [`SET_POSITION_TARGET_LOCAL_NED`](https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED) MAVLink message (see [`setpoint_mixin.hpp`](https://github.com/mavlink/mavros/blob/ros2/mavros/include/mavros/setpoint_mixin.hpp)). ArduPilot's GUIDED mode then routes the message to one of two internal position controllers, depending on the [`GUID_OPTIONS`](https://ardupilot.org/copter/docs/ac2_guidedmode.html#guided-mode-options) parameter:
+
+| Controller | GUID_OPTIONS | ArduPilot SubMode | Trajectory | Speed Control |
+|---|---|---|---|---|
+| **AC_PosControl** (default) | bit 6 = 0 | `SubMode::Pos` | Direct PID to target | Speed limits from WPNAV at init |
+| **AC_WPNav** | bit 6 = 1 (value 64) | `SubMode::WP` | S-curve path planning | Full WPNAV parameter set |
+
+Source: [`mode_guided.cpp :: set_pos_NED_m()`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/mode_guided.cpp) — the `use_wpnav_for_position_control()` conditional selects the sub-mode based on GUID_OPTIONS bit 6.
+
+**AC_PosControl (SubMode::Pos) — Default behavior**
+
+The default GUIDED mode behavior for position-only targets. ArduPilot's position controller runs a PID loop directly toward the target point. At initialization ([`pva_control_start()`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/mode_guided.cpp)), speed limits are read from WPNAV parameters:
+
+```
+pos_control->NE_set_max_speed_accel_m(wp_nav->get_default_speed_NE_ms(), ...)
+pos_control->D_set_max_speed_accel_m(wp_nav->get_default_speed_down_ms(), wp_nav->get_default_speed_up_ms(), ...)
+```
+
+Characteristics:
+- Flies toward target with basic PID, no trajectory shaping
+- Speed limits are set once at mode init, not re-read dynamically from WPNAV params
+- No internal "arrival radius" concept — the SDK's `_check_reached_local()` handles arrival detection
+- Target can be updated rapidly (suitable for continuous position streaming)
+- Can produce abrupt movements at high speeds or long distances
+
+**AC_WPNav (SubMode::WP) — S-curve path planning**
+
+Enabled by setting `GUID_OPTIONS` bit 6 (value 64). Uses the same [AC_WPNav](https://github.com/ArduPilot/ardupilot/tree/master/libraries/AC_WPNav) library as AUTO mode, providing S-curve trajectory planning with controlled acceleration and deceleration.
+
+Characteristics:
+- Flies a straight-line path with smooth S-curve speed profile (trapezoidal accel/decel)
+- Respects all `WPNAV_*` parameters dynamically (speed, radius, accel, jerk)
+- Uses `WPNAV_RADIUS` for internal arrival detection and deceleration planning
+- Supports object avoidance path planning ([Bendy Ruler](https://ardupilot.org/copter/docs/common-oa-bendyruler.html), [Dijkstra](https://ardupilot.org/copter/docs/common-oa-dijkstras.html))
+- Target should **not** be updated rapidly — each new target triggers a full trajectory replan
+- Best suited for point-to-point missions (go to point, stop, perform action)
+
+See [ArduPilot PosControl and Navigation overview](https://ardupilot.org/dev/docs/code-overview-copter-poscontrol-and-navigation.html) and [Guided Mode documentation](https://ardupilot.org/copter/docs/ac2_guidedmode.html).
+
+#### WPNAV Parameters
+
+ArduPilot v4.6.3 [`WPNAV_*` parameters](https://ardupilot.org/copter/docs/parameters-Copter-stable-V4.6.3.html#wpnav-parameters) control navigation speed, acceleration, and precision. Default values from [`AC_WPNav.cpp`](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/libraries/AC_WPNav/AC_WPNav.cpp):
+
+| Parameter | Description | ArduPilot Default | Unit | Range |
+|---|---|---|---|---|
+| `WPNAV_SPEED` | Horizontal speed | 1000 (10 m/s) | cm/s | 10–2000 |
+| `WPNAV_SPEED_UP` | Climb speed | 250 (2.5 m/s) | cm/s | 10–1000 |
+| `WPNAV_SPEED_DN` | Descent speed | 150 (1.5 m/s) | cm/s | 10–500 |
+| `WPNAV_ACCEL` | Horizontal acceleration | 250 (2.5 m/s²) | cm/s/s | 50–500 |
+| `WPNAV_RADIUS` | Waypoint arrival radius | 200 (2.0 m) | cm | 5–1000 |
+| `WPNAV_ACCEL_Z` | Vertical acceleration | 100 (1.0 m/s²) | cm/s/s | 50–500 |
+| `WPNAV_JERK` | Horizontal jerk | 1.0 | m/s/s/s | 1–20 |
+| `WPNAV_RFND_USE` | Rangefinder terrain following | 1 (enabled) | bool | 0–1 |
+
+> **Note**: In ArduPilot dev (v4.8+), these are renamed to `WP_*`. The SDK uses descriptive field names (`speed`, `radius`) so only the internal `_apply_setpoint_config()` mapping needs updating for version changes.
+
+**How parameters affect each sub-mode:**
+
+| Behavior | SubMode::Pos (default) | SubMode::WP (GUID_OPTIONS=64) |
+|---|---|---|
+| WPNAV_SPEED | Read once at init as PosControl limit | Re-read every loop, controls trajectory |
+| WPNAV_RADIUS | Not used (SDK handles arrival) | Used for deceleration and arrival |
+| WPNAV_ACCEL | Read once at init | Controls S-curve acceleration profile |
+| WPNAV_RFND_USE | Not used (`is_terrain_alt=false` for `SET_POSITION_TARGET_LOCAL_NED`) | Only if terrain alt is explicitly requested |
+
+#### Speed Control at Runtime
+
+Two mechanisms exist for changing speed limits during flight:
+
+**`set_param("WPNAV_SPEED", value)`** — Updates the stored FCU parameter via [`PARAM_SET`](https://mavlink.io/en/messages/common.html#PARAM_SET). In SubMode::WP, the new value is picked up on the next `update_wpnav()` loop. In SubMode::Pos, it only takes effect at the next mode initialization (e.g., re-arm or mode switch).
+
+**`set_speed(speed, speed_type)`** — Sends [`MAV_CMD_DO_CHANGE_SPEED`](https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-do-change-speed) (command 178). This directly calls `set_speed_NE_ms()` / `set_speed_up_ms()` / `set_speed_down_ms()` on the current flight mode, which immediately updates AC_PosControl's active speed limits. Works in both sub-modes.
+
+Source: [`GCS_MAVLink_Copter.cpp :: handle_MAV_CMD_DO_CHANGE_SPEED()`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/GCS_MAVLink_Copter.cpp)
+
+```python
+# Immediate speed change via MAV_CMD_DO_CHANGE_SPEED
+drone.set_speed(0.5, "horizontal")   # 0.5 m/s horizontal
+drone.set_speed(0.3, "climb")        # 0.3 m/s climb
+drone.set_speed(0.3, "descent")      # 0.3 m/s descent
+drone.set_speed(-2, "horizontal")    # revert to WPNAV_SPEED default
+```
+
+#### Position + Velocity in PositionTarget
+
+The `PositionTarget` message supports both position and velocity fields simultaneously via `type_mask`. However, combined position+velocity does **not** mean "go to position at this max speed". As explained in [ArduPilot issue #3536](https://github.com/ArduPilot/ardupilot/issues/3536#issuecomment-305703504), the caller must provide a **continuous stream** of desired positions and velocities — the vehicle tries to achieve both simultaneously. This is useful for curved paths (e.g., circles) where the caller continuously updates the position and velocity vector, but is **not suitable** for point-to-point navigation where the drone should fly to a point and stop.
 
 ### Velocity Control
 
@@ -604,6 +712,127 @@ config = PositionPIDConfig(
 drone.set_pid_config(config)
 ```
 
+## Setpoint Navigation Configuration
+
+Controls ArduPilot GUIDED mode behavior when using `NavigationStrategy.SETPOINT`. Manages the position controller sub-mode (AC_PosControl vs AC_WPNav) and WPNAV parameters.
+
+### How It Works
+
+1. **On init**: `_load_setpoint_config()` loads from `setpoint_config_file` (if provided), otherwise from `config/mavros/setpoint_indoor.yaml` or `setpoint_outdoor.yaml` based on `is_indoor`.
+2. **On arm**: `_apply_setpoint_config()` sends `GUID_OPTIONS` and all `WPNAV_*` parameters to the FCU via `set_param()` after entering GUIDED mode.
+3. **On move_to (SETPOINT)**: If `use_wpnav=True`, syncs `WPNAV_RADIUS` with the `precision` parameter so ArduPilot's arrival detection matches the SDK's.
+
+```mermaid
+flowchart TD
+    A["MavrosConfig.setpoint_config_file"] --> B["_load_setpoint_config()"]
+    B --> C["SetpointNavConfig loaded"]
+    D["arm() → set_mode GUIDED"] --> E["_apply_setpoint_config()"]
+    E --> F["set_param GUID_OPTIONS"]
+    E --> G["set_param WPNAV_SPEED/UP/DN"]
+    E --> H["set_param WPNAV_ACCEL"]
+    E --> I["set_param WPNAV_RADIUS"]
+    J["move_to(precision=0.1)"] --> K{"use_wpnav?"}
+    K -->|Yes| L["set_param WPNAV_RADIUS = precision"]
+    L --> M["navigate_setpoint"]
+    K -->|No| M
+```
+
+### Default Configurations
+
+All values in SI units (m/s, m). Converted to ArduPilot units (cm/s, cm) internally by `_apply_setpoint_config()`.
+
+**Indoor** (`config/mavros/setpoint_indoor.yaml`):
+```yaml
+use_wpnav: false
+speed: 0.5          # 50 cm/s horizontal
+speed_up: 0.3       # 30 cm/s climb
+speed_down: 0.3     # 30 cm/s descent
+accel: 0.5          # 50 cm/s/s horizontal acceleration
+radius: 0.1         # 10 cm arrival radius
+```
+
+**Outdoor** (`config/mavros/setpoint_outdoor.yaml`):
+```yaml
+use_wpnav: false
+speed: 2.0          # 200 cm/s horizontal
+speed_up: 1.5       # 150 cm/s climb
+speed_down: 1.0     # 100 cm/s descent
+accel: 1.0          # 100 cm/s/s horizontal acceleration
+radius: 0.3         # 30 cm arrival radius
+```
+
+Both default to `use_wpnav: false` (AC_PosControl, matching ArduPilot's default GUIDED behavior). The SDK defaults are intentionally conservative compared to ArduPilot's factory defaults (10 m/s, 2.0 m radius) to prevent aggressive movements.
+
+### Dataclass Defaults
+
+`SetpointNavConfig()` without a YAML file uses these values (fallback if no config file is found):
+
+| Field | Default | ArduPilot Factory Default |
+|---|---|---|
+| `use_wpnav` | `False` | N/A (bit 6 off) |
+| `speed` | 2.0 m/s | 10.0 m/s |
+| `speed_up` | 1.5 m/s | 2.5 m/s |
+| `speed_down` | 1.5 m/s | 1.5 m/s |
+| `accel` | 1.0 m/s² | 2.5 m/s² |
+| `radius` | 0.2 m | 2.0 m |
+
+### Runtime Updates
+
+```python
+# From YAML file
+drone.set_setpoint_config("/path/to/custom_setpoint.yaml")
+
+# From dictionary (partial updates use from_dict defaults for missing keys)
+drone.set_setpoint_config({"use_wpnav": True, "speed": 0.3, "radius": 0.1})
+
+# From SetpointNavConfig object
+from nectar.control import SetpointNavConfig
+
+config = SetpointNavConfig(use_wpnav=True, speed=0.5, radius=0.1)
+drone.set_setpoint_config(config)
+```
+
+`set_setpoint_config()` updates the config and immediately calls `_apply_setpoint_config()` to send the new parameters to the FCU.
+
+### Speed Control
+
+For immediate speed changes during flight (without re-applying the full config), use `set_speed()`:
+
+```python
+drone.set_speed(0.8, "horizontal")   # MAV_CMD_DO_CHANGE_SPEED type 0
+drone.set_speed(0.5, "climb")        # MAV_CMD_DO_CHANGE_SPEED type 1
+drone.set_speed(0.3, "descent")      # MAV_CMD_DO_CHANGE_SPEED type 2
+```
+
+This sends [`MAV_CMD_DO_CHANGE_SPEED`](https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-do-change-speed) which directly updates AC_PosControl's active speed limits. Works in both SubMode::Pos and SubMode::WP. See [Guided Mode speed control](https://ardupilot.org/copter/docs/ac2_guidedmode.html#speed-control).
+
+### Usage Examples
+
+**Conservative indoor navigation with WPNav S-curve:**
+```python
+config = MavrosConfig(
+    pose_source=PoseSource.VISION,
+    setpoint_config_file="/path/to/slow_indoor.yaml",
+)
+drone = DroneFactory.create("mavros", config, node)
+
+# Enable WPNav for smooth trajectories
+drone.set_setpoint_config({"use_wpnav": True, "speed": 0.3, "radius": 0.1})
+
+# move_to syncs WPNAV_RADIUS with precision when use_wpnav=True
+drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT, precision=0.1)
+```
+
+**Outdoor with default PosControl + speed limits:**
+```python
+# Uses setpoint_outdoor.yaml automatically (pose_source=GPS, use_wpnav=false)
+drone.move_to(x=5.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
+
+# Slow down for precise approach
+drone.set_speed(0.5, "horizontal")
+drone.move_to(x=1.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT, precision=0.2)
+```
+
 ## ArduPilot-Specific Features
 
 ### Flight Modes
@@ -618,8 +847,23 @@ drone.set_mode("LAND")       # Auto land
 
 ### Parameter Setting
 
+Supports both integer and float values. Uses `integer_value` for `int`, `double_value` for `float`.
+
 ```python
-drone.set_param("RTL_ALT", 1500)  # RTL altitude in cm
+drone.set_param("RTL_ALT", 1500)           # int: RTL altitude in cm
+drone.set_param("WPNAV_SPEED", 200.0)      # float: 200 cm/s horizontal
+drone.set_param("GUID_OPTIONS", 64)         # int: enable WPNav bit 6
+```
+
+### Speed Control
+
+Runtime speed changes via [`MAV_CMD_DO_CHANGE_SPEED`](https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-do-change-speed). Immediately updates AC_PosControl limits.
+
+```python
+drone.set_speed(0.5, "horizontal")   # groundspeed (type 0)
+drone.set_speed(0.3, "climb")        # climb speed (type 1)
+drone.set_speed(0.3, "descent")      # descent speed (type 2)
+drone.set_speed(-2, "horizontal")    # revert to WPNAV_SPEED default
 ```
 
 ### Servo Control
@@ -743,11 +987,21 @@ Failed commands log the result code:
 - [Flight Modes](https://ardupilot.org/copter/docs/flight-modes.html)
 - [MAVLink Flight Mode Protocol](https://ardupilot.org/dev/docs/mavlink-get-set-flightmode.html)
 - [GUIDED Mode Commands](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html)
+- [Guided Mode](https://ardupilot.org/copter/docs/ac2_guidedmode.html) — GUID_OPTIONS, speed control, WPNav
+- [PosControl and Navigation Code Overview](https://ardupilot.org/dev/docs/code-overview-copter-poscontrol-and-navigation.html) — AC_PosControl vs AC_WPNav
+- [WPNAV Parameters (v4.6.3)](https://ardupilot.org/copter/docs/parameters-Copter-stable-V4.6.3.html#wpnav-parameters)
+- [MAV_CMD_DO_CHANGE_SPEED](https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-do-change-speed)
 - [Understanding Altitude](https://ardupilot.org/copter/docs/common-understanding-altitude.html)
 - [EKF Navigation Filter](https://ardupilot.org/copter/docs/common-apm-navigation-extended-kalman-filter-overview.html)
 - [Rangefinders](https://ardupilot.org/copter/docs/common-rangefinder-landingpage.html)
 - [Terrain Following](https://ardupilot.org/copter/docs/terrain-following.html)
 - [Servo Configuration](https://ardupilot.org/copter/docs/common-servo.html)
+
+### ArduPilot Source Code
+- [`mode_guided.cpp`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/mode_guided.cpp) — GUIDED mode sub-modes, pva_control_start(), set_pos_NED_m()
+- [`AC_WPNav.cpp`](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/libraries/AC_WPNav/AC_WPNav.cpp) — WPNav parameter defaults, S-curve trajectory
+- [`AC_PosControl.h`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) — Position controller PID, speed limits
+- [`GCS_MAVLink_Copter.cpp`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/GCS_MAVLink_Copter.cpp) — MAV_CMD_DO_CHANGE_SPEED handler, SET_POSITION_TARGET_LOCAL_NED handler
 
 ### Vision & Indoor Navigation
 - [VIO Tracking Camera (ArduPilot)](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html)
