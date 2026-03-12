@@ -40,11 +40,11 @@ class SetpointNavConfig:
     """
 
     use_wpnav: bool = False
-    speed: float = 5.0
-    speed_up: float = 2.5
+    speed: float = 2.0
+    speed_up: float = 1.5
     speed_down: float = 1.5
     accel: float = 1.0
-    radius: float = 2.0
+    radius: float = 0.2
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "SetpointNavConfig":
@@ -81,11 +81,11 @@ class SetpointNavConfig:
         """
         return cls(
             use_wpnav=config_dict.get("use_wpnav", False),
-            speed=config_dict.get("speed", 5.0),
-            speed_up=config_dict.get("speed_up", 2.5),
+            speed=config_dict.get("speed", 2.0),
+            speed_up=config_dict.get("speed_up", 1.5),
             speed_down=config_dict.get("speed_down", 1.5),
             accel=config_dict.get("accel", 1.0),
-            radius=config_dict.get("radius", 2.0),
+            radius=config_dict.get("radius", 0.2),
         )
 
     def to_dict(self) -> dict:
