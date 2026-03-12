@@ -7,7 +7,7 @@ from geographic_msgs.msg import GeoPoseStamped
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from mavros_msgs.msg import GlobalPositionTarget, PositionTarget, State
 from mavros_msgs.srv import CommandBool, CommandHome, CommandLong, CommandTOL, SetMode
-from rcl_interfaces.msg import Parameter
+from rcl_interfaces.msg import Parameter, ParameterType
 from rcl_interfaces.srv import SetParameters
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -618,7 +618,8 @@ class MavrosDrone(BaseDrone):
                 f"speed={cfg.speed}m/s, radius={cfg.radius}m"
             )
 
-        self._applied_radius_cm = float(cfg.radius * 100)
+        if "WPNAV_RADIUS" not in failed:
+            self._applied_radius_cm = float(cfg.radius * 100)
 
     def _get_driver_name(self) -> str:
         """Return MAVROS driver node name."""
@@ -1454,8 +1455,10 @@ class MavrosDrone(BaseDrone):
             param = Parameter()
             param.name = param_id
             if isinstance(param_value, float):
+                param.value.type = ParameterType.PARAMETER_DOUBLE
                 param.value.double_value = param_value
             else:
+                param.value.type = ParameterType.PARAMETER_INTEGER
                 param.value.integer_value = param_value
 
             req = SetParameters.Request()
