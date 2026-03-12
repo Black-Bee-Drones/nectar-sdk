@@ -1,0 +1,9 @@
+# Indoor setpoint navigation parameters
+# ArduPilot GUIDED mode speed/radius limits
+# All values in SI units (m/s, m)
+use_wpnav: false
+speed: 0.5
+speed_up: 0.3
+speed_down: 0.3
+accel: 0.5
+radius: 0.1
