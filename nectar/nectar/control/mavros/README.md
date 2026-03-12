@@ -167,7 +167,8 @@ classDiagram
 
     class SetpointNavConfig {
         <<dataclass>>
-        +use_wpnav bool
+        +guid_options int
+        +use_wpnav bool «property»
         +speed float
         +speed_up float
         +speed_down float
@@ -719,8 +720,8 @@ Controls ArduPilot GUIDED mode behavior when using `NavigationStrategy.SETPOINT`
 ### How It Works
 
 1. **On init**: `_load_setpoint_config()` loads from `setpoint_config_file` (if provided), otherwise from `config/mavros/setpoint_indoor.yaml` or `setpoint_outdoor.yaml` based on `is_indoor`.
-2. **On arm**: `_apply_setpoint_config()` sends `GUID_OPTIONS` and all `WPNAV_*` parameters to the FCU via `set_param()` after entering GUIDED mode.
-3. **On move_to (SETPOINT)**: If `use_wpnav=True`, syncs `WPNAV_RADIUS` with the `precision` parameter so ArduPilot's arrival detection matches the SDK's.
+2. **On arm**: `_apply_setpoint_config()` sends `GUID_OPTIONS` and all `WPNAV_*` parameters to the FCU via `set_param()`. Logs which parameters failed.
+3. **On move_to (SETPOINT)**: If `use_wpnav` (bit 6 set in `guid_options`), syncs `WPNAV_RADIUS` with the `precision` parameter (cached to avoid redundant `set_param` calls on repeated `move_to` with the same precision).
 
 ```mermaid
 flowchart TD
@@ -731,7 +732,7 @@ flowchart TD
     E --> G["set_param WPNAV_SPEED/UP/DN"]
     E --> H["set_param WPNAV_ACCEL"]
     E --> I["set_param WPNAV_RADIUS"]
-    J["move_to(precision=0.1)"] --> K{"use_wpnav?"}
+    J["move_to(precision=0.1)"] --> K{"guid_options bit 6?"}
     K -->|Yes| L["set_param WPNAV_RADIUS = precision"]
     L --> M["navigate_setpoint"]
     K -->|No| M
@@ -743,7 +744,7 @@ All values in SI units (m/s, m). Converted to ArduPilot units (cm/s, cm) interna
 
 **Indoor** (`config/mavros/setpoint_indoor.yaml`):
 ```yaml
-use_wpnav: false
+guid_options: 65    # bit 0 (arm from TX) + bit 6 (WPNav)
 speed: 0.5          # 50 cm/s horizontal
 speed_up: 0.3       # 30 cm/s climb
 speed_down: 0.3     # 30 cm/s descent
@@ -753,7 +754,7 @@ radius: 0.1         # 10 cm arrival radius
 
 **Outdoor** (`config/mavros/setpoint_outdoor.yaml`):
 ```yaml
-use_wpnav: false
+guid_options: 65    # bit 0 (arm from TX) + bit 6 (WPNav)
 speed: 2.0          # 200 cm/s horizontal
 speed_up: 1.5       # 150 cm/s climb
 speed_down: 1.0     # 100 cm/s descent
@@ -761,7 +762,7 @@ accel: 1.0          # 100 cm/s/s horizontal acceleration
 radius: 0.3         # 30 cm arrival radius
 ```
 
-Both default to `use_wpnav: false` (AC_PosControl, matching ArduPilot's default GUIDED behavior). The SDK defaults are intentionally conservative compared to ArduPilot's factory defaults (10 m/s, 2.0 m radius) to prevent aggressive movements.
+Both default to `guid_options: 65` (WPNav S-curve + arm from TX). The SDK speed defaults are intentionally conservative compared to ArduPilot's factory defaults (10 m/s, 2.0 m radius) to prevent aggressive movements.
 
 ### Dataclass Defaults
 
@@ -769,12 +770,22 @@ Both default to `use_wpnav: false` (AC_PosControl, matching ArduPilot's default 
 
 | Field | Default | ArduPilot Factory Default |
 |---|---|---|
-| `use_wpnav` | `False` | N/A (bit 6 off) |
+| `guid_options` | `65` (bit 0 + bit 6) | `0` |
 | `speed` | 2.0 m/s | 10.0 m/s |
 | `speed_up` | 1.5 m/s | 2.5 m/s |
 | `speed_down` | 1.5 m/s | 1.5 m/s |
 | `accel` | 1.0 m/s² | 2.5 m/s² |
 | `radius` | 0.2 m | 2.0 m |
+
+`guid_options` is the [`GUID_OPTIONS`](https://ardupilot.org/copter/docs/ac2_guidedmode.html#guided-mode-options) bitmask sent directly to the FCU. The `use_wpnav` property returns `True` when bit 6 is set. Common values:
+
+| Value | Bits | Meaning |
+|---|---|---|
+| 0 | — | Default GUIDED (AC_PosControl, no TX arm) |
+| 1 | 0 | Allow arming from TX |
+| 64 | 6 | WPNav S-curve only |
+| 65 | 0 + 6 | **SDK default**: arm from TX + WPNav |
+| 193 | 0 + 6 + 7 | Arm from TX + WPNav + weathervaning |
 
 ### Runtime Updates
 
@@ -782,13 +793,20 @@ Both default to `use_wpnav: false` (AC_PosControl, matching ArduPilot's default 
 # From YAML file
 drone.set_setpoint_config("/path/to/custom_setpoint.yaml")
 
+# From Path object
+from pathlib import Path
+drone.set_setpoint_config(Path("/path/to/custom_setpoint.yaml"))
+
 # From dictionary (partial updates use from_dict defaults for missing keys)
-drone.set_setpoint_config({"use_wpnav": True, "speed": 0.3, "radius": 0.1})
+drone.set_setpoint_config({"guid_options": 65, "speed": 0.3, "radius": 0.1})
+
+# Disable WPNav (use AC_PosControl default)
+drone.set_setpoint_config({"guid_options": 1, "speed": 0.5})
 
 # From SetpointNavConfig object
 from nectar.control import SetpointNavConfig
 
-config = SetpointNavConfig(use_wpnav=True, speed=0.5, radius=0.1)
+config = SetpointNavConfig(guid_options=65, speed=0.5, radius=0.1)
 drone.set_setpoint_config(config)
 ```
 
@@ -816,16 +834,16 @@ config = MavrosConfig(
 )
 drone = DroneFactory.create("mavros", config, node)
 
-# Enable WPNav for smooth trajectories
-drone.set_setpoint_config({"use_wpnav": True, "speed": 0.3, "radius": 0.1})
+# WPNav enabled by default (guid_options=65), just adjust speed
+drone.set_setpoint_config({"speed": 0.3, "radius": 0.1})
 
-# move_to syncs WPNAV_RADIUS with precision when use_wpnav=True
+# move_to syncs WPNAV_RADIUS with precision when WPNav is enabled (bit 6)
 drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT, precision=0.1)
 ```
 
 **Outdoor with default PosControl + speed limits:**
 ```python
-# Uses setpoint_outdoor.yaml automatically (pose_source=GPS, use_wpnav=false)
+# Uses setpoint_outdoor.yaml automatically (pose_source=GPS, guid_options=65)
 drone.move_to(x=5.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
 
 # Slow down for precise approach
@@ -852,7 +870,7 @@ Supports both integer and float values. Uses `integer_value` for `int`, `double_
 ```python
 drone.set_param("RTL_ALT", 1500)           # int: RTL altitude in cm
 drone.set_param("WPNAV_SPEED", 200.0)      # float: 200 cm/s horizontal
-drone.set_param("GUID_OPTIONS", 64)         # int: enable WPNav bit 6
+drone.set_param("GUID_OPTIONS", 65)         # int: bits 0 + 6 (arm from TX + WPNav)
 ```
 
 ### Speed Control

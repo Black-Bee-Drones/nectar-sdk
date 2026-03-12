@@ -62,6 +62,7 @@ class MavrosDrone(BaseDrone):
         self._imu: Optional[Imu] = None
         self._pid_config: Optional[PositionPIDConfig] = None
         self._setpoint_config: Optional[SetpointNavConfig] = None
+        self._applied_radius_cm: float = 0.0
         self._takeoff_position = None
         self._takeoff_local: Optional[PositionTarget] = None
         self._initial_altitude: float = 0.0
@@ -598,17 +599,26 @@ class MavrosDrone(BaseDrone):
 
         cfg = self._setpoint_config
 
-        self.set_param("GUID_OPTIONS", 64 if cfg.use_wpnav else 0)
-        self.set_param("WPNAV_SPEED", cfg.speed * 100)
-        self.set_param("WPNAV_SPEED_UP", cfg.speed_up * 100)
-        self.set_param("WPNAV_SPEED_DN", cfg.speed_down * 100)
-        self.set_param("WPNAV_ACCEL", cfg.accel * 100)
-        self.set_param("WPNAV_RADIUS", cfg.radius * 100)
+        params = {
+            "GUID_OPTIONS": cfg.guid_options,
+            "WPNAV_SPEED": float(cfg.speed * 100),
+            "WPNAV_SPEED_UP": float(cfg.speed_up * 100),
+            "WPNAV_SPEED_DN": float(cfg.speed_down * 100),
+            "WPNAV_ACCEL": float(cfg.accel * 100),
+            "WPNAV_RADIUS": float(cfg.radius * 100),
+        }
 
-        self._node.get_logger().info(
-            f"Setpoint config applied: wpnav={cfg.use_wpnav}, "
-            f"speed={cfg.speed}m/s, radius={cfg.radius}m"
-        )
+        failed = [name for name, val in params.items() if not self.set_param(name, val)]
+
+        if failed:
+            self._node.get_logger().warn(f"Setpoint config: failed to set {', '.join(failed)}")
+        else:
+            self._node.get_logger().info(
+                f"Setpoint config applied: wpnav={cfg.use_wpnav}, "
+                f"speed={cfg.speed}m/s, radius={cfg.radius}m"
+            )
+
+        self._applied_radius_cm = float(cfg.radius * 100)
 
     def _get_driver_name(self) -> str:
         """Return MAVROS driver node name."""
@@ -1069,9 +1079,10 @@ class MavrosDrone(BaseDrone):
                 takeoff,
             )
             if self._setpoint_config and self._setpoint_config.use_wpnav:
-                radius_cm = precision * 100
-                if radius_cm != self._setpoint_config.radius * 100:
+                radius_cm = float(precision * 100)
+                if radius_cm != self._applied_radius_cm:
                     self.set_param("WPNAV_RADIUS", radius_cm)
+                    self._applied_radius_cm = radius_cm
             return self._navigator.navigate_setpoint(target, timeout, precision)
 
         # PID strategies (PID or PID_LOCAL)
@@ -1661,7 +1672,7 @@ class MavrosDrone(BaseDrone):
 
         Parameters
         ----------
-        config : str | dict | SetpointNavConfig
+        config : str | Path | dict | SetpointNavConfig
             YAML file path, configuration dictionary, or SetpointNavConfig object.
 
         Raises
@@ -1669,7 +1680,7 @@ class MavrosDrone(BaseDrone):
         TypeError
             If config type not supported.
         """
-        if isinstance(config, str):
+        if isinstance(config, (str, Path)):
             self._setpoint_config = SetpointNavConfig.from_yaml(config)
         elif isinstance(config, dict):
             self._setpoint_config = SetpointNavConfig.from_dict(config)
