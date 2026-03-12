@@ -19,7 +19,7 @@ from nectar.control.exceptions import (
     TakeoffPositionNotSetError,
 )
 from nectar.control.factory import DroneFactory
-from nectar.control.mavros import GPSUtils, MavrosDrone
+from nectar.control.mavros import GPSUtils, MavrosDrone, SetpointNavConfig
 from nectar.control.obstacles import (
     BaseObstacleDetector,
     DepthObstacleDetector,
@@ -65,6 +65,7 @@ __all__ = [
     "PIDController",
     "PIDConfig",
     "PositionPIDConfig",
+    "SetpointNavConfig",
     "BaseDrone",
     "MavrosDrone",
     "BebopDrone",

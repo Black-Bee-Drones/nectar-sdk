@@ -25,6 +25,7 @@ class MavrosConfig(DroneConfig):
     state_topic: str = "/mavros/state"
     local_position_topic: str = "/mavros/local_position/pose"
     pid_config_file: Optional[str] = None
+    setpoint_config_file: Optional[str] = None
     connection_string: str = "serial:///dev/ttyUSB0:921600"
 
 

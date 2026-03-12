@@ -25,6 +25,7 @@ from nectar.control.exceptions import (
 from nectar.control.factory import DroneFactory
 from nectar.control.mavros.gps_utils import GPSUtils
 from nectar.control.mavros.navigator import MavrosNavigator
+from nectar.control.mavros.setpoint_config import SetpointNavConfig
 from nectar.control.mavros.target_computer import TargetComputer
 from nectar.control.pid import PIDConfig, PositionPIDConfig
 from nectar.control.types import (
@@ -60,6 +61,7 @@ class MavrosDrone(BaseDrone):
         self._rng_alt: Optional[Range] = None
         self._imu: Optional[Imu] = None
         self._pid_config: Optional[PositionPIDConfig] = None
+        self._setpoint_config: Optional[SetpointNavConfig] = None
         self._takeoff_position = None
         self._takeoff_local: Optional[PositionTarget] = None
         self._initial_altitude: float = 0.0
@@ -72,6 +74,7 @@ class MavrosDrone(BaseDrone):
         self._setup_services()
         self._startup_sensors()
         self._load_pid_config()
+        self._load_setpoint_config()
         self._navigator = MavrosNavigator(self)
 
         self._node.get_logger().info("MavrosDrone initialized")
@@ -566,6 +569,47 @@ class MavrosDrone(BaseDrone):
             ),
         )
 
+    def _load_setpoint_config(self) -> None:
+        """Load setpoint navigation config from file or use defaults."""
+        config: MavrosConfig = self._config
+
+        if config.setpoint_config_file:
+            path = Path(config.setpoint_config_file)
+        else:
+            config_dir = Path(__file__).parent.parent / "config" / "mavros"
+            if self.is_indoor:
+                path = config_dir / "setpoint_indoor.yaml"
+            else:
+                path = config_dir / "setpoint_outdoor.yaml"
+
+        if path.exists():
+            self._setpoint_config = SetpointNavConfig.from_yaml(path)
+        else:
+            self._setpoint_config = SetpointNavConfig()
+
+    def _apply_setpoint_config(self) -> None:
+        """Send setpoint navigation parameters to the FCU.
+
+        Sets GUID_OPTIONS and WPNAV parameters based on the loaded config.
+        Called during arm() after entering GUIDED mode.
+        """
+        if self._setpoint_config is None:
+            return
+
+        cfg = self._setpoint_config
+
+        self.set_param("GUID_OPTIONS", 64 if cfg.use_wpnav else 0)
+        self.set_param("WPNAV_SPEED", cfg.speed * 100)
+        self.set_param("WPNAV_SPEED_UP", cfg.speed_up * 100)
+        self.set_param("WPNAV_SPEED_DN", cfg.speed_down * 100)
+        self.set_param("WPNAV_ACCEL", cfg.accel * 100)
+        self.set_param("WPNAV_RADIUS", cfg.radius * 100)
+
+        self._node.get_logger().info(
+            f"Setpoint config applied: wpnav={cfg.use_wpnav}, "
+            f"speed={cfg.speed}m/s, radius={cfg.radius}m"
+        )
+
     def _get_driver_name(self) -> str:
         """Return MAVROS driver node name."""
         return "mavros_node"
@@ -625,6 +669,7 @@ class MavrosDrone(BaseDrone):
         try:
             if not self.set_mode("GUIDED"):
                 return False
+            self._apply_setpoint_config()
             self.delay(0.5)
             req = CommandBool.Request()
             req.value = True
@@ -1023,6 +1068,10 @@ class MavrosDrone(BaseDrone):
                 reference,
                 takeoff,
             )
+            if self._setpoint_config and self._setpoint_config.use_wpnav:
+                radius_cm = precision * 100
+                if radius_cm != self._setpoint_config.radius * 100:
+                    self.set_param("WPNAV_RADIUS", radius_cm)
             return self._navigator.navigate_setpoint(target, timeout, precision)
 
         # PID strategies (PID or PID_LOCAL)
@@ -1374,16 +1423,16 @@ class MavrosDrone(BaseDrone):
             self._node.get_logger().error(f"Set mode failed: {e}")
             return False
 
-    def set_param(self, param_id: str, param_value: int) -> bool:
+    def set_param(self, param_id: str, param_value: Union[int, float]) -> bool:
         """
         Set ArduPilot parameter.
 
         Parameters
         ----------
         param_id : str
-            Parameter name (e.g., 'RTL_ALT').
-        param_value : int
-            Integer parameter value.
+            Parameter name (e.g., 'RTL_ALT', 'WPNAV_SPEED').
+        param_value : int or float
+            Parameter value. Uses integer_value for int, double_value for float.
 
         Returns
         -------
@@ -1393,7 +1442,10 @@ class MavrosDrone(BaseDrone):
         try:
             param = Parameter()
             param.name = param_id
-            param.value.integer_value = param_value
+            if isinstance(param_value, float):
+                param.value.double_value = param_value
+            else:
+                param.value.integer_value = param_value
 
             req = SetParameters.Request()
             req.parameters.append(param)
@@ -1403,6 +1455,58 @@ class MavrosDrone(BaseDrone):
             return bool(res)
         except TimeoutError as e:
             self._node.get_logger().error(f"Set param {param_id} failed: {e}")
+            return False
+
+    def set_speed(self, speed: float, speed_type: str = "horizontal") -> bool:
+        """
+        Change speed limit at runtime via MAV_CMD_DO_CHANGE_SPEED.
+
+        Immediately updates AC_PosControl speed limits in the current
+        flight mode. Works in both SubMode::Pos and SubMode::WP.
+
+        Parameters
+        ----------
+        speed : float
+            Speed in m/s. Use -1 for no change, -2 to revert to default.
+        speed_type : str, default="horizontal"
+            Speed axis: "horizontal", "climb", or "descent".
+
+        Returns
+        -------
+        bool
+            True if command accepted, False on failure or timeout.
+
+        See Also
+        --------
+        https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-do-change-speed
+        """
+        type_map = {"horizontal": 0, "climb": 1, "descent": 2}
+        if speed_type not in type_map:
+            self._node.get_logger().error(
+                f"Invalid speed_type '{speed_type}'. Use: {list(type_map.keys())}"
+            )
+            return False
+
+        try:
+            cmd = CommandLong.Request()
+            cmd.command = 178  # MAV_CMD_DO_CHANGE_SPEED
+            cmd.param1 = float(type_map[speed_type])
+            cmd.param2 = float(speed)
+            cmd.param3 = -1.0  # throttle (ignored)
+            cmd.param4 = 0.0
+            cmd.param5 = 0.0
+            cmd.param6 = 0.0
+            cmd.param7 = 0.0
+            res = self._call_service(
+                self._command_srv,
+                cmd,
+                f"Speed {speed_type}={speed}m/s set",
+                "Set speed failed",
+                sync=True,
+            )
+            return bool(res)
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Set speed failed: {e}")
             return False
 
     def do_servo(self, aux_out: int, pwm_value: int) -> bool:
@@ -1550,6 +1654,36 @@ class MavrosDrone(BaseDrone):
         else:
             raise TypeError(f"Invalid config type: {type(config)}")
         self._node.get_logger().info("PID configuration updated")
+
+    def set_setpoint_config(self, config) -> None:
+        """
+        Update setpoint navigation configuration and apply to FCU.
+
+        Parameters
+        ----------
+        config : str | dict | SetpointNavConfig
+            YAML file path, configuration dictionary, or SetpointNavConfig object.
+
+        Raises
+        ------
+        TypeError
+            If config type not supported.
+        """
+        if isinstance(config, str):
+            self._setpoint_config = SetpointNavConfig.from_yaml(config)
+        elif isinstance(config, dict):
+            self._setpoint_config = SetpointNavConfig.from_dict(config)
+        elif isinstance(config, SetpointNavConfig):
+            self._setpoint_config = config
+        else:
+            raise TypeError(f"Invalid config type: {type(config)}")
+        self._apply_setpoint_config()
+        self._node.get_logger().info("Setpoint navigation configuration updated")
+
+    @property
+    def setpoint_config(self) -> Optional[SetpointNavConfig]:
+        """Current setpoint navigation configuration."""
+        return self._setpoint_config
 
     def _validate_service_response(self, response, service_name: str) -> bool:
         """
