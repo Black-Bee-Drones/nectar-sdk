@@ -625,7 +625,7 @@ class MavrosDrone(BaseDrone):
         """Sync WPNAV_RADIUS with precision if WPNav is enabled."""
         if not (self._setpoint_config and self._setpoint_config.use_wpnav):
             return
-        radius_cm = float(round(precision * 100))
+        radius_cm = float(round(max(5.0, min(precision * 100, 1000.0))))
         if radius_cm != self._applied_radius_cm:
             if self.set_param("WPNAV_RADIUS", radius_cm):
                 self._applied_radius_cm = radius_cm

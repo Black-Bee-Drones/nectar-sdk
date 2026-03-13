@@ -52,13 +52,19 @@ class SetpointNavConfig:
     accel: float = 1.0
     radius: float = 0.2
 
+    # ArduPilot valid ranges
+    _RANGES = {
+        "speed": (0.1, 20.0),  # WPNAV_SPEED: 10–2000 cm/s
+        "speed_up": (0.1, 10.0),  # WPNAV_SPEED_UP: 10–1000 cm/s
+        "speed_down": (0.1, 5.0),  # WPNAV_SPEED_DN: 10–500 cm/s
+        "accel": (0.5, 5.0),  # WPNAV_ACCEL: 50–500 cm/s²
+        "radius": (0.05, 10.0),  # WPNAV_RADIUS: 5–1000 cm
+    }
+
     def __post_init__(self) -> None:
         self.guid_options = int(self.guid_options)
-        self.speed = float(self.speed)
-        self.speed_up = float(self.speed_up)
-        self.speed_down = float(self.speed_down)
-        self.accel = float(self.accel)
-        self.radius = float(self.radius)
+        for field_name, (lo, hi) in self._RANGES.items():
+            setattr(self, field_name, max(lo, min(float(getattr(self, field_name)), hi)))
 
     @property
     def use_wpnav(self) -> bool:

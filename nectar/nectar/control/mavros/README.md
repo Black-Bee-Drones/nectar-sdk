@@ -488,12 +488,14 @@ ArduPilot v4.6.3 [`WPNAV_*` parameters](https://ardupilot.org/copter/docs/parame
 
 **How parameters affect each sub-mode:**
 
-| Behavior | SubMode::Pos (default) | SubMode::WP (GUID_OPTIONS=64) |
+| Behavior | SubMode::Pos (default) | SubMode::WP (GUID_OPTIONS bit 6) |
 |---|---|---|
-| WPNAV_SPEED | Read once at init as PosControl limit | Re-read every loop, controls trajectory |
-| WPNAV_RADIUS | Not used (SDK handles arrival) | Used for deceleration and arrival |
-| WPNAV_ACCEL | Read once at init | Controls S-curve acceleration profile |
+| WPNAV_SPEED | Read once at submode init; `set_param` mid-flight has no effect (use `MAV_CMD_DO_CHANGE_SPEED`) | Re-read on each `set_destination()` call; `set_param` takes effect on next target |
+| WPNAV_RADIUS | Not used (SDK handles arrival via `_check_reached_local`) | Re-read on each `set_destination()`; controls deceleration planning and arrival detection |
+| WPNAV_ACCEL | Read once at submode init | Re-read on each `set_destination()`; controls S-curve acceleration profile |
 | WPNAV_RFND_USE | Not used (`is_terrain_alt=false` for `SET_POSITION_TARGET_LOCAL_NED`) | Only if terrain alt is explicitly requested |
+
+> **Runtime `set_param` summary**: In SubMode::WP, all `WPNAV_*` parameters are picked up on the next target because [`wp_nav->set_wp_destination()`](https://github.com/ArduPilot/ardupilot/tree/master/libraries/AC_WPNav) re-reads them. In SubMode::Pos, speed/accel limits are set once via [`AC_PosControl`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) at submode entry (`pva_control_start()`); use `MAV_CMD_DO_CHANGE_SPEED` for dynamic changes. The SDK's `_sync_wpnav_radius()` leverages this WPNav behavior to update `WPNAV_RADIUS` per `move_to` call from the `precision` parameter.
 
 #### Speed Control at Runtime
 
