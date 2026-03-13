@@ -605,7 +605,7 @@ class MavrosDrone(BaseDrone):
             "WPNAV_SPEED_UP": float(cfg.speed_up * 100),
             "WPNAV_SPEED_DN": float(cfg.speed_down * 100),
             "WPNAV_ACCEL": float(cfg.accel * 100),
-            "WPNAV_RADIUS": float(cfg.radius * 100),
+            "WPNAV_RADIUS": float(round(cfg.radius * 100)),
         }
 
         failed = [name for name, val in params.items() if not self.set_param(name, val)]
@@ -619,7 +619,16 @@ class MavrosDrone(BaseDrone):
             )
 
         if "WPNAV_RADIUS" not in failed:
-            self._applied_radius_cm = float(cfg.radius * 100)
+            self._applied_radius_cm = float(round(cfg.radius * 100))
+
+    def _sync_wpnav_radius(self, precision: float) -> None:
+        """Sync WPNAV_RADIUS with precision if WPNav is enabled."""
+        if not (self._setpoint_config and self._setpoint_config.use_wpnav):
+            return
+        radius_cm = float(round(precision * 100))
+        if radius_cm != self._applied_radius_cm:
+            if self.set_param("WPNAV_RADIUS", radius_cm):
+                self._applied_radius_cm = radius_cm
 
     def _get_driver_name(self) -> str:
         """Return MAVROS driver node name."""
@@ -1063,6 +1072,7 @@ class MavrosDrone(BaseDrone):
                 self._initial_altitude,
             )
             check_alt = TargetComputer.compute_target_rel_alt(self.rel_alt, z, reference)
+            self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt)
 
         # SETPOINT: local position setpoint
@@ -1079,11 +1089,7 @@ class MavrosDrone(BaseDrone):
                 reference,
                 takeoff,
             )
-            if self._setpoint_config and self._setpoint_config.use_wpnav:
-                radius_cm = float(precision * 100)
-                if radius_cm != self._applied_radius_cm:
-                    self.set_param("WPNAV_RADIUS", radius_cm)
-                    self._applied_radius_cm = radius_cm
+            self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision)
 
         # PID strategies (PID or PID_LOCAL)
@@ -1169,6 +1175,7 @@ class MavrosDrone(BaseDrone):
             target = GPSUtils.create_gps_setpoint(
                 latitude, longitude, alt, hdg, self._initial_altitude
             )
+            self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt=alt)
 
         # PID_LOCAL: convert GPS target to local NED and use EKF position
