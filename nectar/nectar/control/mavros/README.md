@@ -841,9 +841,9 @@ drone.set_setpoint_config({"speed": 0.3, "radius": 0.1})
 drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT, precision=0.1)
 ```
 
-**Outdoor with default PosControl + speed limits:**
+**Outdoor with WPNav + runtime speed adjustment:**
 ```python
-# Uses setpoint_outdoor.yaml automatically (pose_source=GPS, guid_options=65)
+# Uses setpoint_outdoor.yaml automatically (pose_source=GPS, guid_options=65 → WPNav)
 drone.move_to(x=5.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
 
 # Slow down for precise approach
