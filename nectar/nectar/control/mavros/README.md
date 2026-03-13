@@ -46,19 +46,45 @@ ArduPilot uses [several altitude definitions](https://ardupilot.org/copter/docs/
 
 ### Coordinate Frames
 
-| Frame | Axes | Origin | Used For |
-|-------|------|--------|----------|
-| **NED** (North-East-Down) | X=North, Y=East, Z=Down | Home or local origin | MAVROS local setpoints (`FRAME_LOCAL_NED`) |
-| **Body NED** | X=Forward, Y=Right, Z=Down | Vehicle center | Velocity commands (`FRAME_BODY_NED`) |
-| **WGS84** | Latitude, Longitude, Altitude | Earth reference ellipsoid | GPS coordinates (`NavSatFix`, `GeoPoseStamped`) |
-| **Local Vision** | Depends on VIO setup | Vision system origin | Vision pose (`PoseWithCovarianceStamped`), indoor |
+The FCU uses **NED** (North-East-Down) / **FRD** (Forward-Right-Down) internally. ROS uses **ENU** (East-North-Up) / **FLU** (Forward-Left-Up). MAVROS [automatically transforms](https://github.com/mavlink/mavros/blob/ros2/mavros/src/plugins/setpoint_raw.cpp) between them — **SDK code always uses ROS conventions**.
 
-MAVROS bridges between the FCU's internal frames and ROS2 messages. For indoor operation, an external vision system must publish pose to `/mavros/vision_pose/pose_cov`. See [ArduPilot VIO setup](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html) and [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros).
+| Frame | SDK Input (ROS) | FCU Internal | Origin |
+|-------|----------------|-------------|--------|
+| **World** | ENU: X=East, Y=North, Z=Up | NED: X=North, Y=East, Z=Down | EKF origin |
+| **Body** | FLU: X=Forward, Y=Left, Z=Up | FRD: X=Forward, Y=Right, Z=Down | Vehicle center |
+| **WGS84** | Latitude, Longitude, Altitude | Same | Earth reference ellipsoid |
 
-The SDK's `MoveReference` enum maps to these frames:
-- **BODY**: offsets relative to current position and heading (body NED)
-- **WORLD**: velocities in local NED frame (`move_velocity` only)
-- **TAKEOFF**: offsets relative to stored takeoff position and heading
+MAVROS transform per [`PositionTarget.coordinate_frame`](https://docs.ros.org/en/api/mavros_msgs/html/msg/PositionTarget.html):
+- `FRAME_LOCAL_NED` (1) / `FRAME_LOCAL_OFFSET_NED` (7): ENU→NED (absolute directions)
+- `FRAME_BODY_NED` (8) / `FRAME_BODY_OFFSET_NED` (9): FLU→FRD (heading-relative)
+
+For velocity-only commands (`type_mask` ignoring position fields), only the velocity reference matters.
+
+The SDK's `MoveReference` enum:
+
+| MoveReference | `coordinate_frame` | Velocity meaning (SDK input) |
+|---|---|---|
+| **BODY** | `FRAME_BODY_NED` | vx=forward, vy=left, vz=up (heading-relative) |
+| **WORLD** | `FRAME_LOCAL_NED` | vx=east, vy=north, vz=up (absolute directions) |
+| **TAKEOFF** | `FRAME_BODY_NED` | Velocities in takeoff heading, rotated to current body frame |
+
+#### EKF Origin (Indoor Requirement)
+
+The EKF local frame needs an origin — the (0,0,0) reference point. Outdoors, GPS sets this automatically. **Indoors, set it manually before flight** via Mission Planner ("Set EKF Origin Here") or [`SET_GPS_GLOBAL_ORIGIN`](https://mavlink.io/en/messages/common.html#SET_GPS_GLOBAL_ORIGIN) MAVLink message. The actual lat/lon values don't matter — the EKF just needs a defined origin to fuse vision data.
+
+Without the EKF origin set, `/mavros/local_position/pose` won't be published and `FRAME_LOCAL_NED` commands won't work.
+
+#### Vision Systems (Indoor Position Source)
+
+An external vision system feeds pose data to ArduPilot's EKF via MAVROS:
+
+**T265** ([vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)): `T265 VIO → /tf → vision_to_mavros (ENU alignment) → /mavros/vision_pose/pose`
+
+**D435i** ([Isaac ROS vSLAM](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)): `D435i stereo+IMU → isaac_ros_visual_slam → relay → /mavros/vision_pose/pose_cov`
+
+MAVROS converts the ENU pose to NED and sends [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) to the FCU. The EKF fuses this with IMU and outputs `/mavros/local_position/pose`.
+
+Key ArduPilot parameters: `EK3_SRC1_POSXY=6`, `EK3_SRC1_POSZ=6`, `EK3_SRC1_YAW=6` (ExternalNav), `VISO_TYPE=1`. See [ArduPilot VIO setup](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html) and [ROS VIO guide](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html).
 
 ## Architecture
 
@@ -351,7 +377,7 @@ drone.move_to(x=5.0, y=0.0, z=0.0, altitude_source=AltitudeSource.LIDAR)
 # Body-frame: forward relative to where drone is pointing
 drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.BODY)
 
-# World-frame: north in NED frame regardless of heading
+# World-frame: move east at 0.5 m/s regardless of heading (ENU: vx=east)
 drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
 
 # Timed: move forward for 2 seconds then stop
@@ -526,9 +552,9 @@ Direct velocity command publishing to flight controller.
 **Method**: `move_velocity(vx, vy, vz, vyaw, duration, reference)`
 
 **Reference Frames**:
-- **BODY** (default): Uses `FRAME_BODY_NED`. Velocities relative to current orientation.
-- **WORLD**: Uses `FRAME_LOCAL_NED`. Velocities relative to world NED frame.
-- **TAKEOFF**: Transforms velocities from takeoff frame to body frame before publishing.
+- **BODY** (default): `FRAME_BODY_NED`. vx=forward, vy=left, vz=up (heading-relative, FLU input).
+- **WORLD**: `FRAME_LOCAL_NED`. vx=east, vy=north, vz=up (absolute directions, ENU input).
+- **TAKEOFF**: `FRAME_BODY_NED`. Velocities in takeoff heading, rotated to current body frame.
 
 **Duration**: If `duration` is specified, command is published at 30 Hz for the specified time. If `None`, command is published once (continuous until next command).
 
@@ -558,7 +584,11 @@ target = current_position + (dx, dy, z)
 
 ### WORLD Frame
 
-Relative to world/local NED frame. **move_velocity only**.
+Absolute direction velocities regardless of drone heading. **`move_velocity` only** — `move_to` raises `CapabilityNotSupportedError`.
+
+Uses `FRAME_LOCAL_NED`: velocities are in ENU convention (vx=east, vy=north, vz=up). MAVROS converts to NED before sending to the FCU. "North/East" are relative to the EKF origin's frame — indoors, these directions depend on the magnetometer or vision yaw when the EKF origin was set.
+
+Works both indoors (with vision + EKF origin set) and outdoors (with GPS).
 
 ### TAKEOFF Frame
 
@@ -998,6 +1028,9 @@ Failed commands log the result code:
 - [MAVLink Protocol](https://mavlink.io/en/)
 - [MAV_RESULT Enum](https://mavlink.io/en/messages/common.html#MAV_RESULT)
 - [MAV_CMD Commands](https://mavlink.io/en/messages/common.html#mav_commands)
+- [MAV_FRAME](https://mavlink.io/en/messages/common.html#MAV_FRAME) — coordinate frame definitions
+- [SET_POSITION_TARGET_LOCAL_NED](https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED)
+- [SET_GPS_GLOBAL_ORIGIN](https://mavlink.io/en/messages/common.html#SET_GPS_GLOBAL_ORIGIN) — EKF origin for indoor flight
 - [MAVROS GitHub](https://github.com/mavlink/mavros)
 - [MAVROS ROS2 API](https://docs.ros.org/en/humble/p/mavros/)
 - [MAVROS Wiki (ROS1, still useful)](https://wiki.ros.org/mavros)
@@ -1006,7 +1039,7 @@ Failed commands log the result code:
 - [ArduPilot Copter Documentation](https://ardupilot.org/copter/)
 - [Flight Modes](https://ardupilot.org/copter/docs/flight-modes.html)
 - [MAVLink Flight Mode Protocol](https://ardupilot.org/dev/docs/mavlink-get-set-flightmode.html)
-- [GUIDED Mode Commands](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html)
+- [GUIDED Mode Commands](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html) — SET_POSITION_TARGET_LOCAL_NED handling
 - [Guided Mode](https://ardupilot.org/copter/docs/ac2_guidedmode.html) — GUID_OPTIONS, speed control, WPNav
 - [PosControl and Navigation Code Overview](https://ardupilot.org/dev/docs/code-overview-copter-poscontrol-and-navigation.html) — AC_PosControl vs AC_WPNav
 - [WPNAV Parameters (v4.6.3)](https://ardupilot.org/copter/docs/parameters-Copter-stable-V4.6.3.html#wpnav-parameters)
@@ -1026,7 +1059,9 @@ Failed commands log the result code:
 ### Vision & Indoor Navigation
 - [VIO Tracking Camera (ArduPilot)](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html)
 - [ROS VIO Setup Guide](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
+- [Indoor Non-GPS Flight (LuckyBird tutorial)](https://discuss.ardupilot.org/t/integration-of-ardupilot-and-vio-tracking-camera-part-2-complete-installation-and-indoor-non-gps-flights/43405)
 - [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)
+- [Isaac ROS cuVSLAM with RealSense](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)
 
 ### ROS2
 - [Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html)

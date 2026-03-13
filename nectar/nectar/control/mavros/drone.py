@@ -889,10 +889,12 @@ class MavrosDrone(BaseDrone):
         Parameters
         ----------
         vx : float (m/s), default=0.0
-            (+) Move forward, (-) Move backward.
+            BODY/TAKEOFF: forward (+) / backward (-).
+            WORLD: east (+) / west (-).
 
         vy : float (m/s), default=0.0
-            (+) Move left, (-) Move right.
+            BODY/TAKEOFF: left (+) / right (-).
+            WORLD: north (+) / south (-).
 
         vz : float (m/s), default=0.0
             (+) Move up, (-) Move down.
@@ -907,10 +909,12 @@ class MavrosDrone(BaseDrone):
         reference : MoveReference, default=BODY
             Velocity reference frame:
 
-            - BODY: velocities relative to the drone's current heading.
-            - WORLD: velocities relative to the world/local NED frame.
-            - TAKEOFF: velocities relative to the takeoff heading.
-              Requires takeoff position to be set.
+            - BODY: heading-relative (FLU: vx=forward, vy=left, vz=up).
+              Uses FRAME_BODY_NED; MAVROS converts FLU→FRD.
+            - WORLD: absolute directions (ENU: vx=east, vy=north, vz=up).
+              Uses FRAME_LOCAL_NED; MAVROS converts ENU→NED.
+            - TAKEOFF: velocities in takeoff heading, rotated to current
+              body frame. Requires takeoff position to be set.
 
         Raises
         ------
