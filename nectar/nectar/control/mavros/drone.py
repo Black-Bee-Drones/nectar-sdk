@@ -213,10 +213,10 @@ class MavrosDrone(BaseDrone):
     @property
     def local_pos(self) -> Optional[PoseStamped]:
         """
-        EKF-fused local position from /mavros/local_position/pose.
+        EKF-fused local position from /mavros/local_position/pose (ENU).
 
         Available in both indoor and outdoor modes. Provides a unified
-        local NED frame
+        local frame. MAVROS converts the FCU's internal NED to ENU.
 
         Returns
         -------
