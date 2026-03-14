@@ -1,6 +1,9 @@
 from nectar.control.base import BaseDrone
 from nectar.control.bebop import BebopDrone
 from nectar.control.config import (
+    SITL_CONFIG,
+    SITL_GAZEBO_CONFIG,
+    SITL_GPS_CONFIG,
     BebopConfig,
     DroneConfig,
     MavrosConfig,
@@ -52,6 +55,9 @@ __all__ = [
     "DroneConfig",
     "MavrosConfig",
     "BebopConfig",
+    "SITL_CONFIG",
+    "SITL_GPS_CONFIG",
+    "SITL_GAZEBO_CONFIG",
     "DroneFactory",
     "DriverMonitor",
     "DriverStatus",
