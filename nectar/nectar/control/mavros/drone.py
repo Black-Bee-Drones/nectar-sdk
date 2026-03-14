@@ -598,17 +598,18 @@ class MavrosDrone(BaseDrone):
             return
 
         cfg = self._setpoint_config
+        aliases = cfg.PARAM_ALIASES
+        failed = []
 
-        params = {
-            "GUID_OPTIONS": cfg.guid_options,
-            "WPNAV_SPEED": float(cfg.speed * 100),
-            "WPNAV_SPEED_UP": float(cfg.speed_up * 100),
-            "WPNAV_SPEED_DN": float(cfg.speed_down * 100),
-            "WPNAV_ACCEL": float(cfg.accel * 100),
-            "WPNAV_RADIUS": float(round(cfg.radius * 100)),
-        }
-
-        failed = [name for name, val in params.items() if not self.set_param(name, val)]
+        for name, val in cfg.to_fcu_params().items():
+            if self.set_param(name, val):
+                continue
+            alias = aliases.get(name)
+            if alias:
+                self._node.get_logger().info(f"Param {name} failed, trying alias {alias}")
+                if self.set_param(alias, val):
+                    continue
+            failed.append(name)
 
         if failed:
             self._node.get_logger().warn(f"Setpoint config: failed to set {', '.join(failed)}")
@@ -627,7 +628,9 @@ class MavrosDrone(BaseDrone):
             return
         radius_cm = float(round(max(5.0, min(precision * 100, 1000.0))))
         if radius_cm != self._applied_radius_cm:
-            if self.set_param("WPNAV_RADIUS", radius_cm):
+            name = "WPNAV_RADIUS"
+            alias = SetpointNavConfig.PARAM_ALIASES.get(name)
+            if self.set_param(name, radius_cm) or (alias and self.set_param(alias, radius_cm)):
                 self._applied_radius_cm = radius_cm
 
     def _get_driver_name(self) -> str:
@@ -1477,7 +1480,9 @@ class MavrosDrone(BaseDrone):
             res = self._call_service(
                 self._param_srv, req, f"{param_id} set", f"{param_id} failed", sync=True
             )
-            return bool(res)
+            if res is None:
+                return False
+            return all(r.successful for r in res.results)
         except TimeoutError as e:
             self._node.get_logger().error(f"Set param {param_id} failed: {e}")
             return False
@@ -1772,14 +1777,11 @@ class MavrosDrone(BaseDrone):
         if hasattr(response, "results"):
             all_success = all(r.successful for r in response.results)
             if all_success:
-                param_names = [r.name for r in response.results]
-                self._node.get_logger().info(
-                    f"{service_name}: Parameters set: {', '.join(param_names)}"
-                )
+                self._node.get_logger().info(f"{service_name}: Parameters set successfully")
             else:
-                reasons = [f"{r.name}: {r.reason}" for r in response.results if not r.successful]
+                reasons = [r.reason for r in response.results if not r.successful]
                 self._node.get_logger().warn(
-                    f"{service_name}: Parameters failed: {', '.join(reasons)}"
+                    f"{service_name}: Parameters failed: {'; '.join(reasons)}"
                 )
             return all_success
 

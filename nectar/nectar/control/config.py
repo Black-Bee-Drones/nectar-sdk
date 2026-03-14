@@ -34,3 +34,29 @@ class BebopConfig(DroneConfig):
     name: str = "bebop_drone"
     ip: str = "192.168.42.1"
     namespace: str = "bebop"
+
+
+# Simulation presets
+
+SITL_CONFIG = MavrosConfig(
+    name="sitl_drone",
+    connection_string="tcp://127.0.0.1:5760",
+    expect_lidar=False,
+)
+"""MavrosConfig preset for ArduPilot SITL (headless, no lidar)."""
+
+SITL_GPS_CONFIG = MavrosConfig(
+    name="sitl_drone",
+    pose_source=PoseSource.GPS,
+    connection_string="tcp://127.0.0.1:5760",
+    expect_lidar=False,
+)
+"""MavrosConfig preset for SITL with GPS pose source (outdoor simulation)."""
+
+SITL_GAZEBO_CONFIG = MavrosConfig(
+    name="sitl_drone",
+    pose_source=PoseSource.GPS,
+    connection_string="tcp://127.0.0.1:5760",
+    expect_lidar=False,
+)
+"""MavrosConfig preset for SITL + Gazebo (ardupilot_gazebo iris model)."""

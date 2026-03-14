@@ -52,6 +52,15 @@ class SetpointNavConfig:
     accel: float = 1.0
     radius: float = 0.2
 
+    # ArduPilot v4.8+ renamed WPNAV_* → WP_*. Maps old name → new name.
+    PARAM_ALIASES = {
+        "WPNAV_SPEED": "WP_SPD",
+        "WPNAV_SPEED_UP": "WP_SPD_UP",
+        "WPNAV_SPEED_DN": "WP_SPD_DN",
+        "WPNAV_ACCEL": "WP_ACC",
+        "WPNAV_RADIUS": "WP_RADIUS_M",
+    }
+
     # ArduPilot valid ranges
     _RANGES = {
         "speed": (0.1, 20.0),  # WPNAV_SPEED: 10–2000 cm/s
@@ -121,6 +130,21 @@ class SetpointNavConfig:
             accel=config_dict.get("accel", 1.0),
             radius=config_dict.get("radius", 0.2),
         )
+
+    def to_fcu_params(self) -> dict:
+        """Return ArduPilot parameter names and values in FCU units (cm/s, cm).
+
+        Uses stable WPNAV_* names as primary. Use ``PARAM_ALIASES`` to
+        get fallback names for ArduPilot v4.8+.
+        """
+        return {
+            "GUID_OPTIONS": self.guid_options,
+            "WPNAV_SPEED": float(self.speed * 100),
+            "WPNAV_SPEED_UP": float(self.speed_up * 100),
+            "WPNAV_SPEED_DN": float(self.speed_down * 100),
+            "WPNAV_ACCEL": float(self.accel * 100),
+            "WPNAV_RADIUS": float(round(self.radius * 100)),
+        }
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
