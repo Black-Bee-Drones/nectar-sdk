@@ -200,6 +200,9 @@ classDiagram
         +speed_down float
         +accel float
         +radius float
+        +jerk float
+        +psc_jerk float
+        +rfnd_use int
         +from_yaml(file_path)$ SetpointNavConfig
         +from_dict(config_dict)$ SetpointNavConfig
     }
@@ -512,6 +515,8 @@ ArduPilot v4.6.3 [`WPNAV_*` parameters](https://ardupilot.org/copter/docs/parame
 
 > **Note**: In ArduPilot dev (v4.8+), these are renamed to `WP_*`. The SDK uses descriptive field names (`speed`, `radius`) so only the internal `_apply_setpoint_config()` mapping needs updating for version changes.
 
+The SDK also configures [`PSC_JERK_NE`](https://ardupilot.org/copter/docs/parameters.html#psc-parameters) (position controller NE jerk, default 5.0 m/s³, range 1–20) via `SetpointNavConfig.psc_jerk`. This controls AC_PosControl's response speed in SubMode::Pos. In SITL, higher values (e.g. 50) are typically needed for usable response time.
+
 **How parameters affect each sub-mode:**
 
 | Behavior | SubMode::Pos (default) | SubMode::WP (GUID_OPTIONS bit 6) |
@@ -519,7 +524,9 @@ ArduPilot v4.6.3 [`WPNAV_*` parameters](https://ardupilot.org/copter/docs/parame
 | WPNAV_SPEED | Read once at submode init; `set_param` mid-flight has no effect (use `MAV_CMD_DO_CHANGE_SPEED`) | Re-read on each `set_destination()` call; `set_param` takes effect on next target |
 | WPNAV_RADIUS | Not used (SDK handles arrival via `_check_reached_local`) | Re-read on each `set_destination()`; controls deceleration planning and arrival detection |
 | WPNAV_ACCEL | Read once at submode init | Re-read on each `set_destination()`; controls S-curve acceleration profile |
+| WPNAV_JERK | Not used | Controls S-curve trajectory smoothness |
 | WPNAV_RFND_USE | Not used (`is_terrain_alt=false` for `SET_POSITION_TARGET_LOCAL_NED`) | Only if terrain alt is explicitly requested |
+| PSC_JERK_NE | Controls position controller NE jerk limit | Not used (WPNav has own jerk via WPNAV_JERK) |
 
 > **Runtime `set_param` summary**: In SubMode::WP, all `WPNAV_*` parameters are picked up on the next target because [`wp_nav->set_wp_destination()`](https://github.com/ArduPilot/ardupilot/tree/master/libraries/AC_WPNav) re-reads them. In SubMode::Pos, speed/accel limits are set once via [`AC_PosControl`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) at submode entry (`pva_control_start()`); use `MAV_CMD_DO_CHANGE_SPEED` for dynamic changes. The SDK's `_sync_wpnav_radius()` leverages this WPNav behavior to update `WPNAV_RADIUS` per `move_to` call from the `precision` parameter.
 
@@ -764,6 +771,8 @@ flowchart TD
     E --> G["set_param WPNAV_SPEED/UP/DN"]
     E --> H["set_param WPNAV_ACCEL"]
     E --> I["set_param WPNAV_RADIUS"]
+    E --> Ij["set_param WPNAV_JERK, WPNAV_RFND_USE"]
+    E --> Ip["set_param PSC_JERK_NE"]
     J["move_to(precision=0.1)"] --> K{"guid_options bit 6?"}
     K -->|Yes| L["set_param WPNAV_RADIUS = precision"]
     L --> M["navigate_setpoint"]
@@ -772,29 +781,35 @@ flowchart TD
 
 ### Default Configurations
 
-All values in SI units (m/s, m). Converted to ArduPilot units (cm/s, cm) internally by `_apply_setpoint_config()`.
+All values in SI units (m/s, m, m/s³). Speed/accel/radius are converted to ArduPilot units (cm/s, cm) internally by `_apply_setpoint_config()`. Jerk values are already in m/s³.
 
 **Indoor** (`config/mavros/setpoint_indoor.yaml`):
 ```yaml
-guid_options: 65    # bit 0 (arm from TX) + bit 6 (WPNav)
+guid_options: 1     # bit 0 (arm from TX, AC_PosControl)
 speed: 0.5          # 50 cm/s horizontal
 speed_up: 0.3       # 30 cm/s climb
 speed_down: 0.3     # 30 cm/s descent
 accel: 0.5          # 50 cm/s/s horizontal acceleration
 radius: 0.1         # 10 cm arrival radius
+jerk: 1.0           # WPNav S-curve jerk (m/s³)
+psc_jerk: 5.0       # Position controller NE jerk (m/s³)
+rfnd_use: 0         # Rangefinder terrain following off
 ```
 
 **Outdoor** (`config/mavros/setpoint_outdoor.yaml`):
 ```yaml
-guid_options: 65    # bit 0 (arm from TX) + bit 6 (WPNav)
+guid_options: 1     # bit 0 (arm from TX, AC_PosControl)
 speed: 2.0          # 200 cm/s horizontal
 speed_up: 1.5       # 150 cm/s climb
 speed_down: 1.0     # 100 cm/s descent
 accel: 1.0          # 100 cm/s/s horizontal acceleration
 radius: 0.3         # 30 cm arrival radius
+jerk: 1.0           # WPNav S-curve jerk (m/s³)
+psc_jerk: 5.0       # Position controller NE jerk (m/s³)
+rfnd_use: 1         # Rangefinder terrain following on
 ```
 
-Both default to `guid_options: 65` (WPNav S-curve + arm from TX). The SDK speed defaults are intentionally conservative compared to ArduPilot's factory defaults (10 m/s, 2.0 m radius) to prevent aggressive movements.
+Both default to `guid_options: 1` (arm from TX, AC_PosControl). The SDK speed defaults are intentionally conservative compared to ArduPilot's factory defaults (10 m/s, 2.0 m radius) to prevent aggressive movements.
 
 ### Dataclass Defaults
 
@@ -802,12 +817,15 @@ Both default to `guid_options: 65` (WPNav S-curve + arm from TX). The SDK speed 
 
 | Field | Default | ArduPilot Factory Default |
 |---|---|---|
-| `guid_options` | `65` (bit 0 + bit 6) | `0` |
+| `guid_options` | `1` (bit 0) | `0` |
 | `speed` | 2.0 m/s | 10.0 m/s |
 | `speed_up` | 1.5 m/s | 2.5 m/s |
 | `speed_down` | 1.5 m/s | 1.5 m/s |
 | `accel` | 1.0 m/s² | 2.5 m/s² |
 | `radius` | 0.2 m | 2.0 m |
+| `jerk` | 1.0 m/s³ | 1.0 m/s³ |
+| `psc_jerk` | 5.0 m/s³ | 5.0 m/s³ |
+| `rfnd_use` | 1 | 1 |
 
 `guid_options` is the [`GUID_OPTIONS`](https://ardupilot.org/copter/docs/ac2_guidedmode.html#guided-mode-options) bitmask sent directly to the FCU. The `use_wpnav` property returns `True` when bit 6 is set. Common values:
 

@@ -1,10 +1,11 @@
 """Setpoint navigation configuration for ArduPilot GUIDED mode.
 
-Configures GUID_OPTIONS, speed limits, arrival radius, and acceleration
-for setpoint-based navigation strategies.
+Configures GUID_OPTIONS, speed limits, arrival radius, acceleration,
+jerk limits, and rangefinder usage for setpoint-based navigation strategies.
 
 ArduPilot parameters reference:
-    https://ardupilot.org/copter/docs/parameters-Copter-stable-V4.6.3.html#wpnav-parameters
+    https://ardupilot.org/copter/docs/parameters.html#wpnav-parameters
+    https://ardupilot.org/copter/docs/parameters.html#psc-parameters
     https://ardupilot.org/copter/docs/ac2_guidedmode.html#guided-mode-options
 """
 
@@ -43,6 +44,18 @@ class SetpointNavConfig:
     radius : float
         Arrival radius in m (maps to WPNAV_RADIUS in cm).
         Only used in WPNav mode for trajectory deceleration planning.
+    jerk : float
+        WPNav horizontal jerk limit in m/s³ (maps to WPNAV_JERK).
+        Controls S-curve trajectory smoothness in WPNav mode (bit 6).
+        ArduPilot default 1.0, range 1–20.
+    psc_jerk : float
+        Position controller NE jerk limit in m/s³ (maps to PSC_JERK_NE).
+        Affects AC_PosControl (SubMode::Pos) response speed.
+        ArduPilot default 5.0, range 1–20.
+        SITL typically needs higher values (e.g. 50) for usable response.
+    rfnd_use : int
+        Rangefinder terrain following for WPNav (maps to WPNAV_RFND_USE).
+        0 = disabled, 1 = enabled. ArduPilot default 1.
     """
 
     guid_options: int = 1
@@ -51,6 +64,9 @@ class SetpointNavConfig:
     speed_down: float = 1.5
     accel: float = 1.0
     radius: float = 0.2
+    jerk: float = 1.0
+    psc_jerk: float = 5.0
+    rfnd_use: int = 1
 
     # ArduPilot v4.8+ renamed WPNAV_* → WP_*. Maps old name → new name.
     PARAM_ALIASES = {
@@ -59,6 +75,8 @@ class SetpointNavConfig:
         "WPNAV_SPEED_DN": "WP_SPD_DN",
         "WPNAV_ACCEL": "WP_ACC",
         "WPNAV_RADIUS": "WP_RADIUS_M",
+        "WPNAV_JERK": "WP_JERK",
+        "WPNAV_RFND_USE": "WP_RFND_USE",
     }
 
     # ArduPilot valid ranges
@@ -68,10 +86,13 @@ class SetpointNavConfig:
         "speed_down": (0.1, 5.0),  # WPNAV_SPEED_DN: 10–500 cm/s
         "accel": (0.5, 5.0),  # WPNAV_ACCEL: 50–500 cm/s²
         "radius": (0.05, 10.0),  # WPNAV_RADIUS: 5–1000 cm
+        "jerk": (1.0, 20.0),  # WPNAV_JERK: 1–20 m/s³
+        "psc_jerk": (1.0, 20.0),  # PSC_JERK_NE: 1–20 m/s³
     }
 
     def __post_init__(self) -> None:
         self.guid_options = int(self.guid_options)
+        self.rfnd_use = int(bool(self.rfnd_use))
         for field_name, (lo, hi) in self._RANGES.items():
             setattr(self, field_name, max(lo, min(float(getattr(self, field_name)), hi)))
 
@@ -129,13 +150,18 @@ class SetpointNavConfig:
             speed_down=config_dict.get("speed_down", 1.5),
             accel=config_dict.get("accel", 1.0),
             radius=config_dict.get("radius", 0.2),
+            jerk=config_dict.get("jerk", 1.0),
+            psc_jerk=config_dict.get("psc_jerk", 5.0),
+            rfnd_use=config_dict.get("rfnd_use", 1),
         )
 
     def to_fcu_params(self) -> dict:
-        """Return ArduPilot parameter names and values in FCU units (cm/s, cm).
+        """Return ArduPilot parameter names and values in FCU units.
 
-        Uses stable WPNAV_* names as primary. Use ``PARAM_ALIASES`` to
-        get fallback names for ArduPilot v4.8+.
+        Speed/accel/radius are converted to cm/s and cm. Jerk values are
+        already in m/s³. Uses stable WPNAV_* names
+        as primary. Use ``PARAM_ALIASES`` to get fallback names for
+        ArduPilot v4.8+.
         """
         return {
             "GUID_OPTIONS": self.guid_options,
@@ -144,6 +170,9 @@ class SetpointNavConfig:
             "WPNAV_SPEED_DN": float(self.speed_down * 100),
             "WPNAV_ACCEL": float(self.accel * 100),
             "WPNAV_RADIUS": float(round(self.radius * 100)),
+            "WPNAV_JERK": float(self.jerk),
+            "WPNAV_RFND_USE": int(self.rfnd_use),
+            "PSC_JERK_NE": float(self.psc_jerk),
         }
 
     def to_dict(self) -> dict:
@@ -155,4 +184,7 @@ class SetpointNavConfig:
             "speed_down": self.speed_down,
             "accel": self.accel,
             "radius": self.radius,
+            "jerk": self.jerk,
+            "psc_jerk": self.psc_jerk,
+            "rfnd_use": self.rfnd_use,
         }
