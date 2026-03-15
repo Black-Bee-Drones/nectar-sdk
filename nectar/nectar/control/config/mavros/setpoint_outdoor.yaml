@@ -7,7 +7,7 @@
 #   bit 6 (64): WPNav S-curve for position targets
 #   bit 7 (128): Weathervaning
 #   65 = arm from TX + WPNav
-guid_options: 65
+guid_options: 1
 speed: 2.0
 speed_up: 1.5
 speed_down: 1.0

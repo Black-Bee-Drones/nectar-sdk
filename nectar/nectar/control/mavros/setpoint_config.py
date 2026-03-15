@@ -30,7 +30,7 @@ class SetpointNavConfig:
         Bit 0 (1): Allow arming from TX.
         Bit 6 (64): WPNav S-curve path planning for position targets.
         Bit 7 (128): Weathervaning.
-        Default 65 = bit 0 + bit 6 (arm from TX + WPNav).
+        Default 1 = bit 0 (arm from TX, AC_PosControl).
         See https://ardupilot.org/copter/docs/ac2_guidedmode.html#guided-mode-options
     speed : float
         Horizontal speed limit in m/s (maps to WPNAV_SPEED in cm/s).
@@ -45,7 +45,7 @@ class SetpointNavConfig:
         Only used in WPNav mode for trajectory deceleration planning.
     """
 
-    guid_options: int = 65
+    guid_options: int = 1
     speed: float = 2.0
     speed_up: float = 1.5
     speed_down: float = 1.5
@@ -123,7 +123,7 @@ class SetpointNavConfig:
         SetpointNavConfig
         """
         return cls(
-            guid_options=config_dict.get("guid_options", 65),
+            guid_options=config_dict.get("guid_options", 1),
             speed=config_dict.get("speed", 2.0),
             speed_up=config_dict.get("speed_up", 1.5),
             speed_down=config_dict.get("speed_down", 1.5),
