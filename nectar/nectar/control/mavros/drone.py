@@ -601,13 +601,17 @@ class MavrosDrone(BaseDrone):
         aliases = cfg.PARAM_ALIASES
         failed = []
 
+        # ArduPilot v4.8+ alias WP_RADIUS_M uses meters (not cm like WPNAV_RADIUS).
+        alias_si_units = {"WPNAV_RADIUS"}
+
         for name, val in cfg.to_fcu_params().items():
             if self.set_param(name, val):
                 continue
             alias = aliases.get(name)
             if alias:
                 self._node.get_logger().info(f"Param {name} failed, trying alias {alias}")
-                if self.set_param(alias, val):
+                alias_val = val / 100.0 if name in alias_si_units else val
+                if self.set_param(alias, alias_val):
                     continue
             failed.append(name)
 
@@ -630,7 +634,8 @@ class MavrosDrone(BaseDrone):
         if radius_cm != self._applied_radius_cm:
             name = "WPNAV_RADIUS"
             alias = SetpointNavConfig.PARAM_ALIASES.get(name)
-            if self.set_param(name, radius_cm) or (alias and self.set_param(alias, radius_cm)):
+            radius_m = radius_cm / 100.0
+            if self.set_param(name, radius_cm) or (alias and self.set_param(alias, radius_m)):
                 self._applied_radius_cm = radius_cm
 
     def _get_driver_name(self) -> str:
