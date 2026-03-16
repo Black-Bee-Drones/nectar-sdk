@@ -950,7 +950,7 @@ class MavrosDrone(BaseDrone):
             elif self.is_indoor:
                 current_yaw = PositionUtils.get_yaw_from_pose(self._vision_pos)
             else:
-                current_yaw = np.radians(self.heading)
+                current_yaw = np.radians(90.0 - self.heading)
 
             takeoff_yaw = PositionUtils.get_yaw_from_pose(self._takeoff_position)
 
@@ -975,7 +975,7 @@ class MavrosDrone(BaseDrone):
         if duration is None:
             self._local_pub.publish(msg)
         else:
-            rate = 1.0 / 30
+            rate = 1.0 / 50
             start = self._node.get_clock().now()
             dur = Duration(seconds=duration)
 

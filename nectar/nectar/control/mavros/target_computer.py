@@ -120,7 +120,8 @@ class TargetComputer:
         GeoPoseStamped
         """
         if reference == MoveReference.TAKEOFF:
-            hdg = np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            # Takeoff quaternion stores ENU yaw; convert back to NED heading
+            hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
                 x or 0,
                 -(y or 0),
@@ -142,8 +143,9 @@ class TargetComputer:
                 hdg,
             )
 
-        target_yaw = hdg + (yaw if yaw is not None else 0)
-        quat = quaternion_from_euler(0, 0, np.radians(target_yaw))
+        target_heading = hdg + (yaw if yaw is not None else 0)
+
+        quat = quaternion_from_euler(0, 0, np.radians(90.0 - target_heading))
 
         msg = GeoPoseStamped()
         msg.pose.position.latitude = float(lat)
@@ -198,7 +200,8 @@ class TargetComputer:
             GPS setpoint with AMSL-corrected altitude.
         """
         if reference == MoveReference.TAKEOFF:
-            hdg = np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            # Takeoff quaternion stores ENU yaw; convert back to NED heading
+            hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
             lat, lon, _ = GPSCalculate.calculate_gps_offset(
                 x or 0,
                 -(y or 0),
