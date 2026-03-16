@@ -144,12 +144,12 @@ class MavrosNavigator:
             if distance <= precision:
                 if yaw is not None and abs(dyaw) > YAW_THRESHOLD:
                     continue
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0)
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.info(f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0)
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.warn(f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m")
                 return False
 
@@ -230,10 +230,12 @@ class MavrosNavigator:
             if reached:
                 if abs(dyaw) > YAW_THRESHOLD:
                     continue
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.info(f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.warn(f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m")
                 return False
 
@@ -329,7 +331,9 @@ class MavrosNavigator:
             return PositionUtils.get_yaw_from_pose(drone.local_pos)
         if drone.is_indoor:
             return PositionUtils.get_yaw_from_pose(drone.vision_pos)
-        return np.radians(drone.heading)
+        # Convert compass heading (NED: 0=North, CW) to ENU yaw (0=East, CCW)
+        # to match target yaw from quaternion (always ENU).
+        return np.radians(90.0 - drone.heading)
 
     def _compute_errors(
         self,
