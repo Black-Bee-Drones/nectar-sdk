@@ -186,7 +186,8 @@ class PositionUtils:
             msg.pose.position.latitude = pose.latitude
             msg.pose.position.longitude = pose.longitude
             msg.pose.position.altitude = pose.altitude
-            quaternion = quaternion_from_euler(0, 0, np.radians(heading))
+            # Convert NED heading (0=North, CW) to ENU yaw (0=East, CCW)
+            quaternion = quaternion_from_euler(0, 0, np.radians(90.0 - heading))
             msg.pose.orientation.x = quaternion[0]
             msg.pose.orientation.y = quaternion[1]
             msg.pose.orientation.z = quaternion[2]
