@@ -329,7 +329,7 @@ class MavrosDrone(BaseDrone):
             Range,
             config.lidar_topic,
             lambda msg: setattr(self, "_rng_alt", msg),
-            10,
+            qos_profile_sensor_data,
         )
 
         self._create_subscriber(
