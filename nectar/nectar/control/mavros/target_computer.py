@@ -74,7 +74,11 @@ class TargetComputer:
 
         dx = (x or 0) * np.cos(ref_yaw) - (y or 0) * np.sin(ref_yaw)
         dy = (x or 0) * np.sin(ref_yaw) + (y or 0) * np.cos(ref_yaw)
-        dz = z or 0
+
+        if z is not None:
+            target_z = pos.z + z
+        else:
+            target_z = current_pos.z
 
         msg = PositionTarget()
         msg.header.frame_id = "map"
@@ -82,7 +86,7 @@ class TargetComputer:
         msg.type_mask = _POSITION_MASK
         msg.position.x = float(pos.x + dx)
         msg.position.y = float(pos.y + dy)
-        msg.position.z = float(pos.z + dz)
+        msg.position.z = float(target_z)
         msg.yaw = float(ref_yaw + np.radians(yaw) if yaw is not None else ref_yaw)
         return msg
 
