@@ -67,6 +67,7 @@ install(PROGRAMS
   nectar/examples/vision/depth_example.py
   nectar/examples/ai/detector_example.py
   nectar/control/pid/pid_node.py
+  ../scripts/simulation/vision_pose_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -92,6 +93,15 @@ install(DIRECTORY nectar/interface/images/
 install(DIRECTORY nectar/ai/detection/configs/
   DESTINATION share/${PROJECT_NAME}/ai/detection/configs
   FILES_MATCHING PATTERN "*.yaml"
+)
+
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+  FILES_MATCHING PATTERN "*.launch.py"
+)
+
+install(DIRECTORY simulation/
+  DESTINATION share/${PROJECT_NAME}/simulation
 )
 
 if(BUILD_TESTING)

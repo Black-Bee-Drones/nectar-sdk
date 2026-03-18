@@ -24,6 +24,7 @@ source "$SCRIPT_DIR/lib/python.sh"
 source "$SCRIPT_DIR/lib/workspace.sh"
 source "$SCRIPT_DIR/lib/git.sh"
 source "$SCRIPT_DIR/lib/realsense.sh"
+source "$SCRIPT_DIR/lib/simulation.sh"
 
 show_help() {
     echo ""
@@ -77,6 +78,18 @@ show_help() {
     echo "  ./setup.sh docker-build-full  Build full image (+ PyTorch + AI)"
     echo "  ./setup.sh docker-run         Run container (selects image, GPU auto)"
     echo "  ./setup.sh docker-exec        Open new shell in running container"
+    echo ""
+    echo -e "${BLUE}Simulation:${NC}"
+    echo "  ./setup.sh sim-install        Install ArduPilot SITL"
+    echo "  ./setup.sh sim-install-gazebo Install Gazebo Harmonic + ArduPilot plugin"
+    echo "  ./setup.sh sim-start          Start SITL (headless)"
+    echo "  ./setup.sh sim-start-gazebo   Start SITL in Gazebo mode"
+    echo "  ./setup.sh sim-start-indoor   Start SITL in Gazebo mode (no GPS, indoor)"
+    echo "  ./setup.sh sim-mavros         Launch MAVROS (connects to running SITL)"
+    echo "  ./setup.sh sim-gazebo         Launch Gazebo + MAVROS"
+    echo "  ./setup.sh sim-outdoor        Launch Gazebo outdoor world + MAVROS"
+    echo "  ./setup.sh sim-indoor         Launch Gazebo indoor world + MAVROS + vision bridge"
+    echo "  ./setup.sh sim-stop           Stop all simulation processes"
     echo ""
     echo -e "${BLUE}Docker env vars:${NC}"
     echo "  ROS_DISTRO=jazzy              Build for different ROS distro"
@@ -408,6 +421,18 @@ main() {
         # Hardware
         realsense)          cmd_realsense ;;
         realsense-verify)   cmd_realsense_verify ;;
+
+        # Simulation
+        sim-install)        cmd_sim_install "$@" ;;
+        sim-install-gazebo) cmd_sim_install_gazebo "$@" ;;
+        sim-start)          cmd_sim_start "$@" ;;
+        sim-start-gazebo)   cmd_sim_start_gazebo "$@" ;;
+        sim-start-indoor)   cmd_sim_start_indoor "$@" ;;
+        sim-mavros)         cmd_sim_mavros "$@" ;;
+        sim-gazebo)         cmd_sim_gazebo "$@" ;;
+        sim-outdoor)        cmd_sim_outdoor "$@" ;;
+        sim-indoor)         cmd_sim_indoor "$@" ;;
+        sim-stop)           cmd_sim_stop ;;
 
         # Docker
         docker-build)       cmd_docker_build "sdk" ;;

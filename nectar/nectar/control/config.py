@@ -1,7 +1,10 @@
+import os
 from dataclasses import dataclass
 from typing import Optional
 
 from nectar.control.types import PoseSource
+
+_MAVROS_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config", "mavros")
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,18 @@ SITL_GAZEBO_CONFIG = MavrosConfig(
     name="sitl_drone",
     pose_source=PoseSource.GPS,
     connection_string="tcp://127.0.0.1:5760",
-    expect_lidar=False,
+    expect_lidar=True,
+    pid_config_file=os.path.join(_MAVROS_CONFIG_DIR, "position_sim_outdoor.yaml"),
+    setpoint_config_file=os.path.join(_MAVROS_CONFIG_DIR, "setpoint_sim_outdoor.yaml"),
 )
-"""MavrosConfig preset for SITL + Gazebo (ardupilot_gazebo iris model)."""
+"""MavrosConfig preset for SITL + Gazebo (ardupilot_gazebo iris model, rangefinder enabled)."""
+
+SITL_VISION_CONFIG = MavrosConfig(
+    name="sitl_drone",
+    pose_source=PoseSource.VISION,
+    connection_string="tcp://127.0.0.1:5760",
+    expect_lidar=True,
+    pid_config_file=os.path.join(_MAVROS_CONFIG_DIR, "position_sim_indoor.yaml"),
+    setpoint_config_file=os.path.join(_MAVROS_CONFIG_DIR, "setpoint_sim_indoor.yaml"),
+)
+"""MavrosConfig preset for SITL indoor (no GPS, EKF3 ExternalNav, rangefinder enabled)."""
