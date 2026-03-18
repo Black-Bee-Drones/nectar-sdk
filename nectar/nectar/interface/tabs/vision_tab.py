@@ -408,6 +408,37 @@ class CameraInitWorker(QObject):
                 raise ValueError("ROS camera requires a ROS node")
             return ROSCam(self._node, config)
 
+        elif camera_type == "ros_depth":
+            from nectar.vision.camera import QoSReliability, ROSDepthCam, ROSDepthConfig
+
+            reliability_str = self._config.get("reliability", "Best Effort")
+            if reliability_str == "Reliable":
+                reliability = QoSReliability.RELIABLE
+            else:
+                reliability = QoSReliability.BEST_EFFORT
+
+            color_topic = self._config.get("topic", "/front_camera/image")
+            color_compressed = self._config.get("compressed", False)
+            if color_compressed and not color_topic.endswith("/compressed"):
+                color_topic = color_topic + "/compressed"
+
+            depth_topic = self._config.get("depth_topic", "/front_camera/depth_image")
+            depth_compressed = self._config.get("depth_compressed", False)
+            if depth_compressed and not depth_topic.endswith("/compressedDepth"):
+                depth_topic = depth_topic + "/compressedDepth"
+
+            config = ROSDepthConfig(
+                topic=color_topic,
+                compressed=color_compressed,
+                depth_topic=depth_topic,
+                depth_compressed=depth_compressed,
+                enable_depth=True,
+                reliability=reliability,
+            )
+            if self._node is None:
+                raise ValueError("ROS depth camera requires a ROS node")
+            return ROSDepthCam(self._node, config)
+
         elif camera_type == "file":
             from nectar.vision.camera import FileImageCam, FileImageConfig
 

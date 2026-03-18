@@ -629,7 +629,7 @@ class CameraConfigPanel(QWidget):
 
     configChanged = Signal()
 
-    CAMERA_TYPES = ["webcam", "realsense", "oakd", "ros", "file", "c920", "imx219"]
+    CAMERA_TYPES = ["webcam", "realsense", "oakd", "ros", "ros_depth", "file", "c920", "imx219"]
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         self._emit_config_changed = lambda *_: self.configChanged.emit()
@@ -662,6 +662,7 @@ class CameraConfigPanel(QWidget):
         self._create_realsense_config()
         self._create_oakd_config()
         self._create_ros_config()
+        self._create_ros_depth_config()
         self._create_file_config()
         self._create_c920_config()
         self._create_imx219_config()
@@ -875,6 +876,40 @@ class CameraConfigPanel(QWidget):
         self._ros_encoding.currentIndexChanged.connect(self._emit_config_changed)
         layout.addWidget(self._ros_encoding, 5, 1)
 
+    def _create_ros_depth_config(self) -> None:
+        """Create ROS depth camera (RGBD) configuration panel."""
+        page = self._create_config_page("ros_depth")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        layout.addWidget(self._make_label("Color:"), 0, 0)
+        self._ros_depth_color_topic = QLineEdit("/front_camera/image")
+        self._ros_depth_color_topic.setToolTip("ROS topic for RGB image")
+        self._ros_depth_color_topic.textChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._ros_depth_color_topic, 0, 1)
+
+        self._ros_depth_color_compressed = QCheckBox("Color compressed")
+        self._ros_depth_color_compressed.stateChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._ros_depth_color_compressed, 1, 0, 1, 2)
+
+        layout.addWidget(self._make_label("Depth:"), 2, 0)
+        self._ros_depth_depth_topic = QLineEdit("/front_camera/depth_image")
+        self._ros_depth_depth_topic.setToolTip("ROS topic for depth image")
+        self._ros_depth_depth_topic.textChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._ros_depth_depth_topic, 2, 1)
+
+        self._ros_depth_depth_compressed = QCheckBox("Depth compressed")
+        self._ros_depth_depth_compressed.stateChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._ros_depth_depth_compressed, 3, 0, 1, 2)
+
+        layout.addWidget(self._make_label("QoS:"), 4, 0)
+        self._ros_depth_reliability = QComboBox()
+        self._ros_depth_reliability.addItems(["Best Effort", "Reliable"])
+        self._ros_depth_reliability.setToolTip("QoS reliability policy")
+        self._ros_depth_reliability.currentIndexChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._ros_depth_reliability, 4, 1)
+
     def _create_file_config(self) -> None:
         """Create file image configuration panel."""
         page = self._create_config_page("file")
@@ -1033,6 +1068,16 @@ class CameraConfigPanel(QWidget):
                     "durability": self._ros_durability.currentText(),
                     "history_depth": self._ros_history_depth.value(),
                     "encoding": self._ros_encoding.currentText(),
+                }
+            )
+        elif self._current_type == "ros_depth":
+            config.update(
+                {
+                    "topic": self._ros_depth_color_topic.text(),
+                    "compressed": self._ros_depth_color_compressed.isChecked(),
+                    "depth_topic": self._ros_depth_depth_topic.text(),
+                    "depth_compressed": self._ros_depth_depth_compressed.isChecked(),
+                    "reliability": self._ros_depth_reliability.currentText(),
                 }
             )
         elif self._current_type == "file":
