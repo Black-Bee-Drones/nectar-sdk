@@ -1,0 +1,13 @@
+# Simulation indoor setpoint parameters
+# Higher speed/accel/jerk for SITL — simulated physics need aggressive
+# controller tuning for responsive horizontal movement.
+# ArduPilot defaults: WPNAV_SPEED=1000cm/s, WPNAV_ACCEL=250cm/s/s, PSC_JERK_NE=5.0
+guid_options: 1
+speed: 3.0
+speed_up: 2.0
+speed_down: 1.5
+accel: 2.5
+radius: 0.2
+jerk: 10.0
+psc_jerk: 20.0
+rfnd_use: 1

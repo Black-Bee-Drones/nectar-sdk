@@ -7,7 +7,9 @@
         realsense realsense-verify \
         docker-build docker-build-full docker-run docker-exec \
         full-install \
-        lint lint-fix format check
+        lint lint-fix format check \
+        sim-install sim-install-gazebo sim-start sim-start-gazebo \
+        sim-start-indoor sim-mavros sim-gazebo sim-outdoor sim-indoor sim-stop
 
 SETUP := ./scripts/setup.sh
 
@@ -61,6 +63,18 @@ check:              ; @pre-commit run --all-files
 lint:               ; @cd nectar && ruff check .
 lint-fix:           ; @cd nectar && ruff check --fix .
 format:             ; @cd nectar && ruff format .
+
+# Simulation
+sim-install:        ; @$(SETUP) sim-install
+sim-install-gazebo: ; @$(SETUP) sim-install-gazebo
+sim-start:          ; @$(SETUP) sim-start
+sim-start-gazebo:   ; @$(SETUP) sim-start-gazebo
+sim-start-indoor:   ; @$(SETUP) sim-start-indoor
+sim-mavros:         ; @$(SETUP) sim-mavros
+sim-gazebo:         ; @$(SETUP) sim-gazebo
+sim-outdoor:        ; @$(SETUP) sim-outdoor
+sim-indoor:         ; @$(SETUP) sim-indoor
+sim-stop:           ; @$(SETUP) sim-stop
 
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install
