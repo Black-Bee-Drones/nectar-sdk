@@ -84,8 +84,13 @@ class TargetComputer:
         msg.header.frame_id = "map"
         msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
         msg.type_mask = _POSITION_MASK
-        msg.position.x = float(pos.x + dx)
-        msg.position.y = float(pos.y + dy)
+        # None x/y = hold current position (even with TAKEOFF reference)
+        if x is not None or y is not None:
+            msg.position.x = float(pos.x + dx)
+            msg.position.y = float(pos.y + dy)
+        else:
+            msg.position.x = float(current_pos.x)
+            msg.position.y = float(current_pos.y)
         msg.position.z = float(target_z)
         msg.yaw = float(ref_yaw + np.radians(yaw) if yaw is not None else ref_yaw)
         return msg
@@ -147,7 +152,7 @@ class TargetComputer:
                 hdg,
             )
 
-        target_heading = hdg + (yaw if yaw is not None else 0)
+        target_heading = hdg - (yaw if yaw is not None else 0)
 
         quat = quaternion_from_euler(0, 0, np.radians(90.0 - target_heading))
 
@@ -206,15 +211,20 @@ class TargetComputer:
         if reference == MoveReference.TAKEOFF:
             # Takeoff quaternion stores ENU yaw; convert back to NED heading
             hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
-            lat, lon, _ = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
-                0,
-                takeoff_pos.pose.position.latitude,
-                takeoff_pos.pose.position.longitude,
-                takeoff_pos.pose.position.altitude,
-                hdg,
-            )
+            # None x/y = hold current position (even with TAKEOFF reference)
+            if x is not None or y is not None:
+                lat, lon, _ = GPSCalculate.calculate_gps_offset(
+                    x or 0,
+                    -(y or 0),
+                    0,
+                    takeoff_pos.pose.position.latitude,
+                    takeoff_pos.pose.position.longitude,
+                    takeoff_pos.pose.position.altitude,
+                    hdg,
+                )
+            else:
+                lat = current_gps.latitude
+                lon = current_gps.longitude
         else:
             hdg = current_heading
             lat, lon, _ = GPSCalculate.calculate_gps_offset(
@@ -228,7 +238,7 @@ class TargetComputer:
             )
 
         target_rel_alt = TargetComputer.compute_target_rel_alt(current_rel_alt, z, reference)
-        target_hdg = hdg + (yaw if yaw is not None else 0)
+        target_hdg = hdg - (yaw if yaw is not None else 0)
 
         return GPSUtils.create_gps_setpoint(lat, lon, target_rel_alt, target_hdg, initial_altitude)
 
@@ -244,7 +254,7 @@ class TargetComputer:
         current_rel_alt : float
             Current relative altitude in meters.
         z : float, optional
-            Altitude offset. None treated as 0.
+            Altitude offset. None = hold current altitude.
         reference : MoveReference
             BODY: offset from current. TAKEOFF: absolute relative altitude.
 
@@ -252,9 +262,11 @@ class TargetComputer:
         -------
         float
         """
+        if z is None:
+            return current_rel_alt
         if reference == MoveReference.TAKEOFF:
-            return z or 0
-        return current_rel_alt + (z or 0)
+            return z
+        return current_rel_alt + z
 
     @staticmethod
     def gps_to_local_target(

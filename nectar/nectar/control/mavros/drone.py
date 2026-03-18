@@ -1083,7 +1083,11 @@ class MavrosDrone(BaseDrone):
                 self.rel_alt,
                 self._initial_altitude,
             )
-            check_alt = TargetComputer.compute_target_rel_alt(self.rel_alt, z, reference)
+            check_alt = (
+                TargetComputer.compute_target_rel_alt(self.rel_alt, z, reference)
+                if z is not None
+                else None
+            )
             self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt)
 
