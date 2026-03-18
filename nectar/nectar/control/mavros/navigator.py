@@ -473,17 +473,28 @@ class MavrosNavigator:
             (reached, horizontal_distance)
         """
         gps = self._drone.gps
-        target_alt = check_alt if check_alt is not None else self._drone.rel_alt
 
-        reached, dist, _ = GPSUtils.check_reached(
-            gps.latitude,
-            gps.longitude,
-            self._drone.rel_alt,
-            target.pose.position.latitude,
-            target.pose.position.longitude,
-            target_alt,
-            precision,
-        )
+        if check_alt is not None:
+            reached, dist, _ = GPSUtils.check_reached(
+                gps.latitude,
+                gps.longitude,
+                self._drone.rel_alt,
+                target.pose.position.latitude,
+                target.pose.position.longitude,
+                check_alt,
+                precision,
+            )
+        else:
+            # No altitude target — check horizontal distance only
+            reached, dist, _ = GPSUtils.check_reached(
+                gps.latitude,
+                gps.longitude,
+                0.0,
+                target.pose.position.latitude,
+                target.pose.position.longitude,
+                0.0,
+                precision,
+            )
         return reached, dist
 
     def _create_pid(self, axis: str) -> PIDController:
