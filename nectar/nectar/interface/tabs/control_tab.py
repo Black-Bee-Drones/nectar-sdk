@@ -841,57 +841,49 @@ class ControlTab(QWidget):
 
     def _create_telemetry_panel(self) -> QGroupBox:
         self._telemetry_group = QGroupBox("Telemetry")
-        layout = QHBoxLayout(self._telemetry_group)
-        layout.setSpacing(24)
+        grid = QGridLayout(self._telemetry_group)
+        grid.setSpacing(6)
+        grid.setContentsMargins(8, 8, 8, 8)
 
-        self._pos_x_label = QLabel("X: --")
-        self._pos_y_label = QLabel("Y: --")
-        self._pos_z_label = QLabel("Z: --")
+        # Row 0: Local EKF pose | Yaw | Height | LiDAR
+        self._telem_local_x = QLabel("X: --")
+        self._telem_local_y = QLabel("Y: --")
+        self._telem_local_z = QLabel("Z: --")
+        self._telem_yaw = QLabel("Yaw: --")
+        self._telem_height = QLabel("Height: --")
+        self._telem_lidar = QLabel("LiDAR: --")
 
-        pos_layout = QHBoxLayout()
-        pos_layout.setSpacing(12)
-        pos_layout.addWidget(self._pos_x_label)
-        pos_layout.addWidget(self._pos_y_label)
-        pos_layout.addWidget(self._pos_z_label)
-        layout.addLayout(pos_layout)
+        col = 0
+        for w in [
+            self._telem_local_x,
+            self._telem_local_y,
+            self._telem_local_z,
+            self._telem_yaw,
+            self._telem_height,
+            self._telem_lidar,
+        ]:
+            grid.addWidget(w, 0, col)
+            col += 1
 
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.VLine)
-        sep1.setFixedWidth(1)
-        sep1.setStyleSheet(f"background-color: {COLORS.border};")
-        layout.addWidget(sep1)
+        # Row 1: GPS lat/lon/alt | Heading | RelAlt
+        self._telem_lat = QLabel("Lat: --")
+        self._telem_lon = QLabel("Lon: --")
+        self._telem_gps_alt = QLabel("GpsAlt: --")
+        self._telem_heading = QLabel("Hdg: --")
+        self._telem_rel_alt = QLabel("RelAlt: --")
+        self._telem_mode = QLabel("Mode: --")
 
-        self._yaw_label = QLabel("Yaw: --")
-        self._heading_label = QLabel("Heading: --")
-
-        orient_layout = QHBoxLayout()
-        orient_layout.setSpacing(12)
-        orient_layout.addWidget(self._yaw_label)
-        orient_layout.addWidget(self._heading_label)
-        layout.addLayout(orient_layout)
-
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.VLine)
-        sep2.setFixedWidth(1)
-        sep2.setStyleSheet(f"background-color: {COLORS.border};")
-        layout.addWidget(sep2)
-
-        self._alt_height_label = QLabel("Height: --")
-        self._alt_lidar_label = QLabel("LiDAR: --")
-        self._alt_rel_label = QLabel("RelAlt: --")
-
-        alt_layout = QHBoxLayout()
-        alt_layout.setSpacing(12)
-        alt_layout.addWidget(self._alt_height_label)
-        alt_layout.addWidget(self._alt_lidar_label)
-        alt_layout.addWidget(self._alt_rel_label)
-        layout.addLayout(alt_layout)
-
-        layout.addStretch()
-
-        self._no_telemetry_label = QLabel("")
-        self._no_telemetry_label.setProperty("muted", True)
-        layout.addWidget(self._no_telemetry_label)
+        col = 0
+        for w in [
+            self._telem_lat,
+            self._telem_lon,
+            self._telem_gps_alt,
+            self._telem_heading,
+            self._telem_rel_alt,
+            self._telem_mode,
+        ]:
+            grid.addWidget(w, 1, col)
+            col += 1
 
         return self._telemetry_group
 
@@ -1338,8 +1330,8 @@ class ControlTab(QWidget):
         precision = self._pos_precision_spin.value()
         timeout = self._pos_timeout_spin.value()
 
-        if x is None and y is None and z is None:
-            self._pos_status_label.setText("Enable at least X, Y, or Z")
+        if x is None and y is None and z is None and yaw is None:
+            self._pos_status_label.setText("Enable at least one axis or yaw")
             return
 
         if self._node:
@@ -1463,122 +1455,91 @@ class ControlTab(QWidget):
             self._clear_telemetry()
             return
 
-        try:
-            self._update_mavros_telemetry()
-        except Exception:
-            # Telemetry updates are non-critical; ignore failures
-            pass
+        import rclpy
+
+        if self._node:
+            rclpy.spin_once(self._node, timeout_sec=0)
 
         try:
-            self._update_bebop_telemetry()
+            if self._drone_type == "mavros":
+                self._update_mavros_telemetry()
         except Exception:
-            # Telemetry updates are non-critical; ignore failures
             pass
 
     def _update_mavros_telemetry(self) -> None:
-        if self._drone_type != "mavros":
-            return
+        import numpy as np
 
-        fcu_connected = self._drone.is_fcu_connected
-        if fcu_connected is not None:
-            self._status_fcu.set_status("active" if fcu_connected else "inactive")
+        from nectar.control.types import AltitudeSource
+        from nectar.utils.position_utils import PositionUtils
 
-        armed = self._drone.is_armed
+        d = self._drone
+
+        # Status indicators
+        fcu = d.is_fcu_connected
+        if fcu is not None:
+            self._status_fcu.set_status("active" if fcu else "inactive")
+        armed = d.is_armed
         if armed is not None:
             self._status_armed.set_status("active" if armed else "inactive")
 
-        mode = self._drone.flight_mode
-        self._mode_label.setText(f"Mode: {mode or '--'}")
+        # Local EKF pose (always available in both indoor/outdoor)
+        local = d.local_pos
+        if local:
+            p = local.pose.position
+            self._telem_local_x.setText(f"X: {p.x:.2f}")
+            self._telem_local_y.setText(f"Y: {p.y:.2f}")
+            self._telem_local_z.setText(f"Z: {p.z:.2f}")
+            yaw_deg = np.degrees(PositionUtils.get_yaw_from_pose(local))
+            self._telem_yaw.setText(f"Yaw: {yaw_deg:.1f}°")
 
-        if hasattr(self._drone, "height"):
-            self._alt_height_label.setText(f"Height: {self._drone.height:.2f}m")
-
-        if hasattr(self._drone, "lidar_alt"):
-            lidar = self._drone.lidar_alt
-            if lidar is not None:
-                self._alt_lidar_label.setText(f"LiDAR: {lidar:.2f}m")
-            else:
-                self._alt_lidar_label.setText("LiDAR: N/A")
-
-        is_indoor = getattr(self._drone, "is_indoor", False)
-
-        if is_indoor:
-            vision_pos = getattr(self._drone, "vision_pos", None)
-            if vision_pos:
-                pos = vision_pos.pose.position
-                self._pos_x_label.setText(f"X: {pos.x:.2f}m")
-                self._pos_y_label.setText(f"Y: {pos.y:.2f}m")
-                self._pos_z_label.setText(f"Z: {pos.z:.2f}m")
-
-                import numpy as np
-
-                from nectar.utils.position_utils import PositionUtils
-
-                yaw_rad = PositionUtils.get_yaw_from_pose(vision_pos)
-                self._yaw_label.setText(f"Yaw: {np.degrees(yaw_rad):.1f}°")
-
-            self._heading_label.setText("Heading: N/A")
-            self._alt_rel_label.setText("RelAlt: N/A")
-        else:
+        # GPS (outdoor only, safe — gps property raises for indoor)
+        if not d.is_indoor:
             try:
-                gps = self._drone._gps
+                gps = d.gps
                 if gps:
-                    self._pos_x_label.setText(f"Lat: {gps.latitude:.6f}°")
-                    self._pos_y_label.setText(f"Lon: {gps.longitude:.6f}°")
-                    self._pos_z_label.setText(f"Alt: {gps.altitude:.1f}m")
-                else:
-                    self._pos_x_label.setText("Lat: --")
-                    self._pos_y_label.setText("Lon: --")
-                    self._pos_z_label.setText("Alt: --")
+                    self._telem_lat.setText(f"Lat: {gps.latitude:.6f}")
+                    self._telem_lon.setText(f"Lon: {gps.longitude:.6f}")
+                    self._telem_gps_alt.setText(f"GpsAlt: {gps.altitude:.1f}")
+                self._telem_heading.setText(f"Hdg: {d.heading:.1f}°")
+                self._telem_rel_alt.setText(f"RelAlt: {d.rel_alt:.2f}")
             except Exception:
-                self._pos_x_label.setText("Lat: --")
-                self._pos_y_label.setText("Lon: --")
-                self._pos_z_label.setText("Alt: --")
+                pass
+        else:
+            self._telem_lat.setText("Lat: N/A")
+            self._telem_lon.setText("Lon: N/A")
+            self._telem_gps_alt.setText("GpsAlt: N/A")
+            self._telem_heading.setText("Hdg: N/A")
+            self._telem_rel_alt.setText("RelAlt: N/A")
 
-            try:
-                heading = self._drone._heading
-                if heading:
-                    self._heading_label.setText(f"Heading: {heading.data:.1f}°")
-                    self._yaw_label.setText(f"Yaw: {heading.data:.1f}°")
-                else:
-                    self._heading_label.setText("Heading: --")
-                    self._yaw_label.setText("Yaw: --")
-            except Exception:
-                self._heading_label.setText("Heading: --")
-                self._yaw_label.setText("Yaw: --")
+        # Altitude sources
+        alt = d.get_altitude()
+        self._telem_height.setText(f"Height: {alt:.2f}" if alt is not None else "Height: --")
 
-            try:
-                rel_alt = self._drone._rel_alt
-                if rel_alt:
-                    self._alt_rel_label.setText(f"RelAlt: {rel_alt.data:.2f}m")
-                else:
-                    self._alt_rel_label.setText("RelAlt: --")
-            except Exception:
-                self._alt_rel_label.setText("RelAlt: --")
+        lidar = d.get_altitude(AltitudeSource.LIDAR)
+        self._telem_lidar.setText(f"LiDAR: {lidar:.2f}" if lidar is not None else "LiDAR: --")
 
-    def _update_bebop_telemetry(self) -> None:
-        if self._drone_type != "bebop":
-            return
-
-        self._mode_label.setText("Mode: --")
-        self._no_telemetry_label.setText("Telemetry N/A")
+        self._telem_mode.setText(f"Mode: {d.flight_mode or '--'}")
 
     def _clear_telemetry(self) -> None:
         if self._status_fcu.isVisible():
             self._status_fcu.set_status("inactive")
         if self._status_armed.isVisible():
             self._status_armed.set_status("inactive")
-        self._mode_label.setText("Mode: --")
-
-        self._pos_x_label.setText("X: --")
-        self._pos_y_label.setText("Y: --")
-        self._pos_z_label.setText("Z: --")
-        self._alt_height_label.setText("Height: --")
-        self._alt_lidar_label.setText("LiDAR: --")
-        self._alt_rel_label.setText("RelAlt: --")
-        self._yaw_label.setText("Yaw: --")
-        self._heading_label.setText("Heading: --")
-        self._no_telemetry_label.setText("")
+        for w in [
+            self._telem_local_x,
+            self._telem_local_y,
+            self._telem_local_z,
+            self._telem_yaw,
+            self._telem_height,
+            self._telem_lidar,
+            self._telem_lat,
+            self._telem_lon,
+            self._telem_gps_alt,
+            self._telem_heading,
+            self._telem_rel_alt,
+        ]:
+            w.setText(w.text().split(":")[0] + ": --")
+        self._telem_mode.setText("Mode: --")
 
     @Slot()
     def _send_velocity_command(self) -> None:
