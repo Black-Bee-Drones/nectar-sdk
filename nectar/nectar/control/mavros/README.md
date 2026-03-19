@@ -314,25 +314,105 @@ Navigation logic is encapsulated in `MavrosNavigator` (composition), keeping `Ma
 | `move_to_gps` | VISION | any | N/A | any | ❌ Not supported |
 | `move_velocity` | any | N/A | BODY, WORLD, TAKEOFF | N/A | Direct velocity command |
 
+### `move_to` Parameter Behavior
+
+**Axis values — `x`, `y`, `z`, `yaw`**:
+
+Each axis can be a `float` value or `None`. The behavior depends on the strategy:
+
+| Parameter | Value | PID / PID_LOCAL | SETPOINT / SETPOINT_GLOBAL |
+|-----------|-------|-----------------|---------------------------|
+| `x` | `float` | Active — PID drives this axis | Included in target position |
+| `x` | `None` | **Disabled** — no velocity on this axis, excluded from arrival check | Zero offset — holds current position on this axis |
+| `y` | `float` | Active — PID drives this axis | Included in target position |
+| `y` | `None` | **Disabled** — no velocity on this axis, excluded from arrival check | Zero offset — holds current position on this axis |
+| `z` | `float` | Active — PID drives altitude | Included in target altitude |
+| `z` | `None` | **Disabled** — FCU holds altitude, excluded from arrival check | Zero offset — holds current altitude |
+| `yaw` | `float` | Active — PID drives yaw (degrees) | Included in target orientation |
+| `yaw` | `None` | **Disabled** — maintains current yaw | Holds current yaw |
+
+**Key difference**: With PID strategies, `None` truly disables the axis — no velocity is published and the axis is excluded from the distance check. With SETPOINT strategies, the FCU receives a full 3D+yaw target and controls all axes; `None` means zero offset (hold current).
+
+> **Note on `None` accuracy**: Using `None` is convenient for not having to specify every axis, but comes with trade-offs. With **PID**, a disabled axis is completely uncontrolled — wind or inertia can cause drift on that axis with no correction. The drone may arrive at the correct x but have drifted on y. With **SETPOINT**, the target for a `None` axis is a snapshot of the current position at call time, which may differ slightly from where you actually want to be (e.g., if the drone was still settling). In both cases, small deviations on unspecified axes are expected. For precise multi-axis positioning, specify all axes explicitly.
+
+**Reference frames — `reference`**:
+
+| Reference | Origin | Heading | Use case |
+|-----------|--------|---------|----------|
+| `BODY` | Current position | Current heading | "Move 2m forward from where I am now" |
+| `TAKEOFF` | Takeoff position | Takeoff heading | "Go to the point 3m forward of where I took off" |
+
+With **BODY**: offsets are relative to where the drone is right now. Each `move_to` chains from the previous position.
+
+With **TAKEOFF**: offsets are absolute from the takeoff origin. Calling `move_to(x=3, reference=TAKEOFF)` always goes to the same world point regardless of current position. `None` axes hold the current position — not the takeoff origin (e.g., if the drone is at y=-3 in takeoff frame, `y=None` keeps it at y=-3).
+
+#### None Axis Behavior by Reference
+
+```
+BODY reference:  None = "don't move on this axis" (zero offset from current)
+TAKEOFF reference: None = "hold current position on this axis" (not takeoff origin)
+
+Example: drone is at (3, -2) in takeoff frame
+
+move_to(x=0, y=None, reference=TAKEOFF)
+→ Target: x=0 (takeoff origin X), y=-2 (current Y preserved)
+→ Drone moves to (0, -2) in takeoff frame
+
+move_to(x=0, y=0, reference=TAKEOFF)
+→ Target: x=0, y=0 (full takeoff origin)
+→ Drone moves to (0, 0) in takeoff frame
+```
+
+#### Yaw + Position Behavior (PID / PID_LOCAL)
+
+When `yaw` is specified together with position axes (`x` or `y`), PID navigation uses a **yaw-first** approach:
+
+1. **Phase 1 — Yaw alignment**: Rotates to target yaw while holding position (zero translational velocity). Completes when yaw error ≤ 3°.
+2. **Phase 2 — Translation**: Moves to the target position with yaw hold. Both `x` and `y` axes are activated regardless of which was originally specified, because after rotation the world-frame target may project onto either body axis.
+
+The position target is always computed at call time in the original heading direction. Yaw rotation does not change where the drone goes — only its final orientation.
+
+```
+move_to(x=5, yaw=90):                       move_to(x=5, y=2, yaw=90):
+
+  Phase 1: Rotate 90°                         Phase 1: Rotate 90°
+  Phase 2: Fly to target                       Phase 2: Fly to target
+
+       target ←─── 5m ───── start                  target
+         ·                    │                    ╱
+         ·                    │ rotate            ╱  ~5.4m
+         ·  · · · · · · · · ·│ 90°              ╱
+         ▼                    ▼               start
+      (arrives facing 90°)                    │ rotate
+                                              ▼ 90°
+                                           (arrives facing 90°)
+```
+
+With SETPOINT / SETPOINT_GLOBAL strategies, yaw and position are controlled simultaneously by the FCU (no yaw-first phase needed — the target is in world frame).
+
 ### Navigation Examples
 
-**Indoor -- move relative to current position (BODY)**:
+**Move relative to current position (BODY)**:
 ```python
-# Drone moves 2m forward, then 1m left from where it ends up
 drone.move_to(x=2.0, y=0.0, z=0.0)             # 2m forward
 drone.move_to(x=0.0, y=1.0, z=0.0)             # 1m left
 drone.move_to(z=0.5)                            # 0.5m up (x/y disabled)
+drone.move_to(x=3.0, yaw=45.0)                  # rotate 45° left, then 3m to target
 ```
 
-**Indoor -- move relative to takeoff position (TAKEOFF)**:
+**Move relative to takeoff position (TAKEOFF)**:
 ```python
 # Coordinates are absolute offsets from where the drone took off
 drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)  # 2m forward of takeoff
 drone.move_to(x=2.0, y=1.0, z=0.0, reference=MoveReference.TAKEOFF)  # same X, 1m left of takeoff
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)  # back to takeoff position
+
+# None axes hold current position, not takeoff origin
+drone.move_to(x=0.0, reference=MoveReference.TAKEOFF)  # return to takeoff X, keep current Y and Z
+drone.move_to(z=1.5, reference=MoveReference.TAKEOFF)   # go to 1.5m above takeoff, keep current XY
 ```
 
-**Indoor -- terrain following with lidar**:
+**Terrain following with lidar**:
 ```python
 # z is height above ground (lidar reading), not position-based
 drone.move_to(x=2.0, y=0.0, z=0.3, altitude_source=AltitudeSource.LIDAR)  # fly at 0.3m AGL
@@ -344,19 +424,21 @@ drone.move_to(x=0.0, y=0.0, z=1.0,
               altitude_source=AltitudeSource.LIDAR)  # hold 1.0m AGL at takeoff XY
 ```
 
-**EKF local position (PID_LOCAL) -- unified indoor/outdoor**:
+**EKF local position (PID_LOCAL) — unified indoor/outdoor**:
 ```python
 # Uses /mavros/local_position/pose for PID feedback (same code indoor and outdoor)
 drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.PID_LOCAL)
 ```
 
-**Local setpoint (SETPOINT) -- FCU handles position control**:
+**Local setpoint (SETPOINT) — FCU handles position control**:
 ```python
 # Publishes target to setpoint_raw/local. Works indoor and outdoor.
+# FCU controls all axes simultaneously (including yaw)
 drone.move_to(x=2.0, y=1.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
+drone.move_to(x=3.0, yaw=90.0, strategy=NavigationStrategy.SETPOINT)  # simultaneous position + yaw
 ```
 
-**Outdoor -- GPS waypoint navigation**:
+**GPS waypoint navigation (outdoor)**:
 ```python
 # PID with raw GPS (default)
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0, precision=1.0)
@@ -368,11 +450,6 @@ drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
 # PID with EKF local position
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
                   strategy=NavigationStrategy.PID_LOCAL)
-```
-
-**Outdoor -- relative movement with PID + lidar**:
-```python
-drone.move_to(x=5.0, y=0.0, z=0.0, altitude_source=AltitudeSource.LIDAR)
 ```
 
 **Velocity control**:
@@ -396,36 +473,84 @@ drone.move_velocity(vx=1.0, duration=2.0, reference=MoveReference.BODY)
 | VISION | Vision pose Z | Indoor altitude hold | Position-based via `get_body_distance()` |
 | REL_ALT | GPS relative alt | `move_to_gps` PID, outdoor | `altitude_target - current_rel_alt` |
 
-**LIDAR altitude target resolution**:
-- BODY reference: `current_lidar + z` (relative offset)
-- TAKEOFF reference: `z` (absolute height above ground)
-- Capped at 15m; falls back to position-based if exceeded
+**Altitude `z` parameter by reference**:
+
+| Reference | `z` value | LIDAR source | REL_ALT source | AUTO / VISION source |
+|-----------|-----------|-------------|----------------|---------------------|
+| BODY | `float` | `current_lidar + z` (relative) | `current_rel_alt + z` (relative) | Position-based dz |
+| BODY | `None` | Disabled | Disabled | Disabled (FCU holds) |
+| TAKEOFF | `float` | `z` (absolute AGL) | `z` (absolute rel alt) | `takeoff_z + z` |
+| TAKEOFF | `None` | Disabled | Disabled | Disabled (holds current) |
+
+**LIDAR limits**: Capped at 15m; falls back to position-based if exceeded.
+
+#### Altitude with TAKEOFF Reference — How `takeoff_z` Works
+
+The takeoff position is stored by `_set_takeoff_position()` at the **start of `takeoff()`** — while the drone is still on the ground, before it climbs. This means:
+
+- For **vision/local** (PID, PID_LOCAL, SETPOINT): `takeoff_z ≈ 0` (ground level in vision/EKF frame)
+- For **GPS** (PID outdoor, SETPOINT_GLOBAL): `takeoff_z` = raw GPS altitude on the ground (e.g., 605m ellipsoid height)
+
+With **AUTO/VISION** source (the default), `z` with TAKEOFF reference computes `target_z = takeoff_z + z`. Since `takeoff_z ≈ 0` for vision/local, `z` is effectively the **absolute height above the takeoff ground level**:
+
+```
+drone.takeoff(altitude=1.5)
+# Drone is now at 1.5m altitude. Stored takeoff_z ≈ 0 (ground level).
+
+drone.move_to(z=1.5, reference=MoveReference.TAKEOFF)   # target = 0 + 1.5 = 1.5m → stay at same height
+drone.move_to(z=2.0, reference=MoveReference.TAKEOFF)   # target = 0 + 2.0 = 2.0m → climb 0.5m
+drone.move_to(z=0.5, reference=MoveReference.TAKEOFF)   # target = 0 + 0.5 = 0.5m → descend 1.0m
+drone.move_to(z=0.0, reference=MoveReference.TAKEOFF)   # target = 0 + 0.0 = 0.0m → descend to ground level
+```
+
+With **LIDAR** source and TAKEOFF reference, `z` is the **absolute height above the ground** (direct sensor target):
+
+```
+drone.move_to(z=1.0, reference=MoveReference.TAKEOFF, altitude_source=AltitudeSource.LIDAR)
+# Target: lidar reads 1.0m. Independent of takeoff_z.
+```
+
+With **REL_ALT** source and TAKEOFF reference, `z` is the **absolute relative altitude** (above home):
+
+```
+drone.move_to_gps(lat=..., lon=..., altitude=15.0)
+# Target: rel_alt = 15.0m
+```
+
+> **Key takeaway**: With TAKEOFF reference, `z` is always an **absolute target value**, not a relative offset. After `takeoff(1.5)`, use `z=1.5` to maintain the same height — not `z=0`. `z=0` with AUTO source means "go to ground-level Z".
+
+**Ground collision safety**: `move_to` rejects `z` values that would produce a target altitude ≤ 0. With TAKEOFF reference, `z ≤ 0` is rejected. With BODY reference, `z` is rejected if `current_altitude + z ≤ 0`. In both cases, `z` is set to `None` (altitude disabled) and a warning is logged. The drone still moves on the other axes. Very low positive values (e.g., `z=0.05`) are accepted — the user is responsible for ensuring they are safe for the aircraft and mission.
 
 ### Navigation Flow
 
 ```mermaid
 flowchart TD
     A["move_to / move_to_gps"] --> B{"Strategy?"}
-    B -->|PID| C["Compute PID target"]
-    B -->|SETPOINT| D["Compute setpoint target"]
+    B -->|PID / PID_LOCAL| C["Compute PID target"]
+    B -->|SETPOINT / SETPOINT_GLOBAL| D["Compute setpoint target"]
     C --> E["resolve_altitude_target"]
     E --> F["navigator.navigate_pid"]
     D --> G["navigator.navigate_setpoint"]
-    F --> H["PID loop"]
-    G --> I["Setpoint loop"]
-    H --> J["_compute_errors"]
-    J --> K["_resolve_altitude_error"]
-    K --> L["move_velocity"]
-    L --> yawPID{"Position + yaw converged?"}
+    F --> yawCheck{"yaw specified +\nposition axes active?"}
+    yawCheck -->|Yes| yawPhase["Phase 1: Align yaw\n(zero translation)"]
+    yawPhase --> yawDone{"yaw ≤ 3°?"}
+    yawDone -->|No| yawPhase
+    yawDone -->|Yes| enableXY["Enable both x,y axes\nReset yaw PID"]
+    enableXY --> H
+    yawCheck -->|No| H["Phase 2: PID loop"]
+    H --> J["_compute_errors\n(body-frame dx,dy,dz,dyaw)"]
+    J --> L["PID → move_velocity"]
+    L --> yawPID{"Position + yaw\nconverged?"}
     yawPID -->|No| H
-    yawPID -->|Yes| donePID["Target reached"]
+    yawPID -->|Yes| donePID["Target reached ✓"]
+    G --> I["Setpoint loop"]
     I --> M{"Target type?"}
-    M -->|PositionTarget| N["publish_setpoint + _check_reached_local"]
-    M -->|GeoPoseStamped| O["publish_setpoint + _check_reached_gps"]
-    N --> yawSP{"Position + yaw converged?"}
+    M -->|PositionTarget| N["publish_setpoint\n+ _check_reached_local"]
+    M -->|GeoPoseStamped| O["publish_setpoint\n+ _check_reached_gps"]
+    N --> yawSP{"Position + yaw\nconverged?"}
     O --> yawSP
     yawSP -->|No| I
-    yawSP -->|Yes| doneSP["Setpoint reached"]
+    yawSP -->|Yes| doneSP["Setpoint reached ✓"]
 ```
 
 ### PID Navigation
@@ -434,24 +559,30 @@ Velocity-based control with closed-loop feedback via `MavrosNavigator.navigate_p
 
 **Algorithm**:
 ```
-1. MavrosDrone computes target position (based on reference frame)
+1. MavrosDrone computes target position (world frame, based on reference)
 2. MavrosDrone resolves altitude_target (based on altitude_source)
 3. MavrosNavigator creates PID controllers from config
-4. Loop at ~100 Hz:
+4. If yaw + position specified: align yaw first (Phase 1)
+   - Publish yaw-rate only (vx=vy=vz=0)
+   - Wait until |dyaw| ≤ 3°
+   - Activate both x and y axes for Phase 2
+5. Position loop (Phase 2) at ~100 Hz:
    a. Compute body-frame errors (dx, dy, dz, dyaw)
    b. Override dz if altitude_target set (LIDAR/REL_ALT source)
    c. Update PID controllers with errors
    d. Generate and publish velocity commands
-   e. Check arrival condition
+   e. Check arrival: distance ≤ precision AND |dyaw| ≤ 3°
 ```
 
-**Dead Zone**: Velocity commands zeroed when within `precision / 2` meters to prevent oscillation.
+**Dead Zone**: Per-axis velocity zeroed when error < `precision / 2` to prevent oscillation.
+
+**Active axes**: Only axes with non-`None` values are controlled and included in the distance check. Exception: when yaw is specified with x or y, both horizontal axes are activated after yaw alignment (the world-frame target may project onto either body axis after rotation).
 
 ### Setpoint Navigation
 
-Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. Handles both indoor and outdoor targets in a single method:
+Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. The FCU receives a full target (position + yaw) and controls all axes simultaneously — no yaw-first phase needed.
 
-**Indoor** (PositionTarget): Publishes to `/mavros/setpoint_raw/local`, checks Euclidean distance using vision pose.
+**Indoor** (PositionTarget): Publishes to `/mavros/setpoint_raw/local`, checks Euclidean distance using EKF local position.
 
 **Outdoor** (GeoPoseStamped): Publishes to `/mavros/setpoint_position/global` with AMSL-corrected altitude, checks geodesic distance using GPS and relative altitude.
 
