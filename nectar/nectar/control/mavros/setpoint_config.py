@@ -49,8 +49,8 @@ class SetpointNavConfig:
         Controls S-curve trajectory smoothness in WPNav mode (bit 6).
         ArduPilot default 1.0, range 1–20.
     psc_jerk : float
-        Position controller NE jerk limit in m/s³ (maps to PSC_JERK_NE).
-        Affects AC_PosControl (SubMode::Pos) response speed.
+        Position controller horizontal jerk limit in m/s³ (PSC_JERK_XY in 4.6.3,
+        PSC_JERK_NE in 4.8+). Affects AC_PosControl (SubMode::Pos) response speed.
         ArduPilot default 5.0, range 1–20.
         SITL typically needs higher values (e.g. 50) for usable response.
     rfnd_use : int
@@ -68,7 +68,7 @@ class SetpointNavConfig:
     psc_jerk: float = 5.0
     rfnd_use: int = 1
 
-    # ArduPilot v4.8+ renamed WPNAV_* → WP_*. Maps old name → new name.
+    # ArduPilot v4.8+ renamed WPNAV_* → WP_*. Maps primary (4.6.3) name → alias (4.8+) name.
     PARAM_ALIASES = {
         "WPNAV_SPEED": "WP_SPD",
         "WPNAV_SPEED_UP": "WP_SPD_UP",
@@ -77,6 +77,7 @@ class SetpointNavConfig:
         "WPNAV_RADIUS": "WP_RADIUS_M",
         "WPNAV_JERK": "WP_JERK",
         "WPNAV_RFND_USE": "WP_RFND_USE",
+        "PSC_JERK_XY": "PSC_JERK_NE",
     }
 
     # ArduPilot valid ranges
@@ -87,7 +88,7 @@ class SetpointNavConfig:
         "accel": (0.5, 5.0),  # WPNAV_ACCEL: 50–500 cm/s²
         "radius": (0.05, 10.0),  # WPNAV_RADIUS: 5–1000 cm
         "jerk": (1.0, 20.0),  # WPNAV_JERK: 1–20 m/s³
-        "psc_jerk": (1.0, 20.0),  # PSC_JERK_NE: 1–20 m/s³
+        "psc_jerk": (1.0, 50.0),  # PSC_JERK_XY / PSC_JERK_NE: 1–20 (SITL needs ~50)
     }
 
     def __post_init__(self) -> None:
@@ -172,7 +173,7 @@ class SetpointNavConfig:
             "WPNAV_RADIUS": float(round(self.radius * 100)),
             "WPNAV_JERK": float(self.jerk),
             "WPNAV_RFND_USE": int(self.rfnd_use),
-            "PSC_JERK_NE": float(self.psc_jerk),
+            "PSC_JERK_XY": float(self.psc_jerk),
         }
 
     def to_dict(self) -> dict:
