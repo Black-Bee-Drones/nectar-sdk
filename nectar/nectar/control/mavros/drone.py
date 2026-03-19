@@ -1067,6 +1067,9 @@ class MavrosDrone(BaseDrone):
 
         self._validate_position_sensors(strategy)
 
+        if z is not None:
+            z = self._check_altitude_safety(z, reference)
+
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
             f"strategy={strategy.name} precision={precision}m "
@@ -1333,6 +1336,39 @@ class MavrosDrone(BaseDrone):
         else:
             if self._gps is None:
                 raise SensorNotAvailableError("GPS", "navigation requires sensor data")
+
+    def _check_altitude_safety(self, z: float, reference: MoveReference) -> Optional[float]:
+        """
+        Reject z values that would produce a target altitude at or below ground level.
+
+        Parameters
+        ----------
+        z : float
+            Altitude parameter from move_to.
+        reference : MoveReference
+            Movement reference frame.
+
+        Returns
+        -------
+        float or None
+            Original z if safe, None if target altitude would be ≤ 0.
+        """
+        if reference == MoveReference.TAKEOFF:
+            if z <= 0:
+                self._node.get_logger().warn(
+                    f"z={z} with TAKEOFF reference targets altitude ≤ 0. "
+                    f"Ignoring z to prevent ground collision."
+                )
+                return None
+        else:
+            current_alt = self.get_altitude()
+            if current_alt is not None and current_alt + z <= 0:
+                self._node.get_logger().warn(
+                    f"z={z} from current altitude {current_alt:.2f}m targets "
+                    f"{current_alt + z:.2f}m (≤ 0). Ignoring z to prevent ground collision."
+                )
+                return None
+        return z
 
     def emergency_stop(self) -> None:
         """Execute emergency stop via force disarm."""
