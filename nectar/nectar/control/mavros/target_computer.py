@@ -68,30 +68,28 @@ class TargetComputer:
         if reference == MoveReference.TAKEOFF:
             pos = takeoff_pos.position
             ref_yaw = takeoff_pos.yaw
+            # For None axes, preserve current position in takeoff body frame
+            cos_r, sin_r = np.cos(ref_yaw), np.sin(ref_yaw)
+            dxw = current_pos.x - pos.x
+            dyw = current_pos.y - pos.y
+            x_off = x if x is not None else (cos_r * dxw + sin_r * dyw)
+            y_off = y if y is not None else (-sin_r * dxw + cos_r * dyw)
         else:
             pos = current_pos
             ref_yaw = current_yaw
+            x_off = x or 0
+            y_off = y or 0
 
-        dx = (x or 0) * np.cos(ref_yaw) - (y or 0) * np.sin(ref_yaw)
-        dy = (x or 0) * np.sin(ref_yaw) + (y or 0) * np.cos(ref_yaw)
-
-        if z is not None:
-            target_z = pos.z + z
-        else:
-            target_z = current_pos.z
+        dx = x_off * np.cos(ref_yaw) - y_off * np.sin(ref_yaw)
+        dy = x_off * np.sin(ref_yaw) + y_off * np.cos(ref_yaw)
 
         msg = PositionTarget()
         msg.header.frame_id = "map"
         msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
         msg.type_mask = _POSITION_MASK
-        # None x/y = hold current position (even with TAKEOFF reference)
-        if x is not None or y is not None:
-            msg.position.x = float(pos.x + dx)
-            msg.position.y = float(pos.y + dy)
-        else:
-            msg.position.x = float(current_pos.x)
-            msg.position.y = float(current_pos.y)
-        msg.position.z = float(target_z)
+        msg.position.x = float(pos.x + dx)
+        msg.position.y = float(pos.y + dy)
+        msg.position.z = float(pos.z + z if z is not None else current_pos.z)
         msg.yaw = float(ref_yaw + np.radians(yaw) if yaw is not None else ref_yaw)
         return msg
 
@@ -131,13 +129,32 @@ class TargetComputer:
         if reference == MoveReference.TAKEOFF:
             # Takeoff quaternion stores ENU yaw; convert back to NED heading
             hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            ref_lat = takeoff_pos.pose.position.latitude
+            ref_lon = takeoff_pos.pose.position.longitude
+            ref_alt = takeoff_pos.pose.position.altitude
+
+            # For None axes, preserve current position in takeoff body frame
+            if x is None or y is None:
+                result = Geodesic.WGS84.Inverse(
+                    ref_lat,
+                    ref_lon,
+                    current_gps.latitude,
+                    current_gps.longitude,
+                )
+                dist = result["s12"]
+                rel = np.radians(result["azi1"] - hdg)
+                x_off = x if x is not None else dist * np.cos(rel)
+                y_off = y if y is not None else -dist * np.sin(rel)
+            else:
+                x_off, y_off = x, y
+
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
+                x_off,
+                -y_off,
                 z or 0,
-                takeoff_pos.pose.position.latitude,
-                takeoff_pos.pose.position.longitude,
-                takeoff_pos.pose.position.altitude,
+                ref_lat,
+                ref_lon,
+                ref_alt,
                 hdg,
             )
         else:
@@ -211,20 +228,34 @@ class TargetComputer:
         if reference == MoveReference.TAKEOFF:
             # Takeoff quaternion stores ENU yaw; convert back to NED heading
             hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
-            # None x/y = hold current position (even with TAKEOFF reference)
-            if x is not None or y is not None:
-                lat, lon, _ = GPSCalculate.calculate_gps_offset(
-                    x or 0,
-                    -(y or 0),
-                    0,
-                    takeoff_pos.pose.position.latitude,
-                    takeoff_pos.pose.position.longitude,
-                    takeoff_pos.pose.position.altitude,
-                    hdg,
+            ref_lat = takeoff_pos.pose.position.latitude
+            ref_lon = takeoff_pos.pose.position.longitude
+            ref_alt = takeoff_pos.pose.position.altitude
+
+            # For None axes, preserve current position in takeoff body frame
+            if x is None or y is None:
+                result = Geodesic.WGS84.Inverse(
+                    ref_lat,
+                    ref_lon,
+                    current_gps.latitude,
+                    current_gps.longitude,
                 )
+                dist = result["s12"]
+                rel = np.radians(result["azi1"] - hdg)
+                x_off = x if x is not None else dist * np.cos(rel)
+                y_off = y if y is not None else -dist * np.sin(rel)
             else:
-                lat = current_gps.latitude
-                lon = current_gps.longitude
+                x_off, y_off = x, y
+
+            lat, lon, _ = GPSCalculate.calculate_gps_offset(
+                x_off,
+                -y_off,
+                0,
+                ref_lat,
+                ref_lon,
+                ref_alt,
+                hdg,
+            )
         else:
             hdg = current_heading
             lat, lon, _ = GPSCalculate.calculate_gps_offset(
