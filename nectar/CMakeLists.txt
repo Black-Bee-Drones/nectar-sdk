@@ -18,6 +18,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(realsense2 REQUIRED)
+find_package(cv_bridge REQUIRED)
 
 # =============================================================================
 # C++ Include directories
@@ -40,6 +41,8 @@ add_executable(depth_cluster_node
 ament_target_dependencies(depth_cluster_node
   rclcpp
   std_msgs
+  sensor_msgs
+  cv_bridge
 )
 target_link_libraries(depth_cluster_node
   ${OpenCV_LIBS}

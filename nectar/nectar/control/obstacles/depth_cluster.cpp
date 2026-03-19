@@ -1,30 +1,44 @@
 /**
  * depth_cluster_node.cpp
  *
- * ROS2 node that captures depth frames from a RealSense camera via librealsense2,
- * runs a BFS-based depth clustering algorithm, and publishes obstacle information
- * on the three topics consumed by ROSObstacleDetector:
+ * ROS2 node for BFS-based depth clustering obstacle detection.
  *
+ * This version subscribes to a depth image topic (sensor_msgs/Image) instead
+ * of opening a RealSense pipeline directly, making it compatible with
+ * realsense-ros / Isaac ROS or any other depth source.
+ *
+ * Post-processing is done with the OpenCV-based filters from depth_filters.hpp
+ * (which re-implement the Intel RS2 algorithms for cv::Mat data).
+ *
+ * Publishes obstacle information on:
  *   /<namespace>/obstacle_detected  (std_msgs/Bool)
  *   /<namespace>/obstacle_distance  (std_msgs/Float32)   — meters
  *   /<namespace>/obstacle_direction (std_msgs/String)    — FRONT | LEFT | RIGHT
  *
  * Parameters (ROS2):
  *   namespace            (string,  default "obstacle_detection")
+ *   depth_topic          (string,  default "/camera/depth/image_rect_raw")
+ *   depth_scale          (double,  default 0.001)  — multiplier to convert raw depth to metres
+ *   fov_h                (double,  default 87.0)   — horizontal field of view in degrees
+ *   fov_v                (double,  default 58.0)   — vertical field of view in degrees
+ *   decimation_scale     (int,     default 2)      — decimation factor (1 = disable)
  *   depth_threshold      (double,  default 0.06)   — max depth delta (m) to merge pixels
  *   min_group_size       (int,     default 300)     — minimum cluster pixel count
- *   max_obstacle_distance (double, default 1.0)    — clusters beyond this (m) are ignored
+ *   max_obstacle_distance(double,  default 1.0)    — clusters beyond this (m) are ignored
+ *   drone_radius         (double,  default 0.25)   — used for FOV-based threshold matrix
  */
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <sensor_msgs/msg/image.hpp>
 
-#include <librealsense2/rs.hpp>
+#include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 
-#include <chrono>
+#include "depth_filters.hpp"
+
 #include <cmath>
 #include <limits>
 #include <queue>
@@ -41,16 +55,28 @@ public:
         // Parameters
         // ----------------------------------------------------------------
         this->declare_parameter<std::string>("namespace", "obstacle_detection");
+        this->declare_parameter<std::string>("depth_topic", "/camera/depth/image_rect_raw");
+        this->declare_parameter<double>("depth_scale", 0.001);
+        this->declare_parameter<double>("fov_h", 87.0);
+        this->declare_parameter<double>("fov_v", 58.0);
+        this->declare_parameter<int>("decimation_scale", 2);
         this->declare_parameter<double>("depth_threshold", 0.06);
         this->declare_parameter<int>("min_group_size", 300);
         this->declare_parameter<double>("max_obstacle_distance", 1.0);
         this->declare_parameter<double>("drone_radius", 0.25);
 
-        ns_                   = this->get_parameter("namespace").as_string();
-        depth_threshold_      = static_cast<float>(this->get_parameter("depth_threshold").as_double());
-        min_group_size_       = this->get_parameter("min_group_size").as_int();
-        max_obstacle_distance_= static_cast<float>(this->get_parameter("max_obstacle_distance").as_double());
-        drone_radius_         = static_cast<float>(this->get_parameter("drone_radius").as_double());
+        ns_                    = this->get_parameter("namespace").as_string();
+        depth_topic_           = this->get_parameter("depth_topic").as_string();
+        depth_scale_           = static_cast<float>(this->get_parameter("depth_scale").as_double());
+        fov_h_                 = static_cast<float>(this->get_parameter("fov_h").as_double());
+        fov_v_                 = static_cast<float>(this->get_parameter("fov_v").as_double());
+        depth_threshold_       = static_cast<float>(this->get_parameter("depth_threshold").as_double());
+        min_group_size_        = this->get_parameter("min_group_size").as_int();
+        max_obstacle_distance_ = static_cast<float>(this->get_parameter("max_obstacle_distance").as_double());
+        drone_radius_          = static_cast<float>(this->get_parameter("drone_radius").as_double());
+
+        int dec_scale = this->get_parameter("decimation_scale").as_int();
+        decimate_ = nectar::DepthDecimationFilter(dec_scale);
 
         // ----------------------------------------------------------------
         // Publishers
@@ -63,77 +89,72 @@ public:
             "/" + ns_ + "/obstacle_direction", 10);
 
         // ----------------------------------------------------------------
-        // RealSense pipeline — same stream config as the original standalone app
+        // Depth image subscriber
         // ----------------------------------------------------------------
-        rs2::config cfg;
-        cfg.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, 90);
-        rs2::pipeline_profile profile = pipe_.start(cfg);
-        auto depth_stream = profile.get_stream(RS2_STREAM_DEPTH)
-                             .as<rs2::video_stream_profile>();
-        auto i = depth_stream.get_intrinsics();
-        float fov[2]; // X, Y fov
-        rs2_fov(&i, fov);
-
-        std::cout << "Camera FOV: " << fov[0] << " x " << fov[1] << " degrees" << std::endl;
-
-        rs2::device dev = pipe_.get_active_profile().get_device();
-        rs2::depth_sensor depth_sensor = dev.first<rs2::depth_sensor>();
-        depth_scale_ = depth_sensor.get_depth_scale();
-
-        // Disable the IR projector (same as original)
-        if (depth_sensor.supports(RS2_OPTION_EMITTER_ENABLED))
-            depth_sensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0.f);
-
-        // Post-processing filters (same as original; spatial / hole-filling kept commented)
-        decimate_  = rs2::decimation_filter();
-        // rs2::spatial_filter spatial;
-        // rs2::hole_filling_filter hole_filling(1);
-        //threshold_ = rs2::threshold_filter(0.15f, 1.f);
-
-        thresh_mat_ = threshold_matrix(max_obstacle_distance_, drone_radius_, fov, i.width / 2, i.height / 2);
-
-        // ----------------------------------------------------------------
-        // Timer — poll at ~90 Hz to match the camera framerate
-        // ----------------------------------------------------------------
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(11),
-            std::bind(&DepthClusterNode::process_frame, this));
+        depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+            depth_topic_, 10,
+            std::bind(&DepthClusterNode::depth_callback, this, std::placeholders::_1));
 
         RCLCPP_INFO(this->get_logger(),
-            "DepthClusterNode started — publishing on /%s/*", ns_.c_str());
-    }
-
-    ~DepthClusterNode()
-    {
-        pipe_.stop();
+            "DepthClusterNode started — subscribing to %s, publishing on /%s/*",
+            depth_topic_.c_str(), ns_.c_str());
     }
 
 private:
     // ----------------------------------------------------------------
-    // Main processing callback
+    // Depth callback — replaces the timer + rs2::pipeline polling
     // ----------------------------------------------------------------
-    void process_frame()
+    void depth_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
     {
-        rs2::frameset frames;
-        if (!pipe_.poll_for_frames(&frames))
+        // Convert ROS Image to cv::Mat
+        cv_bridge::CvImageConstPtr cv_ptr;
+        try
+        {
+            cv_ptr = cv_bridge::toCvShare(msg);
+        }
+        catch (const cv_bridge::Exception& e)
+        {
+            RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                "cv_bridge error: %s", e.what());
             return;
+        }
 
-        rs2::depth_frame depth = frames.get_depth_frame();
+        cv::Mat depth_raw = cv_ptr->image;
 
-        // Apply post-processing filters (same order as original)
-        depth = decimate_.process(depth);
+        // Apply decimation filter on raw data
+        cv::Mat decimated = decimate_.apply(depth_raw);
 
-        const int width  = depth.get_width();
-        const int height = depth.get_height();
+        const int width  = decimated.cols;
+        const int height = decimated.rows;
 
-        // Convert raw 16-bit depth to float metres (same conversion as original)
-        cv::Mat depth_mat(height, width, CV_16U, (void*)depth.get_data());
+        // Convert to float metres
         cv::Mat depth_float;
-        depth_mat.convertTo(depth_float, CV_32F, depth_scale_);
-        depth_float.setTo(0, depth_float >= thresh_mat_); // Apply threshold matrix
+        if (decimated.type() == CV_16U)
+            decimated.convertTo(depth_float, CV_32F, depth_scale_);
+        else if (decimated.type() == CV_32F)
+            depth_float = decimated.clone();
+        else
+        {
+            RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "Unsupported depth encoding: %s", msg->encoding.c_str());
+            return;
+        }
+
+        // Rebuild threshold matrix if image dimensions changed
+        if (thresh_mat_.empty() || thresh_mat_.cols != width || thresh_mat_.rows != height)
+        {
+            float fov[2] = {fov_h_, fov_v_};
+            thresh_mat_ = threshold_matrix(max_obstacle_distance_, drone_radius_, fov, width, height);
+            RCLCPP_INFO(this->get_logger(),
+                "Threshold matrix built for %dx%d (FOV %.1f x %.1f deg)",
+                width, height, fov_h_, fov_v_);
+        }
+
+        // Apply threshold matrix — zero out pixels beyond adaptive distance
+        depth_float.setTo(0, depth_float >= thresh_mat_);
 
         // ----------------------------------------------------------------
-        // BFS clustering (identical algorithm to original standalone app)
+        // BFS clustering (identical algorithm to original)
         // ----------------------------------------------------------------
         cv::Mat visited = cv::Mat::zeros(height, width, CV_8U);
         cv::Mat labels  = cv::Mat::zeros(height, width, CV_32S);
@@ -324,17 +345,18 @@ private:
     }
 
     // ----------------------------------------------------------------
-    // RealSense
+    // Depth filter
     // ----------------------------------------------------------------
-    rs2::pipeline           pipe_;
-    rs2::decimation_filter  decimate_;
-    rs2::threshold_filter   threshold_;
-    float                   depth_scale_{1.0f};
+    nectar::DepthDecimationFilter decimate_;
 
     // ----------------------------------------------------------------
     // Parameters
     // ----------------------------------------------------------------
     std::string ns_;
+    std::string depth_topic_;
+    float       depth_scale_{0.001f};
+    float       fov_h_{87.0f};
+    float       fov_v_{58.0f};
     float       depth_threshold_;
     int         min_group_size_;
     float       max_obstacle_distance_;
@@ -342,13 +364,16 @@ private:
     cv::Mat     thresh_mat_;
 
     // ----------------------------------------------------------------
+    // ROS subscriber
+    // ----------------------------------------------------------------
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
+
+    // ----------------------------------------------------------------
     // Publishers
     // ----------------------------------------------------------------
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr    pub_detected_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pub_distance_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr  pub_direction_;
-
-    rclcpp::TimerBase::SharedPtr timer_;
 };
 
 int main(int argc, char ** argv)
@@ -358,4 +383,3 @@ int main(int argc, char ** argv)
     rclcpp::shutdown();
     return 0;
 }
-
