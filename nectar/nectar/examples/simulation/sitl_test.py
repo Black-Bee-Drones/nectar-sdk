@@ -99,9 +99,11 @@ class SITLTest(Node):
                 self.get_logger().error("Takeoff FAILED — aborting")
                 raise RuntimeError("Takeoff failed")
             d.delay(3.0)
-            # SITL position controller is jerk-limited; raise PSC_JERK_NE
+            # SITL position controller is jerk-limited; raise PSC_JERK
             # from ArduPilot default (5 m/s³) so setpoint navigation is usable.
-            d.set_param("PSC_JERK_NE", 50.0)
+
+            if not d.set_param("PSC_JERK_XY", 50.0):
+                d.set_param("PSC_JERK_NE", 50.0)
             self.get_logger().info(f"Airborne at {pos_str(d.local_pos)}")
         else:
             d.set_takeoff_position()

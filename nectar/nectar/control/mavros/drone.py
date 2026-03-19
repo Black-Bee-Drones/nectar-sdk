@@ -601,8 +601,15 @@ class MavrosDrone(BaseDrone):
         aliases = cfg.PARAM_ALIASES
         failed = []
 
-        # ArduPilot v4.8+ alias WP_RADIUS_M uses meters (not cm like WPNAV_RADIUS).
-        alias_si_units = {"WPNAV_RADIUS"}
+        # ArduPilot v4.8+ (PR #32147) converted WPNAV params from cm/s to SI (m/s).
+        # When falling back to WP_* aliases, divide by 100 to convert cm→m units.
+        alias_si_units = {
+            "WPNAV_SPEED",
+            "WPNAV_SPEED_UP",
+            "WPNAV_SPEED_DN",
+            "WPNAV_ACCEL",
+            "WPNAV_RADIUS",
+        }
 
         for name, val in cfg.to_fcu_params().items():
             if self.set_param(name, val):

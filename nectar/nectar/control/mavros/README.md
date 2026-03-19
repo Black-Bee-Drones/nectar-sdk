@@ -515,7 +515,7 @@ ArduPilot v4.6.3 [`WPNAV_*` parameters](https://ardupilot.org/copter/docs/parame
 
 > **Note**: In ArduPilot dev (v4.8+), these are renamed to `WP_*`. The SDK uses descriptive field names (`speed`, `radius`) so only the internal `_apply_setpoint_config()` mapping needs updating for version changes.
 
-The SDK also configures [`PSC_JERK_NE`](https://ardupilot.org/copter/docs/parameters.html#psc-parameters) (position controller NE jerk, default 5.0 m/s³, range 1–20) via `SetpointNavConfig.psc_jerk`. This controls AC_PosControl's response speed in SubMode::Pos. In SITL, higher values (e.g. 50) are typically needed for usable response time.
+The SDK also configures `PSC_JERK_XY` (4.6.3) / `PSC_JERK_NE` (4.8+) — position controller horizontal jerk, default 5.0 m/s³, range 1–20 — via `SetpointNavConfig.psc_jerk`. This controls AC_PosControl's response speed in SubMode::Pos. In SITL, higher values (e.g. 50) are typically needed for usable response time.
 
 **How parameters affect each sub-mode:**
 
@@ -526,7 +526,7 @@ The SDK also configures [`PSC_JERK_NE`](https://ardupilot.org/copter/docs/parame
 | WPNAV_ACCEL | Read once at submode init | Re-read on each `set_destination()`; controls S-curve acceleration profile |
 | WPNAV_JERK | Not used | Controls S-curve trajectory smoothness |
 | WPNAV_RFND_USE | Not used (`is_terrain_alt=false` for `SET_POSITION_TARGET_LOCAL_NED`) | Only if terrain alt is explicitly requested |
-| PSC_JERK_NE | Controls position controller NE jerk limit | Not used (WPNav has own jerk via WPNAV_JERK) |
+| PSC_JERK_XY/NE | Controls position controller horizontal jerk limit | Not used (WPNav has own jerk via WPNAV_JERK) |
 
 > **Runtime `set_param` summary**: In SubMode::WP, all `WPNAV_*` parameters are picked up on the next target because [`wp_nav->set_wp_destination()`](https://github.com/ArduPilot/ardupilot/tree/master/libraries/AC_WPNav) re-reads them. In SubMode::Pos, speed/accel limits are set once via [`AC_PosControl`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) at submode entry (`pva_control_start()`); use `MAV_CMD_DO_CHANGE_SPEED` for dynamic changes. The SDK's `_sync_wpnav_radius()` leverages this WPNav behavior to update `WPNAV_RADIUS` per `move_to` call from the `precision` parameter.
 
@@ -772,7 +772,7 @@ flowchart TD
     E --> H["set_param WPNAV_ACCEL"]
     E --> I["set_param WPNAV_RADIUS"]
     E --> Ij["set_param WPNAV_JERK, WPNAV_RFND_USE"]
-    E --> Ip["set_param PSC_JERK_NE"]
+    E --> Ip["set_param PSC_JERK_XY/NE"]
     J["move_to(precision=0.1)"] --> K{"guid_options bit 6?"}
     K -->|Yes| L["set_param WPNAV_RADIUS = precision"]
     L --> M["navigate_setpoint"]
