@@ -163,6 +163,20 @@ class DroneConfigPanel(QWidget):
             )
         )
 
+        # Apply setpoint params to FCU
+        apply_row = QHBoxLayout()
+        apply_row.setContentsMargins(0, 0, 0, 0)
+        apply_row.setSpacing(8)
+        self._mavros_apply_setpoint = QCheckBox("Apply setpoint params to FCU")
+        self._mavros_apply_setpoint.setChecked(False)
+        self._mavros_apply_setpoint.setToolTip(
+            "Push WPNAV/GUID_OPTIONS from YAML to Pixhawk on arm. "
+            "Off = use existing FCU values (default)."
+        )
+        self._mavros_apply_setpoint.stateChanged.connect(self._on_config_changed)
+        apply_row.addWidget(self._mavros_apply_setpoint)
+        layout.addLayout(apply_row)
+
         return panel
 
     def _create_bebop_panel(self) -> QFrame:
@@ -288,6 +302,7 @@ class DroneConfigPanel(QWidget):
             "setpoint_config_file": self._resolve_config_path(
                 self._mavros_setpoint_file.currentData()
             ),
+            "apply_setpoint_params": self._mavros_apply_setpoint.isChecked(),
         }
 
     def _get_bebop_config(self) -> Dict[str, Any]:
@@ -345,6 +360,9 @@ class DroneConfigPanel(QWidget):
             if idx >= 0:
                 self._mavros_setpoint_file.setCurrentIndex(idx)
 
+        if "apply_setpoint_params" in config:
+            self._mavros_apply_setpoint.setChecked(config["apply_setpoint_params"])
+
     def _set_bebop_config(self, config: Dict[str, Any]) -> None:
         if "ip" in config:
             self._bebop_ip.setText(config["ip"])
@@ -373,6 +391,7 @@ class DroneConfigPanel(QWidget):
                 lidar_topic=config_dict["lidar_topic"],
                 pid_config_file=config_dict["pid_config_file"],
                 setpoint_config_file=config_dict["setpoint_config_file"],
+                apply_setpoint_params=config_dict["apply_setpoint_params"],
                 connection_string=config_dict["connection_string"],
             )
         else:

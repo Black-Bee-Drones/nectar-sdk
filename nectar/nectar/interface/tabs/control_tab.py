@@ -206,6 +206,46 @@ class FlightActionWorker(QObject):
             self.finished.emit(False, str(e))
 
 
+class RTLWorker(QObject):
+    finished = Signal(bool, str)
+    progress = Signal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._drone = None
+        self._altitude: Optional[float] = None
+        self._precision: float = 0.2
+        self._strategy = None
+        self._land: bool = True
+
+    def setup(
+        self, drone, altitude: Optional[float], precision: float, strategy, land: bool
+    ) -> None:
+        self._drone = drone
+        self._altitude = altitude
+        self._precision = precision
+        self._strategy = strategy
+        self._land = land
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            alt_str = f" alt={self._altitude:.1f}m" if self._altitude is not None else ""
+            self.progress.emit(f"RTL ({self._strategy.name}{alt_str})...")
+            success = self._drone.rtl(
+                altitude=self._altitude,
+                precision=self._precision,
+                strategy=self._strategy,
+                land=self._land,
+            )
+            if success:
+                self.finished.emit(True, "RTL complete")
+            else:
+                self.finished.emit(False, "RTL failed")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
 class MoveToWorker(QObject):
     finished = Signal(bool, str)
     progress = Signal(str)
@@ -333,6 +373,9 @@ class ControlTab(QWidget):
         self._flight_thread: Optional[QThread] = None
         self._flight_worker: Optional[FlightActionWorker] = None
         self._flight_action_running: bool = False
+        self._rtl_thread: Optional[QThread] = None
+        self._rtl_worker: Optional[RTLWorker] = None
+        self._rtl_running: bool = False
         self._last_velocity_cmd: tuple = (0.0, 0.0, 0.0, 0.0)
         self._velocity_log_counter: int = 0
 
@@ -791,12 +834,34 @@ class ControlTab(QWidget):
         self._land_btn.setMinimumWidth(60)
         self._land_btn.clicked.connect(self._land)
 
+        sep_rtl = QFrame()
+        sep_rtl.setFrameShape(QFrame.VLine)
+        sep_rtl.setFixedWidth(1)
+        sep_rtl.setStyleSheet(f"background-color: {COLORS.border};")
+
+        self._rtl_strategy_combo = QComboBox()
+        self._rtl_strategy_combo.addItems(["PID", "ArduPilot"])
+        self._rtl_strategy_combo.setFixedWidth(85)
+
+        self._rtl_land_check = QCheckBox("Land")
+        self._rtl_land_check.setChecked(True)
+
+        self._rtl_btn = QPushButton("RTL")
+        self._rtl_btn.setProperty("warning", True)
+        self._rtl_btn.setEnabled(False)
+        self._rtl_btn.setMinimumWidth(60)
+        self._rtl_btn.clicked.connect(self._execute_rtl)
+
         mavros_layout.addWidget(self._arm_btn)
         mavros_layout.addWidget(self._disarm_btn)
         mavros_layout.addWidget(alt_lbl)
         mavros_layout.addWidget(self._altitude_spin)
         mavros_layout.addWidget(self._takeoff_btn)
         mavros_layout.addWidget(self._land_btn)
+        mavros_layout.addWidget(sep_rtl)
+        mavros_layout.addWidget(self._rtl_strategy_combo)
+        mavros_layout.addWidget(self._rtl_land_check)
+        mavros_layout.addWidget(self._rtl_btn)
 
         layout.addWidget(self._mavros_actions)
 
@@ -952,6 +1017,10 @@ class ControlTab(QWidget):
         self._altitude_spin.setEnabled(enabled)
         self._takeoff_btn.setEnabled(enabled)
         self._land_btn.setEnabled(enabled)
+        rtl_enabled = enabled and not self._rtl_running
+        self._rtl_btn.setEnabled(rtl_enabled)
+        self._rtl_strategy_combo.setEnabled(rtl_enabled)
+        self._rtl_land_check.setEnabled(rtl_enabled)
 
     def _set_bebop_controls_enabled(self, enabled: bool) -> None:
         self._bebop_takeoff_btn.setEnabled(enabled)
@@ -1254,6 +1323,10 @@ class ControlTab(QWidget):
             self._disarm_btn.setEnabled(actual_enabled)
             self._takeoff_btn.setEnabled(actual_enabled)
             self._land_btn.setEnabled(actual_enabled)
+            rtl_enabled = actual_enabled and not self._rtl_running
+            self._rtl_btn.setEnabled(rtl_enabled)
+            self._rtl_strategy_combo.setEnabled(rtl_enabled)
+            self._rtl_land_check.setEnabled(rtl_enabled)
         else:
             self._bebop_takeoff_btn.setEnabled(actual_enabled)
             self._bebop_land_btn.setEnabled(actual_enabled)
@@ -1287,6 +1360,51 @@ class ControlTab(QWidget):
     @Slot()
     def _land(self) -> None:
         self._execute_flight_action("land")
+
+    @Slot()
+    def _execute_rtl(self) -> None:
+        if not self._drone or self._rtl_running or self._flight_action_running:
+            return
+
+        from nectar.control.types import RTLStrategy
+
+        strategy_map = {"PID": RTLStrategy.PID, "ArduPilot": RTLStrategy.ARDUPILOT}
+        strategy = strategy_map.get(self._rtl_strategy_combo.currentText(), RTLStrategy.PID)
+        altitude = self._altitude_spin.value()
+        land = self._rtl_land_check.isChecked()
+
+        if self._node:
+            self._node.get_logger().info(
+                f"RTL: strategy={strategy.name} alt={altitude:.1f}m land={land}"
+            )
+
+        self._rtl_running = True
+        self._set_flight_buttons_enabled(False)
+
+        self._rtl_thread = QThread()
+        self._rtl_worker = RTLWorker()
+        self._rtl_worker.setup(self._drone, altitude, 0.2, strategy, land)
+        self._rtl_worker.moveToThread(self._rtl_thread)
+
+        self._rtl_thread.started.connect(self._rtl_worker.run)
+        self._rtl_worker.progress.connect(self._show_progress)
+        self._rtl_worker.finished.connect(self._on_rtl_finished)
+        self._rtl_worker.finished.connect(self._rtl_thread.quit)
+
+        self._rtl_thread.start()
+
+    @Slot(bool, str)
+    def _on_rtl_finished(self, success: bool, message: str) -> None:
+        self._rtl_running = False
+        if success:
+            self._show_progress(message)
+            if self._node:
+                self._node.get_logger().info(message)
+        else:
+            self._show_progress(f"RTL failed: {message}")
+            if self._node:
+                self._node.get_logger().error(f"RTL failed: {message}")
+        self._set_flight_buttons_enabled(True)
 
     @Slot()
     def _execute_move_to(self) -> None:
@@ -1656,5 +1774,9 @@ class ControlTab(QWidget):
         if self._flight_thread and self._flight_thread.isRunning():
             self._flight_thread.quit()
             self._flight_thread.wait(1000)
+
+        if self._rtl_thread and self._rtl_thread.isRunning():
+            self._rtl_thread.quit()
+            self._rtl_thread.wait(1000)
 
         self._cleanup_instance()
