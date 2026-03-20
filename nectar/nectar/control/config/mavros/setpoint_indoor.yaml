@@ -8,15 +8,15 @@
 #   bit 7 (128): Weathervaning
 #   65 = arm from TX + WPNav
 guid_options: 1
-speed: 0.5
-speed_up: 0.3
-speed_down: 0.3
-accel: 0.5
-radius: 0.1
+speed: 1.0
+speed_up: 0.4
+speed_down: 0.4
+accel: 0.8
+radius: 0.15
 
 # Jerk limits (m/s³)
 # jerk: WPNav S-curve jerk (WPNAV_JERK). Range 1–20, default 1.
-# psc_jerk: Position controller NE jerk (PSC_JERK_NE). Range 1–20, default 5.
+# psc_jerk: Position controller horizontal jerk (PSC_JERK_XY/PSC_JERK_NE). Range 1–20, default 5.
 #   Raise in SITL (e.g. 50) for usable response time.
 jerk: 1.0
 psc_jerk: 5.0
