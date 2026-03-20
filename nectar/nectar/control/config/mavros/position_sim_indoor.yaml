@@ -1,5 +1,4 @@
 # Simulation indoor PID parameters
-# Higher limits than real hardware — SITL physics allow faster response
 x:
   kp: 0.8
   ki: 0.0
@@ -31,7 +30,7 @@ yaw:
   kp: 0.5
   ki: 0.1
   kd: 0.0
-  output_min: -0.3
-  output_max: 0.3
+  output_min: -0.65
+  output_max: 0.65
   integral_min: -0.5
   integral_max: 0.5
