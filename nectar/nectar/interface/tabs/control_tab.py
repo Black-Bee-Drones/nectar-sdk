@@ -206,6 +206,46 @@ class FlightActionWorker(QObject):
             self.finished.emit(False, str(e))
 
 
+class RTLWorker(QObject):
+    finished = Signal(bool, str)
+    progress = Signal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._drone = None
+        self._altitude: Optional[float] = None
+        self._precision: float = 0.2
+        self._strategy = None
+        self._land: bool = True
+
+    def setup(
+        self, drone, altitude: Optional[float], precision: float, strategy, land: bool
+    ) -> None:
+        self._drone = drone
+        self._altitude = altitude
+        self._precision = precision
+        self._strategy = strategy
+        self._land = land
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            alt_str = f" alt={self._altitude:.1f}m" if self._altitude is not None else ""
+            self.progress.emit(f"RTL ({self._strategy.name}{alt_str})...")
+            success = self._drone.rtl(
+                altitude=self._altitude,
+                precision=self._precision,
+                strategy=self._strategy,
+                land=self._land,
+            )
+            if success:
+                self.finished.emit(True, "RTL complete")
+            else:
+                self.finished.emit(False, "RTL failed")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
 class MoveToWorker(QObject):
     finished = Signal(bool, str)
     progress = Signal(str)
@@ -333,6 +373,9 @@ class ControlTab(QWidget):
         self._flight_thread: Optional[QThread] = None
         self._flight_worker: Optional[FlightActionWorker] = None
         self._flight_action_running: bool = False
+        self._rtl_thread: Optional[QThread] = None
+        self._rtl_worker: Optional[RTLWorker] = None
+        self._rtl_running: bool = False
         self._last_velocity_cmd: tuple = (0.0, 0.0, 0.0, 0.0)
         self._velocity_log_counter: int = 0
 
@@ -791,12 +834,34 @@ class ControlTab(QWidget):
         self._land_btn.setMinimumWidth(60)
         self._land_btn.clicked.connect(self._land)
 
+        sep_rtl = QFrame()
+        sep_rtl.setFrameShape(QFrame.VLine)
+        sep_rtl.setFixedWidth(1)
+        sep_rtl.setStyleSheet(f"background-color: {COLORS.border};")
+
+        self._rtl_strategy_combo = QComboBox()
+        self._rtl_strategy_combo.addItems(["PID", "ArduPilot"])
+        self._rtl_strategy_combo.setFixedWidth(85)
+
+        self._rtl_land_check = QCheckBox("Land")
+        self._rtl_land_check.setChecked(True)
+
+        self._rtl_btn = QPushButton("RTL")
+        self._rtl_btn.setProperty("warning", True)
+        self._rtl_btn.setEnabled(False)
+        self._rtl_btn.setMinimumWidth(60)
+        self._rtl_btn.clicked.connect(self._execute_rtl)
+
         mavros_layout.addWidget(self._arm_btn)
         mavros_layout.addWidget(self._disarm_btn)
         mavros_layout.addWidget(alt_lbl)
         mavros_layout.addWidget(self._altitude_spin)
         mavros_layout.addWidget(self._takeoff_btn)
         mavros_layout.addWidget(self._land_btn)
+        mavros_layout.addWidget(sep_rtl)
+        mavros_layout.addWidget(self._rtl_strategy_combo)
+        mavros_layout.addWidget(self._rtl_land_check)
+        mavros_layout.addWidget(self._rtl_btn)
 
         layout.addWidget(self._mavros_actions)
 
@@ -841,57 +906,49 @@ class ControlTab(QWidget):
 
     def _create_telemetry_panel(self) -> QGroupBox:
         self._telemetry_group = QGroupBox("Telemetry")
-        layout = QHBoxLayout(self._telemetry_group)
-        layout.setSpacing(24)
+        grid = QGridLayout(self._telemetry_group)
+        grid.setSpacing(6)
+        grid.setContentsMargins(8, 8, 8, 8)
 
-        self._pos_x_label = QLabel("X: --")
-        self._pos_y_label = QLabel("Y: --")
-        self._pos_z_label = QLabel("Z: --")
+        # Row 0: Local EKF pose | Yaw | Height | LiDAR
+        self._telem_local_x = QLabel("X: --")
+        self._telem_local_y = QLabel("Y: --")
+        self._telem_local_z = QLabel("Z: --")
+        self._telem_yaw = QLabel("Yaw: --")
+        self._telem_height = QLabel("Height: --")
+        self._telem_lidar = QLabel("LiDAR: --")
 
-        pos_layout = QHBoxLayout()
-        pos_layout.setSpacing(12)
-        pos_layout.addWidget(self._pos_x_label)
-        pos_layout.addWidget(self._pos_y_label)
-        pos_layout.addWidget(self._pos_z_label)
-        layout.addLayout(pos_layout)
+        col = 0
+        for w in [
+            self._telem_local_x,
+            self._telem_local_y,
+            self._telem_local_z,
+            self._telem_yaw,
+            self._telem_height,
+            self._telem_lidar,
+        ]:
+            grid.addWidget(w, 0, col)
+            col += 1
 
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.VLine)
-        sep1.setFixedWidth(1)
-        sep1.setStyleSheet(f"background-color: {COLORS.border};")
-        layout.addWidget(sep1)
+        # Row 1: GPS lat/lon/alt | Heading | RelAlt
+        self._telem_lat = QLabel("Lat: --")
+        self._telem_lon = QLabel("Lon: --")
+        self._telem_gps_alt = QLabel("GpsAlt: --")
+        self._telem_heading = QLabel("Hdg: --")
+        self._telem_rel_alt = QLabel("RelAlt: --")
+        self._telem_mode = QLabel("Mode: --")
 
-        self._yaw_label = QLabel("Yaw: --")
-        self._heading_label = QLabel("Heading: --")
-
-        orient_layout = QHBoxLayout()
-        orient_layout.setSpacing(12)
-        orient_layout.addWidget(self._yaw_label)
-        orient_layout.addWidget(self._heading_label)
-        layout.addLayout(orient_layout)
-
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.VLine)
-        sep2.setFixedWidth(1)
-        sep2.setStyleSheet(f"background-color: {COLORS.border};")
-        layout.addWidget(sep2)
-
-        self._alt_height_label = QLabel("Height: --")
-        self._alt_lidar_label = QLabel("LiDAR: --")
-        self._alt_rel_label = QLabel("RelAlt: --")
-
-        alt_layout = QHBoxLayout()
-        alt_layout.setSpacing(12)
-        alt_layout.addWidget(self._alt_height_label)
-        alt_layout.addWidget(self._alt_lidar_label)
-        alt_layout.addWidget(self._alt_rel_label)
-        layout.addLayout(alt_layout)
-
-        layout.addStretch()
-
-        self._no_telemetry_label = QLabel("")
-        self._no_telemetry_label.setProperty("muted", True)
-        layout.addWidget(self._no_telemetry_label)
+        col = 0
+        for w in [
+            self._telem_lat,
+            self._telem_lon,
+            self._telem_gps_alt,
+            self._telem_heading,
+            self._telem_rel_alt,
+            self._telem_mode,
+        ]:
+            grid.addWidget(w, 1, col)
+            col += 1
 
         return self._telemetry_group
 
@@ -960,6 +1017,10 @@ class ControlTab(QWidget):
         self._altitude_spin.setEnabled(enabled)
         self._takeoff_btn.setEnabled(enabled)
         self._land_btn.setEnabled(enabled)
+        rtl_enabled = enabled and not self._rtl_running
+        self._rtl_btn.setEnabled(rtl_enabled)
+        self._rtl_strategy_combo.setEnabled(rtl_enabled)
+        self._rtl_land_check.setEnabled(rtl_enabled)
 
     def _set_bebop_controls_enabled(self, enabled: bool) -> None:
         self._bebop_takeoff_btn.setEnabled(enabled)
@@ -1262,6 +1323,10 @@ class ControlTab(QWidget):
             self._disarm_btn.setEnabled(actual_enabled)
             self._takeoff_btn.setEnabled(actual_enabled)
             self._land_btn.setEnabled(actual_enabled)
+            rtl_enabled = actual_enabled and not self._rtl_running
+            self._rtl_btn.setEnabled(rtl_enabled)
+            self._rtl_strategy_combo.setEnabled(rtl_enabled)
+            self._rtl_land_check.setEnabled(rtl_enabled)
         else:
             self._bebop_takeoff_btn.setEnabled(actual_enabled)
             self._bebop_land_btn.setEnabled(actual_enabled)
@@ -1295,6 +1360,51 @@ class ControlTab(QWidget):
     @Slot()
     def _land(self) -> None:
         self._execute_flight_action("land")
+
+    @Slot()
+    def _execute_rtl(self) -> None:
+        if not self._drone or self._rtl_running or self._flight_action_running:
+            return
+
+        from nectar.control.types import RTLStrategy
+
+        strategy_map = {"PID": RTLStrategy.PID, "ArduPilot": RTLStrategy.ARDUPILOT}
+        strategy = strategy_map.get(self._rtl_strategy_combo.currentText(), RTLStrategy.PID)
+        altitude = self._altitude_spin.value()
+        land = self._rtl_land_check.isChecked()
+
+        if self._node:
+            self._node.get_logger().info(
+                f"RTL: strategy={strategy.name} alt={altitude:.1f}m land={land}"
+            )
+
+        self._rtl_running = True
+        self._set_flight_buttons_enabled(False)
+
+        self._rtl_thread = QThread()
+        self._rtl_worker = RTLWorker()
+        self._rtl_worker.setup(self._drone, altitude, 0.2, strategy, land)
+        self._rtl_worker.moveToThread(self._rtl_thread)
+
+        self._rtl_thread.started.connect(self._rtl_worker.run)
+        self._rtl_worker.progress.connect(self._show_progress)
+        self._rtl_worker.finished.connect(self._on_rtl_finished)
+        self._rtl_worker.finished.connect(self._rtl_thread.quit)
+
+        self._rtl_thread.start()
+
+    @Slot(bool, str)
+    def _on_rtl_finished(self, success: bool, message: str) -> None:
+        self._rtl_running = False
+        if success:
+            self._show_progress(message)
+            if self._node:
+                self._node.get_logger().info(message)
+        else:
+            self._show_progress(f"RTL failed: {message}")
+            if self._node:
+                self._node.get_logger().error(f"RTL failed: {message}")
+        self._set_flight_buttons_enabled(True)
 
     @Slot()
     def _execute_move_to(self) -> None:
@@ -1338,8 +1448,8 @@ class ControlTab(QWidget):
         precision = self._pos_precision_spin.value()
         timeout = self._pos_timeout_spin.value()
 
-        if x is None and y is None and z is None:
-            self._pos_status_label.setText("Enable at least X, Y, or Z")
+        if x is None and y is None and z is None and yaw is None:
+            self._pos_status_label.setText("Enable at least one axis or yaw")
             return
 
         if self._node:
@@ -1463,122 +1573,91 @@ class ControlTab(QWidget):
             self._clear_telemetry()
             return
 
-        try:
-            self._update_mavros_telemetry()
-        except Exception:
-            # Telemetry updates are non-critical; ignore failures
-            pass
+        import rclpy
+
+        if self._node:
+            rclpy.spin_once(self._node, timeout_sec=0)
 
         try:
-            self._update_bebop_telemetry()
+            if self._drone_type == "mavros":
+                self._update_mavros_telemetry()
         except Exception:
-            # Telemetry updates are non-critical; ignore failures
             pass
 
     def _update_mavros_telemetry(self) -> None:
-        if self._drone_type != "mavros":
-            return
+        import numpy as np
 
-        fcu_connected = self._drone.is_fcu_connected
-        if fcu_connected is not None:
-            self._status_fcu.set_status("active" if fcu_connected else "inactive")
+        from nectar.control.types import AltitudeSource
+        from nectar.utils.position_utils import PositionUtils
 
-        armed = self._drone.is_armed
+        d = self._drone
+
+        # Status indicators
+        fcu = d.is_fcu_connected
+        if fcu is not None:
+            self._status_fcu.set_status("active" if fcu else "inactive")
+        armed = d.is_armed
         if armed is not None:
             self._status_armed.set_status("active" if armed else "inactive")
 
-        mode = self._drone.flight_mode
-        self._mode_label.setText(f"Mode: {mode or '--'}")
+        # Local EKF pose (always available in both indoor/outdoor)
+        local = d.local_pos
+        if local:
+            p = local.pose.position
+            self._telem_local_x.setText(f"X: {p.x:.2f}")
+            self._telem_local_y.setText(f"Y: {p.y:.2f}")
+            self._telem_local_z.setText(f"Z: {p.z:.2f}")
+            yaw_deg = np.degrees(PositionUtils.get_yaw_from_pose(local))
+            self._telem_yaw.setText(f"Yaw: {yaw_deg:.1f}°")
 
-        if hasattr(self._drone, "height"):
-            self._alt_height_label.setText(f"Height: {self._drone.height:.2f}m")
-
-        if hasattr(self._drone, "lidar_alt"):
-            lidar = self._drone.lidar_alt
-            if lidar is not None:
-                self._alt_lidar_label.setText(f"LiDAR: {lidar:.2f}m")
-            else:
-                self._alt_lidar_label.setText("LiDAR: N/A")
-
-        is_indoor = getattr(self._drone, "is_indoor", False)
-
-        if is_indoor:
-            vision_pos = getattr(self._drone, "vision_pos", None)
-            if vision_pos:
-                pos = vision_pos.pose.position
-                self._pos_x_label.setText(f"X: {pos.x:.2f}m")
-                self._pos_y_label.setText(f"Y: {pos.y:.2f}m")
-                self._pos_z_label.setText(f"Z: {pos.z:.2f}m")
-
-                import numpy as np
-
-                from nectar.utils.position_utils import PositionUtils
-
-                yaw_rad = PositionUtils.get_yaw_from_pose(vision_pos)
-                self._yaw_label.setText(f"Yaw: {np.degrees(yaw_rad):.1f}°")
-
-            self._heading_label.setText("Heading: N/A")
-            self._alt_rel_label.setText("RelAlt: N/A")
-        else:
+        # GPS (outdoor only, safe — gps property raises for indoor)
+        if not d.is_indoor:
             try:
-                gps = self._drone._gps
+                gps = d.gps
                 if gps:
-                    self._pos_x_label.setText(f"Lat: {gps.latitude:.6f}°")
-                    self._pos_y_label.setText(f"Lon: {gps.longitude:.6f}°")
-                    self._pos_z_label.setText(f"Alt: {gps.altitude:.1f}m")
-                else:
-                    self._pos_x_label.setText("Lat: --")
-                    self._pos_y_label.setText("Lon: --")
-                    self._pos_z_label.setText("Alt: --")
+                    self._telem_lat.setText(f"Lat: {gps.latitude:.6f}")
+                    self._telem_lon.setText(f"Lon: {gps.longitude:.6f}")
+                    self._telem_gps_alt.setText(f"GpsAlt: {gps.altitude:.1f}")
+                self._telem_heading.setText(f"Hdg: {d.heading:.1f}°")
+                self._telem_rel_alt.setText(f"RelAlt: {d.rel_alt:.2f}")
             except Exception:
-                self._pos_x_label.setText("Lat: --")
-                self._pos_y_label.setText("Lon: --")
-                self._pos_z_label.setText("Alt: --")
+                pass
+        else:
+            self._telem_lat.setText("Lat: N/A")
+            self._telem_lon.setText("Lon: N/A")
+            self._telem_gps_alt.setText("GpsAlt: N/A")
+            self._telem_heading.setText("Hdg: N/A")
+            self._telem_rel_alt.setText("RelAlt: N/A")
 
-            try:
-                heading = self._drone._heading
-                if heading:
-                    self._heading_label.setText(f"Heading: {heading.data:.1f}°")
-                    self._yaw_label.setText(f"Yaw: {heading.data:.1f}°")
-                else:
-                    self._heading_label.setText("Heading: --")
-                    self._yaw_label.setText("Yaw: --")
-            except Exception:
-                self._heading_label.setText("Heading: --")
-                self._yaw_label.setText("Yaw: --")
+        # Altitude sources
+        alt = d.get_altitude()
+        self._telem_height.setText(f"Height: {alt:.2f}" if alt is not None else "Height: --")
 
-            try:
-                rel_alt = self._drone._rel_alt
-                if rel_alt:
-                    self._alt_rel_label.setText(f"RelAlt: {rel_alt.data:.2f}m")
-                else:
-                    self._alt_rel_label.setText("RelAlt: --")
-            except Exception:
-                self._alt_rel_label.setText("RelAlt: --")
+        lidar = d.get_altitude(AltitudeSource.LIDAR)
+        self._telem_lidar.setText(f"LiDAR: {lidar:.2f}" if lidar is not None else "LiDAR: --")
 
-    def _update_bebop_telemetry(self) -> None:
-        if self._drone_type != "bebop":
-            return
-
-        self._mode_label.setText("Mode: --")
-        self._no_telemetry_label.setText("Telemetry N/A")
+        self._telem_mode.setText(f"Mode: {d.flight_mode or '--'}")
 
     def _clear_telemetry(self) -> None:
         if self._status_fcu.isVisible():
             self._status_fcu.set_status("inactive")
         if self._status_armed.isVisible():
             self._status_armed.set_status("inactive")
-        self._mode_label.setText("Mode: --")
-
-        self._pos_x_label.setText("X: --")
-        self._pos_y_label.setText("Y: --")
-        self._pos_z_label.setText("Z: --")
-        self._alt_height_label.setText("Height: --")
-        self._alt_lidar_label.setText("LiDAR: --")
-        self._alt_rel_label.setText("RelAlt: --")
-        self._yaw_label.setText("Yaw: --")
-        self._heading_label.setText("Heading: --")
-        self._no_telemetry_label.setText("")
+        for w in [
+            self._telem_local_x,
+            self._telem_local_y,
+            self._telem_local_z,
+            self._telem_yaw,
+            self._telem_height,
+            self._telem_lidar,
+            self._telem_lat,
+            self._telem_lon,
+            self._telem_gps_alt,
+            self._telem_heading,
+            self._telem_rel_alt,
+        ]:
+            w.setText(w.text().split(":")[0] + ": --")
+        self._telem_mode.setText("Mode: --")
 
     @Slot()
     def _send_velocity_command(self) -> None:
@@ -1695,5 +1774,9 @@ class ControlTab(QWidget):
         if self._flight_thread and self._flight_thread.isRunning():
             self._flight_thread.quit()
             self._flight_thread.wait(1000)
+
+        if self._rtl_thread and self._rtl_thread.isRunning():
+            self._rtl_thread.quit()
+            self._rtl_thread.wait(1000)
 
         self._cleanup_instance()

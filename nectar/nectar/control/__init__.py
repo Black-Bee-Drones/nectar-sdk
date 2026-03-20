@@ -1,6 +1,10 @@
 from nectar.control.base import BaseDrone
 from nectar.control.bebop import BebopDrone
 from nectar.control.config import (
+    SITL_CONFIG,
+    SITL_GAZEBO_CONFIG,
+    SITL_GPS_CONFIG,
+    SITL_VISION_CONFIG,
     BebopConfig,
     DroneConfig,
     MavrosConfig,
@@ -19,7 +23,7 @@ from nectar.control.exceptions import (
     TakeoffPositionNotSetError,
 )
 from nectar.control.factory import DroneFactory
-from nectar.control.mavros import GPSUtils, MavrosDrone
+from nectar.control.mavros import GPSUtils, MavrosDrone, SetpointNavConfig
 from nectar.control.obstacles import (
     BaseObstacleDetector,
     DepthObstacleDetector,
@@ -52,6 +56,10 @@ __all__ = [
     "DroneConfig",
     "MavrosConfig",
     "BebopConfig",
+    "SITL_CONFIG",
+    "SITL_GPS_CONFIG",
+    "SITL_GAZEBO_CONFIG",
+    "SITL_VISION_CONFIG",
     "DroneFactory",
     "DriverMonitor",
     "DriverStatus",
@@ -65,6 +73,7 @@ __all__ = [
     "PIDController",
     "PIDConfig",
     "PositionPIDConfig",
+    "SetpointNavConfig",
     "BaseDrone",
     "MavrosDrone",
     "BebopDrone",

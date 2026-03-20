@@ -68,13 +68,20 @@ class TargetComputer:
         if reference == MoveReference.TAKEOFF:
             pos = takeoff_pos.position
             ref_yaw = takeoff_pos.yaw
+            # For None axes, preserve current position in takeoff body frame
+            cos_r, sin_r = np.cos(ref_yaw), np.sin(ref_yaw)
+            dxw = current_pos.x - pos.x
+            dyw = current_pos.y - pos.y
+            x_off = x if x is not None else (cos_r * dxw + sin_r * dyw)
+            y_off = y if y is not None else (-sin_r * dxw + cos_r * dyw)
         else:
             pos = current_pos
             ref_yaw = current_yaw
+            x_off = x or 0
+            y_off = y or 0
 
-        dx = (x or 0) * np.cos(ref_yaw) - (y or 0) * np.sin(ref_yaw)
-        dy = (x or 0) * np.sin(ref_yaw) + (y or 0) * np.cos(ref_yaw)
-        dz = z or 0
+        dx = x_off * np.cos(ref_yaw) - y_off * np.sin(ref_yaw)
+        dy = x_off * np.sin(ref_yaw) + y_off * np.cos(ref_yaw)
 
         msg = PositionTarget()
         msg.header.frame_id = "map"
@@ -82,7 +89,7 @@ class TargetComputer:
         msg.type_mask = _POSITION_MASK
         msg.position.x = float(pos.x + dx)
         msg.position.y = float(pos.y + dy)
-        msg.position.z = float(pos.z + dz)
+        msg.position.z = float(pos.z + z if z is not None else current_pos.z)
         msg.yaw = float(ref_yaw + np.radians(yaw) if yaw is not None else ref_yaw)
         return msg
 
@@ -120,14 +127,34 @@ class TargetComputer:
         GeoPoseStamped
         """
         if reference == MoveReference.TAKEOFF:
-            hdg = np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            # Takeoff quaternion stores ENU yaw; convert back to NED heading
+            hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            ref_lat = takeoff_pos.pose.position.latitude
+            ref_lon = takeoff_pos.pose.position.longitude
+            ref_alt = takeoff_pos.pose.position.altitude
+
+            # For None axes, preserve current position in takeoff body frame
+            if x is None or y is None:
+                result = Geodesic.WGS84.Inverse(
+                    ref_lat,
+                    ref_lon,
+                    current_gps.latitude,
+                    current_gps.longitude,
+                )
+                dist = result["s12"]
+                rel = np.radians(result["azi1"] - hdg)
+                x_off = x if x is not None else dist * np.cos(rel)
+                y_off = y if y is not None else -dist * np.sin(rel)
+            else:
+                x_off, y_off = x, y
+
             lat, lon, alt = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
+                x_off,
+                -y_off,
                 z or 0,
-                takeoff_pos.pose.position.latitude,
-                takeoff_pos.pose.position.longitude,
-                takeoff_pos.pose.position.altitude,
+                ref_lat,
+                ref_lon,
+                ref_alt,
                 hdg,
             )
         else:
@@ -142,8 +169,9 @@ class TargetComputer:
                 hdg,
             )
 
-        target_yaw = hdg + (yaw if yaw is not None else 0)
-        quat = quaternion_from_euler(0, 0, np.radians(target_yaw))
+        target_heading = hdg - (yaw if yaw is not None else 0)
+
+        quat = quaternion_from_euler(0, 0, np.radians(90.0 - target_heading))
 
         msg = GeoPoseStamped()
         msg.pose.position.latitude = float(lat)
@@ -198,14 +226,34 @@ class TargetComputer:
             GPS setpoint with AMSL-corrected altitude.
         """
         if reference == MoveReference.TAKEOFF:
-            hdg = np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            # Takeoff quaternion stores ENU yaw; convert back to NED heading
+            hdg = 90.0 - np.degrees(PositionUtils.get_yaw_from_pose(takeoff_pos))
+            ref_lat = takeoff_pos.pose.position.latitude
+            ref_lon = takeoff_pos.pose.position.longitude
+            ref_alt = takeoff_pos.pose.position.altitude
+
+            # For None axes, preserve current position in takeoff body frame
+            if x is None or y is None:
+                result = Geodesic.WGS84.Inverse(
+                    ref_lat,
+                    ref_lon,
+                    current_gps.latitude,
+                    current_gps.longitude,
+                )
+                dist = result["s12"]
+                rel = np.radians(result["azi1"] - hdg)
+                x_off = x if x is not None else dist * np.cos(rel)
+                y_off = y if y is not None else -dist * np.sin(rel)
+            else:
+                x_off, y_off = x, y
+
             lat, lon, _ = GPSCalculate.calculate_gps_offset(
-                x or 0,
-                -(y or 0),
+                x_off,
+                -y_off,
                 0,
-                takeoff_pos.pose.position.latitude,
-                takeoff_pos.pose.position.longitude,
-                takeoff_pos.pose.position.altitude,
+                ref_lat,
+                ref_lon,
+                ref_alt,
                 hdg,
             )
         else:
@@ -221,7 +269,7 @@ class TargetComputer:
             )
 
         target_rel_alt = TargetComputer.compute_target_rel_alt(current_rel_alt, z, reference)
-        target_hdg = hdg + (yaw if yaw is not None else 0)
+        target_hdg = hdg - (yaw if yaw is not None else 0)
 
         return GPSUtils.create_gps_setpoint(lat, lon, target_rel_alt, target_hdg, initial_altitude)
 
@@ -237,7 +285,7 @@ class TargetComputer:
         current_rel_alt : float
             Current relative altitude in meters.
         z : float, optional
-            Altitude offset. None treated as 0.
+            Altitude offset. None = hold current altitude.
         reference : MoveReference
             BODY: offset from current. TAKEOFF: absolute relative altitude.
 
@@ -245,9 +293,11 @@ class TargetComputer:
         -------
         float
         """
+        if z is None:
+            return current_rel_alt
         if reference == MoveReference.TAKEOFF:
-            return z or 0
-        return current_rel_alt + (z or 0)
+            return z
+        return current_rel_alt + z
 
     @staticmethod
     def gps_to_local_target(

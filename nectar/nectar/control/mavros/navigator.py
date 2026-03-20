@@ -94,6 +94,17 @@ class MavrosNavigator:
 
         x_active, y_active, z_active = active_axes
 
+        # Align yaw before translating to prevent body-frame errors from
+        # rotating during simultaneous yaw + position PID control.
+        if yaw is not None and (x_active or y_active):
+            aligned = self._align_yaw(target, pid_yaw, start, timeout_dur, use_local)
+            if not aligned:
+                return False
+            pid_yaw.reset()
+            # World-frame target projects onto both body axes after yaw change
+            x_active = True
+            y_active = True
+
         while True:
             drone.delay(0.01)
 
@@ -141,15 +152,14 @@ class MavrosNavigator:
 
             drone.move_velocity(vel["x"], vel["y"], vel["z"], vyaw)
 
-            if distance <= precision:
-                if yaw is not None and abs(dyaw) > YAW_THRESHOLD:
-                    continue
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0)
+            yaw_ok = yaw is None or abs(dyaw) <= YAW_THRESHOLD
+            if distance <= precision and yaw_ok:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.info(f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0)
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.warn(f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m")
                 return False
 
@@ -209,10 +219,11 @@ class MavrosNavigator:
         start = drone.node.get_clock().now()
         timeout_dur = Duration(seconds=timeout) if timeout else None
 
+        target.header.stamp = drone.node.get_clock().now().to_msg()
+        drone.publish_setpoint(target)
+
         while True:
-            target.header.stamp = drone.node.get_clock().now().to_msg()
-            drone.publish_setpoint(target)
-            drone.delay(0.02)
+            drone.delay(0.1)
 
             if is_gps:
                 reached, distance = self._check_reached_gps(target, check_alt, precision)
@@ -227,13 +238,13 @@ class MavrosNavigator:
                 throttle_duration_sec=0.5,
             )
 
-            if reached:
-                if abs(dyaw) > YAW_THRESHOLD:
-                    continue
+            if reached and abs(dyaw) <= YAW_THRESHOLD:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.info(f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m")
                 return True
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
                 logger.warn(f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m")
                 return False
 
@@ -329,7 +340,9 @@ class MavrosNavigator:
             return PositionUtils.get_yaw_from_pose(drone.local_pos)
         if drone.is_indoor:
             return PositionUtils.get_yaw_from_pose(drone.vision_pos)
-        return np.radians(drone.heading)
+        # Convert compass heading (NED: 0=North, CW) to ENU yaw (0=East, CCW)
+        # to match target yaw from quaternion (always ENU).
+        return np.radians(90.0 - drone.heading)
 
     def _compute_errors(
         self,
@@ -387,6 +400,71 @@ class MavrosNavigator:
             dyaw = 0.0
 
         return dx, dy, dz, dyaw
+
+    def _align_yaw(
+        self,
+        target,
+        pid_yaw: "PIDController",
+        start,
+        timeout_dur: Optional[Duration],
+        use_local: bool,
+    ) -> bool:
+        """
+        Rotate to target yaw before starting position control.
+
+        Publishes yaw-rate-only velocity commands (zero translation) until
+        the yaw error is within YAW_THRESHOLD.
+
+        Parameters
+        ----------
+        target : PositionTarget | GeoPoseStamped
+            Navigation target (used to extract target yaw).
+        pid_yaw : PIDController
+            Yaw PID controller (state is preserved for the position phase).
+        start
+            Navigation start timestamp (shared with position phase for timeout).
+        timeout_dur : Duration, optional
+            Timeout for the entire navigation (yaw + position).
+        use_local : bool
+            Use EKF local position for yaw reading.
+
+        Returns
+        -------
+        bool
+            True if yaw aligned, False on timeout.
+        """
+        drone = self._drone
+        logger = drone.node.get_logger()
+        target_yaw = PositionUtils.get_yaw_from_pose(target)
+
+        logger.info(f"Yaw alignment phase \u2192 {np.degrees(target_yaw):.1f}\u00b0")
+
+        while True:
+            drone.delay(0.01)
+
+            if not drone.obstacle_manager.should_continue_navigation(drone):
+                continue
+
+            curr_yaw = self._get_current_yaw(use_local)
+            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw)
+
+            if abs(dyaw) <= YAW_THRESHOLD:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.1)
+                logger.info(f"\033[32;1mYaw aligned: {np.degrees(curr_yaw):.1f}\u00b0\033[0m")
+                return True
+
+            vyaw = pid_yaw.update(-dyaw)
+            drone.move_velocity(0.0, 0.0, 0.0, vyaw)
+
+            logger.info(
+                f"Yaw align: dyaw={np.degrees(dyaw):.1f}\u00b0 vyaw={vyaw:.2f}",
+                throttle_duration_sec=0.5,
+            )
+
+            if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
+                logger.warn("\033[33;1mTimeout during yaw alignment\033[0m")
+                return False
 
     def _resolve_altitude_error(
         self,
@@ -469,17 +547,28 @@ class MavrosNavigator:
             (reached, horizontal_distance)
         """
         gps = self._drone.gps
-        target_alt = check_alt if check_alt is not None else self._drone.rel_alt
 
-        reached, dist, _ = GPSUtils.check_reached(
-            gps.latitude,
-            gps.longitude,
-            self._drone.rel_alt,
-            target.pose.position.latitude,
-            target.pose.position.longitude,
-            target_alt,
-            precision,
-        )
+        if check_alt is not None:
+            reached, dist, _ = GPSUtils.check_reached(
+                gps.latitude,
+                gps.longitude,
+                self._drone.rel_alt,
+                target.pose.position.latitude,
+                target.pose.position.longitude,
+                check_alt,
+                precision,
+            )
+        else:
+            # No altitude target — check horizontal distance only
+            reached, dist, _ = GPSUtils.check_reached(
+                gps.latitude,
+                gps.longitude,
+                0.0,
+                target.pose.position.latitude,
+                target.pose.position.longitude,
+                0.0,
+                precision,
+            )
         return reached, dist
 
     def _create_pid(self, axis: str) -> PIDController:

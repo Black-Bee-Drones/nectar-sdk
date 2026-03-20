@@ -18,7 +18,7 @@ class GPSUtils:
     def _get_egm96(cls) -> GeoidPGM:
         """Lazy-load EGM96 geoid model."""
         if cls._egm96 is None:
-            cls._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=-3)
+            cls._egm96 = GeoidPGM("/usr/share/GeographicLib/geoids/egm96-5.pgm", kind=3)
         return cls._egm96
 
     @classmethod
