@@ -635,6 +635,8 @@ class MavrosDrone(BaseDrone):
 
     def _sync_wpnav_radius(self, precision: float) -> None:
         """Sync WPNAV_RADIUS with precision if WPNav is enabled."""
+        if not self._config.apply_setpoint_params:
+            return
         if not (self._setpoint_config and self._setpoint_config.use_wpnav):
             return
         radius_cm = float(round(max(5.0, min(precision * 100, 1000.0))))
@@ -704,7 +706,8 @@ class MavrosDrone(BaseDrone):
         try:
             if not self.set_mode("GUIDED"):
                 return False
-            self._apply_setpoint_config()
+            if self._config.apply_setpoint_params:
+                self._apply_setpoint_config()
             self.delay(0.5)
             req = CommandBool.Request()
             req.value = True
@@ -1737,14 +1740,21 @@ class MavrosDrone(BaseDrone):
             raise TypeError(f"Invalid config type: {type(config)}")
         self._node.get_logger().info("PID configuration updated")
 
-    def set_setpoint_config(self, config) -> None:
+    def set_setpoint_config(self, config, apply: bool = True) -> None:
         """
-        Update setpoint navigation configuration and apply to FCU.
+        Update setpoint navigation configuration.
+
+        When ``apply=True`` (default), sends parameters to the FCU immediately
+        via ``set_param``. This persists the values to the Pixhawk's EEPROM.
+        Use ``apply=False`` to update the SDK-side config without touching
+        the FCU (e.g., to change ``use_wpnav`` logic only).
 
         Parameters
         ----------
         config : str | Path | dict | SetpointNavConfig
             YAML file path, configuration dictionary, or SetpointNavConfig object.
+        apply : bool, default=True
+            If True, push parameters to the FCU.
 
         Raises
         ------
@@ -1759,7 +1769,8 @@ class MavrosDrone(BaseDrone):
             self._setpoint_config = config
         else:
             raise TypeError(f"Invalid config type: {type(config)}")
-        self._apply_setpoint_config()
+        if apply:
+            self._apply_setpoint_config()
         self._node.get_logger().info("Setpoint navigation configuration updated")
 
     @property
