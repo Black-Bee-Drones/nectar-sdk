@@ -237,6 +237,7 @@ config = MavrosConfig(
     connection_string="serial:///dev/ttyUSB0:921600",
     pid_config_file=None,                   # Optional custom PID config
     setpoint_config_file=None,              # Optional custom setpoint nav config
+    apply_setpoint_params=False,            # True to push WPNAV params to FCU on arm
 )
 
 drone = DroneFactory.create("mavros", config, node)
@@ -889,22 +890,24 @@ Controls ArduPilot GUIDED mode behavior when using `NavigationStrategy.SETPOINT`
 
 ### How It Works
 
-1. **On init**: `_load_setpoint_config()` loads from `setpoint_config_file` (if provided), otherwise from `config/mavros/setpoint_indoor.yaml` or `setpoint_outdoor.yaml` based on `is_indoor`.
-2. **On arm**: `_apply_setpoint_config()` sends `GUID_OPTIONS` and all `WPNAV_*` parameters to the FCU via `set_param()`. Logs which parameters failed.
-3. **On move_to (SETPOINT)**: If `use_wpnav` (bit 6 set in `guid_options`), syncs `WPNAV_RADIUS` with the `precision` parameter (cached to avoid redundant `set_param` calls on repeated `move_to` with the same precision).
+1. **On init**: `_load_setpoint_config()` loads from `setpoint_config_file` (if provided), otherwise from `config/mavros/setpoint_indoor.yaml` or `setpoint_outdoor.yaml` based on `is_indoor`. The config is always loaded for SDK-side logic (e.g., `use_wpnav` checks).
+2. **On arm** (only if `apply_setpoint_params=True`): `_apply_setpoint_config()` sends `GUID_OPTIONS` and all `WPNAV_*` parameters to the FCU via `set_param()`. Logs which parameters failed.
+3. **On move_to (SETPOINT)** (only if `apply_setpoint_params=True`): If `use_wpnav` (bit 6 set in `guid_options`), syncs `WPNAV_RADIUS` with the `precision` parameter.
+
+> **Important — FCU parameter persistence**: `set_param()` sends a MAVLink `PARAM_SET` message. ArduPilot's handler calls `vp->save()`, which **writes to EEPROM/flash**. Values persist across reboots. By default `apply_setpoint_params=False` so the SDK does not touch FCU parameters. Set `apply_setpoint_params=True` only when you want the SDK to control these values (e.g., SITL). You can also push parameters on demand via `drone.set_setpoint_config(config)` regardless of this flag.
 
 ```mermaid
 flowchart TD
     A["MavrosConfig.setpoint_config_file"] --> B["_load_setpoint_config()"]
     B --> C["SetpointNavConfig loaded"]
-    D["arm() → set_mode GUIDED"] --> E["_apply_setpoint_config()"]
-    E --> F["set_param GUID_OPTIONS"]
-    E --> G["set_param WPNAV_SPEED/UP/DN"]
-    E --> H["set_param WPNAV_ACCEL"]
-    E --> I["set_param WPNAV_RADIUS"]
-    E --> Ij["set_param WPNAV_JERK, WPNAV_RFND_USE"]
-    E --> Ip["set_param PSC_JERK_XY/NE"]
-    J["move_to(precision=0.1)"] --> K{"guid_options bit 6?"}
+    D["arm() → set_mode GUIDED"] --> E{"apply_setpoint_params?"}
+    E -->|Yes| F["_apply_setpoint_config()"]
+    F --> G["set_param GUID_OPTIONS"]
+    F --> H["set_param WPNAV_SPEED/UP/DN"]
+    F --> I["set_param WPNAV_ACCEL/RADIUS/JERK"]
+    F --> Ip["set_param PSC_JERK_XY/NE"]
+    E -->|No| skip["Skip — use existing FCU values"]
+    J["move_to(precision=0.1)"] --> K{"apply_setpoint_params\n+ guid_options bit 6?"}
     K -->|Yes| L["set_param WPNAV_RADIUS = precision"]
     L --> M["navigate_setpoint"]
     K -->|No| M
@@ -971,27 +974,16 @@ Both default to `guid_options: 1` (arm from TX, AC_PosControl). The SDK speed de
 ### Runtime Updates
 
 ```python
-# From YAML file
+# Push config to FCU (default: apply=True)
 drone.set_setpoint_config("/path/to/custom_setpoint.yaml")
-
-# From Path object
-from pathlib import Path
-drone.set_setpoint_config(Path("/path/to/custom_setpoint.yaml"))
-
-# From dictionary (partial updates use from_dict defaults for missing keys)
 drone.set_setpoint_config({"guid_options": 65, "speed": 0.3, "radius": 0.1})
+drone.set_setpoint_config(SetpointNavConfig(guid_options=65, speed=0.5, radius=0.1))
 
-# Disable WPNav (use AC_PosControl default)
-drone.set_setpoint_config({"guid_options": 1, "speed": 0.5})
-
-# From SetpointNavConfig object
-from nectar.control import SetpointNavConfig
-
-config = SetpointNavConfig(guid_options=65, speed=0.5, radius=0.1)
-drone.set_setpoint_config(config)
+# Update SDK-side config only, without touching FCU parameters
+drone.set_setpoint_config({"guid_options": 1, "speed": 0.5}, apply=False)
 ```
 
-`set_setpoint_config()` updates the config and immediately calls `_apply_setpoint_config()` to send the new parameters to the FCU.
+`set_setpoint_config()` always pushes to the FCU by default (`apply=True`), regardless of `apply_setpoint_params`. This is an explicit user action. Pass `apply=False` to update only the SDK-side config.
 
 ### Speed Control
 
