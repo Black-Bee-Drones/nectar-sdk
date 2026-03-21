@@ -29,12 +29,21 @@ class VisionPoseBridge(Node):
 
         self.declare_parameter("model_name", "iris")
         self.declare_parameter("gz_pose_topic", "/world/indoor_room/dynamic_pose/info")
+        self.declare_parameter("fallback_transform_index", 0)
         self._model_name = (
             self.get_parameter("model_name").get_parameter_value().string_value
+        )
+        self._model_prefix = f"{self._model_name}::"
+        self._fallback_index = (
+            self.get_parameter("fallback_transform_index")
+            .get_parameter_value()
+            .integer_value
         )
         gz_topic = (
             self.get_parameter("gz_pose_topic").get_parameter_value().string_value
         )
+        self._miss_count = 0
+        self._using_fallback = False
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
 
@@ -59,19 +68,46 @@ class VisionPoseBridge(Node):
     def _pose_callback(self, msg: TFMessage) -> None:
         # dynamic_pose/info contains transforms for ALL models.
         # Find the one matching our target model.
+        tf_match = None
         for tf in msg.transforms:
-            if tf.child_frame_id == self._model_name:
+            child = tf.child_frame_id
+            if child == self._model_name or child.startswith(self._model_prefix):
+                tf_match = tf
                 break
-        else:
+        if tf_match is None:
+            if msg.transforms and all(not t.child_frame_id for t in msg.transforms):
+                idx = max(0, min(int(self._fallback_index), len(msg.transforms) - 1))
+                tf_match = msg.transforms[idx]
+                if not self._using_fallback:
+                    self.get_logger().warning(
+                        "VisionPoseBridge: TF child_frame_id is empty for all transforms; "
+                        "using fallback_transform_index=%d" % idx
+                    )
+                    self._using_fallback = True
+            else:
+                self._using_fallback = False
+
+        if tf_match is None:
+            self._miss_count += 1
+            if self._miss_count % 100 == 1:
+                sample = ", ".join(t.child_frame_id for t in msg.transforms[:6])
+                self.get_logger().warning(
+                    "VisionPoseBridge: model '%s' not found in %d transforms. Sample: [%s]"
+                    % (self._model_name, len(msg.transforms), sample)
+                )
             return  # target model not in this message
+        self._miss_count = 0
 
         out = PoseWithCovarianceStamped()
-        out.header.stamp = self.get_clock().now().to_msg()
+        if tf_match.header.stamp.sec != 0 or tf_match.header.stamp.nanosec != 0:
+            out.header.stamp = tf_match.header.stamp
+        else:
+            out.header.stamp = self.get_clock().now().to_msg()
         out.header.frame_id = "map"
-        out.pose.pose.position.x = tf.transform.translation.x
-        out.pose.pose.position.y = tf.transform.translation.y
-        out.pose.pose.position.z = tf.transform.translation.z
-        out.pose.pose.orientation = tf.transform.rotation
+        out.pose.pose.position.x = tf_match.transform.translation.x
+        out.pose.pose.position.y = tf_match.transform.translation.y
+        out.pose.pose.position.z = tf_match.transform.translation.z
+        out.pose.pose.orientation = tf_match.transform.rotation
 
         # Low covariance — ground-truth pose is "perfect"
         out.pose.covariance[0] = 0.01  # x
