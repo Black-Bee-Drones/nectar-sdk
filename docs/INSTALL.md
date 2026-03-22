@@ -115,6 +115,45 @@ REALSENSE_CUDA=false make realsense
 
 For indoor navigation with D435i on Jetson Orin, the SDK includes [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros) which bridges NVIDIA Isaac ROS Visual SLAM with MAVROS. See the [VSLAM setup guide](https://www.andrewbernas.com/docs/tutorials/robots/vslam/setup) for the full workflow.
 
+## Simulation (Gazebo + ArduPilot SITL)
+
+### ArduPilot SITL
+
+```bash
+make sim-install           # Clone ArduPilot, build ArduCopter SITL binary
+```
+
+### Gazebo
+
+Installs Gazebo, the `ros_gz` bridge, and the ArduPilot Gazebo plugin. The script
+auto-selects the correct Gazebo version and install method per ROS distro:
+
+```bash
+make sim-install-gazebo    # Native install (auto-detects distro)
+```
+
+| ROS 2 Distro | Gazebo | ros_gz | Notes |
+|---|---|---|---|
+| Humble | Harmonic | built from source | apt binary links against Fortress |
+| Jazzy | Harmonic | binary | native support |
+| Kilted | Ionic | binary | native support |
+
+### Docker with Gazebo
+
+```bash
+INSTALL_GAZEBO=true make docker-build
+INSTALL_GAZEBO=true ROS_DISTRO=jazzy make docker-build
+```
+
+See [`docker/README.md`](../docker/README.md) for more options.
+
+### Running the simulation
+
+```bash
+make sim-start-gazebo      # Start SITL in Gazebo mode (terminal 1)
+make sim-gazebo            # Launch Gazebo + MAVROS (terminal 2)
+```
+
 ## System Setup (individual steps)
 
 ```bash

@@ -128,6 +128,31 @@ udev rules and hotplug scripts for D435/D435i/D455 are included for
 runtime device access (following the
 [VSLAM-UAV](https://github.com/bandofpv/VSLAM-UAV) Docker pattern).
 
+## Gazebo
+
+Gazebo simulation support is opt-in. Installs Gazebo, the `ros_gz` bridge, and the
+ArduPilot Gazebo plugin. The correct Gazebo version and install method are selected
+automatically per ROS distro (`scripts/lib/config.sh`).
+
+```bash
+# SDK with Gazebo (no AI)
+INSTALL_GAZEBO=true make docker-build
+
+# Different ROS distro
+INSTALL_GAZEBO=true ROS_DISTRO=jazzy make docker-build
+
+# Combined with RealSense + AI + GPU
+INSTALL_GAZEBO=true INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
+```
+
+Per-distro Gazebo versions:
+
+| ROS 2 Distro | Gazebo | ros_gz method | Notes |
+|---|---|---|---|
+| Humble | Harmonic | source | apt binary links against Fortress |
+| Jazzy | Harmonic | binary | native support |
+| Kilted | Ionic | binary | native support |
+
 ## Dependency strategy
 
 PyTorch is **not** listed in `pyproject.toml` dependencies. This is intentional:

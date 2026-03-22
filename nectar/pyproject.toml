@@ -36,7 +36,6 @@ control = [
 
 vision = [
     "mediapipe==0.10.18",
-    "protobuf==3.20.3",
 ]
 
 ai = [

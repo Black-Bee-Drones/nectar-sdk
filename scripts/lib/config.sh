@@ -35,6 +35,35 @@ else
     REALSENSE_ROS_TAG="${REALSENSE_ROS_TAG:-4.55.1}"
 fi
 
+# Gazebo — version and ros_gz install method depend on ROS distro.
+# Humble needs ros_gz built from source (apt binary links against Fortress).
+# Jazzy/Kilted ship ros_gz binaries that match their default Gazebo version.
+if [[ "$ROS_DISTRO" == "humble" ]]; then
+    GZ_VERSION="${GZ_VERSION:-harmonic}"
+    GZ_APT_PACKAGE="gz-harmonic"
+    GZ_SIM_DEV_PACKAGE="libgz-sim8-dev"
+    GZ_TRANSPORT_LIB="libgz-transport13"
+    GZ_ROS_FROM_SOURCE=true
+elif [[ "$ROS_DISTRO" == "jazzy" ]]; then
+    GZ_VERSION="${GZ_VERSION:-harmonic}"
+    GZ_APT_PACKAGE="gz-harmonic"
+    GZ_SIM_DEV_PACKAGE="libgz-sim8-dev"
+    GZ_TRANSPORT_LIB="libgz-transport13"
+    GZ_ROS_FROM_SOURCE=false
+elif [[ "$ROS_DISTRO" == "kilted" ]]; then
+    GZ_VERSION="${GZ_VERSION:-ionic}"
+    GZ_APT_PACKAGE="gz-ionic"
+    GZ_SIM_DEV_PACKAGE="libgz-sim9-dev"
+    GZ_TRANSPORT_LIB="libgz-transport14"
+    GZ_ROS_FROM_SOURCE=false
+else
+    GZ_VERSION="${GZ_VERSION:-harmonic}"
+    GZ_APT_PACKAGE="gz-harmonic"
+    GZ_SIM_DEV_PACKAGE="libgz-sim8-dev"
+    GZ_TRANSPORT_LIB="libgz-transport13"
+    GZ_ROS_FROM_SOURCE=true
+fi
+
 # System apt packages
 SYSTEM_PACKAGES=(
     git git-lfs curl wget software-properties-common

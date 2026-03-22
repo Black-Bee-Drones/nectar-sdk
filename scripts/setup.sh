@@ -131,6 +131,7 @@ cmd_docker_build() {
     docker build --network=host \
         --build-arg ROS_DISTRO="${ROS_DISTRO}" \
         --build-arg TORCH_VARIANT="${variant}" \
+        --build-arg INSTALL_GAZEBO="${INSTALL_GAZEBO:-false}" \
         --build-arg INSTALL_REALSENSE="${INSTALL_REALSENSE:-false}" \
         --build-arg REALSENSE_CUDA="${REALSENSE_CUDA:-false}" \
         --target "$target" \

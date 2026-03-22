@@ -35,6 +35,12 @@ RUN make rosdep-init
 RUN make ros2-deps
 RUN make build
 
+# Gazebo: simulation environment + ros_gz bridge + ArduPilot plugin
+ARG INSTALL_GAZEBO=false
+RUN if [ "$INSTALL_GAZEBO" = "true" ]; then \
+    ./scripts/simulation/install_gazebo.sh; \
+    fi
+
 # RealSense: udev rules + hotplug for runtime device access
 COPY docker/realsense/ /opt/realsense/
 RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
