@@ -3,7 +3,7 @@
 # Usage: nectar-od train --config configs/visdrone_yolo26n.yaml
 
 data:
-  dataset_path: datasets/visdrone-augmented
+  dataset_path: datasets/visdrone
   dataset_format: coco
 
 train:
@@ -12,11 +12,11 @@ train:
   epochs: 120
   batch_size: -1
   learning_rate: 0.01
-  output_dir: {OUTPUT_DIR}
+  output_dir: ./nectar/ai/detection/outputs/yolo26-nano-visdrone
   device: cuda
   seed: 42
   push_to_hub: true
-  hub_model_id: blackbeedrones/yolo26-nano-visdrone-aug
+  hub_model_id: blackbeedrones/yolo26-nano-visdrone
   tensorboard: true
   start_tensorboard: true
   tensorboard_port: 6006
@@ -35,7 +35,7 @@ train:
   lr_scheduler_type: cosine
   max_grad_norm: 1.0
   from_scratch: false
-  imgsz: 1024
+  imgsz: 640
   augment: true
   mosaic: 1.0
   mixup: 0.0
