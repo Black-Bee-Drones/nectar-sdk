@@ -31,3 +31,5 @@
 *.parquet filter=lfs diff=lfs merge=lfs -text
 *.feather filter=lfs diff=lfs merge=lfs -text
 nectar/nectar/interface/images/logo.png filter=lfs diff=lfs merge=lfs -text
+*.ipynb filter=lfs diff=lfs merge=lfs -text
+nectar/nectar/ai/detection/notebook/nectar_detection.ipynb filter=lfs diff=lfs merge=lfs -text
