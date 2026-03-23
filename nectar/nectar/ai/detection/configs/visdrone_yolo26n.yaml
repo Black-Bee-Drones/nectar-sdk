@@ -1,0 +1,67 @@
+# VisDrone 2019 - YOLO26 Nano Baseline
+# Resolution: 640x640 (standard YOLO)
+# Usage: nectar-od train --config configs/visdrone_yolo26n.yaml
+
+data:
+  dataset_path: datasets/visdrone-augmented
+  dataset_format: coco
+
+train:
+  framework: ultralytics
+  model: yolo26n.pt
+  epochs: 120
+  batch_size: -1
+  learning_rate: 0.01
+  output_dir: {OUTPUT_DIR}
+  device: cuda
+  seed: 42
+  push_to_hub: true
+  hub_model_id: blackbeedrones/yolo26-nano-visdrone-aug
+  tensorboard: true
+  start_tensorboard: true
+  tensorboard_port: 6006
+  mixed_precision: fp16
+  gradient_accumulation_steps: 1
+  multi_scale: true
+  use_ema: true
+  gradient_checkpoint: true
+  drop_mode: standard
+  drop_path: 0.1
+  drop_schedule: constant
+  dropout: 0.1
+  freeze_encoder: false
+  layer_norm: true
+  rms_norm: false
+  lr_scheduler_type: cosine
+  max_grad_norm: 1.0
+  from_scratch: false
+  imgsz: 1024
+  augment: true
+  mosaic: 1.0
+  mixup: 0.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  lrf: 0.01
+  cos_lr: true
+  early_stopping_patience: 10
+  early_stopping_delta: 0.001
+  early_stopping_metric: map50
+  early_stopping_mode: max
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 42
+  device: cuda
