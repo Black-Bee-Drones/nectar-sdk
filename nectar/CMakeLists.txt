@@ -43,6 +43,7 @@ install(PROGRAMS
   nectar/vision/nodes/camera_publisher_node.py
   nectar/examples/vision/camera_example.py
   nectar/examples/vision/depth_example.py
+  nectar/examples/vision/t265_example.py
   nectar/examples/ai/detector_example.py
   nectar/control/pid/pid_node.py
   ../scripts/simulation/vision_pose_bridge.py
