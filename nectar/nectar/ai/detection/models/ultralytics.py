@@ -315,14 +315,12 @@ class UltralyticsModel(BaseDetectionModel):
                     try:
                         weights_dir = Path(trainer.save_dir) / "weights"
                         if weights_dir.exists():
-                            for pt_file in ["last.pt", "best.pt"]:
-                                pt_path = weights_dir / pt_file
-                                if pt_path.exists():
-                                    uploader.upload_file(
-                                        str(pt_path),
-                                        f"weights/{pt_file}",
-                                        f"Checkpoint epoch {trainer.epoch}",
-                                    )
+                            for pt_path in sorted(weights_dir.glob("*.pt")):
+                                uploader.upload_file(
+                                    str(pt_path),
+                                    f"weights/{pt_path.name}",
+                                    f"Checkpoint epoch {trainer.epoch}",
+                                )
                     except Exception as e:
                         self.logger.error(f"Upload failed: {e}")
 
