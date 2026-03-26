@@ -76,6 +76,7 @@ show_help() {
     echo -e "${BLUE}Docker:${NC}"
     echo "  ./setup.sh docker-build       Build SDK image (no AI, fast)"
     echo "  ./setup.sh docker-build-full  Build full image (+ PyTorch + AI)"
+    echo "  ./setup.sh docker-build-t265  Build SDK image with T265 support (librealsense v2.53.1)"
     echo "  ./setup.sh docker-run         Run container (selects image, GPU auto)"
     echo "  ./setup.sh docker-exec        Open new shell in running container"
     echo ""
@@ -96,6 +97,7 @@ show_help() {
     echo "  TORCH_VARIANT=cu124           Build full with CUDA PyTorch"
     echo "  TORCH_VARIANT=auto            Auto-detect CUDA from nvidia-smi"
     echo "  TORCH_VERSION=2.7.1           Pin specific torch version"
+    echo "  DOCKER_NO_MOUNT=true          Run without local project mount"
     echo ""
     echo -e "${BLUE}Info:${NC}"
     echo "  Workspace:  ${WORKSPACE_DIR}"
@@ -108,6 +110,7 @@ show_help() {
 
 cmd_docker_build() {
     local target="${1:-sdk}"
+    local tag_suffix="${2:-}"
     local variant="${TORCH_VARIANT}"
 
     if [[ "$target" == "sdk-full" && "$variant" == "auto" ]]; then
@@ -126,18 +129,33 @@ cmd_docker_build() {
     if [[ "$target" == "sdk-full" ]]; then
         tag="${DOCKER_IMAGE_PREFIX}:${ROS_DISTRO}-full-${variant}"
     fi
+    [ -n "$tag_suffix" ] && tag="${DOCKER_IMAGE_PREFIX}:${ROS_DISTRO}-${tag_suffix}"
+
+    local build_args=(
+        --build-arg ROS_DISTRO="${ROS_DISTRO}"
+        --build-arg TORCH_VARIANT="${variant}"
+        --build-arg INSTALL_GAZEBO="${INSTALL_GAZEBO:-false}"
+        --build-arg INSTALL_REALSENSE="${INSTALL_REALSENSE:-false}"
+        --build-arg REALSENSE_CUDA="${REALSENSE_CUDA:-false}"
+    )
+    [ -n "${LIBREALSENSE_VERSION:-}" ] && build_args+=(--build-arg "LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}")
+    [ -n "${REALSENSE_ROS_TAG:-}" ]    && build_args+=(--build-arg "REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}")
 
     log_info "Building $tag (target=$target, distro=$ROS_DISTRO, torch=$variant)..."
     docker build --network=host \
-        --build-arg ROS_DISTRO="${ROS_DISTRO}" \
-        --build-arg TORCH_VARIANT="${variant}" \
-        --build-arg INSTALL_GAZEBO="${INSTALL_GAZEBO:-false}" \
-        --build-arg INSTALL_REALSENSE="${INSTALL_REALSENSE:-false}" \
-        --build-arg REALSENSE_CUDA="${REALSENSE_CUDA:-false}" \
+        "${build_args[@]}" \
         --target "$target" \
         -t "$tag" \
         -f "${PROJECT_DIR}/docker/Dockerfile" "$PROJECT_DIR"
     log_success "Docker image $tag built"
+}
+
+cmd_docker_build_t265() {
+    export LIBREALSENSE_VERSION="v2.53.1"
+    export REALSENSE_ROS_TAG="4.51.1"
+    export INSTALL_REALSENSE="true"
+    export ROS_DISTRO="humble"
+    cmd_docker_build "sdk" "t265"
 }
 
 DOCKER_CONTAINER_PREFIX="${ROS2_PKG_NAME}"
@@ -199,7 +217,6 @@ cmd_docker_run() {
     for dev in /dev/video*; do
         [ -e "$dev" ] && devices+=(--device="$dev:$dev")
     done
-    [ -d /dev/bus/usb ] && devices+=(--device=/dev/bus/usb:/dev/bus/usb)
 
     if [ ${#devices[@]} -eq 0 ]; then
         log_warning "No video devices found. Webcam nodes won't work."
@@ -214,6 +231,17 @@ cmd_docker_run() {
     local tty_flag="-i"
     [ -t 0 ] && tty_flag="-it"
 
+    local volumes=(
+        --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw"
+        --volume="$xauth:/root/.Xauthority:rw"
+        --volume="/dev:/dev"
+    )
+
+    if [[ "${DOCKER_NO_MOUNT:-}" != "true" ]] && [ -d "$PROJECT_DIR" ]; then
+        volumes+=(--volume="${PROJECT_DIR}:/home/ros2_ws/src/nectar-sdk")
+        log_info "Mounting local project (disable: DOCKER_NO_MOUNT=true)"
+    fi
+
     log_info "Starting container $name ($tag)..."
     log_info "Open more terminals: make docker-exec"
     docker run $tty_flag --rm \
@@ -224,9 +252,9 @@ cmd_docker_run() {
         --net=host \
         --privileged \
         $gpu_flag \
-        --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-        --volume="$xauth:/root/.Xauthority:rw" \
+        "${volumes[@]}" \
         --device-cgroup-rule='c 81:* rmw' \
+        --device-cgroup-rule='c 189:* rmw' \
         "${devices[@]}" \
         "$tag" \
         bash
@@ -437,6 +465,7 @@ main() {
         # Docker
         docker-build)       cmd_docker_build "sdk" ;;
         docker-build-full)  cmd_docker_build "sdk-full" ;;
+        docker-build-t265)  cmd_docker_build_t265 ;;
         docker-run)         cmd_docker_run ;;
         docker-exec)        cmd_docker_exec ;;
         # Setup
