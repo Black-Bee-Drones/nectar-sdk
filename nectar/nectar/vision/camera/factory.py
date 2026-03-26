@@ -16,6 +16,7 @@ from nectar.vision.camera.config import (
     RealSenseConfig,
     ROSConfig,
     ROSDepthConfig,
+    T265Config,
 )
 from nectar.vision.camera.drivers import (
     C920Cam,
@@ -26,6 +27,7 @@ from nectar.vision.camera.drivers import (
     RealsenseCam,
     ROSCam,
     ROSDepthCam,
+    T265Cam,
 )
 
 
@@ -106,6 +108,8 @@ class CameraFactory:
         if config is None:
             if key == "realsense":
                 config = RealSenseConfig()
+            elif key == "t265":
+                config = T265Config()
             elif key == "webcam":
                 config = OpenCVConfig()
             elif key == "c920":
@@ -144,10 +148,18 @@ class CameraFactory:
                 return builder(config, node)
             return builder(config)
 
+        if builder is T265Cam:
+            if isinstance(config, T265Config) and config.use_ros_topics:
+                if node is None:
+                    raise ValueError("T265Cam with use_ros_topics=True requires a ROS node.")
+                return builder(config, node)
+            return builder(config)
+
         return builder(config)
 
 
 CameraFactory.register("realsense", RealsenseCam)
+CameraFactory.register("t265", T265Cam)
 CameraFactory.register("webcam", OpenCVCam)
 CameraFactory.register("opencv", OpenCVCam)
 CameraFactory.register("c920", C920Cam)

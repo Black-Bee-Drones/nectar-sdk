@@ -6,6 +6,7 @@ from .opencv_cam import OpenCVCam
 from .realsense_cam import RealsenseCam
 from .ros_cam import ROSCam
 from .ros_depth_cam import ROSDepthCam
+from .t265_cam import T265Cam, T265Pose
 
 __all__ = [
     "FileImageCam",
@@ -17,4 +18,6 @@ __all__ = [
     "RealsenseCam",
     "OakdCam",
     "OakdCameraResolution",
+    "T265Cam",
+    "T265Pose",
 ]

@@ -94,3 +94,18 @@ class OakDConfig(CameraConfig):
     cam_num: int = 1  # 1: rgb, 2: left mono, 3: right mono
     enable_depth: bool = False
     name: str = "oakd_cam"
+
+
+@dataclass(frozen=True)
+class T265Config(CameraConfig):
+    name: str = "t265_cam"
+    enable_pose: bool = True
+    enable_depth: bool = True
+    stereo_fov_deg: float = 90.0
+    stereo_height_px: int = 300
+    num_disparities: int = 96
+    block_size: int = 16
+    use_ros_topics: bool = False
+    fisheye1_topic: str = "/camera/fisheye1/image_raw"
+    fisheye2_topic: str = "/camera/fisheye2/image_raw"
+    pose_topic: str = "/camera/pose/sample"

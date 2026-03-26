@@ -12,6 +12,7 @@ from nectar.vision.camera.config import (
     RealSenseConfig,
     ROSConfig,
     ROSDepthConfig,
+    T265Config,
 )
 from nectar.vision.camera.config_builder import ConfigBuilder
 from nectar.vision.camera.drivers import (
@@ -24,6 +25,8 @@ from nectar.vision.camera.drivers import (
     RealsenseCam,
     ROSCam,
     ROSDepthCam,
+    T265Cam,
+    T265Pose,
 )
 from nectar.vision.camera.factory import CameraFactory
 from nectar.vision.camera.handler import ImageHandler
@@ -55,4 +58,7 @@ __all__ = [
     "RealsenseCam",
     "OakdCam",
     "OakdCameraResolution",
+    "T265Cam",
+    "T265Pose",
+    "T265Config",
 ]

@@ -49,6 +49,9 @@ from nectar.vision.camera import (
     ROSConfig,
     ROSDepthCam,
     ROSDepthConfig,
+    T265Cam,
+    T265Config,
+    T265Pose,
 )
 from nectar.vision.nodes import (
     ArucoNode,
@@ -86,6 +89,9 @@ __all__ = [
     "RealsenseCam",
     "OakdCam",
     "OakdCameraResolution",
+    "T265Cam",
+    "T265Config",
+    "T265Pose",
     # Markers
     "Aruco",
     # Color
