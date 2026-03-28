@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+T265 tracking camera example: fisheye stereo display, stereo depth
+visualization with click-to-measure, and 6DOF pose overlay.
+
 Usage:
     # Direct pyrealsense2 (T265 not shared with realsense_ros)
     ros2 run nectar t265_example.py
@@ -26,9 +29,10 @@ class T265DemoNode(Node):
     def __init__(self, mode: str, enable_depth: bool) -> None:
         super().__init__("t265_example")
 
-        self.fisheye_window = "T265 Fisheye"
-        self.depth_window = "T265 Stereo Depth"
-        self.point_uv: Optional[Tuple[int, int]] = None
+        self.enable_depth = enable_depth
+        self.fisheye_window = "T265 Fisheye (L | R)"
+        self.depth_window = "T265 Stereo Depth (click to measure)"
+        self.depth_point: Optional[Tuple[int, int]] = None
 
         use_ros = mode == "ros"
         config = T265Config(
@@ -41,31 +45,38 @@ class T265DemoNode(Node):
         self.cam.start()
 
         cv2.namedWindow(self.fisheye_window)
-        cv2.setMouseCallback(self.fisheye_window, self._on_mouse)
+        if enable_depth:
+            cv2.namedWindow(self.depth_window)
+            cv2.setMouseCallback(self.depth_window, self._on_depth_click)
 
         period = 1.0 / 30.0
         self.timer = self.create_timer(period, self._tick)
         self.get_logger().info(
             f"T265 started ({'ROS topics' if use_ros else 'direct pyrealsense2'}, "
             f"depth={'on' if enable_depth else 'off'}). "
-            "Click on fisheye to measure depth. Press 'q' to quit."
+            "Click on depth window to measure distance. Press 'q' to quit."
         )
 
-    def _on_mouse(self, event, x, y, flags, param):
+    def _on_depth_click(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.point_uv = (x, y)
+            self.depth_point = (x, y)
 
     def _tick(self) -> None:
-        frame = self.cam.get_frame()
-        if frame is None:
+        stereo = self.cam.get_stereo_frames()
+        if stereo is None:
             return
+        left, right = stereo
+
+        left_bgr = cv2.cvtColor(left, cv2.COLOR_GRAY2BGR)
+        right_bgr = cv2.cvtColor(right, cv2.COLOR_GRAY2BGR)
+        combined = np.hstack((left_bgr, right_bgr))
 
         pose = self.cam.get_pose()
-
-        h, w = frame.shape[:2]
+        t = pose.translation
+        v = pose.velocity
         cv2.putText(
-            frame,
-            f"pos: ({pose.translation[0]:+.2f}, {pose.translation[1]:+.2f}, {pose.translation[2]:+.2f})",
+            combined,
+            f"pos: ({t[0]:+.2f}, {t[1]:+.2f}, {t[2]:+.2f})  conf: {pose.tracker_confidence}",
             (10, 25),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
@@ -74,8 +85,8 @@ class T265DemoNode(Node):
             cv2.LINE_AA,
         )
         cv2.putText(
-            frame,
-            f"conf: {pose.tracker_confidence}  vel: ({pose.velocity[0]:+.2f}, {pose.velocity[1]:+.2f}, {pose.velocity[2]:+.2f})",
+            combined,
+            f"vel: ({v[0]:+.2f}, {v[1]:+.2f}, {v[2]:+.2f})",
             (10, 50),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
@@ -84,17 +95,12 @@ class T265DemoNode(Node):
             cv2.LINE_AA,
         )
 
-        if self.point_uv is not None:
-            u, v = self.point_uv
-            u = max(0, min(w - 1, u))
-            v = max(0, min(h - 1, v))
-            cv2.circle(frame, (u, v), 5, (0, 255, 255), -1)
+        cv2.imshow(self.fisheye_window, combined)
 
-        cv2.imshow(self.fisheye_window, frame)
-
-        depth = self.cam.get_depth_frame()
-        if depth is not None:
-            self._show_depth(depth)
+        if self.enable_depth:
+            depth = self.cam.get_depth_frame()
+            if depth is not None:
+                self._show_depth(depth)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
@@ -110,30 +116,25 @@ class T265DemoNode(Node):
         depth_vis = np.nan_to_num(depth_vis, nan=0.0).astype("uint8")
         depth_color = cv2.applyColorMap(depth_vis, cv2.COLORMAP_JET)
 
-        dh, dw = depth_color.shape[:2]
+        if self.depth_point is not None:
+            u, v = self.depth_point
+            dh, dw = depth_color.shape[:2]
+            u = max(0, min(dw - 1, u))
+            v = max(0, min(dh - 1, v))
 
-        if self.point_uv is not None:
-            frame = self.cam.get_frame()
-            if frame is not None:
-                fh, fw = frame.shape[:2]
-                su = int(self.point_uv[0] * dw / fw)
-                sv = int(self.point_uv[1] * dh / fh)
-                su = max(0, min(dw - 1, su))
-                sv = max(0, min(dh - 1, sv))
-
-                dist = self.cam.get_distance(su, sv)
-                label = f"{dist:.2f}m" if dist else "N/A"
-                cv2.circle(depth_color, (su, sv), 4, (255, 255, 255), -1)
-                cv2.putText(
-                    depth_color,
-                    label,
-                    (su + 8, sv - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    1,
-                    cv2.LINE_AA,
-                )
+            dist = self.cam.get_distance(u, v)
+            label = f"{dist:.2f}m" if dist else "N/A"
+            cv2.circle(depth_color, (u, v), 4, (255, 255, 255), -1)
+            cv2.putText(
+                depth_color,
+                label,
+                (u + 8, v - 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
 
         cv2.imshow(self.depth_window, depth_color)
 

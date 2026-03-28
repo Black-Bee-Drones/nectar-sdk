@@ -334,7 +334,11 @@ class CameraInitWorker(QObject):
             use_ros = self._config.get("use_ros_topics", False)
 
             if use_ros:
-                from nectar.vision.camera import QoSReliability, ROSDepthCam, ROSDepthConfig
+                from nectar.vision.camera import (
+                    QoSReliability,
+                    ROSDepthCam,
+                    ROSDepthConfig,
+                )
 
                 color_topic = self._config.get("color_topic", "/camera/color/image_raw")
                 color_compressed = self._config.get("color_compressed", True)
@@ -372,6 +376,22 @@ class CameraInitWorker(QObject):
                 )
                 return RealsenseCam(config)
 
+        elif camera_type == "t265":
+            from nectar.vision.camera import T265Cam, T265Config
+
+            use_ros = self._config.get("use_ros_topics", False)
+            config = T265Config(
+                enable_depth=self._config.get("enable_depth", True),
+                enable_pose=self._config.get("enable_pose", True),
+                stereo_fov_deg=self._config.get("stereo_fov_deg", 90.0),
+                stereo_height_px=self._config.get("stereo_height_px", 300),
+                use_ros_topics=use_ros,
+                fisheye1_topic=self._config.get("fisheye1_topic", "/camera/fisheye1/image_raw"),
+                fisheye2_topic=self._config.get("fisheye2_topic", "/camera/fisheye2/image_raw"),
+                pose_topic=self._config.get("pose_topic", "/camera/pose/sample"),
+            )
+            return T265Cam(config, node=self._node if use_ros else None)
+
         elif camera_type == "oakd":
             from nectar.vision.camera import OakdCam, OakDConfig
 
@@ -382,7 +402,12 @@ class CameraInitWorker(QObject):
             return OakdCam(config)
 
         elif camera_type == "ros":
-            from nectar.vision.camera import QoSDurability, QoSReliability, ROSCam, ROSConfig
+            from nectar.vision.camera import (
+                QoSDurability,
+                QoSReliability,
+                ROSCam,
+                ROSConfig,
+            )
 
             reliability_str = self._config.get("reliability", "Best Effort")
             if reliability_str == "Reliable":
@@ -529,6 +554,9 @@ class VisionTab(QWidget):
         self._current_distance: Optional[float] = None
         self._current_depth_frame: Optional[np.ndarray] = None
         self._depth_colormap = cv2.COLORMAP_PLASMA
+
+        # T265 display mode
+        self._t265_display_mode = "Left Fisheye"
         self._depth_min_m = 0.1
         self._depth_max_m = 5.0
 
@@ -646,12 +674,11 @@ class VisionTab(QWidget):
         # Enable depth checkbox
         self._depth_enable_cb = QCheckBox("Enable Depth Mode")
         self._depth_enable_cb.setToolTip(
-            "Enable depth capture (RealSense/OAK-D only). Requires camera restart."
+            "Enable depth capture (RealSense D4xx/T265/OAK-D). Requires camera restart."
         )
         self._depth_enable_cb.stateChanged.connect(self._on_depth_enabled_changed)
 
-        # Info label about depth
-        depth_info = QLabel("Supports: RealSense, OAK-D")
+        depth_info = QLabel("Supports: RealSense D4xx, T265 (stereo), OAK-D")
         depth_info.setProperty("muted", True)
 
         # Show depth map checkbox
@@ -1325,6 +1352,48 @@ class VisionTab(QWidget):
 
         return isinstance(self._camera, DepthCam)
 
+    def _is_t265_camera(self) -> bool:
+        """Check if current camera is a T265."""
+        if self._camera is None:
+            return False
+        from nectar.vision.camera.drivers.t265_cam import T265Cam
+
+        return isinstance(self._camera, T265Cam)
+
+    def _effective_t265_mode(self) -> str:
+        """Return effective T265 display mode, forcing rectified when measuring depth."""
+        if self._measure_distance and self._depth_enabled:
+            return "Rectified"
+        return self._t265_display_mode
+
+    def _get_t265_display_frame(self) -> Optional[np.ndarray]:
+        """Select T265 display frame based on mode.
+
+        Forces rectified view when measuring depth so click coordinates
+        match the stereo depth output (same projection geometry).
+        """
+        mode = self._effective_t265_mode()
+
+        if mode == "Right Fisheye":
+            pair = self._camera.get_stereo_frames()
+            if pair is None:
+                return None
+            return cv2.cvtColor(pair[1], cv2.COLOR_GRAY2BGR)
+        elif mode == "Both Fisheye":
+            pair = self._camera.get_stereo_frames()
+            if pair is None:
+                return None
+            left_bgr = cv2.cvtColor(pair[0], cv2.COLOR_GRAY2BGR)
+            right_bgr = cv2.cvtColor(pair[1], cv2.COLOR_GRAY2BGR)
+            return np.hstack((left_bgr, right_bgr))
+        elif mode == "Rectified":
+            rect = self._camera.get_rectified_frames()
+            if rect is None:
+                return self._camera.get_frame()
+            return cv2.cvtColor(rect[0], cv2.COLOR_GRAY2BGR)
+        else:
+            return self._camera.get_frame()
+
     def _get_depth_frame(self) -> Optional[np.ndarray]:
         """Get depth frame from camera if available."""
         if not self._is_depth_camera():
@@ -1339,6 +1408,9 @@ class VisionTab(QWidget):
         if not self._is_depth_camera():
             return None
         try:
+            if self._is_t265_camera():
+                return self._camera.get_distance(u, v)
+
             from nectar.vision.camera import ROSDepthCam
 
             if isinstance(self._camera, ROSDepthCam) and self._current_frame is not None:
@@ -1394,6 +1466,9 @@ class VisionTab(QWidget):
     @Slot()
     def _start_camera(self) -> None:
         config = self._camera_config.get_config()
+
+        if config.get("type") == "t265":
+            self._t265_display_mode = config.get("display_mode", "Left Fisheye")
 
         self._start_btn.setEnabled(False)
         self._camera_config.setEnabled(False)
@@ -1492,7 +1567,10 @@ class VisionTab(QWidget):
             return
 
         try:
-            frame = self._camera.get_frame()
+            if self._is_t265_camera():
+                frame = self._get_t265_display_frame()
+            else:
+                frame = self._camera.get_frame()
             if frame is None:
                 return
 
@@ -1548,7 +1626,9 @@ class VisionTab(QWidget):
                         dh, dw = depth_vis.shape[:2]
                         from nectar.vision.camera import ROSDepthCam
 
-                        if isinstance(self._camera, ROSDepthCam):
+                        if self._is_t265_camera() and self._effective_t265_mode() == "Rectified":
+                            scaled_u, scaled_v = u, v
+                        elif isinstance(self._camera, ROSDepthCam) or self._is_t265_camera():
                             scaled_u = int(u * dw / w) if w > 0 else u
                             scaled_v = int(v * dh / h) if h > 0 else v
                         else:
@@ -1557,6 +1637,38 @@ class VisionTab(QWidget):
                         if 0 <= scaled_u < dw and 0 <= scaled_v < dh:
                             cv2.circle(depth_vis, (scaled_u, scaled_v), 8, (255, 255, 255), 2)
                             cv2.circle(depth_vis, (scaled_u, scaled_v), 3, (255, 255, 255), -1)
+
+            # T265 pose overlay
+            pose_str = ""
+            if self._is_t265_camera():
+                try:
+                    pose = self._camera.get_pose()
+                    t = pose.translation
+                    conf = pose.tracker_confidence
+                    pose_str = f" | Pose: ({t[0]:+.2f}, {t[1]:+.2f}, {t[2]:+.2f}) conf={conf}"
+                    cv2.putText(
+                        rgb_frame,
+                        f"pos: ({t[0]:+.2f}, {t[1]:+.2f}, {t[2]:+.2f})",
+                        (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),
+                        1,
+                        cv2.LINE_AA,
+                    )
+                    v = pose.velocity
+                    cv2.putText(
+                        rgb_frame,
+                        f"conf: {conf}  vel: ({v[0]:+.2f}, {v[1]:+.2f}, {v[2]:+.2f})",
+                        (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),
+                        1,
+                        cv2.LINE_AA,
+                    )
+                except Exception:
+                    pass
 
             # Update FPS counter
             self._fps_counter += 1
@@ -1568,7 +1680,9 @@ class VisionTab(QWidget):
 
             h, w = rgb_frame.shape[:2]
             depth_str = " | Depth: ON" if self._depth_enabled and self._is_depth_camera() else ""
-            self._info_label.setText(f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}")
+            self._info_label.setText(
+                f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}{pose_str}"
+            )
 
             # Display RGB frame (always)
             self._video_display.display_rgb(rgb_frame)
