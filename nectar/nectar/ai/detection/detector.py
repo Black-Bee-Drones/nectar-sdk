@@ -295,6 +295,7 @@ class Detector:
             raise RuntimeError("Model not loaded. Call load() first.")
         return self._model.evaluate(config)
 
+    @staticmethod
     def draw_detections(
         self,
         image: np.ndarray,
