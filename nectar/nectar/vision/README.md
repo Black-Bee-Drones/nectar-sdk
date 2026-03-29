@@ -6,7 +6,7 @@ Camera abstraction layer and image processing algorithms for ROS2. Provides unif
 
 - **README.md**: This file - Module architecture, API reference, and usage
 - **camera/**: Camera drivers and abstraction layer
-  - `drivers/`: Camera implementations (`opencv_cam.py`, `realsense_cam.py`, `oakd_cam.py`, etc.)
+  - `drivers/`: Camera implementations (`opencv_cam.py`, `realsense_cam.py`, `t265_cam.py`, `oakd_cam.py`, etc.)
   - `calibration/`: Intrinsic camera calibration
 - **algorithms/**: Vision algorithms
   - `markers/`: ArUco fiducial marker detection
@@ -121,6 +121,20 @@ classDiagram
         +close()
     }
 
+    class T265Cam {
+        -_pipeline Pipeline
+        -_stereo StereoSGBM
+        -_config T265Config
+        +start()
+        +get_frame() Optional~ndarray~
+        +get_depth_frame() Optional~ndarray~
+        +get_distance(u, v) Optional~float~
+        +get_stereo_frames() tuple
+        +get_pose() T265Pose
+        +get_rectified_frames() tuple
+        +close()
+    }
+
     class ImageHandler {
         +node Node
         +image_source str
@@ -146,6 +160,7 @@ classDiagram
     DepthCam <|-- RealsenseCam
     DepthCam <|-- OakdCam
     DepthCam <|-- ROSDepthCam
+    DepthCam <|-- T265Cam
     ROSDepthCam *-- ROSCam
     CameraFactory ..> AbstractCam : creates
     ImageHandler o-- AbstractCam
@@ -232,6 +247,21 @@ classDiagram
         +path str
     }
 
+    class T265Config {
+        <<dataclass>>
+        +enable_pose bool
+        +enable_depth bool
+        +stereo_fov_deg float
+        +stereo_height_px int
+        +num_disparities int
+        +block_size int
+        +use_ros_topics bool
+        +fisheye1_topic str
+        +fisheye2_topic str
+        +pose_topic str
+    }
+
+    CameraConfig <|-- T265Config
     CameraConfig <|-- OpenCVConfig
     CameraConfig <|-- RealSenseConfig
     CameraConfig <|-- OakDConfig
@@ -259,7 +289,8 @@ CameraFactory.register(key: str, builder: Type[AbstractCam])
 |-----|--------------|-------------|
 | `webcam` | `OpenCVCam` | Generic USB webcams |
 | `opencv` | `OpenCVCam` | Alias for webcam |
-| `realsense` | `RealsenseCam` | Intel RealSense D4xx series |
+| `realsense` | `RealsenseCam` | Intel RealSense D4xx (color + depth via pyrealsense2) |
+| `t265` | `T265Cam` | Intel RealSense T265 (fisheye + stereo depth + 6DOF pose) |
 | `oakd` | `OakdCam` | Luxonis OAK-D cameras |
 | `c920` | `C920Cam` | Logitech C920/C920e |
 | `imx219` | `IMX219Cam` | Raspberry Pi Camera v2 (Jetson) |
@@ -363,6 +394,102 @@ class DepthCam(AbstractCam):
     def get_depth_frame() -> Optional[ndarray]  # Depth in meters (float32)
     def get_distance(u: int, v: int) -> Optional[float]  # Distance at pixel
 ```
+
+### T265Cam
+
+Intel RealSense T265 tracking camera driver. The T265 has two 848x800 global-shutter fisheye cameras (30 Hz), a BMI055 IMU (gyro 200 Hz, accel 62 Hz), and an onboard Movidius Myriad 2 VPU running V-SLAM that outputs 6DOF pose at 200 Hz.
+
+The T265 is not a depth camera. `T265Cam` computes stereo depth on the host from the fisheye pair using OpenCV's StereoSGBM with Kannala-Brandt fisheye undistortion, following the [librealsense t265_stereo.py](https://github.com/IntelRealSense/librealsense/blob/v2.53.1/wrappers/python/examples/t265_stereo.py) reference. Effective depth range is ~0.3-3m given the 64mm baseline.
+
+**Access modes**:
+
+| Mode | `use_ros_topics` | When to use |
+|------|-------------------|-------------|
+| Direct | `False` | T265 dedicated to SDK. Uses pyrealsense2 callback-based pipeline. |
+| ROS topics | `True` | `realsense2_camera` already running (e.g. for navigation via `vision_to_mavros`). Subscribes to fisheye + CameraInfo + pose topics. |
+
+When `realsense2_camera` holds the USB device, direct mode will fail. Use ROS topic mode to share the camera.
+
+**Stereo depth pipeline** (one-time on `start()`):
+1. Get Kannala-Brandt intrinsics (K, D) and stereo extrinsics (R, T) from pyrealsense2 profiles or `CameraInfo` topics
+2. Compute `cv2.fisheye.initUndistortRectifyMap` for left and right
+3. Build projection matrices P and reprojection matrix Q
+
+**Per-frame** (`get_depth_frame()`):
+1. Remap both fisheye images with pre-computed maps
+2. Run `cv2.StereoSGBM` on rectified pair
+3. Convert disparity to depth via `depth = focal * baseline / disparity`
+
+**Configuration** (`T265Config`):
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enable_pose` | bool | `True` | Subscribe to / capture 6DOF pose stream |
+| `enable_depth` | bool | `True` | Compute stereo depth from fisheye pair |
+| `stereo_fov_deg` | float | `90.0` | Output FOV for rectified stereo images |
+| `stereo_height_px` | int | `300` | Output height in pixels (width = height + max_disp) |
+| `num_disparities` | int | `96` | StereoSGBM max disparity search range (must be divisible by 16) |
+| `block_size` | int | `16` | StereoSGBM block size |
+| `use_ros_topics` | bool | `False` | `True`: subscribe to ROS topics. `False`: direct pyrealsense2. |
+| `fisheye1_topic` | str | `/camera/fisheye1/image_raw` | Left fisheye topic (ROS mode) |
+| `fisheye2_topic` | str | `/camera/fisheye2/image_raw` | Right fisheye topic (ROS mode) |
+| `pose_topic` | str | `/camera/pose/sample` | Pose topic (ROS mode, Odometry or PoseStamped) |
+
+**T265Pose** dataclass (returned by `get_pose()`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `translation` | ndarray (3,) | Position [x, y, z] in meters |
+| `rotation` | ndarray (4,) | Quaternion [x, y, z, w] |
+| `velocity` | ndarray (3,) | Linear velocity [vx, vy, vz] m/s |
+| `angular_velocity` | ndarray (3,) | Angular velocity [wx, wy, wz] rad/s |
+| `tracker_confidence` | int | 0 (failed) to 3 (high) |
+| `timestamp` | float | Host-synchronized timestamp in seconds |
+
+**API**:
+```python
+T265Cam(config: T265Config, node: Node = None)
+
+cam.start()
+cam.get_frame()                  # Left fisheye as BGR (800x848x3)
+cam.get_stereo_frames()          # (left, right) grayscale pair
+cam.get_depth_frame()            # Stereo depth, float32 meters (300x300)
+cam.get_distance(u, v)           # Distance at pixel in stereo output
+cam.get_pose()                   # T265Pose dataclass
+cam.get_rectified_frames()       # Undistorted+rectified pair (cropped)
+cam.close()
+```
+
+**Example**:
+```python
+from nectar.vision import T265Cam, T265Config
+
+# Direct mode
+cam = T265Cam(T265Config(enable_depth=True, enable_pose=True))
+cam.start()
+
+frame = cam.get_frame()          # left fisheye (BGR)
+depth = cam.get_depth_frame()    # stereo depth (float32, meters)
+pose = cam.get_pose()            # T265Pose
+left, right = cam.get_stereo_frames()
+
+# ROS topic mode (realsense2_camera already running)
+cam = T265Cam(T265Config(use_ros_topics=True), node=node)
+cam.start()
+```
+
+**T265 V-SLAM options** (direct mode only, set on pose sensor before `pipeline.start()`):
+
+| Option | pyrealsense2 name | Default | Description |
+|--------|-------------------|---------|-------------|
+| Mapping | `rs.option.enable_mapping` | 1 (on) | Internal feature map. Reduces drift via small loop closures. |
+| Relocalization | `rs.option.enable_relocalization` | 1 (on) | Reconnects to map after large drift. Can cause large pose jumps. |
+| Pose jumping | `rs.option.enable_pose_jumping` | 1 (on) | Allows discontinuous translation corrections. |
+| Map preservation | `rs.option.enable_map_preservation` | 0 (off) | Preserve map across stop/start cycles. |
+
+For drone flight with ArduPilot EKF: disable relocalization and pose jumping (the EKF cannot handle discontinuous position teleports). Keep mapping enabled. See [PR #4321](https://github.com/IntelRealSense/librealsense/pull/4321), [realsense-ros #779](https://github.com/IntelRealSense/realsense-ros/issues/779).
+
+**pyrealsense2 version**: T265 requires `pyrealsense2==2.53.1.4623` (last PyPI release with TM2 support). Version 2.54+ dropped T265.
 
 ## Algorithms
 
@@ -1204,7 +1331,8 @@ See `examples/vision/` for complete working examples:
 | Example | Description |
 |---------|-------------|
 | `camera_example.py` | Basic camera capture and configuration |
-| `depth_example.py` | Depth camera visualization and distance |
+| `depth_example.py` | Depth camera visualization and distance (RealSense D4xx, OAK-D) |
+| `t265_example.py` | T265 fisheye + stereo depth + pose overlay + click-to-measure |
 
 ## Module Structure
 
@@ -1230,6 +1358,7 @@ vision/
 │       ├── oakd_cam.py
 │       ├── ros_cam.py
 │       ├── ros_depth_cam.py
+│       ├── t265_cam.py
 │       ├── c920_cam.py
 │       ├── imx219_cam.py
 │       └── file_cam.py
@@ -1297,7 +1426,8 @@ vision/
 
 | SDK | Documentation | Camera Class |
 |-----|---------------|--------------|
-| Intel RealSense | [RealSense SDK 2.0](https://dev.intelrealsense.com/docs/docs-get-started) | `RealsenseCam` |
+| Intel RealSense (D4xx) | [RealSense SDK 2.0](https://dev.intelrealsense.com/docs/docs-get-started) | `RealsenseCam` |
+| Intel RealSense (T265) | [T265 Tracking Camera](https://github.com/IntelRealSense/librealsense/blob/v2.53.1/doc/t265.md), [t265_stereo.py](https://github.com/IntelRealSense/librealsense/blob/v2.53.1/wrappers/python/examples/t265_stereo.py) | `T265Cam` |
 | DepthAI | [Luxonis DepthAI Documentation](https://docs.luxonis.com/software/) | `OakdCam` |
 | GStreamer | [GStreamer nvarguscamerasrc](https://docs.nvidia.com/jetson/archives/r35.4.1/DeveloperGuide/text/SD/CameraDevelopment/CameraSoftwareDevelopmentSolution.html) | `IMX219Cam` |
 

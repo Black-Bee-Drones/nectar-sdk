@@ -51,8 +51,18 @@ make docker-exec        # extra terminal in running container
 `docker-run` automatically:
 - Detects available images (shows menu if multiple)
 - Adds `--gpus all` when NVIDIA GPU detected
-- Mounts X11, cameras (`/dev/video*`), USB
+- Mounts local project into the container (live code editing)
+- Mounts X11, cameras (`/dev/video*`), USB, `/dev`
 - Enables host networking for ROS2
+
+The local project mount means edits to Python files on the host appear
+instantly inside the container (via `--symlink-install`). For C++ or
+message changes, run `colcon build` inside the container.
+
+To run with only the baked-in code (no local mount):
+```bash
+DOCKER_NO_MOUNT=true make docker-run
+```
 
 ### Windows
 
@@ -114,6 +124,7 @@ Versions are auto-selected per ROS distro (`scripts/lib/config.sh`):
 | ROS 2 Distro | realsense-ros | librealsense | Cameras |
 |---|---|---|---|
 | Humble | 4.55.1 | v2.55.1 | D435, D435i, D455 |
+| Humble (T265) | [4.51.1](https://github.com/realsenseai/realsense-ros/releases/tag/4.51.1) | [v2.53.1](https://github.com/realsenseai/librealsense/releases/tag/v2.53.1) | T265 (discontinued) |
 | Jazzy | [4.56.4](https://github.com/realsenseai/realsense-ros/releases/tag/4.56.4) | [v2.56.5](https://github.com/realsenseai/librealsense/releases/tag/v2.56.5) | D435, D435i, D455 |
 | Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | [v2.57.6](https://github.com/realsenseai/librealsense/releases/tag/v2.57.6) | D435, D435i, D455 |
 
@@ -124,9 +135,62 @@ LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 \
   INSTALL_REALSENSE=true make docker-build
 ```
 
-udev rules and hotplug scripts for D435/D435i/D455 are included for
+udev rules and hotplug scripts for D435/D435i/D455/T265 are included for
 runtime device access (following the
 [VSLAM-UAV](https://github.com/bandofpv/VSLAM-UAV) Docker pattern).
+
+### T265 Tracking Camera (Docker)
+
+The Intel RealSense T265 is discontinued. The last supporting versions are
+**librealsense v2.53.1** and **realsense-ros 4.51.1** (Humble only).
+Those versions list kernel support for 4.x/5.x, but the build uses
+`FORCE_RSUSB_BACKEND=true` (libusb user-space), so **any host kernel works**
+including 6.x. Docker provides a clean isolated environment with the
+correct library versions without conflicting with newer librealsense on the
+host.
+
+**Build** (requires `:humble` base image — built automatically if missing):
+```bash
+make docker-build-t265
+```
+
+This produces `nectar-sdk:humble-t265`. Internally it starts a container
+from `:humble`, installs librealsense v2.53.1 + realsense-ros 4.51.1 +
+vision_to_mavros, rebuilds the workspace, and commits the result.
+
+**Run** (plug in the T265 first):
+```bash
+make docker-run   # select the humble-t265 image from the menu
+```
+
+The `docker-run` command already passes `--privileged`, `--device=/dev/bus/usb`,
+and X11 forwarding, which is sufficient for USB camera access and GUI tools.
+
+**Test inside the container:**
+```bash
+# Check if the T265 is detected
+rs-enumerate-devices
+
+# GUI viewer (requires X11 forwarding)
+realsense-viewer
+
+# ROS 2 launch
+source /home/ros2_ws/install/setup.bash
+ros2 launch realsense2_camera rs_launch.py device_type:=t265
+
+# Full T265 + MAVROS pipeline (vision_to_mavros)
+ros2 launch vision_to_mavros t265_all_nodes_launch.py
+```
+
+**Host-side udev rule** (optional, for consistent USB permissions):
+```bash
+# Copy the rules file to the host
+sudo cp docker/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+> **Note:** If `realsense-viewer` fails with OpenGL errors, set
+> `LIBGL_ALWAYS_SOFTWARE=1` inside the container for software rendering.
 
 ## Gazebo
 

@@ -50,7 +50,11 @@ RUN mkdir -p /etc/udev/rules.d && \
 # RealSense: build librealsense from source + realsense-ros + vision_to_mavros
 ARG INSTALL_REALSENSE=false
 ARG REALSENSE_CUDA=false
+ARG LIBREALSENSE_VERSION
+ARG REALSENSE_ROS_TAG
 ENV REALSENSE_CUDA=${REALSENSE_CUDA}
+ENV LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}
+ENV REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}
 RUN if [ "$INSTALL_REALSENSE" = "true" ]; then make realsense; fi
 # After realsense build, stale scipy/numpy .so files from --ignore-installed
 # can conflict. Purge and reinstall cleanly.

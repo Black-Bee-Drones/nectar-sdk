@@ -94,3 +94,25 @@ class OakDConfig(CameraConfig):
     cam_num: int = 1  # 1: rgb, 2: left mono, 3: right mono
     enable_depth: bool = False
     name: str = "oakd_cam"
+
+
+@dataclass(frozen=True)
+class T265Config(CameraConfig):
+    name: str = "t265_cam"
+    enable_pose: bool = True
+    enable_depth: bool = True
+    stereo_fov_deg: float = 90.0
+    stereo_height_px: int = 300
+    # StereoSGBM parameters
+    num_disparities: int = 96
+    block_size: int = 16
+    uniqueness_ratio: int = 10
+    speckle_window_size: int = 100
+    speckle_range: int = 32
+    smoothness_window: int = 5
+    max_depth_m: float = 3.0
+    # Access mode
+    use_ros_topics: bool = False
+    fisheye1_topic: str = "/camera/fisheye1/image_raw"
+    fisheye2_topic: str = "/camera/fisheye2/image_raw"
+    pose_topic: str = "/camera/pose/sample"

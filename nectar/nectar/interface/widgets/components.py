@@ -7,6 +7,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -629,7 +630,17 @@ class CameraConfigPanel(QWidget):
 
     configChanged = Signal()
 
-    CAMERA_TYPES = ["webcam", "realsense", "oakd", "ros", "ros_depth", "file", "c920", "imx219"]
+    CAMERA_TYPES = [
+        "webcam",
+        "realsense",
+        "t265",
+        "oakd",
+        "ros",
+        "ros_depth",
+        "file",
+        "c920",
+        "imx219",
+    ]
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         self._emit_config_changed = lambda *_: self.configChanged.emit()
@@ -660,6 +671,7 @@ class CameraConfigPanel(QWidget):
 
         self._create_webcam_config()
         self._create_realsense_config()
+        self._create_t265_config()
         self._create_oakd_config()
         self._create_ros_config()
         self._create_ros_depth_config()
@@ -810,6 +822,151 @@ class CameraConfigPanel(QWidget):
         self._rs_depth_topic.setVisible(visible)
         self._rs_compressed.setVisible(visible)
         self._rs_depth_compressed.setVisible(visible)
+
+    def _create_t265_config(self) -> None:
+        """Create T265 tracking camera configuration panel."""
+        page = self._create_config_page("t265")
+        layout = QGridLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        row = 0
+
+        self._t265_enable_depth = QCheckBox("Enable stereo depth")
+        self._t265_enable_depth.setChecked(True)
+        self._t265_enable_depth.setToolTip("Compute depth from fisheye stereo pair (StereoSGBM)")
+        self._t265_enable_depth.stateChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_enable_depth, row, 0, 1, 2)
+        row += 1
+
+        self._t265_enable_pose = QCheckBox("Enable pose")
+        self._t265_enable_pose.setChecked(True)
+        self._t265_enable_pose.setToolTip("Capture 6DOF pose from T265 VIO")
+        self._t265_enable_pose.stateChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_enable_pose, row, 0, 1, 2)
+        row += 1
+
+        layout.addWidget(self._make_label("Stereo FOV:"), row, 0)
+        self._t265_fov = QSpinBox()
+        self._t265_fov.setRange(60, 120)
+        self._t265_fov.setValue(90)
+        self._t265_fov.setSuffix("°")
+        self._t265_fov.setToolTip("Output FOV for rectified stereo depth")
+        self._t265_fov.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_fov, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Stereo res:"), row, 0)
+        self._t265_stereo_height = QSpinBox()
+        self._t265_stereo_height.setRange(100, 600)
+        self._t265_stereo_height.setValue(300)
+        self._t265_stereo_height.setSuffix("px")
+        self._t265_stereo_height.setToolTip("Stereo output height (width = height + max_disp)")
+        self._t265_stereo_height.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_stereo_height, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Max depth:"), row, 0)
+        self._t265_max_depth = QDoubleSpinBox()
+        self._t265_max_depth.setRange(0.5, 10.0)
+        self._t265_max_depth.setValue(3.0)
+        self._t265_max_depth.setSingleStep(0.5)
+        self._t265_max_depth.setSuffix("m")
+        self._t265_max_depth.setToolTip("Clip depth beyond this range (reduces far-field noise)")
+        self._t265_max_depth.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_max_depth, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Uniqueness:"), row, 0)
+        self._t265_uniqueness = QSpinBox()
+        self._t265_uniqueness.setRange(0, 30)
+        self._t265_uniqueness.setValue(10)
+        self._t265_uniqueness.setSuffix("%")
+        self._t265_uniqueness.setToolTip(
+            "StereoSGBM uniqueness ratio: reject matches where best cost "
+            "is less than this % better than second-best. Higher = less noise, more holes."
+        )
+        self._t265_uniqueness.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_uniqueness, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Speckle:"), row, 0)
+        self._t265_speckle_size = QSpinBox()
+        self._t265_speckle_size.setRange(0, 500)
+        self._t265_speckle_size.setValue(100)
+        self._t265_speckle_size.setSuffix("px")
+        self._t265_speckle_size.setToolTip(
+            "StereoSGBM speckle filter: connected components smaller than this are removed. "
+            "Higher = more aggressive noise removal."
+        )
+        self._t265_speckle_size.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_speckle_size, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Smoothness:"), row, 0)
+        self._t265_smoothness = QSpinBox()
+        self._t265_smoothness.setRange(3, 11)
+        self._t265_smoothness.setValue(5)
+        self._t265_smoothness.setToolTip(
+            "StereoSGBM smoothness window: controls P1/P2 penalties. "
+            "Higher = smoother depth, less detail. P1=8*3*w^2, P2=32*3*w^2."
+        )
+        self._t265_smoothness.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_smoothness, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Display:"), row, 0)
+        self._t265_display_mode = QComboBox()
+        self._t265_display_mode.addItems(
+            ["Left Fisheye", "Right Fisheye", "Both Fisheye", "Rectified"]
+        )
+        self._t265_display_mode.setToolTip("Which T265 view to show in the RGB panel")
+        self._t265_display_mode.currentIndexChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_display_mode, row, 1)
+        row += 1
+
+        self._t265_use_ros = QCheckBox("Use ROS topics")
+        self._t265_use_ros.setToolTip(
+            "Subscribe to realsense2_camera topics (use when node is already running)"
+        )
+        self._t265_use_ros.stateChanged.connect(self._on_t265_ros_toggled)
+        layout.addWidget(self._t265_use_ros, row, 0, 1, 2)
+        row += 1
+
+        self._t265_fisheye1_lbl = self._make_label("Fisheye 1:")
+        layout.addWidget(self._t265_fisheye1_lbl, row, 0)
+        self._t265_fisheye1_topic = QLineEdit("/camera/fisheye1/image_raw")
+        self._t265_fisheye1_topic.textChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_fisheye1_topic, row, 1)
+        row += 1
+
+        self._t265_fisheye2_lbl = self._make_label("Fisheye 2:")
+        layout.addWidget(self._t265_fisheye2_lbl, row, 0)
+        self._t265_fisheye2_topic = QLineEdit("/camera/fisheye2/image_raw")
+        self._t265_fisheye2_topic.textChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_fisheye2_topic, row, 1)
+        row += 1
+
+        self._t265_pose_lbl = self._make_label("Pose topic:")
+        layout.addWidget(self._t265_pose_lbl, row, 0)
+        self._t265_pose_topic = QLineEdit("/camera/pose/sample")
+        self._t265_pose_topic.textChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_pose_topic, row, 1)
+
+        self._toggle_t265_ros_fields(False)
+
+    def _on_t265_ros_toggled(self) -> None:
+        use_ros = self._t265_use_ros.isChecked()
+        self._toggle_t265_ros_fields(use_ros)
+        self.configChanged.emit()
+
+    def _toggle_t265_ros_fields(self, visible: bool) -> None:
+        self._t265_fisheye1_lbl.setVisible(visible)
+        self._t265_fisheye1_topic.setVisible(visible)
+        self._t265_fisheye2_lbl.setVisible(visible)
+        self._t265_fisheye2_topic.setVisible(visible)
+        self._t265_pose_lbl.setVisible(visible)
+        self._t265_pose_topic.setVisible(visible)
 
     def _create_oakd_config(self) -> None:
         """Create OAK-D configuration panel."""
@@ -1051,6 +1208,24 @@ class CameraConfigPanel(QWidget):
                     "depth_topic": self._rs_depth_topic.text(),
                     "color_compressed": self._rs_compressed.isChecked(),
                     "depth_compressed": self._rs_depth_compressed.isChecked(),
+                }
+            )
+        elif self._current_type == "t265":
+            config.update(
+                {
+                    "enable_depth": self._t265_enable_depth.isChecked(),
+                    "enable_pose": self._t265_enable_pose.isChecked(),
+                    "stereo_fov_deg": self._t265_fov.value(),
+                    "stereo_height_px": self._t265_stereo_height.value(),
+                    "max_depth_m": self._t265_max_depth.value(),
+                    "uniqueness_ratio": self._t265_uniqueness.value(),
+                    "speckle_window_size": self._t265_speckle_size.value(),
+                    "smoothness_window": self._t265_smoothness.value(),
+                    "display_mode": self._t265_display_mode.currentText(),
+                    "use_ros_topics": self._t265_use_ros.isChecked(),
+                    "fisheye1_topic": self._t265_fisheye1_topic.text(),
+                    "fisheye2_topic": self._t265_fisheye2_topic.text(),
+                    "pose_topic": self._t265_pose_topic.text(),
                 }
             )
         elif self._current_type == "oakd":

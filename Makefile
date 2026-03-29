@@ -5,7 +5,7 @@
         install-all install-full pytorch \
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
-        docker-build docker-build-full docker-run docker-exec \
+        docker-build docker-build-full docker-build-t265 docker-run docker-exec \
         full-install \
         lint lint-fix format check \
         sim-install sim-install-gazebo sim-start sim-start-gazebo \
@@ -55,6 +55,7 @@ realsense-verify:   ; @$(SETUP) realsense-verify
 # Docker
 docker-build:       ; @$(SETUP) docker-build
 docker-build-full:  ; @$(SETUP) docker-build-full
+docker-build-t265:  ; @$(SETUP) docker-build-t265
 docker-run:         ; @$(SETUP) docker-run
 docker-exec:        ; @$(SETUP) docker-exec
 

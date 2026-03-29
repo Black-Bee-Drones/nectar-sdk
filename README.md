@@ -208,6 +208,7 @@ make docker-run         # Run with X11 + cameras + USB
 | Tag | Contents | PyTorch |
 |-----|----------|---------|
 | `:humble` | control + vision + interface + realsense + oakd | None |
+| `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
 | `:humble-full-cpu` | All above + AI | CPU |
 | `:humble-full-cu124` | All above + AI | CUDA 12.4 |
 
