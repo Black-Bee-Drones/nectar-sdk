@@ -378,17 +378,17 @@ class T265Cam(DepthCam):
         self._undistort_left = (lm1, lm2)
         self._undistort_right = (rm1, rm2)
 
-        window_size = 5
+        ws = cfg.smoothness_window
         self._stereo = cv2.StereoSGBM_create(
             minDisparity=min_disp,
             numDisparities=num_disp,
             blockSize=cfg.block_size,
-            P1=8 * 3 * window_size**2,
-            P2=32 * 3 * window_size**2,
+            P1=8 * 3 * ws**2,
+            P2=32 * 3 * ws**2,
             disp12MaxDiff=1,
-            uniquenessRatio=10,
-            speckleWindowSize=100,
-            speckleRange=32,
+            uniquenessRatio=cfg.uniqueness_ratio,
+            speckleWindowSize=cfg.speckle_window_size,
+            speckleRange=cfg.speckle_range,
         )
 
         self._baseline = abs(T[0]) if T[0] != 0 else 0.064
@@ -478,6 +478,10 @@ class T265Cam(DepthCam):
         focal = self._Q[2, 3]
         if focal != 0 and self._baseline != 0:
             depth[valid] = (focal * self._baseline) / disparity[valid]
+
+        max_d = self._config.max_depth_m
+        if max_d > 0:
+            depth[depth > max_d] = 0
 
         with self._mutex:
             self._cached_depth = depth

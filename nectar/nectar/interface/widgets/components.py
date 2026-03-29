@@ -7,6 +7,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -865,6 +866,55 @@ class CameraConfigPanel(QWidget):
         layout.addWidget(self._t265_stereo_height, row, 1)
         row += 1
 
+        layout.addWidget(self._make_label("Max depth:"), row, 0)
+        self._t265_max_depth = QDoubleSpinBox()
+        self._t265_max_depth.setRange(0.5, 10.0)
+        self._t265_max_depth.setValue(3.0)
+        self._t265_max_depth.setSingleStep(0.5)
+        self._t265_max_depth.setSuffix("m")
+        self._t265_max_depth.setToolTip("Clip depth beyond this range (reduces far-field noise)")
+        self._t265_max_depth.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_max_depth, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Uniqueness:"), row, 0)
+        self._t265_uniqueness = QSpinBox()
+        self._t265_uniqueness.setRange(0, 30)
+        self._t265_uniqueness.setValue(10)
+        self._t265_uniqueness.setSuffix("%")
+        self._t265_uniqueness.setToolTip(
+            "StereoSGBM uniqueness ratio: reject matches where best cost "
+            "is less than this % better than second-best. Higher = less noise, more holes."
+        )
+        self._t265_uniqueness.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_uniqueness, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Speckle:"), row, 0)
+        self._t265_speckle_size = QSpinBox()
+        self._t265_speckle_size.setRange(0, 500)
+        self._t265_speckle_size.setValue(100)
+        self._t265_speckle_size.setSuffix("px")
+        self._t265_speckle_size.setToolTip(
+            "StereoSGBM speckle filter: connected components smaller than this are removed. "
+            "Higher = more aggressive noise removal."
+        )
+        self._t265_speckle_size.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_speckle_size, row, 1)
+        row += 1
+
+        layout.addWidget(self._make_label("Smoothness:"), row, 0)
+        self._t265_smoothness = QSpinBox()
+        self._t265_smoothness.setRange(3, 11)
+        self._t265_smoothness.setValue(5)
+        self._t265_smoothness.setToolTip(
+            "StereoSGBM smoothness window: controls P1/P2 penalties. "
+            "Higher = smoother depth, less detail. P1=8*3*w^2, P2=32*3*w^2."
+        )
+        self._t265_smoothness.valueChanged.connect(self._emit_config_changed)
+        layout.addWidget(self._t265_smoothness, row, 1)
+        row += 1
+
         layout.addWidget(self._make_label("Display:"), row, 0)
         self._t265_display_mode = QComboBox()
         self._t265_display_mode.addItems(
@@ -1167,6 +1217,10 @@ class CameraConfigPanel(QWidget):
                     "enable_pose": self._t265_enable_pose.isChecked(),
                     "stereo_fov_deg": self._t265_fov.value(),
                     "stereo_height_px": self._t265_stereo_height.value(),
+                    "max_depth_m": self._t265_max_depth.value(),
+                    "uniqueness_ratio": self._t265_uniqueness.value(),
+                    "speckle_window_size": self._t265_speckle_size.value(),
+                    "smoothness_window": self._t265_smoothness.value(),
                     "display_mode": self._t265_display_mode.currentText(),
                     "use_ros_topics": self._t265_use_ros.isChecked(),
                     "fisheye1_topic": self._t265_fisheye1_topic.text(),
