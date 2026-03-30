@@ -46,6 +46,11 @@ DRIVER_INFO: Dict[str, DriverInfo] = {
         node_patterns=["bebop_driver"],
         session_name="bebop_driver",
     ),
+    "crazyflie": DriverInfo(
+        name="Crazyflie Server",
+        node_patterns=["crazyflie_server"],
+        session_name="crazyflie_server",
+    ),
 }
 
 

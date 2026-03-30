@@ -40,6 +40,22 @@ class BebopConfig(DroneConfig):
     namespace: str = "bebop"
 
 
+@dataclass(frozen=True)
+class CrazyflieConfig(DroneConfig):
+    name: str = "crazyflie_drone"
+    uri: str = "radio://0/80/2M/E7E7E7E7E7"
+    cf_name: str = "cf231"
+    controller: int = 2
+    estimator: int = 2
+    default_velocity: float = 0.3
+    landing_height: float = 0.04
+    max_height: float = 3.0
+    enable_logging: bool = True
+    log_pose_frequency: int = 10
+    backend: str = "cpp"
+    mocap: bool = False
+
+
 # Simulation presets
 
 SITL_CONFIG = MavrosConfig(

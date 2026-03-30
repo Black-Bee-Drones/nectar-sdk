@@ -6,9 +6,11 @@ from nectar.control.config import (
     SITL_GPS_CONFIG,
     SITL_VISION_CONFIG,
     BebopConfig,
+    CrazyflieConfig,
     DroneConfig,
     MavrosConfig,
 )
+from nectar.control.crazyflie import CrazyflieDrone
 from nectar.control.driver_monitor import (
     DRIVER_INFO,
     DriverInfo,
@@ -32,6 +34,7 @@ from nectar.control.obstacles import (
     ObstacleHandlerConfig,
     ObstacleInfo,
     ObstacleManager,
+    T265ObstacleDetector,
     strategies,
 )
 from nectar.control.pid import (
@@ -56,6 +59,7 @@ __all__ = [
     "DroneConfig",
     "MavrosConfig",
     "BebopConfig",
+    "CrazyflieConfig",
     "SITL_CONFIG",
     "SITL_GPS_CONFIG",
     "SITL_GAZEBO_CONFIG",
@@ -77,9 +81,11 @@ __all__ = [
     "BaseDrone",
     "MavrosDrone",
     "BebopDrone",
+    "CrazyflieDrone",
     "GPSUtils",
     "BaseObstacleDetector",
     "DepthObstacleDetector",
+    "T265ObstacleDetector",
     "ObstacleInfo",
     "ObstacleDirection",
     "ObstacleHandlerConfig",

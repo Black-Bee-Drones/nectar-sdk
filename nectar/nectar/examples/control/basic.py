@@ -4,7 +4,13 @@ import argparse
 import rclpy
 from rclpy.node import Node
 
-from nectar.control import BebopConfig, DroneFactory, MavrosConfig, PoseSource
+from nectar.control import (
+    BebopConfig,
+    CrazyflieConfig,
+    DroneFactory,
+    MavrosConfig,
+    PoseSource,
+)
 
 
 class BasicExample(Node):
@@ -13,6 +19,8 @@ class BasicExample(Node):
 
         if drone_type == "mavros":
             config = MavrosConfig(pose_source=PoseSource.GPS, start_driver=False)
+        elif drone_type == "crazyflie":
+            config = CrazyflieConfig(start_driver=False)
         else:
             config = BebopConfig(start_driver=False)
 
@@ -48,7 +56,7 @@ def main():
     parser = argparse.ArgumentParser(description="Basic drone example")
     parser.add_argument(
         "--drone",
-        choices=["mavros", "bebop"],
+        choices=["mavros", "bebop", "crazyflie"],
         default="mavros",
         help="Drone type (default: mavros)",
     )
