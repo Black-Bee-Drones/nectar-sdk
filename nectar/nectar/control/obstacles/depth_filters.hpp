@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <vector>
 
 #include <opencv2/core.hpp>
 
@@ -243,66 +242,84 @@ private:
     template <typename T>
     cv::Mat decimate(const cv::Mat& src) const
     {
-        const int out_w = src.cols / scale_;
-        const int out_h = src.rows / scale_;
-        const int kernel_size = scale_ * scale_;
+        // Local copy — lets the compiler keep it in a register
+        // instead of reloading the member through `this` each iteration.
+        const int scale = scale_;
+
+        const int out_w = src.cols / scale;
+        const int out_h = src.rows / scale;
 
         cv::Mat dst(out_h, out_w, src.type(), cv::Scalar(0));
 
-        // For scales 2–3 use median; for >= 4 use mean (matching Intel behaviour)
-        const bool use_median = (scale_ <= 3);
-
-        std::vector<T> kernel_buf(kernel_size);
-
-        for (int oy = 0; oy < out_h; ++oy)
+        // For scales 2–3 use median; for >= 4 use mean (matching Intel behaviour).
+        // Branch is hoisted outside the pixel loops entirely.
+        if (scale <= 3)
         {
-            for (int ox = 0; ox < out_w; ++ox)
+            // ---------- median path (scale 2–3) ----------
+            for (int oy = 0; oy < out_h; ++oy)
             {
-                int valid = 0;
-                const int bx = ox * scale_;
-                const int by = oy * scale_;
+                // Pre-compute row pointers for the N source rows of this patch-row.
+                const T* row_ptrs[8]; // max scale = 8
+                const int by = oy * scale;
+                for (int dy = 0; dy < scale; ++dy)
+                    row_ptrs[dy] = src.ptr<T>(by + dy);
 
-                if (use_median)
+                T* dst_ptr = dst.ptr<T>(oy);
+                T kernel_buf[64]; // max 8×8
+
+                for (int ox = 0, bx = 0; ox < out_w; ++ox, bx += scale)
                 {
-                    // Collect non-zero values into kernel buffer
-                    for (int dy = 0; dy < scale_; ++dy)
+                    int valid = 0;
+
+                    for (int dy = 0; dy < scale; ++dy)
                     {
-                        const T* row = src.ptr<T>(by + dy);
-                        for (int dx = 0; dx < scale_; ++dx)
+                        const T* p = row_ptrs[dy] + bx;
+                        for (int dx = 0; dx < scale; ++dx)
                         {
-                            T v = row[bx + dx];
-                            if (v != T(0))
-                                kernel_buf[valid++] = v;
+                            if (p[dx] != T(0))
+                                kernel_buf[valid++] = p[dx];
                         }
                     }
 
-                    if (valid == 0)
-                        dst.at<T>(oy, ox) = T(0);
-                    else
-                        dst.at<T>(oy, ox) = detail::select_median(kernel_buf.data(), valid);
+                    *dst_ptr++ = (valid == 0)
+                        ? T(0)
+                        : detail::select_median(kernel_buf, valid);
                 }
-                else
+            }
+        }
+        else
+        {
+            // ---------- mean path (scale >= 4) ----------
+            for (int oy = 0; oy < out_h; ++oy)
+            {
+                const T* row_ptrs[8];
+                const int by = oy * scale;
+                for (int dy = 0; dy < scale; ++dy)
+                    row_ptrs[dy] = src.ptr<T>(by + dy);
+
+                T* dst_ptr = dst.ptr<T>(oy);
+
+                for (int ox = 0, bx = 0; ox < out_w; ++ox, bx += scale)
                 {
-                    // Mean of non-zero values
                     double sum = 0.0;
-                    for (int dy = 0; dy < scale_; ++dy)
+                    int valid = 0;
+
+                    for (int dy = 0; dy < scale; ++dy)
                     {
-                        const T* row = src.ptr<T>(by + dy);
-                        for (int dx = 0; dx < scale_; ++dx)
+                        const T* p = row_ptrs[dy] + bx;
+                        for (int dx = 0; dx < scale; ++dx)
                         {
-                            T v = row[bx + dx];
-                            if (v != T(0))
+                            if (p[dx] != T(0))
                             {
-                                sum += static_cast<double>(v);
+                                sum += static_cast<double>(p[dx]);
                                 ++valid;
                             }
                         }
                     }
 
-                    if (valid == 0)
-                        dst.at<T>(oy, ox) = T(0);
-                    else
-                        dst.at<T>(oy, ox) = static_cast<T>(sum / valid);
+                    *dst_ptr++ = (valid == 0)
+                        ? T(0)
+                        : static_cast<T>(sum / valid);
                 }
             }
         }

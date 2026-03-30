@@ -26,12 +26,17 @@
  *   min_group_size       (int,     default 300)     — minimum cluster pixel count
  *   max_obstacle_distance(double,  default 1.0)    — clusters beyond this (m) are ignored
  *   drone_radius         (double,  default 0.25)   — used for FOV-based threshold matrix
+ *
+ * The pipeline operates entirely in uint16_t raw sensor units (typically mm)
+ * to maximise throughput on constrained platforms (RPi4).  Parameters are
+ * specified in metres for readability and converted to raw units at init.
+ * Float conversion only happens when publishing scalar results.
  */
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
-#include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/float32_multi_array.hpp>
 #include <sensor_msgs/msg/image.hpp>
 
 #include <cv_bridge/cv_bridge.hpp>
@@ -40,10 +45,9 @@
 #include "depth_filters.hpp"
 
 #include <cmath>
-#include <limits>
-#include <queue>
 #include <string>
 #include <vector>
+#include <chrono>
 
 class DepthClusterNode : public rclcpp::Node
 {
@@ -55,7 +59,7 @@ public:
         // Parameters
         // ----------------------------------------------------------------
         this->declare_parameter<std::string>("namespace", "obstacle_detection");
-        this->declare_parameter<std::string>("depth_topic", "/camera/depth/image_rect_raw");
+        this->declare_parameter<std::string>("depth_topic", "/camera/camera/depth/image_rect_raw");
         this->declare_parameter<double>("depth_scale", 0.001);
         this->declare_parameter<double>("fov_h", 87.0);
         this->declare_parameter<double>("fov_v", 58.0);
@@ -70,10 +74,15 @@ public:
         depth_scale_           = static_cast<float>(this->get_parameter("depth_scale").as_double());
         fov_h_                 = static_cast<float>(this->get_parameter("fov_h").as_double());
         fov_v_                 = static_cast<float>(this->get_parameter("fov_v").as_double());
-        depth_threshold_       = static_cast<float>(this->get_parameter("depth_threshold").as_double());
         min_group_size_        = this->get_parameter("min_group_size").as_int();
-        max_obstacle_distance_ = static_cast<float>(this->get_parameter("max_obstacle_distance").as_double());
         drone_radius_          = static_cast<float>(this->get_parameter("drone_radius").as_double());
+
+        // Convert user-facing metre parameters to raw sensor units (uint16)
+        const float inv_scale = 1.0f / depth_scale_;
+        depth_threshold_raw_   = static_cast<uint16_t>(
+            this->get_parameter("depth_threshold").as_double() * inv_scale);
+        max_obstacle_dist_raw_ = static_cast<uint16_t>(
+            this->get_parameter("max_obstacle_distance").as_double() * inv_scale);
 
         int dec_scale = this->get_parameter("decimation_scale").as_int();
         decimate_ = nectar::DepthDecimationFilter(dec_scale);
@@ -85,8 +94,8 @@ public:
             "/" + ns_ + "/obstacle_detected", 10);
         pub_distance_  = this->create_publisher<std_msgs::msg::Float32>(
             "/" + ns_ + "/obstacle_distance", 10);
-        pub_direction_ = this->create_publisher<std_msgs::msg::String>(
-            "/" + ns_ + "/obstacle_direction", 10);
+        pub_bboxes_ = this->create_publisher<std_msgs::msg::Float32MultiArray>(
+            "/" + ns_ + "/obstacle_bboxes", 10);
 
         // ----------------------------------------------------------------
         // Depth image subscriber
@@ -101,6 +110,7 @@ public:
     }
 
 private:
+    std::vector<double> decimation_cost;
     // ----------------------------------------------------------------
     // Depth callback — replaces the timer + rs2::pipeline polling
     // ----------------------------------------------------------------
@@ -121,67 +131,116 @@ private:
 
         cv::Mat depth_raw = cv_ptr->image;
 
-        // Apply decimation filter on raw data
-        cv::Mat decimated = decimate_.apply(depth_raw);
-
-        const int width  = decimated.cols;
-        const int height = decimated.rows;
-
-        // Convert to float metres
-        cv::Mat depth_float;
-        if (decimated.type() == CV_16U)
-            decimated.convertTo(depth_float, CV_32F, depth_scale_);
-        else if (decimated.type() == CV_32F)
-            depth_float = decimated.clone();
-        else
-        {
+        // Ensure we have a CV_16U image — the native format from RealSense
+        cv::Mat depth_u16;
+        if (depth_raw.type() == CV_16U) {
+            depth_u16 = depth_raw;
+        }
+        else if (depth_raw.type() == CV_32F) {
+            // Rare path: convert float metres back to raw uint16
+            depth_raw.convertTo(depth_u16, CV_16U, 1.0 / depth_scale_);
+        }
+        else {
             RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                 "Unsupported depth encoding: %s", msg->encoding.c_str());
             return;
         }
 
+        // Apply decimation filter on raw uint16 data
+        auto start = std::chrono::high_resolution_clock::now();
+        cv::Mat decimated = decimate_.apply(depth_u16);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        this->decimation_cost.push_back(duration.count());
+
+        if (this->decimation_cost.size() > 500) {
+            double sum = 0;
+            for (size_t i = 0; i < this->decimation_cost.size(); i++) {
+                sum += this->decimation_cost[i];
+            }
+            double avg = sum / static_cast<double>(this->decimation_cost.size());
+            RCLCPP_INFO(this->get_logger(), "Average decimation time: %f us", avg);
+            double std_dev = 0;
+            for (size_t i = 0; i < this->decimation_cost.size(); i++) {
+                std_dev += (this->decimation_cost[i] - avg) * (this->decimation_cost[i] - avg);
+            }
+            std_dev = std_dev / static_cast<double>(this->decimation_cost.size());
+            std_dev = std::sqrt(std_dev);
+            RCLCPP_INFO(this->get_logger(), "Standard deviation of decimation time: %f us", std_dev);
+        }
+
+        const int width  = decimated.cols;
+        const int height = decimated.rows;
+
         // Rebuild threshold matrix if image dimensions changed
         if (thresh_mat_.empty() || thresh_mat_.cols != width || thresh_mat_.rows != height)
         {
             float fov[2] = {fov_h_, fov_v_};
-            thresh_mat_ = threshold_matrix(max_obstacle_distance_, drone_radius_, fov, width, height);
+            thresh_mat_ = threshold_matrix_u16(
+                max_obstacle_dist_raw_, drone_radius_, depth_scale_, fov, width, height);
             RCLCPP_INFO(this->get_logger(),
                 "Threshold matrix built for %dx%d (FOV %.1f x %.1f deg)",
                 width, height, fov_h_, fov_v_);
         }
 
         // Apply threshold matrix — zero out pixels beyond adaptive distance
-        depth_float.setTo(0, depth_float >= thresh_mat_);
+        // Both decimated and thresh_mat_ are CV_16U, so this comparison is integer-only.
+        decimated.setTo(0, decimated >= thresh_mat_);
 
         // ----------------------------------------------------------------
-        // BFS clustering (identical algorithm to original)
+        // BFS clustering and on-the-fly metric computation
         // ----------------------------------------------------------------
         cv::Mat visited = cv::Mat::zeros(height, width, CV_8U);
-        cv::Mat labels  = cv::Mat::zeros(height, width, CV_32S);
         int group_id = 1;
+
+        std::vector<int> cluster_min_x;
+        std::vector<int> cluster_max_x;
+        std::vector<int> cluster_min_y;
+        std::vector<int> cluster_max_y;
+        std::vector<uint32_t> cluster_depth_sums;  // raw-unit sums (uint32 avoids overflow)
+        std::vector<int>     cluster_counts;
+
+        std::vector<cv::Point> q;
+        q.reserve(width * height);
+
+        const uint16_t thresh_raw = depth_threshold_raw_;
 
         for (int y = 0; y < height; y++)
         {
+            const uint16_t* depth_row = decimated.ptr<uint16_t>(y);
+            uchar* visited_row = visited.ptr<uchar>(y);
+
             for (int x = 0; x < width; x++)
             {
-                if (visited.at<uchar>(y, x))
+                if (visited_row[x])
                     continue;
 
-                float d = depth_float.at<float>(y, x);
-                if (d == 0.f)
+                uint16_t d = depth_row[x];
+                if (d == 0)
                     continue;
 
-                std::queue<cv::Point> q;
-                q.push({x, y});
-                visited.at<uchar>(y, x) = 1;
-                labels.at<int>(y, x)    = group_id;
+                q.clear();
+                q.push_back({x, y});
+                visited_row[x] = 1;
 
-                while (!q.empty())
+                int cnt = 0;
+                int mn_x = width, mx_x = 0;
+                int mn_y = height, mx_y = 0;
+                uint32_t depth_sum = 0;
+
+                int head = 0;
+                while (head < static_cast<int>(q.size()))
                 {
-                    cv::Point p = q.front();
-                    q.pop();
+                    cv::Point p = q[head++];
 
-                    float base_depth = depth_float.at<float>(p.y, p.x);
+                    uint16_t base_depth = decimated.ptr<uint16_t>(p.y)[p.x];
+
+                    cnt++;
+                    mn_x = std::min(mn_x, p.x);
+                    mx_x = std::max(mx_x, p.x);
+                    mn_y = std::min(mn_y, p.y);
+                    mx_y = std::max(mx_y, p.y);
+                    depth_sum += base_depth;
 
                     static constexpr int dx[4] = {-1, 1,  0, 0};
                     static constexpr int dy[4] = { 0, 0, -1, 1};
@@ -193,20 +252,42 @@ private:
 
                         if (nx >= 0 && nx < width && ny >= 0 && ny < height)
                         {
-                            if (!visited.at<uchar>(ny, nx))
+                            uchar* n_vis_row = visited.ptr<uchar>(ny);
+                            if (!n_vis_row[nx])
                             {
-                                float nd = depth_float.at<float>(ny, nx);
-                                if (nd == 0.f)
+                                uint16_t nd = decimated.ptr<uint16_t>(ny)[nx];
+                                if (nd == 0)
                                     continue;
 
-                                if (std::abs(nd - base_depth) < depth_threshold_)
+                                // Integer abs diff — no float involved
+                                uint16_t diff = (nd > base_depth)
+                                    ? (nd - base_depth) : (base_depth - nd);
+                                if (diff < thresh_raw)
                                 {
-                                    visited.at<uchar>(ny, nx) = 1;
-                                    labels.at<int>(ny, nx)    = group_id;
-                                    q.push({nx, ny});
+                                    n_vis_row[nx] = 1;
+                                    q.push_back({nx, ny});
                                 }
                             }
                         }
+                    }
+                }
+
+                if (cnt >= min_group_size_)
+                {
+                    uint16_t mean_raw = static_cast<uint16_t>(depth_sum / cnt);
+                    if (mean_raw <= max_obstacle_dist_raw_)
+                    {
+                        cluster_min_x.push_back(mn_x);
+                        cluster_max_x.push_back(mx_x);
+                        cluster_min_y.push_back(mn_y);
+                        cluster_max_y.push_back(mx_y);
+                        cluster_depth_sums.push_back(depth_sum);
+                        cluster_counts.push_back(cnt);
+
+                        float mean_m = mean_raw * depth_scale_;
+                        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                            "Cluster %d: depth=%.2fm, x=[%d, %d], y=[%d, %d], pixels=%d",
+                            group_id, mean_m, mn_x, mx_x, mn_y, mx_y, cnt);
                     }
                 }
 
@@ -215,55 +296,9 @@ private:
         }
 
         // ----------------------------------------------------------------
-        // Analyse clusters — compute bounding X range and mean depth.
-        // Direction logic mirrors DepthObstacleDetector in depth_camera.py.
-        // ----------------------------------------------------------------
-        const float img_cx = width / 2.0f;
-        std::vector<float> cluster_min_x;
-        std::vector<float> cluster_max_x;
-        std::vector<float> cluster_depths;
-
-        for (int id = 1; id < group_id; id++)
-        {
-            cv::Mat mask = (labels == id);
-            int cnt = cv::countNonZero(mask);
-            if (cnt < min_group_size_)
-                continue;
-
-            cv::Mat locs;
-            cv::findNonZero(mask, locs);
-
-            float mn_x = std::numeric_limits<float>::max();
-            float mx_x = std::numeric_limits<float>::lowest();
-            double depth_sum = 0.0;
-
-            for (int k = 0; k < locs.rows; k++)
-            {
-                cv::Point pt = locs.at<cv::Point>(k);
-                mn_x      = std::min(mn_x, static_cast<float>(pt.x));
-                mx_x      = std::max(mx_x, static_cast<float>(pt.x));
-                depth_sum += depth_float.at<float>(pt.y, pt.x);
-            }
-
-            float mean_depth = static_cast<float>(depth_sum / cnt);
-
-            // Discard clusters beyond the configured detection range
-            if (mean_depth > max_obstacle_distance_)
-                continue;
-
-            cluster_min_x.push_back(mn_x);
-            cluster_max_x.push_back(mx_x);
-            cluster_depths.push_back(mean_depth);
-
-            RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                "Cluster %d: depth=%.2fm, x=[%.1f, %.1f], pixels=%d",
-                id, mean_depth, mn_x, mx_x, cnt);
-        }
-
-        // ----------------------------------------------------------------
         // Publish obstacle_detected
         // ----------------------------------------------------------------
-        const bool any_detected = !cluster_depths.empty();
+        const bool any_detected = !cluster_counts.empty();
 
         std_msgs::msg::Bool det_msg;
         det_msg.data = any_detected;
@@ -273,71 +308,80 @@ private:
             return;
 
         // ----------------------------------------------------------------
-        // Determine direction (same logic as depth_camera.py)
-        //   all clusters left  of centre → obstacle is to the RIGHT
-        //   all clusters right of centre → obstacle is to the LEFT
-        //   otherwise                   → FRONT
+        // Format output as a Float32MultiArray [min_x, max_x, min_y, max_y, depth_m, ...]
+        // Convert to metres only here, at publish time.
         // ----------------------------------------------------------------
-        bool all_left  = true;
-        bool all_right = true;
-
-        for (size_t i = 0; i < cluster_min_x.size(); i++)
+        std_msgs::msg::Float32MultiArray bboxes_msg;
+        for (size_t i = 0; i < cluster_counts.size(); ++i)
         {
-            if (cluster_max_x[i] >= img_cx) all_left  = false;
-            if (cluster_min_x[i] <= img_cx) all_right = false;
+            float depth_m = static_cast<float>(cluster_depth_sums[i]) / cluster_counts[i]
+                          * depth_scale_;
+            bboxes_msg.data.push_back(static_cast<float>(cluster_min_x[i]));
+            bboxes_msg.data.push_back(static_cast<float>(cluster_max_x[i]));
+            bboxes_msg.data.push_back(static_cast<float>(cluster_min_y[i]));
+            bboxes_msg.data.push_back(static_cast<float>(cluster_max_y[i]));
+            bboxes_msg.data.push_back(depth_m);
         }
 
-        std::string direction;
-        if (all_left)
-            direction = "RIGHT";
-        else if (all_right)
-            direction = "LEFT";
-        else
-            direction = "FRONT";
-
-        std_msgs::msg::String dir_msg;
-        dir_msg.data = direction;
-        pub_direction_->publish(dir_msg);
+        pub_bboxes_->publish(bboxes_msg);
 
         // ----------------------------------------------------------------
         // Compute and publish average distance across all valid clusters
         // ----------------------------------------------------------------
-        float total_depth = 0.f;
-        for (float d : cluster_depths)
-            total_depth += d;
-        float avg_depth = total_depth / static_cast<float>(cluster_depths.size());
+        uint64_t total_raw = 0;
+        int total_cnt = 0;
+        for (size_t i = 0; i < cluster_counts.size(); ++i)
+        {
+            total_raw += cluster_depth_sums[i];
+            total_cnt += cluster_counts[i];
+        }
+        float avg_depth_m = static_cast<float>(total_raw) / total_cnt * depth_scale_;
 
         std_msgs::msg::Float32 dist_msg;
-        dist_msg.data = avg_depth;
+        dist_msg.data = avg_depth_m;
         pub_distance_->publish(dist_msg);
 
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-            "Obstacle detected | direction: %s | distance: %.2fm",
-            direction.c_str(), avg_depth);
+            "Obstacle detected | clusters: %zu | distance: %.2fm",
+            cluster_counts.size(), avg_depth_m);
     }
 
-    cv::Mat threshold_matrix(float max_depth, float radius, float fov[2], int width, int height)
+    /**
+     * Build the per-pixel threshold matrix in raw uint16 units.
+     * @param max_depth_raw  Maximum obstacle distance in raw sensor units.
+     * @param radius_m       Drone radius in metres.
+     * @param depth_scale    Multiplier to convert raw units → metres (e.g. 0.001).
+     * @param fov            [horizontal_deg, vertical_deg]
+     */
+    cv::Mat threshold_matrix_u16(uint16_t max_depth_raw, float radius_m,
+                                 float depth_scale, float fov[2],
+                                 int width, int height)
     {
-        cv::Mat thresh_mat(height, width, CV_32F);
+        cv::Mat thresh_mat(height, width, CV_16U);
         const float cx = width  / 2.0f;
         const float cy = height / 2.0f;
-        const float hf_ppx = fov[0] * static_cast<float>(CV_PI) / 180.0f / width;  // radians per pixel horizontal
-        const float vf_ppx = fov[1] * static_cast<float>(CV_PI) / 180.0f / height; // radians per pixel vertical
+        const float hf_ppx = fov[0] * static_cast<float>(CV_PI) / 180.0f / width;
+        const float vf_ppx = fov[1] * static_cast<float>(CV_PI) / 180.0f / height;
+        const float inv_scale = 1.0f / depth_scale;
 
         for (int y = 0; y < height; y++)
         {
+            uint16_t* row = thresh_mat.ptr<uint16_t>(y);
             for (int x = 0; x < width; x++)
             {
                 const float sh = std::sin(hf_ppx * (x - cx));
                 const float sv = std::sin(vf_ppx * (y - cy));
                 const float denom = sh * sh + sv * sv;
 
-                // At the optical centre both sin terms are ~0; cap to max_depth
-                float depth = (denom > 1e-12f)
-                    ? radius / std::sqrt(denom)
-                    : max_depth;
+                // Compute depth in metres, then convert to raw units
+                float depth_m = (denom > 1e-12f)
+                    ? radius_m / std::sqrt(denom)
+                    : static_cast<float>(max_depth_raw) * depth_scale;
 
-                thresh_mat.at<float>(y, x) = std::min(depth, max_depth);
+                uint16_t depth_raw = static_cast<uint16_t>(
+                    std::min(depth_m * inv_scale,
+                             static_cast<float>(max_depth_raw)));
+                row[x] = depth_raw;
             }
         }
 
@@ -357,11 +401,11 @@ private:
     float       depth_scale_{0.001f};
     float       fov_h_{87.0f};
     float       fov_v_{58.0f};
-    float       depth_threshold_;
+    uint16_t    depth_threshold_raw_;     // depth threshold in raw sensor units
     int         min_group_size_;
-    float       max_obstacle_distance_;
+    uint16_t    max_obstacle_dist_raw_;   // max obstacle distance in raw units
     float       drone_radius_;
-    cv::Mat     thresh_mat_;
+    cv::Mat     thresh_mat_;              // CV_16U threshold matrix in raw units
 
     // ----------------------------------------------------------------
     // ROS subscriber
@@ -373,7 +417,7 @@ private:
     // ----------------------------------------------------------------
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr    pub_detected_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pub_distance_;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr  pub_direction_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr pub_bboxes_;
 };
 
 int main(int argc, char ** argv)
