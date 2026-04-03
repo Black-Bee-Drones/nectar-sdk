@@ -20,7 +20,7 @@ class DroneConfigPanel(QWidget):
     Compact configuration panel for drone settings.
 
     Dynamically generates UI based on drone config dataclass fields.
-    Supports Mavros and Bebop configuration types.
+    Supports Mavros, Bebop, and Crazyflie configuration types.
 
     Signals
     -------
@@ -44,11 +44,14 @@ class DroneConfigPanel(QWidget):
 
         self._mavros_panel = self._create_mavros_panel()
         self._bebop_panel = self._create_bebop_panel()
+        self._crazyflie_panel = self._create_crazyflie_panel()
 
         layout.addWidget(self._mavros_panel)
         layout.addWidget(self._bebop_panel)
+        layout.addWidget(self._crazyflie_panel)
 
         self._bebop_panel.setVisible(False)
+        self._crazyflie_panel.setVisible(False)
 
     def _create_config_row(self, label: str, widget: QWidget, tooltip: str = "") -> QHBoxLayout:
         """Create a compact horizontal config row."""
@@ -225,6 +228,116 @@ class DroneConfigPanel(QWidget):
 
         return panel
 
+    def _create_crazyflie_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {COLORS.surface_elevated};
+                border: 1px solid {COLORS.border};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """
+        )
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        header = QLabel("CRAZYFLIE")
+        header.setStyleSheet(
+            f"""
+            color: {COLORS.accent};
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        """
+        )
+        layout.addWidget(header)
+
+        self._cf_name = QLineEdit()
+        self._cf_name.setText("cf231")
+        self._cf_name.setPlaceholderText("cf231")
+        self._cf_name.textChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row("CF Name:", self._cf_name, "Robot name in crazyflies.yaml")
+        )
+
+        self._cf_uri = QLineEdit()
+        self._cf_uri.setText("radio://0/80/2M/E7E7E7E7E7")
+        self._cf_uri.setPlaceholderText("radio://0/80/2M/E7E7E7E7E7")
+        self._cf_uri.textChanged.connect(self._on_config_changed)
+        layout.addLayout(self._create_config_row("URI:", self._cf_uri, "Crazyradio URI"))
+
+        self._cf_backend = QComboBox()
+        self._cf_backend.addItems(["cpp", "cflib", "sim"])
+        self._cf_backend.setCurrentIndex(0)
+        self._cf_backend.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row("Backend:", self._cf_backend, "Crazyswarm2 backend")
+        )
+
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(12)
+
+        ctrl_lbl = QLabel("Controller:")
+        ctrl_lbl.setProperty("secondary", True)
+        ctrl_lbl.setFixedWidth(72)
+        self._cf_controller = QComboBox()
+        self._cf_controller.addItems(["PID (1)", "Mellinger (2)"])
+        self._cf_controller.setCurrentIndex(1)
+        self._cf_controller.currentIndexChanged.connect(self._on_config_changed)
+
+        est_lbl = QLabel("Estimator:")
+        est_lbl.setProperty("secondary", True)
+        self._cf_estimator = QComboBox()
+        self._cf_estimator.addItems(["Complementary (1)", "Kalman (2)"])
+        self._cf_estimator.setCurrentIndex(1)
+        self._cf_estimator.currentIndexChanged.connect(self._on_config_changed)
+
+        row1.addWidget(ctrl_lbl)
+        row1.addWidget(self._cf_controller)
+        row1.addWidget(est_lbl)
+        row1.addWidget(self._cf_estimator)
+        layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(12)
+
+        max_h_lbl = QLabel("Max H:")
+        max_h_lbl.setProperty("secondary", True)
+        max_h_lbl.setFixedWidth(72)
+        self._cf_max_height = QLineEdit()
+        self._cf_max_height.setText("3.0")
+        self._cf_max_height.setPlaceholderText("3.0")
+        self._cf_max_height.textChanged.connect(self._on_config_changed)
+
+        vel_lbl = QLabel("Velocity:")
+        vel_lbl.setProperty("secondary", True)
+        self._cf_velocity = QLineEdit()
+        self._cf_velocity.setText("0.3")
+        self._cf_velocity.setPlaceholderText("0.3")
+        self._cf_velocity.textChanged.connect(self._on_config_changed)
+
+        row2.addWidget(max_h_lbl)
+        row2.addWidget(self._cf_max_height)
+        row2.addWidget(vel_lbl)
+        row2.addWidget(self._cf_velocity)
+        layout.addLayout(row2)
+
+        mocap_row = QHBoxLayout()
+        mocap_row.setContentsMargins(0, 0, 0, 0)
+        mocap_row.setSpacing(8)
+        self._cf_mocap = QCheckBox("Motion capture")
+        self._cf_mocap.setChecked(False)
+        self._cf_mocap.stateChanged.connect(self._on_config_changed)
+        mocap_row.addWidget(self._cf_mocap)
+        layout.addLayout(mocap_row)
+
+        return panel
+
     @staticmethod
     def _mavros_config_dir() -> str:
         import os
@@ -261,12 +374,12 @@ class DroneConfigPanel(QWidget):
         Parameters
         ----------
         drone_type : str
-            Drone type ('mavros' or 'bebop').
+            Drone type ('mavros', 'bebop', or 'crazyflie').
         """
         self._drone_type = drone_type.lower()
-        is_mavros = self._drone_type == "mavros"
-        self._mavros_panel.setVisible(is_mavros)
-        self._bebop_panel.setVisible(not is_mavros)
+        self._mavros_panel.setVisible(self._drone_type == "mavros")
+        self._bebop_panel.setVisible(self._drone_type == "bebop")
+        self._crazyflie_panel.setVisible(self._drone_type == "crazyflie")
 
     def get_config(self) -> Dict[str, Any]:
         """
@@ -279,6 +392,8 @@ class DroneConfigPanel(QWidget):
         """
         if self._drone_type == "mavros":
             return self._get_mavros_config()
+        if self._drone_type == "crazyflie":
+            return self._get_crazyflie_config()
         return self._get_bebop_config()
 
     def _get_mavros_config(self) -> Dict[str, Any]:
@@ -311,6 +426,24 @@ class DroneConfigPanel(QWidget):
             "namespace": self._bebop_namespace.text().strip() or "bebop",
         }
 
+    def _get_crazyflie_config(self) -> Dict[str, Any]:
+        def _float_or(text: str, default: float) -> float:
+            try:
+                return float(text.strip())
+            except (ValueError, AttributeError):
+                return default
+
+        return {
+            "cf_name": self._cf_name.text().strip() or "cf231",
+            "uri": self._cf_uri.text().strip() or "radio://0/80/2M/E7E7E7E7E7",
+            "backend": self._cf_backend.currentText(),
+            "controller": self._cf_controller.currentIndex() + 1,
+            "estimator": self._cf_estimator.currentIndex() + 1,
+            "max_height": _float_or(self._cf_max_height.text(), 3.0),
+            "default_velocity": _float_or(self._cf_velocity.text(), 0.3),
+            "mocap": self._cf_mocap.isChecked(),
+        }
+
     def set_config(self, config: Dict[str, Any]) -> None:
         """
         Set configuration values from dictionary.
@@ -322,6 +455,8 @@ class DroneConfigPanel(QWidget):
         """
         if self._drone_type == "mavros":
             self._set_mavros_config(config)
+        elif self._drone_type == "crazyflie":
+            self._set_crazyflie_config(config)
         else:
             self._set_bebop_config(config)
 
@@ -370,13 +505,33 @@ class DroneConfigPanel(QWidget):
         if "namespace" in config:
             self._bebop_namespace.setText(config["namespace"])
 
+    def _set_crazyflie_config(self, config: Dict[str, Any]) -> None:
+        if "cf_name" in config:
+            self._cf_name.setText(config["cf_name"])
+        if "uri" in config:
+            self._cf_uri.setText(config["uri"])
+        if "backend" in config:
+            idx = self._cf_backend.findText(config["backend"])
+            if idx >= 0:
+                self._cf_backend.setCurrentIndex(idx)
+        if "controller" in config:
+            self._cf_controller.setCurrentIndex(max(0, config["controller"] - 1))
+        if "estimator" in config:
+            self._cf_estimator.setCurrentIndex(max(0, config["estimator"] - 1))
+        if "max_height" in config:
+            self._cf_max_height.setText(str(config["max_height"]))
+        if "default_velocity" in config:
+            self._cf_velocity.setText(str(config["default_velocity"]))
+        if "mocap" in config:
+            self._cf_mocap.setChecked(config["mocap"])
+
     def create_config_object(self):
         """
         Create a config dataclass instance from current settings.
 
         Returns
         -------
-        MavrosConfig | BebopConfig
+        MavrosConfig | BebopConfig | CrazyflieConfig
             Configuration object for current drone type.
         """
         config_dict = self.get_config()
@@ -393,6 +548,20 @@ class DroneConfigPanel(QWidget):
                 setpoint_config_file=config_dict["setpoint_config_file"],
                 apply_setpoint_params=config_dict["apply_setpoint_params"],
                 connection_string=config_dict["connection_string"],
+            )
+        elif self._drone_type == "crazyflie":
+            from nectar.control import CrazyflieConfig
+
+            return CrazyflieConfig(
+                start_driver=False,
+                cf_name=config_dict["cf_name"],
+                uri=config_dict["uri"],
+                backend=config_dict["backend"],
+                controller=config_dict["controller"],
+                estimator=config_dict["estimator"],
+                max_height=config_dict["max_height"],
+                default_velocity=config_dict["default_velocity"],
+                mocap=config_dict["mocap"],
             )
         else:
             from nectar.control import BebopConfig

@@ -36,12 +36,23 @@ class DriverWorker(QObject):
         self._drone_type: str = ""
         self._connection_string: str = ""
         self._ip: str = ""
+        self._backend: str = ""
+        self._mocap: bool = False
 
-    def setup_connect(self, drone_type: str, connection_string: str = "", ip: str = "") -> None:
+    def setup_connect(
+        self,
+        drone_type: str,
+        connection_string: str = "",
+        ip: str = "",
+        backend: str = "",
+        mocap: bool = False,
+    ) -> None:
         self._action = "connect"
         self._drone_type = drone_type
         self._connection_string = connection_string
         self._ip = ip
+        self._backend = backend
+        self._mocap = mocap
 
     def setup_disconnect(self, drone_type: str) -> None:
         self._action = "disconnect"
@@ -93,14 +104,22 @@ class DriverWorker(QObject):
         if self._drone_type == "mavros":
             conn = self._connection_string or "serial:///dev/ttyUSB0:921600"
             return f"ros2 launch mavros apm.launch fcu_url:={conn}"
+        if self._drone_type == "crazyflie":
+            backend = self._backend or "cpp"
+            cmd = f"ros2 launch crazyflie launch.py backend:={backend}"
+            if not self._mocap:
+                cmd += " mocap:=False"
+            return cmd
         ip = self._ip or "192.168.42.1"
         return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={ip}"
 
     def _get_session_name(self) -> str:
-        return "mavros_node" if self._drone_type == "mavros" else "bebop_driver"
+        names = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
+        return names.get(self._drone_type, "bebop_driver")
 
     def _get_node_pattern(self) -> str:
-        return "mavros_node" if self._drone_type == "mavros" else "bebop_driver"
+        patterns = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
+        return patterns.get(self._drone_type, "bebop_driver")
 
 
 class DroneInstanceWorker(QObject):
@@ -157,7 +176,8 @@ class DriverStatusChecker(QObject):
         try:
             from nectar.utils.process import ProcessUtils
 
-            pattern = "mavros_node" if self._drone_type == "mavros" else "bebop_driver"
+            patterns = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
+            pattern = patterns.get(self._drone_type, "bebop_driver")
             is_running = ProcessUtils.is_node_running(pattern, timeout=2.0)
             self.status_checked.emit(is_running)
         except Exception:
@@ -410,7 +430,7 @@ class ControlTab(QWidget):
         lbl = QLabel("Drone:")
         lbl.setProperty("secondary", True)
         self._drone_combo = QComboBox()
-        self._drone_combo.addItems(["Mavros", "Bebop"])
+        self._drone_combo.addItems(["Mavros", "Bebop", "Crazyflie"])
         self._drone_combo.setFixedWidth(100)
         self._drone_combo.currentTextChanged.connect(self._on_drone_type_changed)
         type_layout.addWidget(lbl)
@@ -893,6 +913,56 @@ class ControlTab(QWidget):
         layout.addWidget(self._bebop_actions)
         self._bebop_actions.setVisible(False)
 
+        self._crazyflie_actions = QWidget()
+        cf_layout = QHBoxLayout(self._crazyflie_actions)
+        cf_layout.setContentsMargins(0, 0, 0, 0)
+        cf_layout.setSpacing(6)
+
+        cf_alt_lbl = QLabel("Alt:")
+        cf_alt_lbl.setProperty("secondary", True)
+        self._cf_altitude_spin = QDoubleSpinBox()
+        self._cf_altitude_spin.setRange(0.1, 3.0)
+        self._cf_altitude_spin.setValue(0.5)
+        self._cf_altitude_spin.setSingleStep(0.1)
+        self._cf_altitude_spin.setSuffix(" m")
+        self._cf_altitude_spin.setMinimumWidth(75)
+
+        self._cf_takeoff_btn = QPushButton("Takeoff")
+        self._cf_takeoff_btn.setProperty("success", True)
+        self._cf_takeoff_btn.setEnabled(False)
+        self._cf_takeoff_btn.setMinimumWidth(80)
+        self._cf_takeoff_btn.clicked.connect(self._crazyflie_takeoff)
+
+        self._cf_land_btn = QPushButton("Land")
+        self._cf_land_btn.setEnabled(False)
+        self._cf_land_btn.setMinimumWidth(60)
+        self._cf_land_btn.clicked.connect(self._crazyflie_land)
+
+        cf_sep_rtl = QFrame()
+        cf_sep_rtl.setFrameShape(QFrame.VLine)
+        cf_sep_rtl.setFixedWidth(1)
+        cf_sep_rtl.setStyleSheet(f"background-color: {COLORS.border};")
+
+        self._cf_rtl_land_check = QCheckBox("Land")
+        self._cf_rtl_land_check.setChecked(True)
+
+        self._cf_rtl_btn = QPushButton("RTL")
+        self._cf_rtl_btn.setProperty("warning", True)
+        self._cf_rtl_btn.setEnabled(False)
+        self._cf_rtl_btn.setMinimumWidth(60)
+        self._cf_rtl_btn.clicked.connect(self._crazyflie_rtl)
+
+        cf_layout.addWidget(cf_alt_lbl)
+        cf_layout.addWidget(self._cf_altitude_spin)
+        cf_layout.addWidget(self._cf_takeoff_btn)
+        cf_layout.addWidget(self._cf_land_btn)
+        cf_layout.addWidget(cf_sep_rtl)
+        cf_layout.addWidget(self._cf_rtl_land_check)
+        cf_layout.addWidget(self._cf_rtl_btn)
+
+        layout.addWidget(self._crazyflie_actions)
+        self._crazyflie_actions.setVisible(False)
+
         layout.addStretch()
 
         self._emergency_btn = QPushButton("STOP")
@@ -1004,12 +1074,14 @@ class ControlTab(QWidget):
         self._set_velocity_control_enabled(controls_active)
         self._set_mavros_controls_enabled(controls_active and self._drone_type == "mavros")
         self._set_bebop_controls_enabled(controls_active and self._drone_type == "bebop")
-        self._set_position_control_enabled(controls_active and self._drone_type == "mavros")
+        self._set_crazyflie_controls_enabled(controls_active and self._drone_type == "crazyflie")
+        self._set_position_control_enabled(
+            controls_active and self._drone_type in ("mavros", "crazyflie")
+        )
 
     def _update_status_indicators(self) -> None:
-        has_fcu = self._drone_type == "mavros"
-        self._status_fcu.setVisible(has_fcu)
-        self._status_armed.setVisible(has_fcu)
+        self._status_fcu.setVisible(self._drone_type == "mavros")
+        self._status_armed.setVisible(self._drone_type in ("mavros", "crazyflie"))
 
     def _set_mavros_controls_enabled(self, enabled: bool) -> None:
         self._arm_btn.setEnabled(enabled)
@@ -1026,6 +1098,14 @@ class ControlTab(QWidget):
         self._bebop_takeoff_btn.setEnabled(enabled)
         self._bebop_land_btn.setEnabled(enabled)
         self._flip_btn.setEnabled(enabled)
+
+    def _set_crazyflie_controls_enabled(self, enabled: bool) -> None:
+        self._cf_altitude_spin.setEnabled(enabled)
+        self._cf_takeoff_btn.setEnabled(enabled)
+        self._cf_land_btn.setEnabled(enabled)
+        rtl_enabled = enabled and not self._rtl_running
+        self._cf_rtl_btn.setEnabled(rtl_enabled)
+        self._cf_rtl_land_check.setEnabled(rtl_enabled)
 
     def _set_velocity_control_enabled(self, enabled: bool) -> None:
         for slider in self._velocity_sliders:
@@ -1074,10 +1154,10 @@ class ControlTab(QWidget):
     @Slot(str)
     def _on_drone_type_changed(self, drone_type: str) -> None:
         self._drone_type = drone_type.lower()
-        is_mavros = self._drone_type == "mavros"
 
-        self._mavros_actions.setVisible(is_mavros)
-        self._bebop_actions.setVisible(not is_mavros)
+        self._mavros_actions.setVisible(self._drone_type == "mavros")
+        self._bebop_actions.setVisible(self._drone_type == "bebop")
+        self._crazyflie_actions.setVisible(self._drone_type == "crazyflie")
         self._config_panel.set_drone_type(self._drone_type)
 
         self._update_capability_panels()
@@ -1087,11 +1167,15 @@ class ControlTab(QWidget):
             self._status_checker.set_drone_type(self._drone_type)
 
     def _update_capability_panels(self) -> None:
-        has_position_control = self._drone_type == "mavros"
-        has_telemetry = self._drone_type == "mavros"
+        has_position_control = self._drone_type in ("mavros", "crazyflie")
+        has_telemetry = self._drone_type in ("mavros", "crazyflie")
+        is_crazyflie = self._drone_type == "crazyflie"
 
         self._position_panel.setVisible(has_position_control)
         self._telemetry_group.setVisible(has_telemetry)
+
+        self._pos_strategy_combo.setVisible(not is_crazyflie)
+        self._pos_alt_source_combo.setVisible(not is_crazyflie)
 
     @Slot()
     def _trigger_driver_check(self) -> None:
@@ -1119,12 +1203,16 @@ class ControlTab(QWidget):
         self._show_progress("Connecting...")
 
         config = self._config_panel.get_config()
-        conn_str = config.get("connection_string", "")
-        ip = config.get("ip", "")
 
         self._driver_thread = QThread()
         self._driver_worker = DriverWorker()
-        self._driver_worker.setup_connect(self._drone_type, conn_str, ip)
+        self._driver_worker.setup_connect(
+            self._drone_type,
+            connection_string=config.get("connection_string", ""),
+            ip=config.get("ip", ""),
+            backend=config.get("backend", ""),
+            mocap=config.get("mocap", False),
+        )
         self._driver_worker.moveToThread(self._driver_thread)
 
         self._driver_thread.started.connect(self._driver_worker.run)
@@ -1327,6 +1415,13 @@ class ControlTab(QWidget):
             self._rtl_btn.setEnabled(rtl_enabled)
             self._rtl_strategy_combo.setEnabled(rtl_enabled)
             self._rtl_land_check.setEnabled(rtl_enabled)
+        elif self._drone_type == "crazyflie":
+            self._cf_takeoff_btn.setEnabled(actual_enabled)
+            self._cf_land_btn.setEnabled(actual_enabled)
+            self._cf_altitude_spin.setEnabled(actual_enabled)
+            rtl_enabled = actual_enabled and not self._rtl_running
+            self._cf_rtl_btn.setEnabled(rtl_enabled)
+            self._cf_rtl_land_check.setEnabled(rtl_enabled)
         else:
             self._bebop_takeoff_btn.setEnabled(actual_enabled)
             self._bebop_land_btn.setEnabled(actual_enabled)
@@ -1407,6 +1502,42 @@ class ControlTab(QWidget):
         self._set_flight_buttons_enabled(True)
 
     @Slot()
+    def _crazyflie_takeoff(self) -> None:
+        self._execute_flight_action("takeoff", self._cf_altitude_spin.value())
+
+    @Slot()
+    def _crazyflie_land(self) -> None:
+        self._execute_flight_action("land")
+
+    @Slot()
+    def _crazyflie_rtl(self) -> None:
+        if not self._drone or self._rtl_running or self._flight_action_running:
+            return
+
+        from nectar.control.types import RTLStrategy
+
+        altitude = self._cf_altitude_spin.value()
+        land = self._cf_rtl_land_check.isChecked()
+
+        if self._node:
+            self._node.get_logger().info(f"RTL: PID alt={altitude:.1f}m land={land}")
+
+        self._rtl_running = True
+        self._set_flight_buttons_enabled(False)
+
+        self._rtl_thread = QThread()
+        self._rtl_worker = RTLWorker()
+        self._rtl_worker.setup(self._drone, altitude, 0.2, RTLStrategy.PID, land)
+        self._rtl_worker.moveToThread(self._rtl_thread)
+
+        self._rtl_thread.started.connect(self._rtl_worker.run)
+        self._rtl_worker.progress.connect(self._show_progress)
+        self._rtl_worker.finished.connect(self._on_rtl_finished)
+        self._rtl_worker.finished.connect(self._rtl_thread.quit)
+
+        self._rtl_thread.start()
+
+    @Slot()
     def _execute_move_to(self) -> None:
         if not self._drone or self._moveto_running:
             return
@@ -1419,6 +1550,7 @@ class ControlTab(QWidget):
 
         reference_map = {
             "Body": MoveReference.BODY,
+            "World": MoveReference.WORLD,
             "Takeoff": MoveReference.TAKEOFF,
         }
         strategy_map = {
@@ -1519,7 +1651,7 @@ class ControlTab(QWidget):
             self._driver_connected
             and self._instance_initialized
             and self._controls_enabled
-            and self._drone_type == "mavros"
+            and self._drone_type in ("mavros", "crazyflie")
         )
 
     @Slot()
@@ -1581,6 +1713,8 @@ class ControlTab(QWidget):
         try:
             if self._drone_type == "mavros":
                 self._update_mavros_telemetry()
+            elif self._drone_type == "crazyflie":
+                self._update_crazyflie_telemetry()
         except Exception:
             pass
 
@@ -1637,6 +1771,42 @@ class ControlTab(QWidget):
         self._telem_lidar.setText(f"LiDAR: {lidar:.2f}" if lidar is not None else "LiDAR: --")
 
         self._telem_mode.setText(f"Mode: {d.flight_mode or '--'}")
+
+    def _update_crazyflie_telemetry(self) -> None:
+        import math
+
+        d = self._drone
+
+        pos = d.position
+        self._telem_local_x.setText(f"X: {pos[0]:.2f}")
+        self._telem_local_y.setText(f"Y: {pos[1]:.2f}")
+        self._telem_local_z.setText(f"Z: {pos[2]:.2f}")
+        self._telem_height.setText(f"Height: {d.height:.2f}")
+
+        if d.pose is not None:
+            q = d.pose.pose.orientation
+            siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            yaw_deg = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+            self._telem_yaw.setText(f"Yaw: {yaw_deg:.1f}")
+        else:
+            self._telem_yaw.setText("Yaw: --")
+
+        self._telem_lidar.setText("LiDAR: N/A")
+
+        battery = d.battery_voltage
+        self._telem_lat.setText(f"Bat: {battery:.2f}V" if battery is not None else "Bat: --")
+        rssi = d.rssi
+        self._telem_lon.setText(f"RSSI: {rssi}dBm" if rssi is not None else "RSSI: --")
+        self._telem_gps_alt.setText(f"Flying: {'Yes' if d.is_flying else 'No'}")
+        self._telem_heading.setText(f"CanFly: {'Yes' if d.can_fly else 'No'}")
+        self._telem_rel_alt.setText(f"Tumbled: {'Yes' if d.is_tumbled else 'No'}")
+
+        armed = d.is_armed
+        if armed is not None:
+            self._status_armed.set_status("active" if armed else "inactive")
+
+        self._telem_mode.setText(f"CF: {d.config.cf_name}")
 
     def _clear_telemetry(self) -> None:
         if self._status_fcu.isVisible():
