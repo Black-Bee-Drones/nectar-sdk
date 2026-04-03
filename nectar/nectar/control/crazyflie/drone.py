@@ -509,6 +509,7 @@ class CrazyflieDrone(BaseDrone):
             If None, publishes a single command.
         reference : MoveReference, default=BODY
             BODY: velocities relative to current heading.
+            TAKEOFF: velocities in takeoff heading frame.
             WORLD: velocities in world frame.
         """
         self._in_streaming_mode = True
@@ -560,6 +561,19 @@ class CrazyflieDrone(BaseDrone):
         Uses the Crazyflie's goTo service which plans a smooth degree-7
         polynomial trajectory from current state to target.
 
+        Coordinate semantics match MAVROS:
+
+        - BODY: offsets relative to current position and heading.
+          x/y=None disables that axis (no offset). z=None maintains current
+          height. yaw is degrees relative to current heading.
+        - TAKEOFF: offsets relative to takeoff position and heading.
+          x/y=None preserves current position on that axis (does NOT go to
+          takeoff position). z is absolute height above ground (z=None
+          maintains current height, z <= 0 is rejected for safety). yaw is
+          degrees relative to takeoff heading.
+        - WORLD: absolute world-frame coordinates.
+          None values preserve current position/yaw on that axis.
+
         Parameters
         ----------
         x : float, optional
@@ -567,13 +581,12 @@ class CrazyflieDrone(BaseDrone):
         y : float, optional
             Left (+) / right (-) offset in meters.
         z : float, optional
-            Up (+) / down (-) offset in meters.
+            Up (+) / down (-) offset in meters (BODY) or absolute height (TAKEOFF).
         yaw : float, optional
-            Target yaw in degrees. None maintains current yaw.
+            Target yaw in degrees relative to reference heading.
+            None maintains current yaw.
         reference : MoveReference, default=BODY
-            BODY: offset relative to current position/heading.
-            WORLD: absolute position in world frame.
-            TAKEOFF: offset relative to takeoff position/heading.
+            Reference frame for movement.
         timeout : float, optional, default=60.0
             Maximum time for navigation.
         precision : float, default=0.1
@@ -598,65 +611,27 @@ class CrazyflieDrone(BaseDrone):
         if self._in_streaming_mode:
             self.notify_setpoints_stop()
 
-        dx = x if x is not None else 0.0
-        dy = y if y is not None else 0.0
-        dz = z if z is not None else 0.0
+        if reference == MoveReference.TAKEOFF and self._takeoff_position is None:
+            raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
 
-        if dx == 0.0 and dy == 0.0 and dz == 0.0 and yaw is None:
-            self._node.get_logger().warn("move_to called with no movement (all axes zero/None)")
-            return True
+        if z is not None:
+            z = self._check_altitude_safety(z, reference)
 
-        target_yaw = math.radians(yaw) if yaw is not None else self._get_yaw()
-
-        if reference == MoveReference.BODY:
-            current_yaw = self._get_yaw()
-            world_dx = dx * math.cos(current_yaw) - dy * math.sin(current_yaw)
-            world_dy = dx * math.sin(current_yaw) + dy * math.cos(current_yaw)
-            goal = Point(
-                x=self._position[0] + world_dx,
-                y=self._position[1] + world_dy,
-                z=self._position[2] + dz,
-            )
-            relative = False
-
-        elif reference == MoveReference.TAKEOFF:
-            if self._takeoff_position is None:
-                raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
-            takeoff_yaw = self._takeoff_yaw
-            world_dx = dx * math.cos(takeoff_yaw) - dy * math.sin(takeoff_yaw)
-            world_dy = dx * math.sin(takeoff_yaw) + dy * math.cos(takeoff_yaw)
-            goal = Point(
-                x=self._takeoff_position[0] + world_dx,
-                y=self._takeoff_position[1] + world_dy,
-                z=self._takeoff_position[2] + dz,
-            )
-            relative = False
-
-        elif reference == MoveReference.WORLD:
-            goal = Point(x=dx, y=dy, z=dz)
-            relative = False
-
-        else:
-            goal = Point(x=dx, y=dy, z=dz)
-            relative = True
-
-        if goal.z < 0.0 and not relative:
-            self._node.get_logger().warn(
-                f"Target altitude {goal.z:.2f}m is below ground, clamping to 0"
-            )
+        goal, target_yaw = self._compute_goal(x, y, z, yaw, reference)
         goal.z = max(0.0, min(goal.z, config.max_height))
 
-        distance = (
-            math.sqrt(
-                (goal.x - self._position[0]) ** 2
-                + (goal.y - self._position[1]) ** 2
-                + (goal.z - self._position[2]) ** 2
-            )
-            if not relative
-            else math.sqrt(dx**2 + dy**2 + dz**2)
-        )
+        distance = self._distance_to(goal)
+        yaw_diff = abs(self._normalize_angle(target_yaw - self._get_yaw()))
 
-        duration = max(distance / config.default_velocity, 1.0)
+        if distance < precision * 0.5 and yaw_diff < math.radians(3):
+            self._node.get_logger().info(
+                f"Already at target (distance={distance:.3f}m, "
+                f"yaw_diff={math.degrees(yaw_diff):.1f} deg)"
+            )
+            return True
+
+        yaw_duration = yaw_diff / math.radians(60)
+        duration = max(distance / config.default_velocity, yaw_duration, 1.0)
 
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
@@ -666,7 +641,7 @@ class CrazyflieDrone(BaseDrone):
 
         req = GoTo.Request()
         req.group_mask = 0
-        req.relative = relative
+        req.relative = False
         req.goal = goal
         req.yaw = float(target_yaw)
         req.duration = rclpy.duration.Duration(seconds=duration).to_msg()
@@ -1112,6 +1087,133 @@ class CrazyflieDrone(BaseDrone):
             + (goal.y - self._position[1]) ** 2
             + (goal.z - self._position[2]) ** 2
         )
+
+    def _compute_goal(
+        self,
+        x: Optional[float],
+        y: Optional[float],
+        z: Optional[float],
+        yaw: Optional[float],
+        reference: MoveReference,
+    ) -> tuple:
+        """Compute absolute goal position and yaw for the goTo command.
+
+        Follows the same coordinate semantics as MAVROS
+        ``TargetComputer.compute_local_target``:
+
+        - BODY: offsets rotated by current yaw, added to current position.
+          None axes produce zero offset (hold current).
+        - TAKEOFF: offsets rotated by takeoff yaw, added to takeoff position.
+          None axes preserve the drone's current position on that axis by
+          computing the equivalent offset from takeoff.
+        - WORLD: absolute coordinates. None axes preserve current position.
+
+        Parameters
+        ----------
+        x, y, z : float, optional
+            Movement offsets or absolute coordinates depending on reference.
+        yaw : float, optional
+            Yaw in degrees relative to the reference heading.
+        reference : MoveReference
+            Coordinate frame.
+
+        Returns
+        -------
+        tuple[Point, float]
+            (goal, target_yaw) in world frame.
+        """
+        current_yaw = self._get_yaw()
+
+        if reference == MoveReference.BODY:
+            ref_yaw = current_yaw
+            dx = x if x is not None else 0.0
+            dy = y if y is not None else 0.0
+            world_dx = dx * math.cos(ref_yaw) - dy * math.sin(ref_yaw)
+            world_dy = dx * math.sin(ref_yaw) + dy * math.cos(ref_yaw)
+            goal = Point(
+                x=self._position[0] + world_dx,
+                y=self._position[1] + world_dy,
+                z=self._position[2] + (z if z is not None else 0.0),
+            )
+            target_yaw = ref_yaw + math.radians(yaw) if yaw is not None else current_yaw
+
+        elif reference == MoveReference.TAKEOFF:
+            ref_yaw = self._takeoff_yaw
+            tkp = self._takeoff_position
+            cos_r = math.cos(ref_yaw)
+            sin_r = math.sin(ref_yaw)
+
+            if x is not None:
+                x_off = x
+            else:
+                dxw = self._position[0] - tkp[0]
+                dyw = self._position[1] - tkp[1]
+                x_off = cos_r * dxw + sin_r * dyw
+
+            if y is not None:
+                y_off = y
+            else:
+                dxw = self._position[0] - tkp[0]
+                dyw = self._position[1] - tkp[1]
+                y_off = -sin_r * dxw + cos_r * dyw
+
+            world_dx = x_off * cos_r - y_off * sin_r
+            world_dy = x_off * sin_r + y_off * cos_r
+
+            goal = Point(
+                x=tkp[0] + world_dx,
+                y=tkp[1] + world_dy,
+                z=z if z is not None else self._position[2],
+            )
+            target_yaw = ref_yaw + math.radians(yaw) if yaw is not None else current_yaw
+
+        else:  # WORLD
+            goal = Point(
+                x=x if x is not None else self._position[0],
+                y=y if y is not None else self._position[1],
+                z=z if z is not None else self._position[2],
+            )
+            target_yaw = math.radians(yaw) if yaw is not None else current_yaw
+
+        return goal, self._normalize_angle(target_yaw)
+
+    def _check_altitude_safety(self, z: float, reference: MoveReference) -> Optional[float]:
+        """Reject z values that would produce a target altitude at or below ground.
+
+        Mirrors MAVROS ``MavrosDrone._check_altitude_safety``.
+
+        Parameters
+        ----------
+        z : float
+            Altitude parameter from ``move_to``.
+        reference : MoveReference
+            Movement reference frame.
+
+        Returns
+        -------
+        float or None
+            Original z if safe, None if target altitude would be <= 0.
+        """
+        if reference == MoveReference.TAKEOFF:
+            if z <= 0:
+                self._node.get_logger().warn(
+                    f"z={z} with TAKEOFF reference targets altitude <= 0. "
+                    "Ignoring z to prevent ground collision."
+                )
+                return None
+        else:
+            if self.height + z <= 0:
+                self._node.get_logger().warn(
+                    f"z={z} from current height {self.height:.2f}m targets "
+                    f"{self.height + z:.2f}m (<= 0). Ignoring z to prevent ground collision."
+                )
+                return None
+        return z
+
+    @staticmethod
+    def _normalize_angle(angle: float) -> float:
+        """Normalize angle to [-pi, pi]."""
+        return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
 DroneFactory.register("crazyflie", CrazyflieDrone.from_config)
