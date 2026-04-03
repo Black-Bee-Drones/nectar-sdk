@@ -6,6 +6,7 @@ from geometry_msgs.msg import Point, PoseStamped
 from rclpy.duration import Duration
 from rclpy.node import Node
 from std_srvs.srv import Empty
+from tf2_msgs.msg import TFMessage
 
 from nectar.control.base import BaseDrone
 from nectar.control.config import CrazyflieConfig, DroneConfig
@@ -88,6 +89,7 @@ class CrazyflieDrone(BaseDrone):
         self._takeoff_position: Optional[List[float]] = None
         self._takeoff_yaw: float = 0.0
         self._in_streaming_mode = False
+        self._tf_received = False
 
         prefix = f"/{config.cf_name}"
         self._prefix = prefix
@@ -196,6 +198,7 @@ class CrazyflieDrone(BaseDrone):
     def _setup_subscribers(self, prefix: str) -> None:
         self._create_subscriber(Status, f"{prefix}/status", self._on_status, 10)
         self._create_subscriber(PoseStamped, f"{prefix}/pose", self._on_pose, 10)
+        self._create_subscriber(TFMessage, "/tf", self._on_tf, 10)
 
     def _setup_publishers(self, prefix: str) -> None:
         self._cmd_full_state_pub = self._create_publisher(FullState, f"{prefix}/cmd_full_state", 1)
@@ -220,6 +223,22 @@ class CrazyflieDrone(BaseDrone):
             msg.pose.position.y,
             msg.pose.position.z,
         ]
+
+    def _on_tf(self, msg: TFMessage) -> None:
+        cf_name = self._config.cf_name
+        for transform in msg.transforms:
+            if transform.child_frame_id == cf_name:
+                t = transform.transform.translation
+                self._position = [t.x, t.y, t.z]
+                if self._pose is None:
+                    self._pose = PoseStamped()
+                    self._pose.header = transform.header
+                self._pose.pose.position.x = t.x
+                self._pose.pose.position.y = t.y
+                self._pose.pose.position.z = t.z
+                self._pose.pose.orientation = transform.transform.rotation
+                self._tf_received = True
+                break
 
     # Driver
 
@@ -257,9 +276,7 @@ class CrazyflieDrone(BaseDrone):
         bool
             True if status messages are being received.
         """
-        timeout = Duration(
-            seconds=self._config.sensor_timeout if hasattr(self._config, "sensor_timeout") else 10.0
-        )
+        timeout = Duration(seconds=self._config.sensor_timeout)
         start = self._node.get_clock().now()
 
         while self._node.get_clock().now() - start < timeout:
@@ -271,8 +288,14 @@ class CrazyflieDrone(BaseDrone):
                     f"(battery: {self._status.battery_voltage:.2f}V)"
                 )
                 return True
+            if self._tf_received:
+                self._connected = True
+                self._node.get_logger().info(
+                    f"Connected to {self._config.cf_name} (simulation via /tf)"
+                )
+                return True
 
-        self._node.get_logger().warn("Connection timeout: no status received")
+        self._node.get_logger().warn("Connection timeout: no status or tf received")
         return False
 
     def disconnect(self) -> None:
@@ -293,8 +316,7 @@ class CrazyflieDrone(BaseDrone):
         """
         req = Arm.Request()
         req.arm = True
-        self._call_service_async(self._arm_srv, req)
-        self._node.get_logger().info("Arm command sent")
+        self._call_service(self._arm_srv, req, success_msg="Armed", sync=False)
         return True
 
     def disarm(self) -> bool:
@@ -308,21 +330,31 @@ class CrazyflieDrone(BaseDrone):
         """
         req = Arm.Request()
         req.arm = False
-        self._call_service_async(self._arm_srv, req)
-        self._node.get_logger().info("Disarm command sent")
+        self._call_service(self._arm_srv, req, success_msg="Disarmed", sync=False)
         return True
 
-    def takeoff(self, altitude: float, duration: Optional[float] = None) -> bool:
+    def takeoff(
+        self,
+        altitude: float,
+        duration: Optional[float] = None,
+        timeout: float = 30.0,
+        precision: float = 0.12,
+    ) -> bool:
         """
         Execute takeoff to specified altitude.
 
         Parameters
         ----------
         altitude : float
-            Target height in meters.
+            Target height in meters (must be > 0).
         duration : float, optional
             Time to reach target height in seconds.
             If None, estimated from altitude and default_velocity.
+        timeout : float, default=30.0
+            Maximum time to wait for altitude convergence.
+        precision : float, default=0.12
+            Altitude precision in meters. Takeoff succeeds when
+            height >= altitude - precision.
 
         Returns
         -------
@@ -330,24 +362,61 @@ class CrazyflieDrone(BaseDrone):
             True if takeoff command sent and altitude reached.
         """
         config: CrazyflieConfig = self._config
-        altitude = min(altitude, config.max_height)
+
+        if altitude <= 0.0:
+            self._node.get_logger().error(
+                f"Invalid takeoff altitude: {altitude:.2f}m (must be > 0)"
+            )
+            return False
+
+        if altitude > config.max_height:
+            self._node.get_logger().warn(
+                f"Altitude {altitude:.2f}m exceeds max_height {config.max_height:.2f}m, clamping"
+            )
+            altitude = config.max_height
 
         if duration is None:
-            duration = max(altitude / config.default_velocity, 1.0)
+            duration = max(altitude / config.default_velocity, 2.0)
 
+        initial_height = self.height
         self._takeoff_position = list(self._position)
         self._takeoff_yaw = self._get_yaw()
+
+        self._node.get_logger().info(
+            f"Takeoff to {altitude:.2f}m over {duration:.1f}s "
+            f"(initial height={initial_height:.2f}m)"
+        )
 
         req = Takeoff.Request()
         req.group_mask = 0
         req.height = float(altitude)
         req.duration = rclpy.duration.Duration(seconds=duration).to_msg()
-        self._call_service_async(self._takeoff_srv, req)
+        self._call_service(
+            self._takeoff_srv,
+            req,
+            fail_msg="Takeoff command failed",
+            sync=True,
+        )
 
-        self._node.get_logger().info(f"Takeoff to {altitude:.2f}m over {duration:.1f}s")
+        threshold = altitude - precision
+        start = self._node.get_clock().now()
+        deadline = Duration(seconds=timeout)
 
-        self.delay(duration + 0.5)
-        return True
+        while self._node.get_clock().now() - start < deadline:
+            rclpy.spin_once(self._node, timeout_sec=0.05)
+            if self.height >= threshold:
+                self.delay(1.0)
+                self._node.get_logger().info(
+                    f"Takeoff complete (height={self.height:.2f}m, target={altitude:.2f}m)"
+                )
+                return True
+
+        height_gain = self.height - initial_height
+        self._node.get_logger().warn(
+            f"Takeoff timeout (height={self.height:.2f}m, target={altitude:.2f}m, "
+            f"gained={height_gain:.2f}m)"
+        )
+        return height_gain >= altitude * 0.5
 
     def land(self, timeout: float = 30.0, duration: Optional[float] = None) -> bool:
         """
@@ -364,27 +433,50 @@ class CrazyflieDrone(BaseDrone):
         Returns
         -------
         bool
-            True if land command sent.
+            True if landing completed (height near ground).
         """
         config: CrazyflieConfig = self._config
 
         if self._in_streaming_mode:
             self.notify_setpoints_stop()
 
-        current_height = self._position[2]
+        current_height = self.height
+        landed_threshold = config.landing_height + 0.05
+
+        if current_height <= landed_threshold:
+            self._node.get_logger().info(
+                f"Already near ground (height={current_height:.3f}m), skipping land"
+            )
+            return True
+
         if duration is None:
             duration = max(current_height / config.default_velocity, 1.0)
+
+        self._node.get_logger().info(f"Landing from {current_height:.2f}m over {duration:.1f}s")
 
         req = Land.Request()
         req.group_mask = 0
         req.height = config.landing_height
         req.duration = rclpy.duration.Duration(seconds=duration).to_msg()
-        self._call_service_async(self._land_srv, req)
+        self._call_service(
+            self._land_srv,
+            req,
+            fail_msg="Land command failed",
+            sync=True,
+        )
 
-        self._node.get_logger().info(f"Landing from {current_height:.2f}m over {duration:.1f}s")
+        start = self._node.get_clock().now()
+        deadline = Duration(seconds=timeout)
 
-        self.delay(duration + 0.5)
-        return True
+        while self._node.get_clock().now() - start < deadline:
+            rclpy.spin_once(self._node, timeout_sec=0.05)
+            if self.height <= landed_threshold:
+                self.delay(0.5)
+                self._node.get_logger().info(f"Landing complete (height={self.height:.3f}m)")
+                return True
+
+        self._node.get_logger().warn(f"Landing timeout (height={self.height:.3f}m)")
+        return self.height <= 0.1
 
     def move_velocity(
         self,
@@ -458,7 +550,7 @@ class CrazyflieDrone(BaseDrone):
         yaw: Optional[float] = None,
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
-        precision: float = 0.2,
+        precision: float = 0.1,
         strategy: NavigationStrategy = NavigationStrategy.PID,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
@@ -484,7 +576,7 @@ class CrazyflieDrone(BaseDrone):
             TAKEOFF: offset relative to takeoff position/heading.
         timeout : float, optional, default=60.0
             Maximum time for navigation.
-        precision : float, default=0.2
+        precision : float, default=0.1
             Arrival threshold in meters.
         strategy : NavigationStrategy, default=PID
             Ignored -- Crazyflie always uses onboard polynomial planner.
@@ -509,6 +601,11 @@ class CrazyflieDrone(BaseDrone):
         dx = x if x is not None else 0.0
         dy = y if y is not None else 0.0
         dz = z if z is not None else 0.0
+
+        if dx == 0.0 and dy == 0.0 and dz == 0.0 and yaw is None:
+            self._node.get_logger().warn("move_to called with no movement (all axes zero/None)")
+            return True
+
         target_yaw = math.radians(yaw) if yaw is not None else self._get_yaw()
 
         if reference == MoveReference.BODY:
@@ -543,6 +640,10 @@ class CrazyflieDrone(BaseDrone):
             goal = Point(x=dx, y=dy, z=dz)
             relative = True
 
+        if goal.z < 0.0 and not relative:
+            self._node.get_logger().warn(
+                f"Target altitude {goal.z:.2f}m is below ground, clamping to 0"
+            )
         goal.z = max(0.0, min(goal.z, config.max_height))
 
         distance = (
@@ -557,18 +658,23 @@ class CrazyflieDrone(BaseDrone):
 
         duration = max(distance / config.default_velocity, 1.0)
 
+        self._node.get_logger().info(
+            f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
+            f"precision={precision}m | goal=({goal.x:.2f}, {goal.y:.2f}, {goal.z:.2f}) "
+            f"distance={distance:.2f}m duration={duration:.1f}s"
+        )
+
         req = GoTo.Request()
         req.group_mask = 0
         req.relative = relative
         req.goal = goal
         req.yaw = float(target_yaw)
         req.duration = rclpy.duration.Duration(seconds=duration).to_msg()
-        self._call_service_async(self._goto_srv, req)
-
-        self._node.get_logger().info(
-            f"GoTo goal=({goal.x:.2f}, {goal.y:.2f}, {goal.z:.2f}) "
-            f"yaw={math.degrees(target_yaw):.1f}deg duration={duration:.1f}s "
-            f"ref={reference.name}"
+        self._call_service(
+            self._goto_srv,
+            req,
+            fail_msg="GoTo command failed",
+            sync=True,
         )
 
         return self._wait_for_position(goal, duration, timeout, precision)
@@ -581,7 +687,7 @@ class CrazyflieDrone(BaseDrone):
         All future commands are ignored until reboot.
         """
         req = Empty.Request()
-        self._call_service_async(self._emergency_srv, req)
+        self._call_service(self._emergency_srv, req, sync=False)
         self._node.get_logger().warn("Emergency stop -- reboot required")
 
     def rtl(
@@ -669,7 +775,7 @@ class CrazyflieDrone(BaseDrone):
         req.goal = Point(x=float(goal[0]), y=float(goal[1]), z=float(goal[2]))
         req.yaw = float(yaw)
         req.duration = rclpy.duration.Duration(seconds=duration).to_msg()
-        self._call_service_async(self._goto_srv, req)
+        self._call_service(self._goto_srv, req, success_msg="GoTo sent", sync=True)
 
     def cmd_full_state(
         self,
@@ -766,7 +872,7 @@ class CrazyflieDrone(BaseDrone):
         req = NotifySetpointsStop.Request()
         req.remain_valid_millisecs = remain_valid_ms
         req.group_mask = 0
-        self._call_service_async(self._notify_stop_srv, req)
+        self._call_service(self._notify_stop_srv, req, sync=False)
         self._in_streaming_mode = False
         self.delay(0.1)
 
@@ -826,8 +932,12 @@ class CrazyflieDrone(BaseDrone):
         req.timescale = float(timescale)
         req.reversed = reverse
         req.relative = relative
-        self._call_service_async(self._start_traj_srv, req)
-        self._node.get_logger().info(f"Trajectory {trajectory_id} started (timescale={timescale})")
+        self._call_service(
+            self._start_traj_srv,
+            req,
+            success_msg=f"Trajectory {trajectory_id} started (timescale={timescale})",
+            sync=False,
+        )
 
     def set_firmware_param(self, name: str, value) -> None:
         """
@@ -856,7 +966,7 @@ class CrazyflieDrone(BaseDrone):
 
         req = SetParameters.Request()
         req.parameters = [Parameter(name=param_name, value=param_value)]
-        self._call_service_async(self._set_params_srv, req)
+        self._call_service(self._set_params_srv, req, sync=False)
 
     def get_firmware_param(self, name: str):
         """
@@ -946,13 +1056,6 @@ class CrazyflieDrone(BaseDrone):
         msg.twist.angular.z = vyaw
         self._cmd_full_state_pub.publish(msg)
 
-    def _call_service_async(self, client, request) -> None:
-        """Fire-and-forget async service call."""
-        if not client.service_is_ready():
-            self._node.get_logger().debug(f"Service {client.srv_name} not ready, waiting...")
-            client.wait_for_service(timeout_sec=5.0)
-        client.call_async(request)
-
     def _wait_for_position(
         self,
         goal: Point,
@@ -960,30 +1063,55 @@ class CrazyflieDrone(BaseDrone):
         timeout: Optional[float],
         precision: float,
     ) -> bool:
-        """Wait for the drone to reach the goal position."""
-        effective_timeout = min(duration + 2.0, timeout) if timeout else duration + 2.0
+        """Wait for the drone to reach the goal position.
+
+        Spins during the polynomial trajectory execution (``duration``), then
+        actively polls until the target is reached or ``timeout`` expires.
+        """
+        effective_timeout = timeout if timeout else duration + 10.0
         start = self._node.get_clock().now()
         deadline = Duration(seconds=effective_timeout)
+        duration_deadline = Duration(seconds=duration)
+        last_log = start
+        log_interval = Duration(seconds=2.0)
 
-        self.delay(duration * 0.8)
+        while self._node.get_clock().now() - start < duration_deadline:
+            rclpy.spin_once(self._node, timeout_sec=0.05)
 
         while self._node.get_clock().now() - start < deadline:
             rclpy.spin_once(self._node, timeout_sec=0.05)
-            dx = goal.x - self._position[0]
-            dy = goal.y - self._position[1]
-            dz = goal.z - self._position[2]
-            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+            dist = self._distance_to(goal)
+
             if dist <= precision:
-                self._node.get_logger().info(f"Target reached (distance={dist:.3f}m)")
+                self.delay(0.3)
+                self._node.get_logger().info(
+                    f"Target reached (distance={dist:.3f}m) at "
+                    f"({self._position[0]:.2f}, {self._position[1]:.2f}, {self._position[2]:.2f})"
+                )
                 return True
 
-        dist = math.sqrt(
+            now = self._node.get_clock().now()
+            if now - last_log >= log_interval:
+                elapsed = (now - start).nanoseconds / 1e9
+                self._node.get_logger().debug(
+                    f"Navigating... distance={dist:.3f}m elapsed={elapsed:.1f}s"
+                )
+                last_log = now
+
+        dist = self._distance_to(goal)
+        self._node.get_logger().warn(
+            f"GoTo timeout (distance={dist:.3f}m, precision={precision}m) at "
+            f"({self._position[0]:.2f}, {self._position[1]:.2f}, {self._position[2]:.2f})"
+        )
+        return dist <= precision * 3
+
+    def _distance_to(self, goal: Point) -> float:
+        """Euclidean distance from current position to goal."""
+        return math.sqrt(
             (goal.x - self._position[0]) ** 2
             + (goal.y - self._position[1]) ** 2
             + (goal.z - self._position[2]) ** 2
         )
-        self._node.get_logger().warn(f"GoTo timeout (distance={dist:.3f}m, precision={precision}m)")
-        return dist <= precision * 2
 
 
 DroneFactory.register("crazyflie", CrazyflieDrone.from_config)

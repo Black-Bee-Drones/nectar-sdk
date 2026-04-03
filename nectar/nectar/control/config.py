@@ -50,6 +50,7 @@ class CrazyflieConfig(DroneConfig):
     default_velocity: float = 0.3
     landing_height: float = 0.04
     max_height: float = 3.0
+    sensor_timeout: float = 10.0
     enable_logging: bool = True
     log_pose_frequency: int = 10
     backend: str = "cpp"
