@@ -2064,34 +2064,42 @@ class OpenCVUtils:
 
     def detect_hands(self, frame: np.ndarray) -> np.ndarray:
         if self._hand_tracker is None:
+            if getattr(self, "_hand_init_failed", False):
+                return frame
             try:
                 from nectar.vision import HandTracker, HandTrackerConfig
 
                 config = HandTrackerConfig(num_hands=2, running_mode="IMAGE")
                 self._hand_tracker = HandTracker(config)
                 self._hand_tracker.start()
-            except (ImportError, RuntimeError):
+            except Exception as e:
+                self._hand_init_failed = True
+                print(f"[nectar] HandTracker init failed: {e}")
                 return frame
 
         try:
             return self._hand_tracker.detect(frame, draw=True)
-        except RuntimeError:
+        except Exception:
             return frame
 
     def detect_faces(self, frame: np.ndarray) -> np.ndarray:
         if self._face_tracker is None:
+            if getattr(self, "_face_init_failed", False):
+                return frame
             try:
                 from nectar.vision import FaceMeshTracker, FaceMeshTrackerConfig
 
                 config = FaceMeshTrackerConfig(num_faces=1, running_mode="IMAGE")
                 self._face_tracker = FaceMeshTracker(config)
                 self._face_tracker.start()
-            except (ImportError, RuntimeError):
+            except Exception as e:
+                self._face_init_failed = True
+                print(f"[nectar] FaceMeshTracker init failed: {e}")
                 return frame
 
         try:
             return self._face_tracker.detect(frame, draw=True)
-        except RuntimeError:
+        except Exception:
             return frame
 
     def detect_aruco_markers(self, frame: np.ndarray, dict_type: str) -> np.ndarray:
