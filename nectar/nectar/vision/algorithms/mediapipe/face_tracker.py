@@ -16,7 +16,11 @@ try:
     from mediapipe.tasks.python import vision
 
     MEDIAPIPE_AVAILABLE = True
-except ImportError:
+except (ImportError, TypeError) as e:
+    import warnings
+
+    _mediapipe_error = e
+    warnings.warn(f"mediapipe not available (FaceMesh disabled): {e}", stacklevel=1)
     mp = None
     landmark_pb2 = None
     python = None
@@ -326,8 +330,9 @@ class FaceMeshTracker:
     def __init__(self, config: Optional[FaceMeshTrackerConfig] = None):
         if not MEDIAPIPE_AVAILABLE:
             raise ImportError(
-                "mediapipe is required for FaceMeshTracker. "
-                "Install with: pip install nectar-sdk[vision]"
+                f"mediapipe is required for FaceMeshTracker. "
+                f"Install with: pip install nectar-sdk[vision] "
+                f"(cause: {_mediapipe_error})"
             )
 
         self._config = config or FaceMeshTrackerConfig()
