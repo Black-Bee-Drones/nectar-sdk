@@ -2,47 +2,77 @@
 
 | File | Description | Args |
 |------|-------------|------|
-| `basic.py` | Takeoff, velocity, land | `--drone mavros\|bebop` |
+| `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone mavros\|bebop\|crazyflie --mode velocity\|hover\|position` |
 | `sensors.py` | Monitor GPS/vision/local data | `--source gps\|vision` |
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |
 | `mavros_navigation.py` | Navigation test (BODY, TAKEOFF, GPS) | `--mode --strategy --test --distance` |
 | `mavros_obstacles.py` | Obstacle avoidance | - |
 
-## Usage
+## Basic Flight
 
 ```bash
-# Basic flight
-python3 basic.py --drone mavros
+# MAVROS -- velocity box at 2m altitude
+python3 basic.py --drone mavros --height 2.0
 
-# Sensor monitoring
+# Crazyflie -- hover test in simulation
+python3 basic.py --drone crazyflie --mode hover --height 0.5 --backend sim --hover-time 10
+
+# Crazyflie -- position box (move_to) with 0.6m sides
+python3 basic.py --drone crazyflie --mode position --height 0.5 --side 0.6
+
+# Crazyflie -- velocity box at 0.4m altitude
+python3 basic.py --drone crazyflie --mode velocity --height 0.4 --velocity 0.2 --side 0.5
+
+# Bebop -- velocity box
+python3 basic.py --drone bebop --mode velocity
+```
+
+### Modes
+
+| Mode | Description |
+|------|-------------|
+| `velocity` (default) | Takeoff, fly a square with velocity commands, land |
+| `hover` | Takeoff, hold position for `--hover-time` seconds, land |
+| `position` | Takeoff, fly a square with `move_to` commands, land |
+
+## Sensor Monitoring
+
+```bash
 python3 sensors.py --source gps
 python3 sensors.py --source vision
+```
 
-# PID simulation (no ROS required)
+## PID Simulation
+
+```bash
 python3 pid_simulation.py
 python3 pid_simulation.py --setpoint 30 --kp 0.8 --ki 0.2
 python3 pid_simulation.py --plot
+```
 
-# Navigation — full outdoor flight (default: PID strategy)
+## MAVROS Navigation
+
+```bash
+# Full outdoor flight (default: PID strategy)
 python3 mavros_navigation.py --mode outdoor
 
-# Navigation — use EKF local position instead of raw GPS
+# Use EKF local position instead of raw GPS
 python3 mavros_navigation.py --strategy pid-local
 
-# Navigation — local setpoint (FCU handles position control)
+# Local setpoint (FCU handles position control)
 python3 mavros_navigation.py --strategy setpoint --test body
 
-# Navigation — GPS global setpoint for long-range waypoints
+# GPS global setpoint for long-range waypoints
 python3 mavros_navigation.py --mode outdoor --test gps --strategy setpoint-global
 
-# Navigation — hand-held test (no takeoff, verify navigation logic)
+# Hand-held test (no takeoff, verify navigation logic)
 python3 mavros_navigation.py --no-takeoff --test body
 
-# Navigation — custom distance, specific tests
+# Custom distance, specific tests
 python3 mavros_navigation.py --test body takeoff-ref --distance 3.0
 ```
 
-## Navigation Strategies
+### Navigation Strategies
 
 | Strategy | Description |
 |----------|-------------|

@@ -396,7 +396,7 @@ drone.land()
 ros2 launch crazyflie launch.py backend:=sim
 
 # Terminal 2: Run script with same code
-ros2 run nectar crazyflie_basic.py
+python3 basic.py --drone crazyflie --backend sim
 ```
 
 ## Differences from MAVROS and Bebop
