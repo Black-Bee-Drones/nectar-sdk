@@ -71,9 +71,9 @@ classDiagram
         +takeoff(altitude, duration) bool
         +land(timeout, duration) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
-        +move_to(x, y, z, yaw, reference, timeout, precision) bool
+        +move_to(x, y, z, yaw, reference, timeout, precision, method, altitude_source) bool
         +emergency_stop()
-        +rtl(altitude, precision, strategy, land) bool
+        +rtl(altitude, precision, method, land) bool
         +go_to(goal, yaw, duration, relative)
         +cmd_full_state(pos, vel, acc, yaw, omega)
         +cmd_position(pos, yaw)
@@ -150,14 +150,14 @@ drone.connect()                        # Wait for status, verify connection
 drone.takeoff(altitude=0.5)            # Takeoff to 0.5m (duration auto-estimated)
 drone.takeoff(altitude=0.5, duration=2.0)  # Explicit duration
 
-drone.move_to(x=0.5, y=0.0, z=0.0)    # 0.5m forward (BODY frame)
+drone.move_to(x=0.5, y=0.0, z=0.0)    # 0.5m forward (BODY); POSITION method (default, only option)
 drone.move_to(x=1.0, reference=MoveReference.TAKEOFF)  # 1m forward of takeoff
 
 drone.move_velocity(vx=0.2, duration=2.0)  # Streaming velocity for 2 seconds
 
 drone.land()                            # Land from current height
 drone.emergency_stop()                  # Hard kill (requires reboot)
-drone.rtl()                             # Return to takeoff position and land
+drone.rtl()                             # Return to takeoff (NAVIGATE method, default) and land
 ```
 
 ### Crazyflie-Specific Features
@@ -229,16 +229,22 @@ Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). For pre
 
 `move_velocity()` uses `cmd_full_state` streaming setpoints. This switches the Crazyflie to low-level mode. The SDK automatically calls `notify_setpoints_stop()` when transitioning back to high-level commands.
 
+### Navigation methods (`move_to` / `rtl`)
+
+`move_to` accepts `method: NavigationMethod` (default `NavigationMethod.POSITION`). **CrazyflieDrone only supports `NavigationMethod.POSITION`** (onboard high-level `goTo`). `NavigationMethod.PID`, `NavigationMethod.PID_EKF`, and `NavigationMethod.POSITION_GLOBAL` raise `CapabilityNotSupportedError`.
+
+`rtl` accepts `method: RTLMethod` (default `RTLMethod.NAVIGATE`). **CrazyflieDrone only supports `RTLMethod.NAVIGATE`** (same goTo-based path as `move_to` to the takeoff pose). `RTLMethod.NATIVE` raises `CapabilityNotSupportedError`.
+
 ### Capability Matrix
 
 | Method | Supported | Notes |
 |--------|-----------|-------|
 | `takeoff` | Yes | Onboard high-level commander |
 | `land` | Yes | Onboard high-level commander |
-| `move_to` | Yes | Via goTo service, all reference frames |
+| `move_to` | Yes | `NavigationMethod.POSITION` only (goTo); other methods raise `CapabilityNotSupportedError`; all `MoveReference` frames supported |
 | `move_velocity` | Yes | Via cmd_full_state streaming |
 | `move_to_gps` | No | No GPS on Crazyflie 2.x |
-| `rtl` | Yes | PID strategy only (goTo to takeoff position) |
+| `rtl` | Yes | `RTLMethod.NAVIGATE` only (goTo to takeoff position); `RTLMethod.NATIVE` raises `CapabilityNotSupportedError` |
 | `emergency_stop` | Yes | Hard kill, requires reboot |
 | `set_home` | No | No GPS |
 
@@ -403,8 +409,8 @@ python3 basic.py --drone crazyflie --backend sim
 
 | Aspect | MAVROS | Bebop | Crazyflie |
 |--------|--------|-------|-----------|
-| **Navigation** | Companion-side PID or FCU setpoints | Velocity only | Onboard polynomial planner |
-| **Position control** | PID, PID_LOCAL, SETPOINT, SETPOINT_GLOBAL | Not supported | goTo (onboard) |
+| **Navigation** | `NavigationMethod`: PID, PID_EKF, POSITION, POSITION_GLOBAL | Velocity only | `NavigationMethod.POSITION` only (onboard goTo) |
+| **Position control** | PID, PID_EKF, POSITION, POSITION_GLOBAL | Not supported | POSITION only (onboard goTo) |
 | **GPS** | Yes | No | No |
 | **Altitude source** | Lidar, vision, GPS, EKF | Fixed hover | ToF rangefinder + EKF |
 | **Trajectory support** | Upload via MAVLink missions | No | Piecewise polynomial upload + execute |

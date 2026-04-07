@@ -235,27 +235,25 @@ class RTLWorker(QObject):
         self._drone = None
         self._altitude: Optional[float] = None
         self._precision: float = 0.2
-        self._strategy = None
+        self._method = None
         self._land: bool = True
 
-    def setup(
-        self, drone, altitude: Optional[float], precision: float, strategy, land: bool
-    ) -> None:
+    def setup(self, drone, altitude: Optional[float], precision: float, method, land: bool) -> None:
         self._drone = drone
         self._altitude = altitude
         self._precision = precision
-        self._strategy = strategy
+        self._method = method
         self._land = land
 
     @Slot()
     def run(self) -> None:
         try:
             alt_str = f" alt={self._altitude:.1f}m" if self._altitude is not None else ""
-            self.progress.emit(f"RTL ({self._strategy.name}{alt_str})...")
+            self.progress.emit(f"RTL ({self._method.name}{alt_str})...")
             success = self._drone.rtl(
                 altitude=self._altitude,
                 precision=self._precision,
-                strategy=self._strategy,
+                method=self._method,
                 land=self._land,
             )
             if success:
@@ -278,7 +276,7 @@ class MoveToWorker(QObject):
         self._z: Optional[float] = None
         self._yaw: Optional[float] = None
         self._reference = None
-        self._strategy = None
+        self._method = None
         self._altitude_source = None
         self._timeout: float = 60.0
         self._precision: float = 0.2
@@ -294,7 +292,7 @@ class MoveToWorker(QObject):
         reference,
         timeout: float,
         precision: float,
-        strategy=None,
+        method=None,
         altitude_source=None,
     ) -> None:
         self._drone = drone
@@ -303,7 +301,7 @@ class MoveToWorker(QObject):
         self._z = z
         self._yaw = yaw
         self._reference = reference
-        self._strategy = strategy
+        self._method = method
         self._altitude_source = altitude_source
         self._timeout = timeout
         self._precision = precision
@@ -341,8 +339,8 @@ class MoveToWorker(QObject):
                 timeout=self._timeout,
                 precision=self._precision,
             )
-            if self._strategy is not None:
-                kwargs["strategy"] = self._strategy
+            if self._method is not None:
+                kwargs["method"] = self._method
             if self._altitude_source is not None:
                 kwargs["altitude_source"] = self._altitude_source
             success = self._drone.move_to(**kwargs)
@@ -713,8 +711,8 @@ class ControlTab(QWidget):
         strat_lbl = QLabel("Strategy:")
         strat_lbl.setProperty("secondary", True)
         self._pos_strategy_combo = QComboBox()
-        self._pos_strategy_combo.addItems(["PID", "PID Local", "Setpoint", "Setpoint Global"])
-        self._pos_strategy_combo.setCurrentIndex(0)
+        self._pos_strategy_combo.addItems(["Position", "Position Global", "PID", "PID EKF"])
+        self._pos_strategy_combo.setCurrentIndex(3)
         self._pos_strategy_combo.setFixedWidth(120)
 
         alt_src_lbl = QLabel("Alt:")
@@ -860,7 +858,7 @@ class ControlTab(QWidget):
         sep_rtl.setStyleSheet(f"background-color: {COLORS.border};")
 
         self._rtl_strategy_combo = QComboBox()
-        self._rtl_strategy_combo.addItems(["PID", "ArduPilot"])
+        self._rtl_strategy_combo.addItems(["Navigate", "Native"])
         self._rtl_strategy_combo.setFixedWidth(85)
 
         self._rtl_land_check = QCheckBox("Land")
@@ -1177,6 +1175,9 @@ class ControlTab(QWidget):
         self._pos_strategy_combo.setVisible(not is_crazyflie)
         self._pos_alt_source_combo.setVisible(not is_crazyflie)
 
+        if is_crazyflie:
+            self._pos_strategy_combo.setCurrentIndex(0)  # POSITION (onboard goTo)
+
     @Slot()
     def _trigger_driver_check(self) -> None:
         if self._status_checker:
@@ -1461,16 +1462,16 @@ class ControlTab(QWidget):
         if not self._drone or self._rtl_running or self._flight_action_running:
             return
 
-        from nectar.control.types import RTLStrategy
+        from nectar.control.types import RTLMethod
 
-        strategy_map = {"PID": RTLStrategy.PID, "ArduPilot": RTLStrategy.ARDUPILOT}
-        strategy = strategy_map.get(self._rtl_strategy_combo.currentText(), RTLStrategy.PID)
+        method_map = {"Navigate": RTLMethod.NAVIGATE, "Native": RTLMethod.NATIVE}
+        method = method_map.get(self._rtl_strategy_combo.currentText(), RTLMethod.NAVIGATE)
         altitude = self._altitude_spin.value()
         land = self._rtl_land_check.isChecked()
 
         if self._node:
             self._node.get_logger().info(
-                f"RTL: strategy={strategy.name} alt={altitude:.1f}m land={land}"
+                f"RTL: method={method.name} alt={altitude:.1f}m land={land}"
             )
 
         self._rtl_running = True
@@ -1478,7 +1479,7 @@ class ControlTab(QWidget):
 
         self._rtl_thread = QThread()
         self._rtl_worker = RTLWorker()
-        self._rtl_worker.setup(self._drone, altitude, 0.2, strategy, land)
+        self._rtl_worker.setup(self._drone, altitude, 0.2, method, land)
         self._rtl_worker.moveToThread(self._rtl_thread)
 
         self._rtl_thread.started.connect(self._rtl_worker.run)
@@ -1514,20 +1515,20 @@ class ControlTab(QWidget):
         if not self._drone or self._rtl_running or self._flight_action_running:
             return
 
-        from nectar.control.types import RTLStrategy
+        from nectar.control.types import RTLMethod
 
         altitude = self._cf_altitude_spin.value()
         land = self._cf_rtl_land_check.isChecked()
 
         if self._node:
-            self._node.get_logger().info(f"RTL: PID alt={altitude:.1f}m land={land}")
+            self._node.get_logger().info(f"RTL: NAVIGATE alt={altitude:.1f}m land={land}")
 
         self._rtl_running = True
         self._set_flight_buttons_enabled(False)
 
         self._rtl_thread = QThread()
         self._rtl_worker = RTLWorker()
-        self._rtl_worker.setup(self._drone, altitude, 0.2, RTLStrategy.PID, land)
+        self._rtl_worker.setup(self._drone, altitude, 0.2, RTLMethod.NAVIGATE, land)
         self._rtl_worker.moveToThread(self._rtl_thread)
 
         self._rtl_thread.started.connect(self._rtl_worker.run)
@@ -1545,7 +1546,7 @@ class ControlTab(QWidget):
         from nectar.control.types import (
             AltitudeSource,
             MoveReference,
-            NavigationStrategy,
+            NavigationMethod,
         )
 
         reference_map = {
@@ -1553,11 +1554,11 @@ class ControlTab(QWidget):
             "World": MoveReference.WORLD,
             "Takeoff": MoveReference.TAKEOFF,
         }
-        strategy_map = {
-            "PID": NavigationStrategy.PID,
-            "PID Local": NavigationStrategy.PID_LOCAL,
-            "Setpoint": NavigationStrategy.SETPOINT,
-            "Setpoint Global": NavigationStrategy.SETPOINT_GLOBAL,
+        method_map = {
+            "Position": NavigationMethod.POSITION,
+            "Position Global": NavigationMethod.POSITION_GLOBAL,
+            "PID": NavigationMethod.PID,
+            "PID EKF": NavigationMethod.PID_EKF,
         }
         alt_source_map = {
             "Auto": AltitudeSource.AUTO,
@@ -1568,8 +1569,11 @@ class ControlTab(QWidget):
 
         ref_name = self._pos_reference_combo.currentText()
         reference = reference_map.get(ref_name, MoveReference.BODY)
-        strat_name = self._pos_strategy_combo.currentText()
-        strategy = strategy_map.get(strat_name, NavigationStrategy.PID)
+        method_name = self._pos_strategy_combo.currentText()
+        default_method = (
+            NavigationMethod.PID_EKF if self._drone_type == "mavros" else NavigationMethod.POSITION
+        )
+        method = method_map.get(method_name, default_method)
         alt_name = self._pos_alt_source_combo.currentText()
         altitude_source = alt_source_map.get(alt_name, AltitudeSource.AUTO)
 
@@ -1596,7 +1600,7 @@ class ControlTab(QWidget):
                 parts.append(f"yaw={yaw:.0f}")
             self._node.get_logger().info(
                 f"Position control: {', '.join(parts)} ref={ref_name} "
-                f"strategy={strat_name} alt={alt_name} prec={precision:.2f}m"
+                f"method={method_name} alt={alt_name} prec={precision:.2f}m"
             )
 
         self._moveto_running = True
@@ -1614,7 +1618,7 @@ class ControlTab(QWidget):
             reference,
             timeout,
             precision,
-            strategy,
+            method,
             altitude_source,
         )
         self._moveto_worker.moveToThread(self._moveto_thread)

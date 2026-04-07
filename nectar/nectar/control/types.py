@@ -12,16 +12,16 @@ class PoseSource(Enum):
     VISION = auto()
 
 
-class NavigationStrategy(Enum):
+class NavigationMethod(Enum):
+    POSITION = auto()
+    POSITION_GLOBAL = auto()
     PID = auto()
-    PID_LOCAL = auto()
-    SETPOINT = auto()
-    SETPOINT_GLOBAL = auto()
+    PID_EKF = auto()
 
 
-class RTLStrategy(Enum):
-    PID = auto()
-    ARDUPILOT = auto()
+class RTLMethod(Enum):
+    NAVIGATE = auto()
+    NATIVE = auto()
 
 
 class AltitudeSource(Enum):

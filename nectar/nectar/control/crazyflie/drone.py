@@ -18,8 +18,8 @@ from nectar.control.factory import DroneFactory
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
 from nectar.utils.process import ProcessUtils
 
@@ -552,7 +552,7 @@ class CrazyflieDrone(BaseDrone):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.1,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
@@ -561,7 +561,7 @@ class CrazyflieDrone(BaseDrone):
         Uses the Crazyflie's goTo service which plans a smooth degree-7
         polynomial trajectory from current state to target.
 
-        Coordinate semantics match MAVROS:
+        Coordinate semantics:
 
         - BODY: offsets relative to current position and heading.
           x/y=None disables that axis (no offset). z=None maintains current
@@ -591,8 +591,9 @@ class CrazyflieDrone(BaseDrone):
             Maximum time for navigation.
         precision : float, default=0.1
             Arrival threshold in meters.
-        strategy : NavigationStrategy, default=PID
-            Ignored -- Crazyflie always uses onboard polynomial planner.
+        method : NavigationMethod, default=POSITION
+            Only POSITION is supported (onboard polynomial planner).
+            PID, PID_EKF, POSITION_GLOBAL raise CapabilityNotSupportedError.
         altitude_source : AltitudeSource, default=AUTO
             Ignored -- Crazyflie uses fused ToF/flow altitude.
 
@@ -605,7 +606,11 @@ class CrazyflieDrone(BaseDrone):
         ------
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
+        CapabilityNotSupportedError
+            If method is not POSITION.
         """
+        if method != NavigationMethod.POSITION:
+            raise CapabilityNotSupportedError(f"{method.name} navigation", self._config.name)
         config: CrazyflieConfig = self._config
 
         if self._in_streaming_mode:
@@ -669,7 +674,7 @@ class CrazyflieDrone(BaseDrone):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NAVIGATE,
         land: bool = True,
     ) -> bool:
         """
@@ -681,8 +686,8 @@ class CrazyflieDrone(BaseDrone):
             Transit height in meters. If specified, adjusts height first.
         precision : float, default=0.2
             Arrival threshold in meters.
-        strategy : RTLStrategy, default=PID
-            Only PID supported. ARDUPILOT raises CapabilityNotSupportedError.
+        method : RTLMethod, default=NAVIGATE
+            Only NAVIGATE supported. NATIVE raises CapabilityNotSupportedError.
         land : bool, default=True
             Execute landing after reaching takeoff position.
 
@@ -691,8 +696,8 @@ class CrazyflieDrone(BaseDrone):
         bool
             True if RTL successful.
         """
-        if strategy == RTLStrategy.ARDUPILOT:
-            raise CapabilityNotSupportedError("ARDUPILOT RTL", self._config.name)
+        if method == RTLMethod.NATIVE:
+            raise CapabilityNotSupportedError("NATIVE RTL", self._config.name)
 
         if self._takeoff_position is None:
             raise TakeoffPositionNotSetError("RTL")

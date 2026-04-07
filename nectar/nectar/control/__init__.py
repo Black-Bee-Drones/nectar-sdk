@@ -45,16 +45,16 @@ from nectar.control.pid import (
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
+    NavigationMethod,
     PoseSource,
-    RTLStrategy,
+    RTLMethod,
 )
 
 __all__ = [
     "MoveReference",
     "PoseSource",
-    "NavigationStrategy",
-    "RTLStrategy",
+    "NavigationMethod",
+    "RTLMethod",
     "AltitudeSource",
     "DroneConfig",
     "MavrosConfig",
