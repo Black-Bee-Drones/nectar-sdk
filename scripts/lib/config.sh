@@ -88,6 +88,12 @@ ROS2_PACKAGES=(
     "ros-${ROS_DISTRO}-image-geometry"
 )
 
+# Crazyflie / Crazyswarm2 apt packages
+CRAZYFLIE_PACKAGES=(
+    "ros-${ROS_DISTRO}-crazyflie"
+    "ros-${ROS_DISTRO}-crazyflie-interfaces"
+)
+
 # Qt6/PySide6 system dependencies
 GUI_SYSTEM_PACKAGES=(
     libxcb-cursor0 libxcb-shape0 libxcb-icccm4 libxcb-image0

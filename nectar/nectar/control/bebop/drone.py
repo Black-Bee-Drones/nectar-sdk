@@ -12,8 +12,8 @@ from nectar.control.factory import DroneFactory
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
 from nectar.utils.process import ProcessUtils
 
@@ -236,7 +236,7 @@ class BebopDrone(BaseDrone):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         raise CapabilityNotSupportedError("Position control", "Bebop")
@@ -250,9 +250,11 @@ class BebopDrone(BaseDrone):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NATIVE,
         land: bool = True,
     ) -> bool:
+        if method == RTLMethod.NAVIGATE:
+            raise CapabilityNotSupportedError("NAVIGATE RTL", "Bebop")
         self._navigate_home_pub.publish(Empty())
         self._node.get_logger().info("Navigate home (RTL)")
         if land:

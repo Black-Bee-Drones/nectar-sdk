@@ -1,6 +1,6 @@
 # Drone Control Module
 
-Protocol-based drone control framework for ROS2 with factory pattern instantiation, configurable navigation strategies, and event-based obstacle detection.
+Protocol-based drone control framework for ROS2 with factory pattern instantiation, configurable navigation methods, and event-based obstacle detection.
 
 ## Documentation Index
 
@@ -33,11 +33,11 @@ classDiagram
         +takeoff(altitude) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
-        +move_to(x, y, z, yaw, reference, timeout, precision, strategy) bool
-        +move_to_gps(lat, lon, alt, heading, timeout, precision, strategy) bool
+        +move_to(x, y, z, yaw, reference, timeout, precision, method) bool
+        +move_to_gps(lat, lon, alt, heading, timeout, precision, method) bool
         +emergency_stop()
         +set_home() bool
-        +rtl(altitude, precision, strategy, land) bool
+        +rtl(altitude, precision, method, land) bool
     }
 
     class BaseDrone {
@@ -314,18 +314,18 @@ drone.move_to(
     reference: MoveReference = MoveReference.BODY,
     timeout: Optional[float] = 60.0,
     precision: float = 0.2,
-    strategy: NavigationStrategy = NavigationStrategy.PID,
+    method: NavigationMethod = NavigationMethod.POSITION,
     altitude_source: AltitudeSource = AltitudeSource.AUTO,
 ) -> bool
 ```
 
-**Navigation Strategies**:
+**Navigation Methods**:
+- `POSITION`: Local position setpoint via `setpoint_raw/local` — works indoor and outdoor
+- `POSITION_GLOBAL`: GPS global setpoint via `setpoint_position/global` — outdoor only, long range
 - `PID`: Velocity control with raw sensors — vision pose (indoor) or GPS (outdoor)
-- `PID_LOCAL`: Velocity control with EKF local position — unified indoor/outdoor frame
-- `SETPOINT`: Local position setpoint via `setpoint_raw/local` — works indoor and outdoor
-- `SETPOINT_GLOBAL`: GPS global setpoint via `setpoint_position/global` — outdoor only, long range
+- `PID_EKF`: Velocity control with EKF local position — unified indoor/outdoor frame
 
-**Altitude Sources** (PID only):
+**Altitude Sources** (`PID` and `PID_EKF`):
 - `AUTO`: Position-based altitude (vision Z indoor, GPS altitude outdoor)
 - `LIDAR`: Ground-relative altitude via rangefinder (terrain following)
 - `REL_ALT`: GPS-based relative altitude above home
@@ -340,7 +340,7 @@ drone.move_to_gps(
     heading: Optional[float] = None,   # degrees
     timeout: Optional[float] = 60.0,
     precision: float = 0.5,            # meters
-    strategy: NavigationStrategy = NavigationStrategy.PID
+    method: NavigationMethod = NavigationMethod.PID
 ) -> bool
 ```
 
@@ -355,14 +355,14 @@ drone.move_to_gps(
 drone.rtl(
     altitude: Optional[float] = None,  # Transit altitude (meters)
     precision: float = 0.2,
-    strategy: RTLStrategy = RTLStrategy.PID,  # PID or ARDUPILOT
+    method: RTLMethod = RTLMethod.NAVIGATE,  # NAVIGATE or NATIVE
     land: bool = True
 ) -> bool
 ```
 
-**RTL Strategies**:
-- `PID`: Navigate to takeoff position using PID control
-- `ARDUPILOT`: Trigger ArduPilot's native RTL mode
+**RTL Methods**:
+- `NAVIGATE`: Navigate to takeoff position using the drone's configured navigation path (e.g. PID / setpoints on MAVROS)
+- `NATIVE`: Trigger the flight stack's native RTL mode (e.g. ArduPilot RTL)
 
 ## Obstacle Detection
 
@@ -602,8 +602,8 @@ See individual module READMEs for detailed documentation.
 **Enums**:
 - `PoseSource`: GPS, VISION
 - `MoveReference`: BODY, WORLD, TAKEOFF
-- `NavigationStrategy`: PID, PID_LOCAL, SETPOINT, SETPOINT_GLOBAL
-- `RTLStrategy`: PID, ARDUPILOT
+- `NavigationMethod`: POSITION, POSITION_GLOBAL, PID, PID_EKF
+- `RTLMethod`: NAVIGATE, NATIVE
 - `AltitudeSource`: AUTO, LIDAR, VISION, REL_ALT
 - `ObstacleDirection`: FRONT, BACK, LEFT, RIGHT, UP, DOWN
 - `ObstacleInfo`: Detection result

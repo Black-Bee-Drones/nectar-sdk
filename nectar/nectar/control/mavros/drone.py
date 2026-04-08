@@ -31,9 +31,9 @@ from nectar.control.pid import PIDConfig, PositionPIDConfig
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
+    NavigationMethod,
     PoseSource,
-    RTLStrategy,
+    RTLMethod,
 )
 from nectar.utils.position_utils import PositionUtils
 from nectar.utils.process import ProcessUtils
@@ -829,7 +829,12 @@ class MavrosDrone(BaseDrone):
                             f"Adjusting altitude from {current_alt:.2f}m to {altitude:.2f}m"
                         )
                         adjustment_success = self.move_to(
-                            z=altitude_diff,
+                            x=0.0,
+                            y=0.0,
+                            z=altitude,
+                            yaw=0.0,
+                            reference=MoveReference.TAKEOFF,
+                            method=NavigationMethod.PID,
                             precision=precision,
                             timeout=timeout,
                         )
@@ -1002,7 +1007,7 @@ class MavrosDrone(BaseDrone):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.PID_EKF,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
@@ -1012,16 +1017,16 @@ class MavrosDrone(BaseDrone):
         ----------
         x : float, optional
             Forward (+) or backward (-) in meters.
-            For PID strategies, None disables X axis control.
-            For SETPOINT strategies, None means zero offset (hold current).
+            For PID methods, None disables X axis control.
+            For POSITION methods, None means zero offset (hold current).
         y : float, optional
             Left (+) or right (-) in meters.
-            For PID strategies, None disables Y axis control.
-            For SETPOINT strategies, None means zero offset (hold current).
+            For PID methods, None disables Y axis control.
+            For POSITION methods, None means zero offset (hold current).
         z : float, optional
             Up (+) or down (-) in meters.
-            For PID strategies, None disables altitude control.
-            For SETPOINT strategies, None means zero offset (hold current).
+            For PID methods, None disables altitude control.
+            For POSITION methods, None means zero offset (hold current).
         yaw : float, optional
             Yaw angle in degrees. None maintains current yaw.
         reference : MoveReference, default=BODY
@@ -1031,11 +1036,11 @@ class MavrosDrone(BaseDrone):
             Maximum navigation time in seconds.
         precision : float, default=0.2
             Arrival threshold in meters.
-        strategy : NavigationStrategy, default=PID
-            PID: velocity control with raw sensors (vision/GPS).
-            PID_LOCAL: velocity control with EKF local position.
-            SETPOINT: local position setpoint (setpoint_raw/local).
-            SETPOINT_GLOBAL: GPS global setpoint (outdoor only).
+        method : NavigationMethod, default=PID_EKF
+            PID_EKF: companion-side velocity PID with EKF-fused position.
+            PID: companion-side velocity PID with raw sensors (vision/GPS).
+            POSITION: onboard position controller (setpoint_raw/local).
+            POSITION_GLOBAL: onboard GPS position controller (outdoor only).
         altitude_source : AltitudeSource, default=AUTO
             Altitude sensor source for PID navigation:
 
@@ -1054,7 +1059,7 @@ class MavrosDrone(BaseDrone):
         TakeoffPositionNotSetError
             If reference=TAKEOFF but takeoff position not set.
         CapabilityNotSupportedError
-            If reference=WORLD or SETPOINT_GLOBAL indoors.
+            If reference=WORLD or POSITION_GLOBAL indoors.
         SensorNotAvailableError
             If required position, altitude sensors are not available.
         """
@@ -1064,26 +1069,26 @@ class MavrosDrone(BaseDrone):
             )
 
         if reference == MoveReference.TAKEOFF:
-            takeoff = self._get_takeoff_for_strategy(strategy)
+            takeoff = self._get_takeoff_for_method(method)
             if takeoff is None:
                 raise TakeoffPositionNotSetError("move_to with TAKEOFF reference")
 
-        self._validate_position_sensors(strategy)
+        self._validate_position_sensors(method)
 
         if z is not None:
             z = self._check_altitude_safety(z, reference)
 
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
-            f"strategy={strategy.name} precision={precision}m "
+            f"method={method.name} precision={precision}m "
             f"alt_source={altitude_source.name}"
         )
         self.delay(0.05)
 
-        # SETPOINT_GLOBAL: GPS setpoint with AMSL correction (outdoor only)
-        if strategy == NavigationStrategy.SETPOINT_GLOBAL:
+        # POSITION_GLOBAL: GPS setpoint with AMSL correction (outdoor only)
+        if method == NavigationMethod.POSITION_GLOBAL:
             if self.is_indoor:
-                raise CapabilityNotSupportedError("SETPOINT_GLOBAL", "indoor mode")
+                raise CapabilityNotSupportedError("POSITION_GLOBAL", "indoor mode")
             target = TargetComputer.compute_gps_setpoint(
                 self._gps,
                 self.heading,
@@ -1104,8 +1109,8 @@ class MavrosDrone(BaseDrone):
             self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt)
 
-        # SETPOINT: local position setpoint
-        if strategy == NavigationStrategy.SETPOINT:
+        # POSITION: local position setpoint
+        if method == NavigationMethod.POSITION:
             pos, yaw_rad = self._get_local_position()
             takeoff = self._takeoff_local if reference == MoveReference.TAKEOFF else None
             target = TargetComputer.compute_local_target(
@@ -1121,9 +1126,9 @@ class MavrosDrone(BaseDrone):
             self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision)
 
-        # PID strategies (PID or PID_LOCAL)
-        use_local = strategy == NavigationStrategy.PID_LOCAL
-        target = self._compute_pid_target(x, y, z, yaw, reference, strategy)
+        # PID methods (PID or PID_EKF)
+        use_local = method == NavigationMethod.PID_EKF
+        target = self._compute_pid_target(x, y, z, yaw, reference, method)
         active_axes = (x is not None, y is not None, z is not None)
         alt_target = self._navigator.resolve_altitude_target(z, reference, altitude_source)
 
@@ -1146,7 +1151,7 @@ class MavrosDrone(BaseDrone):
         heading: Optional[float] = None,
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.PID,
     ) -> bool:
         """
         Move the drone to a specified GPS coordinate.
@@ -1165,10 +1170,10 @@ class MavrosDrone(BaseDrone):
             Maximum navigation time in seconds.
         precision : float, default=0.5
             Arrival threshold in meters.
-        strategy : NavigationStrategy, default=PID
-            PID: velocity control with raw GPS.
-            PID_LOCAL: velocity control with EKF local position.
-            SETPOINT_GLOBAL: GPS global setpoint publishing.
+        method : NavigationMethod, default=PID
+            PID: companion-side velocity PID with raw GPS.
+            PID_EKF: companion-side velocity PID with EKF local position.
+            POSITION_GLOBAL: onboard GPS position controller.
 
         Returns
         -------
@@ -1178,37 +1183,37 @@ class MavrosDrone(BaseDrone):
         Raises
         ------
         CapabilityNotSupportedError
-            If indoor mode, or SETPOINT (local) used with GPS coordinates.
+            If indoor mode, or POSITION (local) used with GPS coordinates.
         """
         if self.is_indoor:
             raise CapabilityNotSupportedError("GPS navigation", "indoor mode")
 
-        if strategy == NavigationStrategy.SETPOINT:
+        if method == NavigationMethod.POSITION:
             raise CapabilityNotSupportedError(
-                "SETPOINT (local) for GPS waypoints — use SETPOINT_GLOBAL",
+                "POSITION (local) for GPS waypoints — use POSITION_GLOBAL",
                 self._config.name,
             )
 
-        self._validate_position_sensors(strategy)
+        self._validate_position_sensors(method)
 
         alt = altitude if altitude is not None else self.rel_alt
         hdg = heading if heading is not None else self.heading
 
         self._node.get_logger().info(
             f"move_to_gps: lat={latitude:.6f} lon={longitude:.6f} alt={alt:.1f}m "
-            f"hdg={hdg:.1f}\u00b0 strategy={strategy.name} precision={precision}m"
+            f"hdg={hdg:.1f}\u00b0 method={method.name} precision={precision}m"
         )
 
-        # SETPOINT_GLOBAL: publish GPS setpoint to /mavros/setpoint_position/global
-        if strategy == NavigationStrategy.SETPOINT_GLOBAL:
+        # POSITION_GLOBAL: publish GPS setpoint to /mavros/setpoint_position/global
+        if method == NavigationMethod.POSITION_GLOBAL:
             target = GPSUtils.create_gps_setpoint(
                 latitude, longitude, alt, hdg, self._initial_altitude
             )
             self._sync_wpnav_radius(precision)
             return self._navigator.navigate_setpoint(target, timeout, precision, check_alt=alt)
 
-        # PID_LOCAL: convert GPS target to local NED and use EKF position
-        if strategy == NavigationStrategy.PID_LOCAL:
+        # PID_EKF: convert GPS target to local NED and use EKF position
+        if method == NavigationMethod.PID_EKF:
             target = TargetComputer.gps_to_local_target(
                 latitude,
                 longitude,
@@ -1248,14 +1253,14 @@ class MavrosDrone(BaseDrone):
         z: Optional[float],
         yaw: Optional[float],
         reference: MoveReference,
-        strategy: NavigationStrategy,
+        method: NavigationMethod,
     ) -> Union[PositionTarget, GeoPoseStamped]:
-        """Compute target for PID navigation based on strategy and pose source."""
+        """Compute target for PID navigation based on method and pose source."""
         takeoff = (
-            self._get_takeoff_for_strategy(strategy) if reference == MoveReference.TAKEOFF else None
+            self._get_takeoff_for_method(method) if reference == MoveReference.TAKEOFF else None
         )
 
-        if strategy == NavigationStrategy.PID_LOCAL:
+        if method == NavigationMethod.PID_EKF:
             pos = self._local_pos.pose.position
             yaw_rad = PositionUtils.get_yaw_from_pose(self._local_pos)
             return TargetComputer.compute_local_target(
@@ -1304,33 +1309,31 @@ class MavrosDrone(BaseDrone):
             )
         return self._local_pos.pose.position, PositionUtils.get_yaw_from_pose(self._local_pos)
 
-    def _get_takeoff_for_strategy(self, strategy: NavigationStrategy):
-        """Get the appropriate takeoff position for a navigation strategy."""
-        if strategy in (NavigationStrategy.PID_LOCAL, NavigationStrategy.SETPOINT):
+    def _get_takeoff_for_method(self, method: NavigationMethod):
+        """Get the appropriate takeoff position for a navigation method."""
+        if method in (NavigationMethod.PID_EKF, NavigationMethod.POSITION):
             return self._takeoff_local
         return self._takeoff_position
 
-    def _validate_position_sensors(
-        self, strategy: NavigationStrategy = NavigationStrategy.PID
-    ) -> None:
+    def _validate_position_sensors(self, method: NavigationMethod = NavigationMethod.PID) -> None:
         """
         Validate that position sensors are available for navigation.
 
         Parameters
         ----------
-        strategy : NavigationStrategy, default=PID
-            Strategy determines which sensors are required.
+        method : NavigationMethod, default=PID
+            Method determines which sensors are required.
 
         Raises
         ------
         SensorNotAvailableError
             If required position sensor data is missing.
         """
-        if strategy in (NavigationStrategy.PID_LOCAL, NavigationStrategy.SETPOINT):
+        if method in (NavigationMethod.PID_EKF, NavigationMethod.POSITION):
             if self._local_pos is None:
                 raise SensorNotAvailableError(
                     "Local position",
-                    "PID_LOCAL/SETPOINT requires /mavros/local_position/pose",
+                    "PID_EKF/POSITION requires /mavros/local_position/pose",
                 )
             return
         if self.is_indoor:
@@ -1400,7 +1403,7 @@ class MavrosDrone(BaseDrone):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NAVIGATE,
         land: bool = True,
     ) -> bool:
         """
@@ -1411,10 +1414,10 @@ class MavrosDrone(BaseDrone):
         altitude : float, optional
             Transit altitude in meters. If specified, climbs/descends before navigating.
         precision : float, default=0.2
-            Arrival threshold for PID strategy in meters.
-        strategy : RTLStrategy, default=PID
-            PID: navigate to takeoff position using velocity control,
-            ARDUPILOT: trigger FCU's native RTL mode.
+            Arrival threshold in meters (used by NAVIGATE method).
+        method : RTLMethod, default=NAVIGATE
+            NAVIGATE: SDK navigates to takeoff position using position control.
+            NATIVE: trigger ArduPilot's native RTL mode.
         land : bool, default=True
             Execute landing after reaching home.
 
@@ -1426,36 +1429,50 @@ class MavrosDrone(BaseDrone):
         Raises
         ------
         TakeoffPositionNotSetError
-            If strategy=PID but takeoff position not set.
+            If method=NAVIGATE but takeoff position not set.
         """
-        self._node.get_logger().info(f"RTL using strategy: {strategy.name}")
+        self._node.get_logger().info(f"RTL using method: {method.name}")
 
-        if strategy == RTLStrategy.ARDUPILOT:
+        if method == RTLMethod.NATIVE:
             return self._rtl_ardupilot(altitude, land)
         return self._rtl_pid(altitude, precision, land)
 
+    # ArduPilot v4.8+ renamed RTL params from centimeters to meters.
+    _RTL_PARAM_ALIASES = {
+        "RTL_ALT": "RTL_ALT_M",
+        "RTL_ALT_FINAL": "RTL_ALT_FINAL_M",
+    }
+
     def _rtl_ardupilot(self, altitude: Optional[float], land: bool) -> bool:
         try:
-            if altitude is not None:
-                param = Parameter()
-                param.name = "RTL_ALT"
-                param.value.integer_value = int(altitude * 100)
+            rtl_alt_cm = int(altitude * 100) if altitude is not None else 0
+            self._set_rtl_param("RTL_ALT", rtl_alt_cm)
 
-                req = SetParameters.Request()
-                req.parameters.append(param)
-                self._call_service(self._param_srv, req, "RTL_ALT set", "RTL_ALT failed", sync=True)
-                self.delay(1.0)
+            rtl_final_cm = 0 if land else rtl_alt_cm
+            self._set_rtl_param("RTL_ALT_FINAL", rtl_final_cm)
 
             if not self.set_mode("RTL"):
                 return False
-
-            if not land:
-                self.delay(5.0)
 
             return True
         except TimeoutError as e:
             self._node.get_logger().error(f"RTL ArduPilot failed: {e}")
             return False
+
+    def _set_rtl_param(self, name: str, value_cm: int) -> None:
+        """Set an RTL parameter with v4.6.3/v4.8+ alias fallback.
+
+        Tries the v4.6.3 name (centimeters) first. If it fails, tries
+        the v4.8+ alias (meters).
+        """
+        if self.set_param(name, value_cm):
+            return
+        alias = self._RTL_PARAM_ALIASES.get(name)
+        if alias:
+            value_m = value_cm / 100.0
+            if self.set_param(alias, value_m):
+                return
+        self._node.get_logger().warn(f"Failed to set {name}")
 
     def _rtl_pid(self, altitude: Optional[float], precision: float, land: bool) -> bool:
         if self._takeoff_position is None:
@@ -1464,10 +1481,23 @@ class MavrosDrone(BaseDrone):
         if altitude is not None:
             target_z = altitude - (self.get_altitude() or 0.0)
             self._node.get_logger().info(f"Moving to RTL altitude: {altitude}m")
-            self.move_to(x=0, y=0, z=target_z, precision=precision)
+            self.move_to(
+                x=0,
+                y=0,
+                z=target_z,
+                precision=precision,
+                method=NavigationMethod.PID_EKF,
+            )
 
         self._node.get_logger().info("Navigating to takeoff position")
-        self.move_to(x=0, y=0, z=0, reference=MoveReference.TAKEOFF, precision=precision)
+        self.move_to(
+            x=0,
+            y=0,
+            z=0,
+            reference=MoveReference.TAKEOFF,
+            precision=precision,
+            method=NavigationMethod.PID_EKF,
+        )
 
         if land:
             self._node.get_logger().info("Landing")
@@ -1851,105 +1881,6 @@ class MavrosDrone(BaseDrone):
         # Unknown response type - log and assume success
         self._node.get_logger().debug(f"{service_name}: Unknown response type, assuming success")
         return True
-
-    def _call_service(
-        self,
-        service,
-        request,
-        success_msg: str,
-        fail_msg: str,
-        sync: bool = False,
-        timeout: float = 10.0,
-    ):
-        """
-        Call a ROS2 service with timeout and optional async execution.
-
-        Parameters
-        ----------
-        service : Client
-            ROS2 service client.
-        request : SrvTypeRequest
-            Service request message.
-        success_msg : str
-            Message to log on success.
-        fail_msg : str
-            Message to log on failure.
-        sync : bool, default=False
-            If True, blocks (spins) until service completes.
-            If False, returns immediately (non-blocking).
-        timeout : float, default=10.0
-            Maximum time in seconds to wait for service availability.
-
-        Returns
-        -------
-        Any or None
-            Service response if sync=True, None if async or on failure.
-
-        Raises
-        ------
-        TimeoutError
-            If service not available within timeout.
-        """
-        elapsed = 0.0
-        wait_interval = 1.0
-
-        while not service.wait_for_service(timeout_sec=wait_interval):
-            elapsed += wait_interval
-            self._node.get_logger().info(
-                f"Service {service.srv_name} not available, waiting... ({elapsed:.0f}s)"
-            )
-            if elapsed >= timeout:
-                self._node.get_logger().error(
-                    f"\033[31;1m{fail_msg} - Service {service.srv_name} not available after {timeout}s\033[0m"
-                )
-                raise TimeoutError(f"Service {service.srv_name} not available after {timeout}s")
-
-        self._node.get_logger().debug(f"Calling service {service.srv_name} | sync={sync}")
-
-        if sync:
-            # Use call_async + spin loop to avoid deadlocks
-            future = service.call_async(request)
-            start_time = self._node.get_clock().now()
-
-            while not future.done():
-                rclpy.spin_once(self._node, timeout_sec=0.05)
-                if (self._node.get_clock().now() - start_time).nanoseconds / 1e9 > timeout:
-                    self._node.get_logger().error(
-                        f"\033[31;1m{fail_msg}: Timeout waiting for response\033[0m"
-                    )
-                    return None
-
-            try:
-                result = future.result()
-                if result is not None:
-                    self._validate_service_response(
-                        result, service.srv_name
-                    )  # TODO: test the responses from mavros to include in the verification of service
-                    self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
-                    return result
-                else:
-                    self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
-                    return None
-            except Exception as e:
-                self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
-                return None
-        else:
-            future = service.call_async(request)
-
-            def _handle_response(future):
-                try:
-                    result = future.result()
-                    if result is not None and self._validate_service_response(
-                        result, service.srv_name
-                    ):
-                        self._node.get_logger().info(f"\033[32;1m{success_msg}\033[0m")
-                    else:
-                        self._node.get_logger().error(f"\033[31;1m{fail_msg}\033[0m")
-                except Exception as e:
-                    self._node.get_logger().error(f"\033[31;1m{fail_msg}: {e}\033[0m")
-
-            future.add_done_callback(_handle_response)
-            return None
 
 
 DroneFactory.register("mavros", MavrosDrone.from_config)

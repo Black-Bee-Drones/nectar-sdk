@@ -21,8 +21,8 @@ from nectar.control.protocols import ObstacleDetector
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
 from nectar.utils.process import ProcessUtils
 
@@ -319,7 +319,7 @@ class BaseDrone(ABC):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
@@ -364,12 +364,12 @@ class BaseDrone(ABC):
         precision : float, default=0.2
             Arrival threshold in meters.
 
-        strategy : NavigationStrategy (enum), default=PID
+        method : NavigationMethod (enum), default=POSITION
             Navigation algorithm:
-            - PID: velocity-based control with raw sensors (vision/GPS)
-            - PID_LOCAL: velocity-based control with EKF local position
-            - SETPOINT: local position setpoint (setpoint_raw/local)
-            - SETPOINT_GLOBAL: GPS global setpoint (outdoor only)
+            - POSITION: onboard position controller (FCU setpoint / goTo)
+            - POSITION_GLOBAL: onboard GPS position controller (outdoor only)
+            - PID: companion-side velocity PID with raw sensors
+            - PID_EKF: companion-side velocity PID with EKF-fused position
 
         altitude_source : AltitudeSource (enum), default=AUTO
             Altitude sensor source for PID navigation:
@@ -390,6 +390,8 @@ class BaseDrone(ABC):
             If reference=TAKEOFF but takeoff position not set.
         SensorNotAvailableError
             If altitude_source=LIDAR but lidar is not available.
+        CapabilityNotSupportedError
+            If the requested method is not supported by this drone.
         """
         pass
 
@@ -401,7 +403,7 @@ class BaseDrone(ABC):
         heading: Optional[float] = None,
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.PID,
     ) -> bool:
         """
         Navigate to GPS coordinates.
@@ -420,7 +422,7 @@ class BaseDrone(ABC):
             Maximum navigation time in seconds.
         precision : float, default=0.5
             Arrival threshold in meters.
-        strategy : NavigationStrategy, default=PID
+        method : NavigationMethod, default=PID
             Navigation algorithm.
 
         Returns
@@ -455,7 +457,7 @@ class BaseDrone(ABC):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NAVIGATE,
         land: bool = True,
     ) -> bool:
         """
@@ -466,9 +468,11 @@ class BaseDrone(ABC):
         altitude : float, optional
             Transit altitude in meters. None uses current altitude.
         precision : float, default=0.2
-            Arrival threshold for PID strategy in meters.
-        strategy : RTLStrategy, default=PID
-            RTL algorithm (PID navigates to takeoff, ARDUPILOT triggers FCU RTL mode).
+            Arrival threshold in meters (used by NAVIGATE method).
+        method : RTLMethod, default=NAVIGATE
+            RTL algorithm:
+            - NAVIGATE: SDK navigates to takeoff position using position control.
+            - NATIVE: drone's built-in RTL mode (ArduPilot RTL, Bebop navigate_home).
         land : bool, default=True
             Execute landing after reaching home.
 
@@ -709,6 +713,110 @@ class BaseDrone(ABC):
         )
         self._clients.append(client)
         return client
+
+    def _call_service(
+        self,
+        client: Client,
+        request,
+        success_msg: str = "",
+        fail_msg: str = "",
+        sync: bool = True,
+        timeout: float = 10.0,
+        validator: Optional[Callable] = None,
+    ):
+        """
+        Call a ROS2 service with deadlock-safe async+spin pattern.
+
+        Parameters
+        ----------
+        client : Client
+            ROS2 service client.
+        request : SrvTypeRequest
+            Service request message.
+        success_msg : str, default=""
+            Message to log on success.
+        fail_msg : str, default=""
+            Message to log on failure.
+        sync : bool, default=True
+            If True, blocks (spins) until service completes and returns response.
+            If False, fire-and-forget with optional done callback.
+        timeout : float, default=10.0
+            Maximum time in seconds to wait for service availability and response.
+        validator : callable, optional
+            Function ``(response, service_name) -> bool`` for response validation.
+            If None, response is assumed valid.
+
+        Returns
+        -------
+        Any or None
+            Service response if sync=True and successful, None otherwise.
+
+        Raises
+        ------
+        TimeoutError
+            If service not available within timeout.
+        """
+        elapsed = 0.0
+        wait_interval = 1.0
+
+        while not client.wait_for_service(timeout_sec=wait_interval):
+            elapsed += wait_interval
+            self._node.get_logger().info(
+                f"Service {client.srv_name} not available, waiting... ({elapsed:.0f}s)"
+            )
+            if elapsed >= timeout:
+                msg = f"Service {client.srv_name} not available after {timeout}s"
+                if fail_msg:
+                    self._node.get_logger().error(f"{fail_msg} - {msg}")
+                raise TimeoutError(msg)
+
+        self._node.get_logger().debug(f"Calling service {client.srv_name} | sync={sync}")
+
+        if sync:
+            future = client.call_async(request)
+            start_time = self._node.get_clock().now()
+
+            while not future.done():
+                rclpy.spin_once(self._node, timeout_sec=0.05)
+                if (self._node.get_clock().now() - start_time).nanoseconds / 1e9 > timeout:
+                    if fail_msg:
+                        self._node.get_logger().error(f"{fail_msg}: Timeout waiting for response")
+                    return None
+
+            try:
+                result = future.result()
+                if result is None:
+                    if fail_msg:
+                        self._node.get_logger().error(fail_msg)
+                    return None
+                if validator:
+                    validator(result, client.srv_name)
+                if success_msg:
+                    self._node.get_logger().info(success_msg)
+                return result
+            except Exception as e:
+                if fail_msg:
+                    self._node.get_logger().error(f"{fail_msg}: {e}")
+                return None
+        else:
+            future = client.call_async(request)
+
+            def _handle_response(fut):
+                try:
+                    result = fut.result()
+                    if result is not None:
+                        if validator:
+                            validator(result, client.srv_name)
+                        if success_msg:
+                            self._node.get_logger().info(success_msg)
+                    elif fail_msg:
+                        self._node.get_logger().error(fail_msg)
+                except Exception as e:
+                    if fail_msg:
+                        self._node.get_logger().error(f"{fail_msg}: {e}")
+
+            future.add_done_callback(_handle_response)
+            return None
 
     def delay(self, seconds: float) -> None:
         """

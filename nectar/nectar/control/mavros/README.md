@@ -130,8 +130,8 @@ classDiagram
         +takeoff(altitude, max_retries, adjust_altitude, precision, timeout) bool
         +land(timeout) bool
         +move_velocity(vx, vy, vz, vyaw, duration, reference)
-        +move_to(x, y, z, yaw, reference, timeout, precision, strategy, altitude_source) bool
-        +move_to_gps(lat, lon, alt, heading, timeout, precision, strategy) bool
+        +move_to(x, y, z, yaw, reference, timeout, precision, method, altitude_source) bool
+        +move_to_gps(lat, lon, alt, heading, timeout, precision, method) bool
         +publish_setpoint(target)
         +emergency_stop()
         +set_home() bool
@@ -142,11 +142,11 @@ classDiagram
         +set_mode(mode) bool
         +set_param(param_id, value) bool
         +do_servo(aux_out, pwm_value) bool
-        +rtl(altitude, precision, strategy, land) bool
-        -_compute_pid_target(x, y, z, yaw, reference, strategy)
+        +rtl(altitude, precision, method, land) bool
+        -_compute_pid_target(x, y, z, yaw, reference, method)
         -_get_local_position() tuple
-        -_get_takeoff_for_strategy(strategy)
-        -_validate_position_sensors(strategy)
+        -_get_takeoff_for_method(method)
+        -_validate_position_sensors(method)
         -_call_service(service, request, success_msg, fail_msg, sync, timeout)
     }
 
@@ -295,23 +295,25 @@ drone.takeoff(altitude=1.5, precision=0.15, timeout=30.0)
 
 Navigation logic is encapsulated in `MavrosNavigator` (composition), keeping `MavrosDrone` focused on hardware interface, sensor data, and target computation.
 
+`move_to` and `move_to_gps` accept `method: NavigationMethod` (defaults: `move_to` → `NavigationMethod.PID_EKF`, `move_to_gps` → `NavigationMethod.PID`). `rtl` accepts `method: RTLMethod` (default `RTLMethod.NAVIGATE`). RTL with `NAVIGATE` uses `PID_EKF` internally.
+
 ### Capability Matrix
 
-| Entry Point | PoseSource | Strategy | Reference | AltitudeSource | Notes |
-|------------|-----------|----------|-----------|----------------|-------|
-| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | Default indoor — raw vision pose |
-| `move_to` | VISION | PID_LOCAL | BODY, TAKEOFF | AUTO, VISION, LIDAR | EKF local pose (unified frame) |
-| `move_to` | VISION | SETPOINT | BODY, TAKEOFF | N/A | Local setpoint via setpoint_raw/local |
-| `move_to` | VISION | ~~SETPOINT_GLOBAL~~ | — | — | ❌ No GPS indoors |
-| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | Default outdoor — raw GPS |
-| `move_to` | GPS | PID_LOCAL | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | EKF local pose (unified frame) |
-| `move_to` | GPS | SETPOINT | BODY, TAKEOFF | N/A | Local setpoint via setpoint_raw/local |
-| `move_to` | GPS | SETPOINT_GLOBAL | BODY, TAKEOFF | N/A | GPS setpoint with AMSL (long range) |
+| Entry Point | PoseSource | Method | Reference | AltitudeSource | Notes |
+|------------|-----------|--------|-----------|----------------|-------|
+| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | Raw vision pose (SDK velocity PID) |
+| `move_to` | VISION | PID_EKF | BODY, TAKEOFF | AUTO, VISION, LIDAR | **Default** — EKF local pose (unified frame) |
+| `move_to` | VISION | POSITION | BODY, TAKEOFF | N/A | Local setpoint via setpoint_raw/local |
+| `move_to` | VISION | ~~POSITION_GLOBAL~~ | — | — | ❌ No GPS indoors |
+| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | Raw GPS (SDK velocity PID) |
+| `move_to` | GPS | PID_EKF | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | **Default** — EKF local pose (unified frame) |
+| `move_to` | GPS | POSITION | BODY, TAKEOFF | N/A | Local setpoint via setpoint_raw/local |
+| `move_to` | GPS | POSITION_GLOBAL | BODY, TAKEOFF | N/A | GPS setpoint with AMSL (long range) |
 | `move_to` | any | any | WORLD | any | ❌ Not supported |
 | `move_to_gps` | GPS | PID | N/A | REL_ALT | GPS waypoint with raw GPS PID |
-| `move_to_gps` | GPS | PID_LOCAL | N/A | REL_ALT | GPS waypoint with EKF local PID |
-| `move_to_gps` | GPS | ~~SETPOINT~~ | — | — | ❌ GPS input needs global output |
-| `move_to_gps` | GPS | SETPOINT_GLOBAL | N/A | N/A | GPS setpoint to FCU |
+| `move_to_gps` | GPS | PID_EKF | N/A | REL_ALT | GPS waypoint with EKF local PID |
+| `move_to_gps` | GPS | ~~POSITION~~ | — | — | ❌ GPS input needs global output |
+| `move_to_gps` | GPS | POSITION_GLOBAL | N/A | N/A | GPS setpoint to FCU |
 | `move_to_gps` | VISION | any | N/A | any | ❌ Not supported |
 | `move_velocity` | any | N/A | BODY, WORLD, TAKEOFF | N/A | Direct velocity command |
 
@@ -319,9 +321,9 @@ Navigation logic is encapsulated in `MavrosNavigator` (composition), keeping `Ma
 
 **Axis values — `x`, `y`, `z`, `yaw`**:
 
-Each axis can be a `float` value or `None`. The behavior depends on the strategy:
+Each axis can be a `float` value or `None`. The behavior depends on the navigation method:
 
-| Parameter | Value | PID / PID_LOCAL | SETPOINT / SETPOINT_GLOBAL |
+| Parameter | Value | PID / PID_EKF | POSITION / POSITION_GLOBAL |
 |-----------|-------|-----------------|---------------------------|
 | `x` | `float` | Active — PID drives this axis | Included in target position |
 | `x` | `None` | **Disabled** — no velocity on this axis, excluded from arrival check | Zero offset — holds current position on this axis |
@@ -332,9 +334,9 @@ Each axis can be a `float` value or `None`. The behavior depends on the strategy
 | `yaw` | `float` | Active — PID drives yaw (degrees) | Included in target orientation |
 | `yaw` | `None` | **Disabled** — maintains current yaw | Holds current yaw |
 
-**Key difference**: With PID strategies, `None` truly disables the axis — no velocity is published and the axis is excluded from the distance check. With SETPOINT strategies, the FCU receives a full 3D+yaw target and controls all axes; `None` means zero offset (hold current).
+**Key difference**: With PID methods (`NavigationMethod.PID`, `NavigationMethod.PID_EKF`), `None` truly disables the axis — no velocity is published and the axis is excluded from the distance check. With POSITION methods (`NavigationMethod.POSITION`, `NavigationMethod.POSITION_GLOBAL`), the FCU receives a full 3D+yaw target and controls all axes; `None` means zero offset (hold current).
 
-> **Note on `None` accuracy**: Using `None` is convenient for not having to specify every axis, but comes with trade-offs. With **PID**, a disabled axis is completely uncontrolled — wind or inertia can cause drift on that axis with no correction. The drone may arrive at the correct x but have drifted on y. With **SETPOINT**, the target for a `None` axis is a snapshot of the current position at call time, which may differ slightly from where you actually want to be (e.g., if the drone was still settling). In both cases, small deviations on unspecified axes are expected. For precise multi-axis positioning, specify all axes explicitly.
+> **Note on `None` accuracy**: Using `None` is convenient for not having to specify every axis, but comes with trade-offs. With **PID**, a disabled axis is completely uncontrolled — wind or inertia can cause drift on that axis with no correction. The drone may arrive at the correct x but have drifted on y. With **POSITION**, the target for a `None` axis is a snapshot of the current position at call time, which may differ slightly from where you actually want to be (e.g., if the drone was still settling). In both cases, small deviations on unspecified axes are expected. For precise multi-axis positioning, specify all axes explicitly.
 
 **Reference frames — `reference`**:
 
@@ -364,7 +366,7 @@ move_to(x=0, y=0, reference=TAKEOFF)
 → Drone moves to (0, 0) in takeoff frame
 ```
 
-#### Yaw + Position Behavior (PID / PID_LOCAL)
+#### Yaw + Position Behavior (PID / PID_EKF)
 
 When `yaw` is specified together with position axes (`x` or `y`), PID navigation uses a **yaw-first** approach:
 
@@ -389,7 +391,7 @@ move_to(x=5, yaw=90):                       move_to(x=5, y=2, yaw=90):
                                            (arrives facing 90°)
 ```
 
-With SETPOINT / SETPOINT_GLOBAL strategies, yaw and position are controlled simultaneously by the FCU (no yaw-first phase needed — the target is in world frame).
+With POSITION / POSITION_GLOBAL methods, yaw and position are controlled simultaneously by the FCU (no yaw-first phase needed — the target is in world frame).
 
 ### Navigation Examples
 
@@ -425,32 +427,32 @@ drone.move_to(x=0.0, y=0.0, z=1.0,
               altitude_source=AltitudeSource.LIDAR)  # hold 1.0m AGL at takeoff XY
 ```
 
-**EKF local position (PID_LOCAL) — unified indoor/outdoor**:
+**EKF local position (PID_EKF) — unified indoor/outdoor**:
 ```python
 # Uses /mavros/local_position/pose for PID feedback (same code indoor and outdoor)
-drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.PID_LOCAL)
+drone.move_to(x=2.0, y=0.0, z=0.0, method=NavigationMethod.PID_EKF)
 ```
 
-**Local setpoint (SETPOINT) — FCU handles position control**:
+**Local position (POSITION) — FCU handles position control**:
 ```python
 # Publishes target to setpoint_raw/local. Works indoor and outdoor.
 # FCU controls all axes simultaneously (including yaw)
-drone.move_to(x=2.0, y=1.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
-drone.move_to(x=3.0, yaw=90.0, strategy=NavigationStrategy.SETPOINT)  # simultaneous position + yaw
+drone.move_to(x=2.0, y=1.0, z=0.0, method=NavigationMethod.POSITION)
+drone.move_to(x=3.0, yaw=90.0, method=NavigationMethod.POSITION)  # simultaneous position + yaw
 ```
 
 **GPS waypoint navigation (outdoor)**:
 ```python
-# PID with raw GPS (default)
+# PID with raw GPS (default for move_to_gps)
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0, precision=1.0)
 
 # GPS global setpoint (long range, FCU handles navigation)
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
-                  strategy=NavigationStrategy.SETPOINT_GLOBAL)
+                  method=NavigationMethod.POSITION_GLOBAL)
 
 # PID with EKF local position
 drone.move_to_gps(lat=-27.1234, lon=-48.4567, altitude=15.0,
-                  strategy=NavigationStrategy.PID_LOCAL)
+                  method=NavigationMethod.PID_EKF)
 ```
 
 **Velocity control**:
@@ -489,8 +491,8 @@ drone.move_velocity(vx=1.0, duration=2.0, reference=MoveReference.BODY)
 
 The takeoff position is stored by `_set_takeoff_position()` at the **start of `takeoff()`** — while the drone is still on the ground, before it climbs. This means:
 
-- For **vision/local** (PID, PID_LOCAL, SETPOINT): `takeoff_z ≈ 0` (ground level in vision/EKF frame)
-- For **GPS** (PID outdoor, SETPOINT_GLOBAL): `takeoff_z` = raw GPS altitude on the ground (e.g., 605m ellipsoid height)
+- For **vision/local** (PID, PID_EKF, POSITION): `takeoff_z ≈ 0` (ground level in vision/EKF frame)
+- For **GPS** (PID outdoor, POSITION_GLOBAL): `takeoff_z` = raw GPS altitude on the ground (e.g., 605m ellipsoid height)
 
 With **AUTO/VISION** source (the default), `z` with TAKEOFF reference computes `target_z = takeoff_z + z`. Since `takeoff_z ≈ 0` for vision/local, `z` is effectively the **absolute height above the takeoff ground level**:
 
@@ -526,9 +528,9 @@ drone.move_to_gps(lat=..., lon=..., altitude=15.0)
 
 ```mermaid
 flowchart TD
-    A["move_to / move_to_gps"] --> B{"Strategy?"}
-    B -->|PID / PID_LOCAL| C["Compute PID target"]
-    B -->|SETPOINT / SETPOINT_GLOBAL| D["Compute setpoint target"]
+    A["move_to / move_to_gps"] --> B{"Method?"}
+    B -->|PID / PID_EKF| C["Compute PID target"]
+    B -->|POSITION / POSITION_GLOBAL| D["Compute setpoint target"]
     C --> E["resolve_altitude_target"]
     E --> F["navigator.navigate_pid"]
     D --> G["navigator.navigate_setpoint"]
@@ -579,7 +581,7 @@ Velocity-based control with closed-loop feedback via `MavrosNavigator.navigate_p
 
 **Active axes**: Only axes with non-`None` values are controlled and included in the distance check. Exception: when yaw is specified with x or y, both horizontal axes are activated after yaw alignment (the world-frame target may project onto either body axis after rotation).
 
-### Setpoint Navigation
+### Position Navigation
 
 Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. The FCU receives a full target (position + yaw) and controls all axes simultaneously — no yaw-first phase needed.
 
@@ -587,7 +589,7 @@ Direct position setpoint publishing via `MavrosNavigator.navigate_setpoint()`. T
 
 **Outdoor** (GeoPoseStamped): Publishes to `/mavros/setpoint_position/global` with AMSL-corrected altitude, checks geodesic distance using GPS and relative altitude.
 
-**Yaw convergence**: Both PID and setpoint navigation verify that the target yaw has been reached (within `YAW_THRESHOLD = 3°`) before declaring arrival. Yaw error is computed via `PositionUtils.compute_yaw_error()` and logged alongside distance each iteration.
+**Yaw convergence**: PID navigation and position-setpoint navigation (`navigate_setpoint`) both verify that the target yaw has been reached (within `YAW_THRESHOLD = 3°`) before declaring arrival. Yaw error is computed via `PositionUtils.compute_yaw_error()` and logged alongside distance each iteration.
 
 #### ArduPilot GUIDED Mode Position Controllers
 
@@ -660,7 +662,7 @@ The SDK also configures `PSC_JERK_XY` (4.6.3) / `PSC_JERK_NE` (4.8+) — positio
 | WPNAV_RFND_USE | Not used (`is_terrain_alt=false` for `SET_POSITION_TARGET_LOCAL_NED`) | Only if terrain alt is explicitly requested |
 | PSC_JERK_XY/NE | Controls position controller horizontal jerk limit | Not used (WPNav has own jerk via WPNAV_JERK) |
 
-> **Runtime `set_param` summary**: In SubMode::WP, all `WPNAV_*` parameters are picked up on the next target because [`wp_nav->set_wp_destination()`](https://github.com/ArduPilot/ardupilot/tree/master/libraries/AC_WPNav) re-reads them. In SubMode::Pos, speed/accel limits are set once via [`AC_PosControl`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) at submode entry (`pva_control_start()`); use `MAV_CMD_DO_CHANGE_SPEED` for dynamic changes. The SDK's `_sync_wpnav_radius()` leverages this WPNav behavior to update `WPNAV_RADIUS` per `move_to` call from the `precision` parameter.
+> **Runtime `set_param` summary**: In SubMode::WP, all `WPNAV_*` parameters are picked up on the next target because [`wp_nav->set_wp_destination()`](https://github.com/ArduPilot/ardupilot/tree/master/libraries/AC_WPNav) re-reads them. In SubMode::Pos, speed/accel limits are set once via [`AC_PosControl`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) at submode entry (`pva_control_start()`); use `MAV_CMD_DO_CHANGE_SPEED` for dynamic changes. The SDK's `_sync_wpnav_radius()` leverages this WPNav behavior to update `WPNAV_RADIUS` on each `move_to` / `move_to_gps` call that uses `NavigationMethod.POSITION` or `NavigationMethod.POSITION_GLOBAL` (with WPNav enabled) from the `precision` argument.
 
 #### Speed Control at Runtime
 
@@ -699,10 +701,10 @@ Direct velocity command publishing to flight controller.
 
 ## Reference Frame Transformations
 
-### Supported References by Method
+### Supported references by API
 
-| Method | BODY | WORLD | TAKEOFF |
-|--------|------|-------|---------|
+| API | BODY | WORLD | TAKEOFF |
+|-----|------|-------|---------|
 | `move_velocity()` | yes | yes | yes |
 | `move_to()` | yes | no | yes |
 
@@ -744,7 +746,9 @@ target = takeoff_position + rotate(x, y, z, takeoff_yaw)
 
 ## RTL Implementation
 
-### PID Strategy
+Default `rtl()` uses `RTLMethod.NAVIGATE` (SDK PID path to home). Use `RTLMethod.NATIVE` for the FCU RTL mode.
+
+### NAVIGATE (`RTLMethod.NAVIGATE`)
 
 Navigate to takeoff position using PID control.
 
@@ -754,20 +758,25 @@ Navigate to takeoff position using PID control.
 3. If `land=True`: execute landing
 
 ```python
-drone.rtl(altitude=5.0, strategy=RTLStrategy.PID, land=True)
+drone.rtl(altitude=5.0, method=RTLMethod.NAVIGATE, land=True)
 ```
 
-### ArduPilot Strategy
+### NATIVE (`RTLMethod.NATIVE`)
 
-Trigger ArduPilot's native RTL mode.
+Trigger ArduPilot's native RTL mode. See [RTL Mode](https://ardupilot.org/copter/docs/rtl-mode.html).
 
 **Sequence**:
-1. If altitude specified: set RTL_ALT parameter
-2. Set mode to "RTL"
-3. If `land=False`: return after 5 seconds
+1. Set `RTL_ALT`: if `altitude` is specified, sets the minimum return altitude (in cm). If `altitude` is `None`, sets `RTL_ALT=0` so the drone returns at its current altitude (ArduPilot default is 15m which causes unwanted climbing).
+2. Set `RTL_ALT_FINAL`: if `land=True`, sets to 0 (auto-land after loiter). If `land=False`, sets to the same value as `RTL_ALT` (hold altitude above home, no descent).
+3. Set mode to "RTL".
+
+Parameter names differ between ArduPilot versions: `RTL_ALT` / `RTL_ALT_FINAL` (v4.6.3, centimeters) vs `RTL_ALT_M` / `RTL_ALT_FINAL_M` (v4.8+, meters). The SDK tries the v4.6.3 name first and falls back to v4.8+ automatically.
 
 ```python
-drone.rtl(altitude=15.0, strategy=RTLStrategy.ARDUPILOT, land=True)
+drone.rtl(method=RTLMethod.NATIVE)                        # return at current altitude, auto-land
+drone.rtl(altitude=15.0, method=RTLMethod.NATIVE)          # climb to 15m, return, auto-land
+drone.rtl(method=RTLMethod.NATIVE, land=False)             # return at current altitude, hold above home
+drone.rtl(altitude=10.0, method=RTLMethod.NATIVE, land=False)  # climb to 10m, return, hold at 10m
 ```
 
 ## ROS2 Topics
@@ -886,13 +895,13 @@ drone.set_pid_config(config)
 
 ## Setpoint Navigation Configuration
 
-Controls ArduPilot GUIDED mode behavior when using `NavigationStrategy.SETPOINT`. Manages the position controller sub-mode (AC_PosControl vs AC_WPNav) and WPNAV parameters.
+Controls ArduPilot GUIDED mode behavior when using `NavigationMethod.POSITION` (local setpoints via `setpoint_raw/local`). Manages the position controller sub-mode (AC_PosControl vs AC_WPNav) and WPNAV parameters.
 
 ### How It Works
 
 1. **On init**: `_load_setpoint_config()` loads from `setpoint_config_file` (if provided), otherwise from `config/mavros/setpoint_indoor.yaml` or `setpoint_outdoor.yaml` based on `is_indoor`. The config is always loaded for SDK-side logic (e.g., `use_wpnav` checks).
 2. **On arm** (only if `apply_setpoint_params=True`): `_apply_setpoint_config()` sends `GUID_OPTIONS` and all `WPNAV_*` parameters to the FCU via `set_param()`. Logs which parameters failed.
-3. **On move_to (SETPOINT)** (only if `apply_setpoint_params=True`): If `use_wpnav` (bit 6 set in `guid_options`), syncs `WPNAV_RADIUS` with the `precision` parameter.
+3. **On `move_to` / `move_to_gps` with `NavigationMethod.POSITION` or `POSITION_GLOBAL`** (only if `apply_setpoint_params=True`): If `use_wpnav` (bit 6 set in `guid_options`), syncs `WPNAV_RADIUS` with the `precision` parameter.
 
 > **Important — FCU parameter persistence**: `set_param()` sends a MAVLink `PARAM_SET` message. ArduPilot's handler calls `vp->save()`, which **writes to EEPROM/flash**. Values persist across reboots. By default `apply_setpoint_params=False` so the SDK does not touch FCU parameters. Set `apply_setpoint_params=True` only when you want the SDK to control these values (e.g., SITL). You can also push parameters on demand via `drone.set_setpoint_config(config)` regardless of this flag.
 
@@ -1011,17 +1020,17 @@ drone = DroneFactory.create("mavros", config, node)
 drone.set_setpoint_config({"speed": 0.3, "radius": 0.1})
 
 # move_to syncs WPNAV_RADIUS with precision when WPNav is enabled (bit 6)
-drone.move_to(x=2.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT, precision=0.1)
+drone.move_to(x=2.0, y=0.0, z=0.0, method=NavigationMethod.POSITION, precision=0.1)
 ```
 
 **Outdoor with WPNav + runtime speed adjustment:**
 ```python
 # Uses setpoint_outdoor.yaml automatically (pose_source=GPS, guid_options=65 → WPNav)
-drone.move_to(x=5.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT)
+drone.move_to(x=5.0, y=0.0, z=0.0, method=NavigationMethod.POSITION)
 
 # Slow down for precise approach
 drone.set_speed(0.5, "horizontal")
-drone.move_to(x=1.0, y=0.0, z=0.0, strategy=NavigationStrategy.SETPOINT, precision=0.2)
+drone.move_to(x=1.0, y=0.0, z=0.0, method=NavigationMethod.POSITION, precision=0.2)
 ```
 
 ## ArduPilot-Specific Features
