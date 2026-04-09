@@ -2,42 +2,11 @@
 
 import os
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-
-def _get_source_segmentation_module_dir() -> Path:
-    """Get the segmentation module directory from source location if available."""
-    installed_dir = Path(__file__).parent.parent
-
-    def _find_git_root(start: Path) -> Optional[Path]:
-        current = start.resolve()
-        while current != current.parent:
-            if (current / ".git").exists():
-                return current
-            current = current.parent
-        return None
-
-    git_root = _find_git_root(Path(__file__))
-    if git_root is None:
-        return installed_dir
-
-    source_candidates = [
-        git_root / "nectar" / "nectar" / "ai" / "segmentation",
-        git_root / "nectar" / "ai" / "segmentation",
-    ]
-    for candidate in source_candidates:
-        if candidate.exists() and (candidate / "__init__.py").exists():
-            return candidate
-
-    return installed_dir
-
-
-SEGMENTATION_MODULE_DIR = _get_source_segmentation_module_dir()
-DEFAULT_DATA_DIR = SEGMENTATION_MODULE_DIR / "data"
-DEFAULT_OUTPUT_DIR = SEGMENTATION_MODULE_DIR / "outputs"
+from nectar.ai.paths import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR  # noqa: F401
 
 
 @dataclass

@@ -119,9 +119,13 @@ def main():
             eval_split = params.get("eval_split", "test")
             eval_output = str(Path(output_dir_raw) / "evaluation")
 
+            eval_dataset = dataset
+            if Path(eval_dataset).suffix in (".yaml", ".yml"):
+                eval_dataset = str(Path(eval_dataset).parent)
+
             eval_config = SegEvaluationConfig(
                 model_path=result["model_path"],
-                dataset_path=dataset,
+                dataset_path=eval_dataset,
                 framework=framework,
                 output_dir=eval_output,
                 split=eval_split,
