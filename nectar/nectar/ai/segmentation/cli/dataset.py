@@ -76,7 +76,9 @@ def cmd_convert(args):
         return
 
     converter = SegFormatConverter(
-        args.input, args.output, num_workers=args.num_workers,
+        args.input,
+        args.output,
+        num_workers=args.num_workers,
     )
     converter.convert(
         target_format=target_format,
@@ -112,22 +114,27 @@ def main():
     # ---- download ----
     dl_parser = subparsers.add_parser("download", help="Download segmentation dataset")
     dl_parser.add_argument(
-        "--source", required=True,
+        "--source",
+        required=True,
         help="Dataset source (ultralytics, roboflow)",
     )
     dl_parser.add_argument(
-        "--dataset", default=None,
+        "--dataset",
+        default=None,
         help="Dataset identifier for ultralytics (e.g. crack-seg)",
     )
 
     from nectar.ai.segmentation.core.configs import DEFAULT_DATA_DIR
 
     dl_parser.add_argument(
-        "--output", default=str(DEFAULT_DATA_DIR),
+        "--output",
+        default=str(DEFAULT_DATA_DIR),
         help=f"Output directory (default: {DEFAULT_DATA_DIR}/<dataset>)",
     )
     dl_parser.add_argument(
-        "--format", default="yolo", choices=["yolo", "coco", "both"],
+        "--format",
+        default="yolo",
+        choices=["yolo", "coco", "both"],
         help="Output format",
     )
     dl_parser.add_argument("--num-workers", type=int, default=None)
@@ -137,7 +144,8 @@ def main():
     dl_parser.add_argument("--project", help="Roboflow project")
     dl_parser.add_argument("--version", type=int, help="Roboflow version")
     dl_parser.add_argument(
-        "--roboflow-format", default=None,
+        "--roboflow-format",
+        default=None,
         help="Roboflow export format (yolov8, coco, etc.)",
     )
 
@@ -146,7 +154,9 @@ def main():
     conv_parser.add_argument("--input", required=True, help="Input dataset directory")
     conv_parser.add_argument("--output", required=True, help="Output directory")
     conv_parser.add_argument(
-        "--format", required=True, choices=["coco", "yolo"],
+        "--format",
+        required=True,
+        choices=["coco", "yolo"],
         help="Target format",
     )
     conv_parser.add_argument("--copy-images", action="store_true", default=True)

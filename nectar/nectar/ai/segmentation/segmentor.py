@@ -92,7 +92,9 @@ class Segmentor:
         if any(x in source_lower for x in ["-seg", "_seg"]):
             if any(x in source_lower for x in ["yolo", "ultralytics"]):
                 return Framework.ULTRALYTICS
-        if any(x in source_lower for x in ["mask2former", "maskformer", "segformer", "segmentation"]):
+        if any(
+            x in source_lower for x in ["mask2former", "maskformer", "segformer", "segmentation"]
+        ):
             return Framework.TRANSFORMERS
         if "rfdetr" in source_lower:
             return Framework.RFDETR

@@ -25,11 +25,11 @@ from nectar.ai.segmentation.core.types import (
     SegPrediction,
 )
 from nectar.ai.segmentation.datasets import (
+    RoboflowSegHandler,
     SegDatasetAnalyzer,
     SegDatasetHandlerRegistry,
     SegFormatConverter,
     UltralyticsSegHandler,
-    RoboflowSegHandler,
 )
 from nectar.ai.segmentation.evaluation.evaluator import SegmentationEvaluator
 from nectar.ai.segmentation.models.rfdetr import RFDETRSegModel

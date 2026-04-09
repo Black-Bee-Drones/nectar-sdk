@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-from nectar.ai.detection.core.configs import TrainingMetrics, TrainingResult
-
 
 def _get_source_segmentation_module_dir() -> Path:
     """Get the segmentation module directory from source location if available."""

@@ -60,6 +60,7 @@ def main():
     framework = params.get("framework") or detect_framework(model, task="segmentation")
     logger.info("Framework: %s", framework)
 
+    from nectar.ai.detection.utils.tensorboard import TensorBoardManager
     from nectar.ai.segmentation import Segmentor
     from nectar.ai.segmentation.core.configs import SegEvaluationConfig
     from nectar.ai.segmentation.evaluation.evaluator import SegmentationEvaluator
@@ -68,7 +69,6 @@ def main():
         TransformersSegTrainingConfig,
         UltralyticsSegTrainingConfig,
     )
-    from nectar.ai.detection.utils.tensorboard import TensorBoardManager
 
     common_args = collect_common_train_params(params, dataset, output_dir_raw)
 

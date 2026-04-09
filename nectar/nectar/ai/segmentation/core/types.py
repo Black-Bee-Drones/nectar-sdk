@@ -210,10 +210,12 @@ class SegmentationResult:
 
         masks = None
         if any(s.mask is not None for s in self.segmentations):
-            masks = np.array([
-                s.mask if s.mask is not None else np.zeros_like(self.segmentations[0].mask)
-                for s in self.segmentations
-            ])
+            masks = np.array(
+                [
+                    s.mask if s.mask is not None else np.zeros_like(self.segmentations[0].mask)
+                    for s in self.segmentations
+                ]
+            )
 
         return sv.Detections(
             xyxy=xyxy,

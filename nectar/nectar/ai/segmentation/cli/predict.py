@@ -104,8 +104,13 @@ def process_directory(
 
         for img_path in batch_paths:
             process_image(
-                segmentor, str(img_path), conf_threshold, iou_threshold,
-                output_dir, show=False, save_masks=save_masks,
+                segmentor,
+                str(img_path),
+                conf_threshold,
+                iou_threshold,
+                output_dir,
+                show=False,
+                save_masks=save_masks,
             )
 
     logger.info("Results saved to %s", output_dir)
@@ -141,13 +146,23 @@ def main():
 
     if input_path.is_file():
         process_image(
-            segmentor, str(input_path), args.conf_threshold, args.iou_threshold,
-            output_dir, args.show, args.save_masks,
+            segmentor,
+            str(input_path),
+            args.conf_threshold,
+            args.iou_threshold,
+            output_dir,
+            args.show,
+            args.save_masks,
         )
     elif input_path.is_dir():
         process_directory(
-            segmentor, str(input_path), args.conf_threshold, args.iou_threshold,
-            output_dir, args.batch_size, args.save_masks,
+            segmentor,
+            str(input_path),
+            args.conf_threshold,
+            args.iou_threshold,
+            output_dir,
+            args.batch_size,
+            args.save_masks,
         )
     else:
         logger.error("Invalid input: %s", args.input)

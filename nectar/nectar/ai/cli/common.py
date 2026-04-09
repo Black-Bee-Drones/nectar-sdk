@@ -196,9 +196,7 @@ def add_common_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     parser.add_argument("--push-to-hub", action="store_true", help="Push to HuggingFace Hub")
     parser.add_argument("--hub-model-id", type=str, help="HuggingFace model ID")
     parser.add_argument("--multi-gpu", action="store_true", help="Enable multi-GPU")
-    parser.add_argument(
-        "--mixed-precision", type=str, default="no", choices=["no", "fp16", "bf16"]
-    )
+    parser.add_argument("--mixed-precision", type=str, default="no", choices=["no", "fp16", "bf16"])
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--early-stopping-patience", type=int, help="Early stopping patience")
     parser.add_argument("--from-scratch", action="store_true", help="Train from scratch")
@@ -216,7 +214,9 @@ def add_common_predict_args(parser: argparse.ArgumentParser) -> argparse.Argumen
     """Add prediction arguments shared by detection and segmentation."""
     parser.add_argument("--model", type=str, required=True, help="Model path or name")
     parser.add_argument("--input", type=str, required=True, help="Input image or directory")
-    parser.add_argument("--output", type=str, default="outputs/predictions", help="Output directory")
+    parser.add_argument(
+        "--output", type=str, default="outputs/predictions", help="Output directory"
+    )
     parser.add_argument("--device", type=str, default="auto", help="Device")
     parser.add_argument("--conf-threshold", type=float, default=0.5, help="Confidence threshold")
     parser.add_argument("--iou-threshold", type=float, default=0.45, help="IoU threshold")
@@ -251,7 +251,9 @@ def add_common_eval_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     return parser
 
 
-def collect_common_train_params(params: Dict[str, Any], dataset: str, output_dir: str) -> Dict[str, Any]:
+def collect_common_train_params(
+    params: Dict[str, Any], dataset: str, output_dir: str
+) -> Dict[str, Any]:
     """Build the common_args dict consumed by all framework training configs."""
     return {
         "dataset_path": dataset,
@@ -294,46 +296,50 @@ def collect_common_train_params(params: Dict[str, Any], dataset: str, output_dir
 
 def add_ultralytics_args(common_args: Dict[str, Any], params: Dict[str, Any]) -> None:
     """Extend common_args in-place with Ultralytics-specific parameters."""
-    common_args.update({
-        "warmup_epochs": params.get("warmup_epochs", 3.0),
-        "warmup_momentum": params.get("warmup_momentum", 0.8),
-        "lrf": params.get("lrf", 0.01),
-        "cos_lr": params.get("cos_lr", False),
-        "dropout": params.get("dropout", 0.0),
-        "freeze": params.get("freeze"),
-    })
+    common_args.update(
+        {
+            "warmup_epochs": params.get("warmup_epochs", 3.0),
+            "warmup_momentum": params.get("warmup_momentum", 0.8),
+            "lrf": params.get("lrf", 0.01),
+            "cos_lr": params.get("cos_lr", False),
+            "dropout": params.get("dropout", 0.0),
+            "freeze": params.get("freeze"),
+        }
+    )
 
 
 def add_rfdetr_args(common_args: Dict[str, Any], params: Dict[str, Any]) -> None:
     """Extend common_args in-place with RF-DETR-specific parameters."""
-    common_args.update({
-        "resolution": params.get("resolution", params.get("imgsz", 560)),
-        "lr_encoder": params.get("lr_encoder"),
-        "use_ema": params.get("use_ema", True),
-        "gradient_checkpointing": params.get("gradient_checkpointing")
-        or params.get("gradient_checkpoint", False),
-        "drop_path": params.get("drop_path", 0.0),
-        "drop_mode": params.get("drop_mode", "standard"),
-        "drop_schedule": params.get("drop_schedule", "constant"),
-        "cutoff_epoch": params.get("cutoff_epoch", 0),
-        "freeze_encoder": params.get("freeze_encoder", False),
-        "layer_norm": params.get("layer_norm", False),
-        "rms_norm": params.get("rms_norm", False),
-        "backbone_lora": params.get("backbone_lora", False),
-        "multi_scale": params.get("multi_scale", False),
-        "force_no_pretrain": params.get("force_no_pretrain", False),
-        "ema_decay": params.get("ema_decay", 0.9997),
-        "ema_tau": params.get("ema_tau", 0.0),
-        "lr_vit_layer_decay": params.get("lr_vit_layer_decay", 0.8),
-        "lr_component_decay": params.get("lr_component_decay", 1.0),
-        "sync_bn": params.get("sync_bn", True),
-        "num_workers": params.get("num_workers", 2),
-        "set_cost_class": params.get("set_cost_class", 2.0),
-        "set_cost_bbox": params.get("set_cost_bbox", 5.0),
-        "set_cost_giou": params.get("set_cost_giou", 2.0),
-        "start_epoch": params.get("start_epoch", 0),
-        "early_stopping_use_ema": params.get("early_stopping_use_ema", False),
-        "warmup_epochs": params.get("warmup_epochs", 3.0),
-        "dropout": params.get("dropout", 0.0),
-        "rfdetr_size": params.get("rfdetr_size"),
-    })
+    common_args.update(
+        {
+            "resolution": params.get("resolution", params.get("imgsz", 560)),
+            "lr_encoder": params.get("lr_encoder"),
+            "use_ema": params.get("use_ema", True),
+            "gradient_checkpointing": params.get("gradient_checkpointing")
+            or params.get("gradient_checkpoint", False),
+            "drop_path": params.get("drop_path", 0.0),
+            "drop_mode": params.get("drop_mode", "standard"),
+            "drop_schedule": params.get("drop_schedule", "constant"),
+            "cutoff_epoch": params.get("cutoff_epoch", 0),
+            "freeze_encoder": params.get("freeze_encoder", False),
+            "layer_norm": params.get("layer_norm", False),
+            "rms_norm": params.get("rms_norm", False),
+            "backbone_lora": params.get("backbone_lora", False),
+            "multi_scale": params.get("multi_scale", False),
+            "force_no_pretrain": params.get("force_no_pretrain", False),
+            "ema_decay": params.get("ema_decay", 0.9997),
+            "ema_tau": params.get("ema_tau", 0.0),
+            "lr_vit_layer_decay": params.get("lr_vit_layer_decay", 0.8),
+            "lr_component_decay": params.get("lr_component_decay", 1.0),
+            "sync_bn": params.get("sync_bn", True),
+            "num_workers": params.get("num_workers", 2),
+            "set_cost_class": params.get("set_cost_class", 2.0),
+            "set_cost_bbox": params.get("set_cost_bbox", 5.0),
+            "set_cost_giou": params.get("set_cost_giou", 2.0),
+            "start_epoch": params.get("start_epoch", 0),
+            "early_stopping_use_ema": params.get("early_stopping_use_ema", False),
+            "warmup_epochs": params.get("warmup_epochs", 3.0),
+            "dropout": params.get("dropout", 0.0),
+            "rfdetr_size": params.get("rfdetr_size"),
+        }
+    )
