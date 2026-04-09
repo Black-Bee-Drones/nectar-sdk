@@ -1,0 +1,16 @@
+{
+  "map50": 0.0,
+  "map50_95": 0.0,
+  "mar50": 0.0,
+  "mar50_95": 0.0,
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1_score": 0.0,
+  "mean_iou": 0.0,
+  "pixel_accuracy": 0.0,
+  "inference_time_per_image": 0.04321722047669547,
+  "total_segmentations": 105,
+  "per_class_metrics": [],
+  "per_class_iou": {},
+  "visualizations": {}
+}

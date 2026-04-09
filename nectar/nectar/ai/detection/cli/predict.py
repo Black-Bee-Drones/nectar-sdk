@@ -12,23 +12,14 @@ try:
 except ImportError:
     sv = None
 
+from nectar.ai.cli.common import add_common_predict_args
+
 
 def parse_args():
-    """Parse command line arguments."""
+    """Parse command line arguments for detection prediction."""
     parser = argparse.ArgumentParser(description="Run inference with detection models")
-
-    parser.add_argument("--model", type=str, required=True, help="Model path or name")
-    parser.add_argument("--input", type=str, required=True, help="Input image or directory")
-    parser.add_argument(
-        "--output", type=str, default="outputs/predictions", help="Output directory"
-    )
-    parser.add_argument("--device", type=str, default="auto", help="Device")
-    parser.add_argument("--conf-threshold", type=float, default=0.5, help="Confidence threshold")
-    parser.add_argument("--iou-threshold", type=float, default=0.45, help="IoU threshold")
-    parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
-    parser.add_argument("--show", action="store_true", help="Display predictions")
+    add_common_predict_args(parser)
     parser.add_argument("--save-txt", action="store_true", help="Save predictions to text")
-
     return parser.parse_args()
 
 
@@ -55,7 +46,6 @@ def process_image(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if len(result) > 0:
-        # Draw annotations
         annotated = detector.draw_detections(image.copy(), result)
         cv2.imwrite(str(output_path), annotated)
         logger.info("Saved: %s", output_path)
@@ -107,7 +97,6 @@ def process_directory(
     logger.info("Found %d images", len(image_paths))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Process in batches
     for i in range(0, len(image_paths), batch_size):
         batch_paths = image_paths[i : i + batch_size]
         batch_num = i // batch_size + 1
@@ -115,7 +104,6 @@ def process_directory(
         logger.info("Batch %d/%d", batch_num, total_batches)
 
         if batch_size == 1:
-            # Single image processing
             for img_path in batch_paths:
                 process_image(
                     detector,
@@ -127,22 +115,18 @@ def process_directory(
                     save_txt=save_txt,
                 )
         else:
-            # Batch processing
             results = detector.detect_batch(
                 [str(p) for p in batch_paths],
                 conf=conf_threshold,
                 iou=iou_threshold,
             )
-
             for img_path, result in zip(batch_paths, results):
                 image = cv2.imread(str(img_path))
                 image_name = img_path.stem
-                output_path = output_dir / f"{image_name}_prediction.jpg"
-
+                out = output_dir / f"{image_name}_prediction.jpg"
                 if len(result) > 0:
                     annotated = detector.draw_detections(image.copy(), result)
-                    cv2.imwrite(str(output_path), annotated)
-
+                    cv2.imwrite(str(out), annotated)
                     if save_txt:
                         txt_path = output_dir / f"{image_name}_prediction.txt"
                         with open(txt_path, "w") as f:
@@ -152,7 +136,7 @@ def process_directory(
                                 x_c, y_c = x1 + w / 2, y1 + h / 2
                                 f.write(f"{det.class_id} {x_c} {y_c} {w} {h} {det.confidence}\n")
                 else:
-                    cv2.imwrite(str(output_path), image)
+                    cv2.imwrite(str(out), image)
 
     logger.info("Results saved to %s", output_dir)
 
@@ -171,7 +155,6 @@ def main():
 
     args = parse_args()
 
-    # Use Detector facade for auto-detection
     from nectar.ai.detection import Detector
 
     logger.info("Loading model: %s", args.model)

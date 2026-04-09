@@ -74,6 +74,11 @@ install(DIRECTORY nectar/ai/detection/configs/
   FILES_MATCHING PATTERN "*.yaml"
 )
 
+install(DIRECTORY nectar/ai/segmentation/configs/
+  DESTINATION share/${PROJECT_NAME}/ai/segmentation/configs
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
 install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
   FILES_MATCHING PATTERN "*.launch.py"

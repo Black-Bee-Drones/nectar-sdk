@@ -22,7 +22,7 @@ except ImportError:
 
 try:
     from rfdetr import RFDETRBase, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
-    from rfdetr.main import download_pretrain_weights
+    from rfdetr.detr import download_pretrain_weights
     from rfdetr.util.coco_classes import COCO_CLASSES
 
     RFDETR_AVAILABLE = True
