@@ -297,7 +297,6 @@ class Detector:
 
     @staticmethod
     def draw_detections(
-        self,
         image: np.ndarray,
         result: DetectionResult,
         show_labels: bool = True,
