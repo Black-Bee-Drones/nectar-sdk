@@ -177,8 +177,14 @@ class RFDETRSegModel(BaseSegmentationModel):
         else:
             raise ValueError(f"Unsupported image type: {type(image)}")
 
+        predict_kwargs = {"threshold": seg_input.conf_threshold}
+        if self.resolution:
+            predict_kwargs["shape"] = (self.resolution, self.resolution)
+        elif seg_input.imgsz:
+            predict_kwargs["shape"] = (seg_input.imgsz, seg_input.imgsz)
+
         start_time = time.time()
-        detections = self.rfdetr_wrapper.predict(pil_image, threshold=seg_input.conf_threshold)
+        detections = self.rfdetr_wrapper.predict(pil_image, **predict_kwargs)
         inference_time = time.time() - start_time
 
         return SegPrediction.from_detections(
@@ -282,9 +288,9 @@ class RFDETRSegModel(BaseSegmentationModel):
 
         model_path = self._find_best_checkpoint(output_dir)
         return {
-            "model_path": str(model_path)
-            if model_path and model_path.exists()
-            else str(output_dir),
+            "model_path": (
+                str(model_path) if model_path and model_path.exists() else str(output_dir)
+            ),
             "metrics": {},
         }
 
