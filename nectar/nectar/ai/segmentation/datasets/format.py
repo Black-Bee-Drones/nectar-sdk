@@ -92,7 +92,7 @@ def _process_yolo_seg_image_to_coco(args: Tuple) -> Optional[Dict]:
             annotations.append(
                 {
                     "image_id": img_id,
-                    "category_id": class_id,
+                    "category_id": class_id + 1,
                     "segmentation": [flat_polygon],
                     "bbox": [round(v, 2) for v in bbox],
                     "area": round(area, 2),
@@ -310,11 +310,13 @@ class SegFormatConverter:
         class_names = yaml_data["names"]
         if isinstance(class_names, list):
             categories = [
-                {"id": i, "name": n, "supercategory": "object"} for i, n in enumerate(class_names)
+                {"id": i + 1, "name": n, "supercategory": "object"}
+                for i, n in enumerate(class_names)
             ]
         else:
             categories = [
-                {"id": int(k), "name": v, "supercategory": "object"} for k, v in class_names.items()
+                {"id": int(k) + 1, "name": v, "supercategory": "object"}
+                for k, v in class_names.items()
             ]
 
         if splits is None:

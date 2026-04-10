@@ -1,6 +1,5 @@
 """Ultralytics YOLO segmentation model implementation."""
 
-import gc
 import logging
 import os
 import time
@@ -241,26 +240,7 @@ class UltralyticsSegModel(BaseSegmentationModel):
         if config.mixed_precision == "fp16":
             train_args["amp"] = True
 
-        def on_train_start(trainer):
-            self._actual_save_dir = Path(trainer.save_dir)
-
-        self.model.add_callback("on_train_start", on_train_start)
-
-        if getattr(config, "gc_per_accumulation", True):
-            accum_steps = config.gradient_accumulation_steps
-
-            def on_batch_end(trainer):
-                ni = getattr(
-                    trainer,
-                    "ni",
-                    getattr(trainer, "epoch", 0) * getattr(trainer, "nb", 0),
-                )
-                if (ni + 1) % accum_steps == 0:
-                    gc.collect()
-                    if torch and torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-
-            self.model.add_callback("on_train_batch_end", on_batch_end)
+        self._setup_callbacks(config, output_dir)
 
         try:
             results = self.model.train(**train_args)
@@ -269,6 +249,24 @@ class UltralyticsSegModel(BaseSegmentationModel):
             return {"model_path": str(model_path), "metrics": metrics}
         except Exception as e:
             raise TrainingError(str(e)) from e
+
+    def _setup_callbacks(self, config: SegTrainingConfig, output_dir: Path) -> None:
+        """Setup training callbacks for HF upload, GC, and save-dir tracking."""
+        from nectar.ai.detection.utils.callbacks import (
+            setup_ultralytics_gc_callback,
+            setup_ultralytics_hf_callbacks,
+        )
+
+        def on_train_start(trainer):
+            self._actual_save_dir = Path(trainer.save_dir)
+
+        self.model.add_callback("on_train_start", on_train_start)
+
+        if config.push_to_hub and config.hub_model_id:
+            setup_ultralytics_hf_callbacks(self.model, config.hub_model_id, output_dir, self.logger)
+
+        if getattr(config, "gc_per_accumulation", True):
+            setup_ultralytics_gc_callback(self.model, config.gradient_accumulation_steps)
 
     def _extract_metrics(self, results) -> Dict[str, Any]:
         """Extract metrics from training results."""

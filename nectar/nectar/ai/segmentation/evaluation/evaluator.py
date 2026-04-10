@@ -25,6 +25,7 @@ except ImportError:
 
 try:
     import supervision as sv
+    from supervision.metrics.core import MetricTarget
     from supervision.metrics.f1_score import F1Score
     from supervision.metrics.mean_average_precision import MeanAveragePrecision
     from supervision.metrics.mean_average_recall import MeanAverageRecall
@@ -303,6 +304,7 @@ class SegmentationEvaluator:
             precision=metrics_dict["precision"],
             recall=metrics_dict["recall"],
             f1_score=metrics_dict["f1_score"],
+            mean_iou=metrics_dict.get("mean_iou", 0.0),
             inference_time_per_image=avg_time,
             total_segmentations=metrics_dict["total_detections"],
             visualizations=visualizations,
@@ -368,18 +370,42 @@ class SegmentationEvaluator:
                 filtered.append(pred)
         return filtered
 
+    @staticmethod
+    def _has_masks(detections_list):
+        return any(d.mask is not None and len(d) > 0 for d in detections_list)
+
+    @staticmethod
+    def _compute_mean_iou(preds, gts):
+        """Compute mean IoU between predicted and ground-truth masks."""
+        ious = []
+        for pred, gt in zip(preds, gts):
+            if pred.mask is None or gt.mask is None or len(pred) == 0 or len(gt) == 0:
+                continue
+            for p_mask in pred.mask:
+                best_iou = 0.0
+                for g_mask in gt.mask:
+                    intersection = np.logical_and(p_mask, g_mask).sum()
+                    union = np.logical_or(p_mask, g_mask).sum()
+                    if union > 0:
+                        best_iou = max(best_iou, intersection / union)
+                ious.append(best_iou)
+        return float(np.mean(ious)) if ious else 0.0
+
     def _compute_metrics(self, preds, gts, classes):
-        map_metric = MeanAveragePrecision()
+        has_masks = self._has_masks(preds) and self._has_masks(gts)
+        target = MetricTarget.MASKS if has_masks else MetricTarget.BOXES
+
+        map_metric = MeanAveragePrecision(metric_target=target)
         map_metric.update(predictions=preds, targets=gts)
         map_result = map_metric.compute()
 
-        mar_metric = MeanAverageRecall()
+        mar_metric = MeanAverageRecall(metric_target=target)
         mar_metric.update(predictions=preds, targets=gts)
         mar_result = mar_metric.compute()
 
-        precision_metric = Precision()
-        recall_metric = Recall()
-        f1_metric = F1Score()
+        precision_metric = Precision(metric_target=target)
+        recall_metric = Recall(metric_target=target)
+        f1_metric = F1Score(metric_target=target)
         precision_metric.update(predictions=preds, targets=gts)
         recall_metric.update(predictions=preds, targets=gts)
         f1_metric.update(predictions=preds, targets=gts)
@@ -408,7 +434,16 @@ class SegmentationEvaluator:
             "precision": float(precision_result.precision_at_50),
             "recall": float(recall_result.recall_at_50),
             "f1_score": float(f1_result.f1_50),
+            "metric_target": target.value,
         }
+
+        if has_masks:
+            box_map = MeanAveragePrecision(metric_target=MetricTarget.BOXES)
+            box_map.update(predictions=preds, targets=gts)
+            box_result = box_map.compute()
+            metrics_dict["box_map50"] = float(box_result.map50)
+            metrics_dict["box_map50_95"] = float(box_result.map50_95)
+            metrics_dict["mean_iou"] = self._compute_mean_iou(preds, gts)
 
         num_classes = len(classes)
 

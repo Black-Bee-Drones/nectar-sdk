@@ -8,10 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from huggingface_hub import HfApi, HfFolder, create_repo
+    from huggingface_hub import HfApi, create_repo
 except ImportError:
     HfApi = None
-    HfFolder = None
     create_repo = None
 
 
@@ -64,7 +63,7 @@ class HuggingFaceUploader:
         self.local_dir = Path(local_dir)
         self.repo_type = repo_type
         self.private = private
-        self.token = token or os.environ.get("HF_TOKEN") or HfFolder.get_token()
+        self.token = token or os.environ.get("HF_TOKEN")
         self.api = HfApi()
         self._repo_exists = False
 

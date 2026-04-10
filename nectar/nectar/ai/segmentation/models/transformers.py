@@ -40,17 +40,15 @@ except ImportError:
 from PIL import Image
 
 from nectar.ai.detection.datasets.format import FormatDetector
-from nectar.ai.segmentation.datasets.format import SegFormatConverter
-from nectar.ai.detection.datasets.subset import SubsetCreator
 from nectar.ai.detection.utils.device import get_device
 from nectar.ai.segmentation.core.base import BaseSegmentationModel
 from nectar.ai.segmentation.core.configs import SegTrainingConfig
 from nectar.ai.segmentation.core.exceptions import ModelNotLoadedError, TrainingError
 from nectar.ai.segmentation.core.types import (
     SegmentationInput,
-    SegmentationResult,
     SegPrediction,
 )
+from nectar.ai.segmentation.datasets.format import SegFormatConverter
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +183,7 @@ class TransformersSegModel(BaseSegmentationModel):
                 outputs, pil_image, inference_time, image_path, seg_input.conf_threshold
             )
         else:
-            return self._process_semantic_output(
-                outputs, pil_image, inference_time, image_path
-            )
+            return self._process_semantic_output(outputs, pil_image, inference_time, image_path)
 
     def _process_instance_output(
         self,
@@ -346,6 +342,8 @@ class TransformersSegModel(BaseSegmentationModel):
                 remove_unused_columns=False,
                 push_to_hub=config.push_to_hub,
                 hub_model_id=config.hub_model_id if config.push_to_hub else None,
+                hub_strategy="every_save" if config.push_to_hub else None,
+                hub_private_repo=True,
             )
 
         from nectar.ai.detection.models.dataset import collate_fn
@@ -439,6 +437,8 @@ class TransformersSegModel(BaseSegmentationModel):
             remove_unused_columns=False,
             push_to_hub=config.push_to_hub,
             hub_model_id=config.hub_model_id if config.push_to_hub else None,
+            hub_strategy="every_save" if config.push_to_hub else None,
+            hub_private_repo=True,
         )
 
         num_labels = len(id2label) if id2label else len(self.class_names)
@@ -460,13 +460,13 @@ class TransformersSegModel(BaseSegmentationModel):
                 correct = 0
                 total = 0
 
-                for p, l in zip(pred, labels):
-                    valid = l != 255
-                    correct += np.sum((p == l) & valid)
+                for p, gt in zip(pred, labels):
+                    valid = gt != 255
+                    correct += np.sum((p == gt) & valid)
                     total += np.sum(valid)
                     for cls_id in range(num_labels):
                         pred_mask = (p == cls_id) & valid
-                        label_mask = (l == cls_id) & valid
+                        label_mask = (gt == cls_id) & valid
                         intersection[cls_id] += np.sum(pred_mask & label_mask)
                         union[cls_id] += np.sum(pred_mask | label_mask)
 
@@ -540,7 +540,12 @@ class TransformersSegModel(BaseSegmentationModel):
             seed=config.seed,
         )
 
-        return train_dataset, val_dataset, train_dataset.id2label, train_dataset.label2id
+        return (
+            train_dataset,
+            val_dataset,
+            train_dataset.id2label,
+            train_dataset.label2id,
+        )
 
     def _setup_callbacks(self, config: SegTrainingConfig) -> List:
         """Setup training callbacks."""

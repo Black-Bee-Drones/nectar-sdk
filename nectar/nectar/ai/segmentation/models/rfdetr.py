@@ -1,6 +1,5 @@
 """RF-DETR segmentation model implementation."""
 
-import gc
 import json
 import logging
 import time
@@ -28,7 +27,7 @@ try:
         RFDETRSegSmall,
         RFDETRSegXLarge,
     )
-    from rfdetr.util.coco_classes import COCO_CLASSES
+    from rfdetr.assets.coco_classes import COCO_CLASS_NAMES
 
     RFDETR_SEG_AVAILABLE = True
     RFDETR_SEG_MODELS = {
@@ -41,7 +40,7 @@ try:
     }
 except ImportError as _rfdetr_err:
     RFDETR_SEG_AVAILABLE = False
-    COCO_CLASSES = []
+    COCO_CLASS_NAMES = []
     RFDETR_SEG_MODELS = {}
     logging.getLogger(__name__).debug("rfdetr seg import failed: %s", _rfdetr_err)
 
@@ -106,7 +105,7 @@ class RFDETRSegModel(BaseSegmentationModel):
         self.rfdetr_wrapper = None
         self.from_scratch = from_scratch
         self.resolution = resolution
-        self.class_names = {i: name for i, name in enumerate(COCO_CLASSES)}
+        self.class_names = {i: name for i, name in enumerate(COCO_CLASS_NAMES)}
 
     def _infer_model_size(self, path: str) -> str:
         """Infer model size from checkpoint path."""
@@ -124,7 +123,7 @@ class RFDETRSegModel(BaseSegmentationModel):
         checkpoint_path = model_path or self.model_path
         model_kwargs = {}
 
-        if len(self.class_names) != len(COCO_CLASSES):
+        if len(self.class_names) != len(COCO_CLASS_NAMES):
             model_kwargs["num_classes"] = len(self.class_names)
 
         if self.resolution:
@@ -142,20 +141,44 @@ class RFDETRSegModel(BaseSegmentationModel):
 
         self.model = self.rfdetr_wrapper.model.model
 
+        wrapper_names = getattr(self.rfdetr_wrapper, "class_names", None)
+        if wrapper_names:
+            self.class_names = {i: name for i, name in enumerate(wrapper_names)}
+
     def update_class_names_from_dataset(self, dataset_path: str) -> None:
-        """Update class names from COCO dataset annotations."""
+        """Update class names from dataset annotations (COCO or YOLO)."""
+        dataset_root = Path(dataset_path)
+        if dataset_root.suffix in (".yaml", ".yml"):
+            dataset_root = dataset_root.parent
+
         for split in ["train", "valid", "test"]:
-            ann_path = Path(dataset_path) / split / "_annotations.coco.json"
+            ann_path = dataset_root / split / "_annotations.coco.json"
             if ann_path.exists():
                 with open(ann_path) as f:
                     data = json.load(f)
-                categories = data.get("categories", [])
+                categories = sorted(data.get("categories", []), key=lambda c: c["id"])
                 if categories:
-                    self.class_names = {
-                        cat["id"]: cat["name"] for cat in sorted(categories, key=lambda x: x["id"])
-                    }
-                    self.logger.info("Loaded %d classes from dataset", len(self.class_names))
+                    self.class_names = {i: cat["name"] for i, cat in enumerate(categories)}
+                    self.logger.info(
+                        "Loaded %d classes from COCO annotations", len(self.class_names)
+                    )
                     return
+
+        yaml_path = dataset_root / "data.yaml"
+        if yaml_path.exists():
+            import yaml
+
+            with open(yaml_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            names = data.get("names", {})
+            if isinstance(names, dict):
+                self.class_names = {int(k): v for k, v in names.items()}
+            elif isinstance(names, list):
+                self.class_names = {i: n for i, n in enumerate(names)}
+            if self.class_names:
+                self.logger.info("Loaded %d classes from data.yaml", len(self.class_names))
+                return
+
         self.logger.warning("Could not load class names from dataset")
 
     def _predict_single(self, seg_input: SegmentationInput) -> SegPrediction:
@@ -177,15 +200,23 @@ class RFDETRSegModel(BaseSegmentationModel):
         else:
             raise ValueError(f"Unsupported image type: {type(image)}")
 
-        predict_kwargs = {"threshold": seg_input.conf_threshold}
+        predict_kwargs = {
+            "threshold": seg_input.conf_threshold,
+            "include_source_image": False,
+        }
         if self.resolution:
             predict_kwargs["shape"] = (self.resolution, self.resolution)
-        elif seg_input.imgsz:
-            predict_kwargs["shape"] = (seg_input.imgsz, seg_input.imgsz)
 
         start_time = time.time()
         detections = self.rfdetr_wrapper.predict(pil_image, **predict_kwargs)
         inference_time = time.time() - start_time
+
+        for key in ("source_shape", "source_image"):
+            detections.data.pop(key, None)
+
+        if len(detections) > 0 and detections.class_id is not None:
+            valid = detections.class_id < len(self.class_names)
+            detections = detections[valid]
 
         return SegPrediction.from_detections(
             detections=detections,
@@ -247,8 +278,16 @@ class RFDETRSegModel(BaseSegmentationModel):
                 resolution = 560
         imgsz = int(resolution)
 
+        if getattr(config, "gradient_checkpointing", False):
+            self.rfdetr_wrapper.model_config.gradient_checkpointing = True
+
+        lr_scheduler = getattr(config, "lr_scheduler_type", "step")
+        if lr_scheduler not in ("step", "cosine"):
+            lr_scheduler = "step"
+
         lr_encoder = getattr(config, "lr_encoder", None)
-        train_args = {
+        esp = config.early_stopping_patience
+        train_kwargs: Dict[str, Any] = {
             "dataset_dir": dataset_path,
             "output_dir": str(output_dir),
             "epochs": config.epochs,
@@ -256,33 +295,27 @@ class RFDETRSegModel(BaseSegmentationModel):
             "batch_size": config.batch_size,
             "grad_accum_steps": config.gradient_accumulation_steps,
             "lr": float(config.learning_rate),
-            "lr_scheduler": getattr(config, "lr_scheduler_type", "step"),
+            "lr_scheduler": lr_scheduler,
             "lr_encoder": float(lr_encoder) if lr_encoder is not None else None,
-            "resolution": imgsz,
             "weight_decay": config.weight_decay,
-            "device": config.device,
             "use_ema": getattr(config, "use_ema", True),
-            "gradient_checkpointing": getattr(config, "gradient_checkpointing", False),
             "checkpoint_interval": config.save_period,
             "tensorboard": config.tensorboard,
-            "early_stopping": config.early_stopping_patience is not None,
-            "early_stopping_patience": config.early_stopping_patience,
+            "early_stopping": esp is not None and esp > 0,
             "early_stopping_min_delta": config.early_stopping_delta,
+            "drop_path": getattr(config, "drop_path", 0.0),
+            "ema_decay": getattr(config, "ema_decay", 0.993),
+            "ema_tau": getattr(config, "ema_tau", 100),
+            "lr_vit_layer_decay": getattr(config, "lr_vit_layer_decay", 0.8),
+            "sync_bn": getattr(config, "sync_bn", False),
+            "num_workers": getattr(config, "num_workers", 2),
+            "seed": config.seed,
         }
-
-        # GC callback
-        self.rfdetr_wrapper._gc_batch_counter = 0
-
-        def on_epoch_end_gc(info_dict):
-            gc.collect()
-            if torch and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            self.rfdetr_wrapper._gc_batch_counter = 0
-
-        self.rfdetr_wrapper.callbacks["on_fit_epoch_end"].append(on_epoch_end_gc)
+        if esp is not None:
+            train_kwargs["early_stopping_patience"] = esp
 
         try:
-            self.rfdetr_wrapper.train(**{k: v for k, v in train_args.items() if v is not None})
+            self._train_with_ptl(config, output_dir, imgsz, train_kwargs)
         except RuntimeError as e:
             raise TrainingError(str(e)) from e
 
@@ -293,6 +326,40 @@ class RFDETRSegModel(BaseSegmentationModel):
             ),
             "metrics": {},
         }
+
+    def _train_with_ptl(
+        self,
+        config: SegTrainingConfig,
+        output_dir: Path,
+        resolution: int,
+        train_kwargs: Dict[str, Any],
+    ) -> None:
+        """Run training via the RF-DETR Custom Training API (PTL)."""
+        from rfdetr.config import SegmentationTrainConfig as RFSegTrainConfig
+        from rfdetr.training import RFDETRDataModule, RFDETRModelModule, build_trainer
+
+        from nectar.ai.detection.utils.callbacks import get_hf_upload_ptl_callback
+
+        model_config = self.rfdetr_wrapper.model_config
+        model_config.resolution = resolution
+        model_config.num_classes = len(self.class_names)
+        model_config.segmentation_head = True
+
+        filtered = {k: v for k, v in train_kwargs.items() if v is not None}
+        filtered["segmentation_head"] = True
+        rf_train_config = RFSegTrainConfig(**filtered)
+
+        module = RFDETRModelModule(model_config, rf_train_config)
+        datamodule = RFDETRDataModule(model_config, rf_train_config)
+        trainer = build_trainer(rf_train_config, model_config)
+
+        if config.push_to_hub and config.hub_model_id:
+            hf_cb = get_hf_upload_ptl_callback(config.hub_model_id, output_dir, self.logger)
+            trainer.callbacks.extend([hf_cb])
+
+        trainer.fit(module, datamodule)
+
+        self.rfdetr_wrapper.model.model = module.model
 
     def _find_best_checkpoint(self, output_dir: Path) -> Optional[Path]:
         """Find best model checkpoint from output directory."""

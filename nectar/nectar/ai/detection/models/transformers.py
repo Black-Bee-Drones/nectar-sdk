@@ -268,7 +268,7 @@ class TransformersModel(BaseDetectionModel):
                 run_name=run_name,
                 push_to_hub=config.push_to_hub,
                 hub_model_id=config.hub_model_id if config.push_to_hub else None,
-                hub_strategy="all_checkpoints" if config.push_to_hub else None,
+                hub_strategy="every_save" if config.push_to_hub else None,
                 hub_private_repo=True,
                 fp16=(config.mixed_precision == "fp16"),
                 bf16=(config.mixed_precision == "bf16"),

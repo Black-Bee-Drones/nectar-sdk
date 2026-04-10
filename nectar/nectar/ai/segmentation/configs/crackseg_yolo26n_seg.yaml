@@ -1,0 +1,39 @@
+# Crack Segmentation - YOLO26n-seg (quick local test)
+# Usage: nectar-ai segment train --config <path-to-this-file>
+
+data:
+  dataset_path: nectar/ai/data/crack-seg/data.yaml
+  dataset_format: yolo
+
+train:
+  framework: ultralytics
+  model: yolo26n-seg.pt
+  epochs: 3
+  batch_size: 4
+  learning_rate: 0.01
+  output_dir: nectar/ai/outputs/crackseg-yolo26n-seg
+  max_train_samples: 500
+  max_eval_samples: 100
+  device: "0"
+  seed: 42
+  tensorboard: true
+  start_tensorboard: false
+  imgsz: 320
+  from_scratch: false
+  weight_decay: 0.0005
+  warmup_epochs: 1.0
+  warmup_momentum: 0.8
+  lrf: 0.01
+  cos_lr: false
+  dropout: 0.0
+  early_stopping_patience: 0
+  push_to_hub: true
+  hub_model_id: blackbeedrones/crackseg-yolo26n-seg
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 1
+  device: "0"

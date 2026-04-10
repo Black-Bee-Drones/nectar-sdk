@@ -1,6 +1,5 @@
 """Ultralytics YOLO model implementation."""
 
-import gc
 import logging
 import os
 import time
@@ -289,68 +288,17 @@ class UltralyticsModel(BaseDetectionModel):
             raise TrainingError(str(e)) from e
 
     def _setup_callbacks(self, config: TrainingConfig, output_dir: Path) -> None:
-        """Setup training callbacks."""
-        from ..utils.huggingface import HuggingFaceUploader
+        """Setup training callbacks for HF upload and GC."""
+        from ..utils.callbacks import (
+            setup_ultralytics_gc_callback,
+            setup_ultralytics_hf_callbacks,
+        )
 
-        def is_main_process():
-            try:
-                import torch.distributed as dist
-
-                if dist.is_available() and dist.is_initialized():
-                    return dist.get_rank() == 0
-            except Exception:
-                pass
-            return int(os.environ.get("RANK", "0")) == 0
-
-        # HuggingFace upload callback
         if config.push_to_hub and config.hub_model_id:
-            uploader = HuggingFaceUploader(
-                repo_id=config.hub_model_id,
-                local_dir=str(output_dir),
-                private=True,
-            )
+            setup_ultralytics_hf_callbacks(self.model, config.hub_model_id, output_dir, self.logger)
 
-            def on_train_epoch_end(trainer):
-                if is_main_process():
-                    try:
-                        weights_dir = Path(trainer.save_dir) / "weights"
-                        if weights_dir.exists():
-                            for pt_path in sorted(weights_dir.glob("*.pt")):
-                                uploader.upload_file(
-                                    str(pt_path),
-                                    f"weights/{pt_path.name}",
-                                    f"Checkpoint epoch {trainer.epoch}",
-                                )
-                    except Exception as e:
-                        self.logger.error(f"Upload failed: {e}")
-
-            def on_train_end(trainer):
-                if is_main_process():
-                    try:
-                        uploader.local_dir = Path(trainer.save_dir)
-                        uploader.upload(commit_message="Training completed")
-                    except Exception as e:
-                        self.logger.error(f"Final upload failed: {e}")
-
-            self.model.add_callback("on_train_epoch_end", on_train_epoch_end)
-            self.model.add_callback("on_train_end", on_train_end)
-
-        # GC callback
         if getattr(config, "gc_per_accumulation", True):
-            accum_steps = config.gradient_accumulation_steps
-
-            def on_batch_end(trainer):
-                ni = getattr(
-                    trainer,
-                    "ni",
-                    getattr(trainer, "epoch", 0) * getattr(trainer, "nb", 0),
-                )
-                if (ni + 1) % accum_steps == 0:
-                    gc.collect()
-                    if torch and torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-
-            self.model.add_callback("on_train_batch_end", on_batch_end)
+            setup_ultralytics_gc_callback(self.model, config.gradient_accumulation_steps)
 
     def _extract_metrics(self, results) -> Dict[str, Any]:
         """Extract metrics from training results."""

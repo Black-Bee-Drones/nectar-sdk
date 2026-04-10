@@ -168,6 +168,23 @@ def main():
         with open(run_info_path, "w", encoding="utf-8") as f:
             json.dump(run_info, f, indent=2, default=str)
 
+        if params.get("push_to_hub") and params.get("hub_model_id"):
+            try:
+                from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+
+                logger.info("Uploading to HuggingFace Hub: %s", params["hub_model_id"])
+                uploader = HuggingFaceUploader(
+                    repo_id=params["hub_model_id"],
+                    local_dir=output_dir_raw,
+                )
+                uploader.upload(
+                    commit_message=f"Training run: {run_name}",
+                    ignore_patterns=["*.log", "datasets/**", "*.ckpt"],
+                )
+                logger.info("Upload complete")
+            except Exception as upload_err:
+                logger.warning("HuggingFace upload failed: %s", upload_err)
+
     except Exception as e:
         logger.error("Training failed: %s", e)
         raise

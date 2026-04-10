@@ -155,9 +155,19 @@ class RFDETRSegTrainingConfig(SegTrainingConfig):
     framework: str = field(default="rfdetr", init=False)
     resolution: int = 560
 
+    _VALID_LR_SCHEDULERS = ("step", "cosine")
+
     def to_rfdetr_args(self) -> Dict[str, Any]:
-        """Convert to RF-DETR training arguments."""
-        return {
+        """Convert to RF-DETR TrainConfig-compatible training arguments.
+
+        Fields handled specially by RFDETR.train() (popped before TrainConfig):
+        ``device`` and ``resolution``.
+        """
+        lr_scheduler = self.lr_scheduler_type
+        if lr_scheduler not in self._VALID_LR_SCHEDULERS:
+            lr_scheduler = "step"
+
+        args: Dict[str, Any] = {
             "dataset_dir": self.dataset_path,
             "output_dir": self.output_dir,
             "epochs": self.epochs,
@@ -165,26 +175,31 @@ class RFDETRSegTrainingConfig(SegTrainingConfig):
             "batch_size": self.batch_size,
             "grad_accum_steps": self.gradient_accumulation_steps,
             "lr": self.learning_rate,
-            "lr_scheduler": self.lr_scheduler_type,
-            "lr_encoder": self.lr_encoder,
+            "lr_scheduler": lr_scheduler,
             "resolution": self.resolution if self.imgsz is None else self.imgsz,
             "weight_decay": self.weight_decay,
             "use_ema": self.use_ema,
-            "gradient_checkpointing": self.gradient_checkpointing,
             "checkpoint_interval": self.save_period,
             "tensorboard": self.tensorboard,
-            "early_stopping": self.early_stopping_patience is not None,
-            "early_stopping_patience": self.early_stopping_patience,
+            "early_stopping": self.early_stopping_patience is not None
+            and self.early_stopping_patience > 0,
             "early_stopping_min_delta": self.early_stopping_delta,
-            "dropout": self.dropout,
             "drop_path": self.drop_path,
             "sync_bn": self.sync_bn,
             "num_workers": self.num_workers,
-            "amp": self.mixed_precision == "fp16",
-            "set_cost_class": self.set_cost_class,
-            "set_cost_bbox": self.set_cost_bbox,
-            "set_cost_giou": self.set_cost_giou,
             "ema_decay": self.ema_decay,
             "ema_tau": self.ema_tau,
             "lr_vit_layer_decay": self.lr_vit_layer_decay,
         }
+        if self.early_stopping_patience is not None:
+            args["early_stopping_patience"] = self.early_stopping_patience
+        if self.lr_encoder is not None:
+            args["lr_encoder"] = self.lr_encoder
+        return args
+
+    def get_model_config_overrides(self) -> Dict[str, Any]:
+        """Return ModelConfig fields that must be set before training."""
+        overrides: Dict[str, Any] = {}
+        if self.gradient_checkpointing:
+            overrides["gradient_checkpointing"] = True
+        return overrides
