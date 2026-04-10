@@ -114,7 +114,8 @@ def _load_yolo_seg_dataset(dataset_path: Path, split: str) -> SegmentationDatase
     with open(yaml_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
-    classes = list(data.get("names", {}).values())
+    names = data.get("names", {})
+    classes = names if isinstance(names, list) else list(names.values())
 
     split_rel = data.get(split, data.get("val", "valid"))
     if not Path(split_rel).is_absolute():

@@ -2,21 +2,35 @@
 Shared training callbacks for HuggingFace Hub uploads.
 
 Provides framework-specific callback factories that wrap HuggingFaceUploader
-for automatic checkpoint uploads during training.
+for automatic output directory sync during training.
+
+All three frameworks share the same upload behavior: sync the full output
+directory to HuggingFace Hub between epochs and at training end, using
+HF_SYNC_IGNORE_PATTERNS to exclude datasets, temp files, etc.
 
 Supported frameworks:
 - Ultralytics (YOLO): via model.add_callback()
 - RF-DETR (PyTorch Lightning): via pytorch_lightning.Callback
-- Transformers: native push_to_hub in TrainingArguments (no custom callback needed)
+- Transformers (HuggingFace): via transformers.TrainerCallback
 """
 
 import gc
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
+
+HF_SYNC_IGNORE_PATTERNS: List[str] = [
+    "datasets/**",
+    "*.tmp",
+    "*.bak",
+    "__pycache__/**",
+    "*.pyc",
+    ".ipynb_checkpoints/**",
+    "*.git*",
+]
 
 
 def _is_main_process() -> bool:
@@ -40,8 +54,7 @@ def setup_ultralytics_hf_callbacks(
     """
     Register HuggingFace upload callbacks on an Ultralytics YOLO model.
 
-    Uploads weight checkpoints after each epoch and the full output
-    directory when training ends.
+    Syncs the full output directory after each epoch and at training end.
 
     Parameters
     ----------
@@ -68,14 +81,11 @@ def setup_ultralytics_hf_callbacks(
         if not _is_main_process():
             return
         try:
-            weights_dir = Path(trainer.save_dir) / "weights"
-            if weights_dir.exists():
-                for pt_path in sorted(weights_dir.glob("*.pt")):
-                    uploader.upload_file(
-                        str(pt_path),
-                        f"weights/{pt_path.name}",
-                        f"Checkpoint epoch {trainer.epoch}",
-                    )
+            uploader.local_dir = Path(trainer.save_dir)
+            uploader.upload(
+                commit_message=f"Sync epoch {trainer.epoch}",
+                ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
+            )
         except Exception as e:
             log.error("HF epoch upload failed: %s", e)
 
@@ -84,7 +94,10 @@ def setup_ultralytics_hf_callbacks(
             return
         try:
             uploader.local_dir = Path(trainer.save_dir)
-            uploader.upload(commit_message="Training completed")
+            uploader.upload(
+                commit_message="Training completed",
+                ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
+            )
         except Exception as e:
             log.error("HF final upload failed: %s", e)
 
@@ -125,7 +138,7 @@ def get_hf_upload_ptl_callback(
     """
     Create a PyTorch Lightning callback for HuggingFace Hub uploads.
 
-    Uploads the output directory after each validation epoch and at
+    Syncs the output directory after each validation epoch and at
     training end. Used by RF-DETR models.
 
     Parameters
@@ -149,7 +162,7 @@ def get_hf_upload_ptl_callback(
     log = log or logger
 
     class _HFUploadCallback(Callback):
-        """Uploads training outputs to HuggingFace Hub between epochs."""
+        """Syncs training outputs to HuggingFace Hub between epochs."""
 
         def __init__(self):
             super().__init__()
@@ -165,8 +178,8 @@ def get_hf_upload_ptl_callback(
             try:
                 self._uploader.local_dir = output_dir
                 self._uploader.upload(
-                    commit_message=f"Checkpoint epoch {trainer.current_epoch}",
-                    ignore_patterns=["*.ckpt", "datasets/**"],
+                    commit_message=f"Sync epoch {trainer.current_epoch}",
+                    ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
                 )
             except Exception as e:
                 log.error("HF epoch upload failed: %s", e)
@@ -178,7 +191,73 @@ def get_hf_upload_ptl_callback(
                 self._uploader.local_dir = output_dir
                 self._uploader.upload(
                     commit_message="Training completed",
-                    ignore_patterns=["datasets/**"],
+                    ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
+                )
+            except Exception as e:
+                log.error("HF final upload failed: %s", e)
+
+    return _HFUploadCallback()
+
+
+def get_hf_upload_transformers_callback(
+    repo_id: str,
+    output_dir: Path,
+    log: Optional[logging.Logger] = None,
+):
+    """
+    Create a HuggingFace Transformers TrainerCallback for Hub uploads.
+
+    Syncs the output directory after each epoch and at training end.
+    Used by Transformers detection and segmentation models.
+
+    Parameters
+    ----------
+    repo_id : str
+        HuggingFace Hub repository ID.
+    output_dir : Path
+        Local training output directory.
+    log : logging.Logger, optional
+        Logger instance.
+
+    Returns
+    -------
+    transformers.TrainerCallback
+        The configured callback instance.
+    """
+    from transformers import TrainerCallback
+
+    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+
+    log = log or logger
+
+    class _HFUploadCallback(TrainerCallback):
+        """Syncs training outputs to HuggingFace Hub between epochs."""
+
+        def __init__(self):
+            self._uploader = HuggingFaceUploader(
+                repo_id=repo_id,
+                local_dir=str(output_dir),
+                private=True,
+            )
+
+        def on_epoch_end(self, args, state, control, **kwargs):
+            if not state.is_world_process_zero:
+                return
+            try:
+                self._uploader.upload(
+                    commit_message=f"Sync epoch {int(state.epoch)}",
+                    ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
+                )
+            except Exception as e:
+                log.error("HF epoch upload failed: %s", e)
+
+        def on_train_end(self, args, state, control, **kwargs):
+            if not state.is_world_process_zero:
+                return
+            try:
+                self._uploader.upload(
+                    commit_message="Training completed",
+                    ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
                 )
             except Exception as e:
                 log.error("HF final upload failed: %s", e)

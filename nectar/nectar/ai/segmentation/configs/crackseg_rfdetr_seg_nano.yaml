@@ -10,7 +10,7 @@ train:
   framework: rfdetr
   model: rfdetr-seg-nano
   epochs: 10
-  batch_size: 2
+  batch_size: 8
   learning_rate: 5e-5
   lr_encoder: 1e-5
   output_dir: nectar/ai/outputs/crackseg-rfdetr-seg-nano

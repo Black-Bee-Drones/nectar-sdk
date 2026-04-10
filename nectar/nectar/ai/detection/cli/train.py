@@ -62,6 +62,7 @@ def main():
 
     from nectar.ai.detection import Detector
     from nectar.ai.detection.core.configs import EvaluationConfig
+    from nectar.ai.detection.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
     from nectar.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
     from nectar.ai.detection.training.config import (
         RFDETRTrainingConfig,
@@ -119,16 +120,6 @@ def main():
         logger.info("Training completed in %.2f seconds", training_time)
         logger.info("Model saved: %s", result.get("model_path", "N/A"))
 
-        ignore_patterns = [
-            "*.tmp",
-            "*.bak",
-            "__pycache__",
-            "*.git*",
-            "*.pyc",
-            ".ipynb_checkpoints",
-            "datasets/**",
-        ]
-
         if params.get("push_to_hub") and params.get("hub_model_id"):
             logger.info("Uploading training outputs to HuggingFace Hub...")
             try:
@@ -139,7 +130,7 @@ def main():
                 )
                 uploader.upload(
                     commit_message="Upload complete training results",
-                    ignore_patterns=ignore_patterns,
+                    ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
                 )
                 logger.info("Successfully uploaded to %s", params["hub_model_id"])
             except Exception as e:
@@ -155,9 +146,13 @@ def main():
             eval_output_dir = eval_output
             logger.info("Evaluating on %s split", eval_split)
 
+            eval_dataset = dataset
+            if Path(eval_dataset).suffix in (".yaml", ".yml"):
+                eval_dataset = str(Path(eval_dataset).parent)
+
             eval_config = EvaluationConfig(
                 model_path=result["model_path"],
-                dataset_path=dataset,
+                dataset_path=eval_dataset,
                 framework=framework,
                 output_dir=eval_output,
                 split=eval_split,
@@ -188,7 +183,7 @@ def main():
                     eval_uploader.upload(
                         commit_message="Add evaluation results",
                         path_in_repo="evaluation",
-                        ignore_patterns=ignore_patterns,
+                        ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
                     )
                 except Exception as e:
                     logger.error("Failed to upload evaluation results: %s", e)

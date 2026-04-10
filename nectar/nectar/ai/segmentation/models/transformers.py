@@ -315,7 +315,7 @@ class TransformersSegModel(BaseSegmentationModel):
         imgsz = config.imgsz if config.imgsz else 640
         self.load_model(self.model_name, id2label=id2label, label2id=label2id, imgsz=imgsz)
 
-        callbacks = self._setup_callbacks(config)
+        callbacks = self._setup_callbacks(config, output_dir)
 
         if hasattr(config, "to_training_args"):
             args_dict = config.to_training_args()
@@ -340,10 +340,6 @@ class TransformersSegModel(BaseSegmentationModel):
                 fp16=(config.mixed_precision == "fp16"),
                 bf16=(config.mixed_precision == "bf16"),
                 remove_unused_columns=False,
-                push_to_hub=config.push_to_hub,
-                hub_model_id=config.hub_model_id if config.push_to_hub else None,
-                hub_strategy="every_save" if config.push_to_hub else None,
-                hub_private_repo=True,
             )
 
         from nectar.ai.detection.models.dataset import collate_fn
@@ -418,7 +414,7 @@ class TransformersSegModel(BaseSegmentationModel):
         ds["train"].set_transform(train_transforms)
         ds["validation"].set_transform(val_transforms)
 
-        callbacks = self._setup_callbacks(config)
+        callbacks = self._setup_callbacks(config, output_dir)
 
         training_args = TrainingArguments(
             output_dir=str(output_dir / run_name),
@@ -435,10 +431,6 @@ class TransformersSegModel(BaseSegmentationModel):
             run_name=run_name,
             fp16=(config.mixed_precision == "fp16"),
             remove_unused_columns=False,
-            push_to_hub=config.push_to_hub,
-            hub_model_id=config.hub_model_id if config.push_to_hub else None,
-            hub_strategy="every_save" if config.push_to_hub else None,
-            hub_private_repo=True,
         )
 
         num_labels = len(id2label) if id2label else len(self.class_names)
@@ -547,7 +539,7 @@ class TransformersSegModel(BaseSegmentationModel):
             train_dataset.label2id,
         )
 
-    def _setup_callbacks(self, config: SegTrainingConfig) -> List:
+    def _setup_callbacks(self, config: SegTrainingConfig, output_dir: Optional[Path] = None) -> List:
         """Setup training callbacks."""
         callbacks = []
         if config.early_stopping_patience:
@@ -559,6 +551,14 @@ class TransformersSegModel(BaseSegmentationModel):
             )
         if getattr(config, "gc_per_accumulation", True):
             callbacks.append(_GCCallback(config.gradient_accumulation_steps))
+
+        if config.push_to_hub and config.hub_model_id and output_dir:
+            from nectar.ai.detection.utils.callbacks import get_hf_upload_transformers_callback
+
+            callbacks.append(
+                get_hf_upload_transformers_callback(config.hub_model_id, output_dir, self.logger)
+            )
+
         return callbacks
 
     def save(self, save_path: str) -> str:

@@ -9,7 +9,7 @@ train:
   framework: ultralytics
   model: yolo26n-seg.pt
   epochs: 3
-  batch_size: 4
+  batch_size: 16
   learning_rate: 0.01
   output_dir: nectar/ai/outputs/crackseg-yolo26n-seg
   max_train_samples: 500

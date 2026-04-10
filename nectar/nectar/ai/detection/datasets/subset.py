@@ -113,10 +113,14 @@ class SubsetCreator:
 
             split_path = yaml_dir / dataset_config[split]
             if not split_path.exists():
+                split_name = Path(dataset_config[split]).parts[-2] if "/images" in dataset_config[split] else Path(dataset_config[split]).name
+                split_path = yaml_dir / split_name / "images"
+            if not split_path.exists():
                 self._print(f"Split directory not found: {split_path}")
                 continue
 
             self._create_yolo_split_subset(split, split_path, max_samples, yaml_dir)
+            subset_config[split] = f"{split}/images"
 
         subset_yaml_path = self.output_dir / "data.yaml"
         with open(subset_yaml_path, "w") as f:
@@ -146,8 +150,9 @@ class SubsetCreator:
         total_class_counts = Counter()
 
         self._print(f"Analyzing class distribution for {split} split...")
+        labels_dir = split_path.parent / "labels"
         for img_path in image_files:
-            label_path = (split_path.parent / "labels" / img_path.stem).with_suffix(".txt")
+            label_path = labels_dir / f"{img_path.stem}.txt"
             if not label_path.exists():
                 continue
 
@@ -193,7 +198,7 @@ class SubsetCreator:
         for img_path in tqdm(sampled_images, desc=f"Copying {split}"):
             shutil.copy2(img_path, subset_images_dir / img_path.name)
 
-            label_path = (split_path.parent / "labels" / img_path.stem).with_suffix(".txt")
+            label_path = labels_dir / f"{img_path.stem}.txt"
             if label_path.exists():
                 shutil.copy2(label_path, subset_labels_dir / label_path.name)
 

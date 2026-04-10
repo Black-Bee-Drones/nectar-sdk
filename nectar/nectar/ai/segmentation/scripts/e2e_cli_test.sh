@@ -14,9 +14,11 @@
 # ==========================================================================
 set -e
 
-export PYTHONPATH=/home/samuel/ros2_ws/src/nectar-sdk/nectar:$PYTHONPATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NECTAR_PKG="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+export PYTHONPATH="$NECTAR_PKG:$PYTHONPATH"
 export HF_TOKEN="${HF_TOKEN:-}"
-cd /home/samuel/ros2_ws/src/nectar-sdk/nectar
+cd "$NECTAR_PKG"
 
 AI_DIR=nectar/ai
 DATA_DIR=$AI_DIR/data

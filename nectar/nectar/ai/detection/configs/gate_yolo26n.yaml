@@ -1,4 +1,4 @@
-# Gate Detection - YOLO26n (quick local test)
+# Gate Detection - YOLO26n (e2e test)
 # Dataset: Roboflow black-bee-drones/imav-25-gate-sfbbq
 # Usage: nectar-ai detect train --config <path-to-this-file>
 
@@ -9,8 +9,8 @@ data:
 train:
   framework: ultralytics
   model: yolo26n.pt
-  epochs: 3
-  batch_size: 4
+  epochs: 4
+  batch_size: 16
   learning_rate: 0.01
   output_dir: nectar/ai/outputs/gate-yolo26n
   max_train_samples: 100

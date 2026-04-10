@@ -317,7 +317,8 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
     with open(yaml_path) as f:
         data = yaml.safe_load(f)
 
-    classes = list(data.get("names", {}).values())
+    names = data.get("names", {})
+    classes = names if isinstance(names, list) else list(names.values())
 
     # Get split directory
     split_path = data.get(split, data.get("val", "valid"))

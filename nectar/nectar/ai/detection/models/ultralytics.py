@@ -163,6 +163,9 @@ class UltralyticsModel(BaseDetectionModel):
         """Prepare dataset configuration, auto-detecting and converting format if needed."""
         dataset_path = Path(config.dataset_path)
 
+        if dataset_path.is_file() and dataset_path.suffix in (".yaml", ".yml"):
+            return str(dataset_path)
+
         detector = FormatDetector(str(dataset_path))
         detected_format = detector.detect()
 

@@ -60,6 +60,7 @@ def main():
     framework = params.get("framework") or detect_framework(model, task="segmentation")
     logger.info("Framework: %s", framework)
 
+    from nectar.ai.detection.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
     from nectar.ai.detection.utils.tensorboard import TensorBoardManager
     from nectar.ai.segmentation import Segmentor
     from nectar.ai.segmentation.core.configs import SegEvaluationConfig
@@ -144,6 +145,24 @@ def main():
             logger.info("mIoU: %.4f", eval_metrics.mean_iou)
             logger.info("Evaluation completed in %.2f seconds", eval_time)
 
+            if params.get("push_to_hub") and params.get("hub_model_id"):
+                logger.info("Uploading evaluation results to HuggingFace Hub...")
+                try:
+                    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+
+                    eval_uploader = HuggingFaceUploader(
+                        repo_id=params["hub_model_id"],
+                        local_dir=eval_output,
+                        repo_type="model",
+                    )
+                    eval_uploader.upload(
+                        commit_message="Add evaluation results",
+                        path_in_repo="evaluation",
+                        ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
+                    )
+                except Exception as e:
+                    logger.error("Failed to upload evaluation results: %s", e)
+
         run_info = {
             "run_name": run_name,
             "timestamp": datetime.now().isoformat(),
@@ -178,12 +197,12 @@ def main():
                     local_dir=output_dir_raw,
                 )
                 uploader.upload(
-                    commit_message=f"Training run: {run_name}",
-                    ignore_patterns=["*.log", "datasets/**", "*.ckpt"],
+                    commit_message="Upload complete training results",
+                    ignore_patterns=HF_SYNC_IGNORE_PATTERNS,
                 )
-                logger.info("Upload complete")
-            except Exception as upload_err:
-                logger.warning("HuggingFace upload failed: %s", upload_err)
+                logger.info("Successfully uploaded to %s", params["hub_model_id"])
+            except Exception as e:
+                logger.error("Failed to upload training outputs: %s", e)
 
     except Exception as e:
         logger.error("Training failed: %s", e)
