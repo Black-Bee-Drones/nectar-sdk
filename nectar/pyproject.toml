@@ -46,7 +46,7 @@ ai = [
     "timm==1.0.26",
     "accelerate==1.13.0",
     "datasets==4.8.4",
-    "rfdetr[train,loggers] @ git+https://github.com/roboflow/rf-detr.git@develop",
+    "rfdetr[train] @ git+https://github.com/roboflow/rf-detr.git@develop",
     "supervision==0.27.0",
     "tensorboard==2.20.0",
     "roboflow==1.2.13",
