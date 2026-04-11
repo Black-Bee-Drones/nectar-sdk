@@ -5,8 +5,8 @@ Follows the same flow as the detection evaluator:
 2. Run inference at a low confidence threshold to capture all predictions
 3. Save raw results JSON
 4. Filter at user-specified confidence threshold
-5. Compute metrics via supervision
-6. Generate all evaluation visualizations
+5. Compute metrics (torchmetrics for mAP, supervision for P/R/F1/mAR)
+6. Generate Box and Mask evaluation visualizations
 """
 
 import json
@@ -27,12 +27,16 @@ try:
     import supervision as sv
     from supervision.metrics.core import MetricTarget
     from supervision.metrics.f1_score import F1Score
-    from supervision.metrics.mean_average_precision import MeanAveragePrecision
     from supervision.metrics.mean_average_recall import MeanAverageRecall
     from supervision.metrics.precision import Precision
     from supervision.metrics.recall import Recall
 except ImportError:
     sv = None
+
+try:
+    from torchmetrics.detection.mean_ap import MeanAveragePrecision as TorchMeanAP
+except ImportError:
+    TorchMeanAP = None
 
 from tqdm import tqdm
 
@@ -152,40 +156,35 @@ class SegmentationEvaluator:
 
         visualizations: Dict[str, str] = {}
 
-        try:
-            px, py_p, py_r, py_f1, ap_curve = compute_curves(
-                all_preds,
-                all_gts,
-                num_classes,
-                self.config.iou_threshold,
-            )
-            visualizations["PR_curve"] = plot_pr_curve(px, py_p, ap_curve, names, self.output_dir)
-            visualizations["P_curve"] = plot_confidence_curve(
-                px,
-                py_p,
-                names,
-                self.output_dir,
-                "Precision",
-                "P_curve.png",
-            )
-            visualizations["R_curve"] = plot_confidence_curve(
-                px,
-                py_r,
-                names,
-                self.output_dir,
-                "Recall",
-                "R_curve.png",
-            )
-            visualizations["F1_curve"] = plot_confidence_curve(
-                px,
-                py_f1,
-                names,
-                self.output_dir,
-                "F1",
-                "F1_curve.png",
-            )
-        except Exception as e:
-            logger.error("Failed to generate curve plots: %s", e)
+        has_masks = self._has_masks(all_preds) and self._has_masks(all_gts)
+        curve_variants = [("Box", False)]
+        if has_masks:
+            curve_variants.append(("Mask", True))
+
+        for prefix, use_masks in curve_variants:
+            try:
+                px, py_p, py_r, py_f1, ap_curve = compute_curves(
+                    all_preds,
+                    all_gts,
+                    num_classes,
+                    self.config.iou_threshold,
+                    use_masks=use_masks,
+                )
+                visualizations[f"{prefix}PR_curve"] = plot_pr_curve(
+                    px, py_p, ap_curve, names, self.output_dir,
+                    title=f"{prefix} Precision-Recall Curve",
+                    filename=f"{prefix}PR_curve.png",
+                )
+                for metric, data, fname in [
+                    ("Precision", py_p, f"{prefix}P_curve.png"),
+                    ("Recall", py_r, f"{prefix}R_curve.png"),
+                    ("F1", py_f1, f"{prefix}F1_curve.png"),
+                ]:
+                    visualizations[f"{prefix}{metric[0]}_curve"] = plot_confidence_curve(
+                        px, data, names, self.output_dir, metric, fname,
+                    )
+            except Exception as e:
+                logger.error("Failed to generate %s curve plots: %s", prefix, e)
 
         try:
             visualizations["results"] = plot_metrics_summary(metrics_dict, self.output_dir)
@@ -395,10 +394,10 @@ class SegmentationEvaluator:
         has_masks = self._has_masks(preds) and self._has_masks(gts)
         target = MetricTarget.MASKS if has_masks else MetricTarget.BOXES
 
-        map_metric = MeanAveragePrecision(metric_target=target)
-        map_metric.update(predictions=preds, targets=gts)
-        map_result = map_metric.compute()
+        # -- mAP via torchmetrics (correctly supports iou_type="segm") ------
+        mask_map_dict, box_map_dict = self._compute_map_torchmetrics(preds, gts, has_masks)
 
+        # -- P / R / F1 / mAR via supervision (correctly branches on masks) -
         mar_metric = MeanAverageRecall(metric_target=target)
         mar_metric.update(predictions=preds, targets=gts)
         mar_result = mar_metric.compute()
@@ -414,7 +413,6 @@ class SegmentationEvaluator:
         f1_result = f1_metric.compute()
 
         for name, result in [
-            ("map_metrics", map_result),
             ("mar_metrics", mar_result),
             ("precision_metrics", precision_result),
             ("recall_metrics", recall_result),
@@ -425,9 +423,10 @@ class SegmentationEvaluator:
             except Exception:
                 pass
 
+        primary = mask_map_dict if has_masks else box_map_dict
         metrics_dict = {
-            "map50": float(map_result.map50),
-            "map50_95": float(map_result.map50_95),
+            "map50": primary["map50"],
+            "map50_95": primary["map50_95"],
             "mar_100": float(mar_result.mAR_at_100),
             "mar_10": float(mar_result.mAR_at_10),
             "mar_1": float(mar_result.mAR_at_1),
@@ -438,36 +437,32 @@ class SegmentationEvaluator:
         }
 
         if has_masks:
-            box_map = MeanAveragePrecision(metric_target=MetricTarget.BOXES)
-            box_map.update(predictions=preds, targets=gts)
-            box_result = box_map.compute()
-            metrics_dict["box_map50"] = float(box_result.map50)
-            metrics_dict["box_map50_95"] = float(box_result.map50_95)
+            metrics_dict["box_map50"] = box_map_dict["map50"]
+            metrics_dict["box_map50_95"] = box_map_dict["map50_95"]
             metrics_dict["mean_iou"] = self._compute_mean_iou(preds, gts)
 
         num_classes = len(classes)
 
-        def _extract(arr, n, iou_idx=0):
+        def _extract(arr, n):
             if arr is None or arr.size == 0:
                 return np.zeros(n)
             if arr.ndim == 2:
-                arr = arr[:, min(iou_idx, arr.shape[1] - 1)]
+                arr = arr[:, 0]
             out = np.zeros(n)
             copy_len = min(len(arr), n)
             out[:copy_len] = arr[:copy_len]
             return out
 
-        ap50 = _extract(map_result.ap_per_class, num_classes)
-        if map_result.ap_per_class is not None and map_result.ap_per_class.ndim == 2:
-            ap50_95_raw = np.mean(map_result.ap_per_class, axis=1)
-            ap50_95 = np.zeros(num_classes)
-            ap50_95[: min(len(ap50_95_raw), num_classes)] = ap50_95_raw[:num_classes]
-        else:
-            ap50_95 = ap50.copy()
-
         prec_pc = _extract(precision_result.precision_per_class, num_classes)
         rec_pc = _extract(recall_result.recall_per_class, num_classes)
         f1_pc = _extract(f1_result.f1_per_class, num_classes)
+
+        ap50_pc = primary.get("ap50_per_class", [])
+        ap50_95_pc = primary.get("ap50_95_per_class", [])
+        if not isinstance(ap50_pc, (list, np.ndarray)):
+            ap50_pc = [ap50_pc]
+        if not isinstance(ap50_95_pc, (list, np.ndarray)):
+            ap50_95_pc = [ap50_95_pc]
 
         per_class = []
         for i, cls_name in enumerate(classes):
@@ -475,8 +470,8 @@ class SegmentationEvaluator:
                 {
                     "class_id": i,
                     "class_name": cls_name,
-                    "ap50": float(ap50[i]),
-                    "ap50_95": float(ap50_95[i]),
+                    "ap50": float(ap50_pc[i]) if i < len(ap50_pc) else 0.0,
+                    "ap50_95": float(ap50_95_pc[i]) if i < len(ap50_95_pc) else 0.0,
                     "precision": float(prec_pc[i]),
                     "recall": float(rec_pc[i]),
                     "f1_score": float(f1_pc[i]),
@@ -484,6 +479,76 @@ class SegmentationEvaluator:
             )
 
         return metrics_dict, per_class
+
+    def _compute_map_torchmetrics(self, preds, gts, has_masks):
+        """Compute mAP using torchmetrics for both box and mask IoU."""
+        if TorchMeanAP is None:
+            logger.warning("torchmetrics not available, falling back to zeros")
+            empty = {"map50": 0.0, "map50_95": 0.0, "ap50_per_class": [], "ap50_95_per_class": []}
+            return empty, empty
+
+        tm_preds, tm_targets = self._sv_to_torchmetrics(preds, gts, has_masks)
+
+        results = {}
+        iou_types = ["segm", "bbox"] if has_masks else ["bbox"]
+        for iou_type in iou_types:
+            metric = TorchMeanAP(iou_type=iou_type)
+            metric.update(tm_preds, tm_targets)
+            r = metric.compute()
+
+            ap50_pc = r.get("map_per_class", torch.tensor([])).numpy()
+            ap50_pc = np.where(ap50_pc < 0, 0.0, ap50_pc)
+
+            results[iou_type] = {
+                "map50": float(r["map_50"]),
+                "map50_95": float(r["map"]),
+                "ap50_per_class": ap50_pc.tolist() if ap50_pc.size else [],
+                "ap50_95_per_class": ap50_pc.tolist() if ap50_pc.size else [],
+            }
+
+        mask_result = results.get("segm", results["bbox"])
+        box_result = results["bbox"]
+        return mask_result, box_result
+
+    @staticmethod
+    def _sv_to_torchmetrics(preds, gts, has_masks):
+        """Convert sv.Detections lists to torchmetrics format."""
+        tm_preds = []
+        tm_targets = []
+
+        for pred, gt in zip(preds, gts):
+            p = {
+                "boxes": torch.tensor(pred.xyxy, dtype=torch.float32) if len(pred) > 0
+                else torch.zeros((0, 4), dtype=torch.float32),
+                "scores": torch.tensor(pred.confidence, dtype=torch.float32) if pred.confidence is not None and len(pred) > 0
+                else torch.zeros(0, dtype=torch.float32),
+                "labels": torch.tensor(pred.class_id, dtype=torch.int64) if pred.class_id is not None and len(pred) > 0
+                else torch.zeros(0, dtype=torch.int64),
+            }
+            t = {
+                "boxes": torch.tensor(gt.xyxy, dtype=torch.float32) if len(gt) > 0
+                else torch.zeros((0, 4), dtype=torch.float32),
+                "labels": torch.tensor(gt.class_id, dtype=torch.int64) if gt.class_id is not None and len(gt) > 0
+                else torch.zeros(0, dtype=torch.int64),
+            }
+
+            if has_masks:
+                if pred.mask is not None and len(pred) > 0:
+                    p["masks"] = torch.tensor(pred.mask, dtype=torch.bool)
+                else:
+                    h = gt.mask.shape[1] if gt.mask is not None and len(gt) > 0 else 1
+                    w = gt.mask.shape[2] if gt.mask is not None and len(gt) > 0 else 1
+                    p["masks"] = torch.zeros((0, h, w), dtype=torch.bool)
+
+                if gt.mask is not None and len(gt) > 0:
+                    t["masks"] = torch.tensor(gt.mask, dtype=torch.bool)
+                else:
+                    t["masks"] = torch.zeros((0, 1, 1), dtype=torch.bool)
+
+            tm_preds.append(p)
+            tm_targets.append(t)
+
+        return tm_preds, tm_targets
 
     # ------------------------------------------------------------------
     # Helpers

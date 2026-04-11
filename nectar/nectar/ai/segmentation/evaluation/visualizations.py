@@ -43,6 +43,8 @@ def plot_pr_curve(
     ap: np.ndarray,
     names: Dict[int, str],
     output_dir: Path,
+    title: str = "Precision-Recall Curve",
+    filename: str = "PR_curve.png",
 ) -> str:
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
@@ -62,9 +64,9 @@ def plot_pr_curve(
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.05)
     ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left", fontsize=8)
-    ax.set_title("Precision-Recall Curve (Segmentation)")
+    ax.set_title(title)
 
-    path = output_dir / "PR_curve.png"
+    path = output_dir / filename
     fig.savefig(path, dpi=250)
     plt.close(fig)
     return str(path)
@@ -349,16 +351,29 @@ def plot_performance_analysis(per_class_df: pd.DataFrame, output_dir: Path) -> s
 
 def plot_metrics_summary(metrics: Dict[str, float], output_dir: Path) -> str:
     output_dir.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5), tight_layout=True)
 
-    items = {
-        "mAP@50": metrics.get("map50", 0),
-        "mAP@50-95": metrics.get("map50_95", 0),
-        "Precision": metrics.get("precision", 0),
-        "Recall": metrics.get("recall", 0),
-        "F1": metrics.get("f1_score", 0),
-    }
-    colors = [_DARK_BLUE, _GOLD, _TEAL, _RED, _PURPLE]
+    has_box = "box_map50" in metrics
+    items = {}
+    colors = []
+
+    if has_box:
+        items["Mask\nmAP@50"] = metrics.get("map50", 0)
+        items["Mask\nmAP@50-95"] = metrics.get("map50_95", 0)
+        items["Box\nmAP@50"] = metrics.get("box_map50", 0)
+        items["Box\nmAP@50-95"] = metrics.get("box_map50_95", 0)
+        items["Precision"] = metrics.get("precision", 0)
+        items["Recall"] = metrics.get("recall", 0)
+        items["F1"] = metrics.get("f1_score", 0)
+        colors = [_DARK_BLUE, _GOLD, _DARK_BLUE, _GOLD, _TEAL, _RED, _PURPLE]
+    else:
+        items["mAP@50"] = metrics.get("map50", 0)
+        items["mAP@50-95"] = metrics.get("map50_95", 0)
+        items["Precision"] = metrics.get("precision", 0)
+        items["Recall"] = metrics.get("recall", 0)
+        items["F1"] = metrics.get("f1_score", 0)
+        colors = [_DARK_BLUE, _GOLD, _TEAL, _RED, _PURPLE]
+
+    fig, ax = plt.subplots(1, 1, figsize=(max(10, len(items) * 1.4), 5), tight_layout=True)
     bars = ax.bar(items.keys(), items.values(), color=colors, edgecolor="black", linewidth=0.3)
     for bar, v in zip(bars, items.values()):
         ax.text(

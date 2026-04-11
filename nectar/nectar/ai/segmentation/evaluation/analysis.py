@@ -181,8 +181,15 @@ def compute_curves(
     all_gts: list,
     num_classes: int,
     iou_threshold: float = 0.5,
+    use_masks: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute per-class P, R, F1 curves over confidence thresholds."""
+    """Compute per-class P, R, F1 curves over confidence thresholds.
+
+    Parameters
+    ----------
+    use_masks : bool
+        If True, use mask IoU for matching instead of box IoU.
+    """
     px = np.linspace(0, 1, 1000)
     py_p = np.zeros((num_classes, len(px)))
     py_r = np.zeros((num_classes, len(px)))
@@ -195,22 +202,24 @@ def compute_curves(
         total_gt = 0
 
         for preds, gts in zip(all_preds, all_gts):
-            gt_mask = (
+            gt_cls_mask = (
                 gts.class_id == cls_id if gts.class_id is not None else np.zeros(0, dtype=bool)
             )
-            gt_boxes = gts.xyxy[gt_mask] if gt_mask.any() else np.zeros((0, 4))
+            gt_boxes = gts.xyxy[gt_cls_mask] if gt_cls_mask.any() else np.zeros((0, 4))
             total_gt += len(gt_boxes)
 
-            pred_mask = (
-                preds.class_id == cls_id if preds.class_id is not None else np.zeros(0, dtype=bool)
+            pred_cls_mask = (
+                preds.class_id == cls_id
+                if preds.class_id is not None
+                else np.zeros(0, dtype=bool)
             )
-            if not pred_mask.any():
+            if not pred_cls_mask.any():
                 continue
-            pred_boxes = preds.xyxy[pred_mask]
+            pred_boxes = preds.xyxy[pred_cls_mask]
             pred_conf = (
-                preds.confidence[pred_mask]
+                preds.confidence[pred_cls_mask]
                 if preds.confidence is not None
-                else np.ones(pred_mask.sum())
+                else np.ones(pred_cls_mask.sum())
             )
 
             if len(gt_boxes) == 0:
@@ -218,7 +227,16 @@ def compute_curves(
                 all_tp.extend([0] * len(pred_conf))
                 continue
 
-            iou_mat = _iou_matrix(gt_boxes, pred_boxes)
+            if use_masks and gts.mask is not None and preds.mask is not None:
+                gt_masks = gts.mask[gt_cls_mask]
+                pred_masks = preds.mask[pred_cls_mask]
+                if gt_masks.size > 0 and pred_masks.size > 0:
+                    iou_mat = _mask_iou_matrix(gt_masks, pred_masks)
+                else:
+                    iou_mat = _iou_matrix(gt_boxes, pred_boxes)
+            else:
+                iou_mat = _iou_matrix(gt_boxes, pred_boxes)
+
             matched_gt: set = set()
             order = np.argsort(-pred_conf)
             for d_idx in order:
@@ -410,6 +428,34 @@ def save_error_statistics_csv(
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def _mask_iou_matrix(gt_masks: np.ndarray, det_masks: np.ndarray) -> np.ndarray:
+    """Compute pairwise mask IoU between ground-truth and detection masks.
+
+    Parameters
+    ----------
+    gt_masks : np.ndarray
+        Boolean masks of shape ``(N, H, W)``.
+    det_masks : np.ndarray
+        Boolean masks of shape ``(M, H, W)``.
+
+    Returns
+    -------
+    np.ndarray
+        IoU matrix of shape ``(N, M)``.
+    """
+    if gt_masks.size == 0 or det_masks.size == 0:
+        return np.zeros((gt_masks.shape[0], det_masks.shape[0]))
+
+    gt_flat = gt_masks.reshape(gt_masks.shape[0], -1).astype(bool)
+    det_flat = det_masks.reshape(det_masks.shape[0], -1).astype(bool)
+
+    intersection = np.logical_and(gt_flat[:, None, :], det_flat[None, :, :]).sum(axis=2)
+    union = np.logical_or(gt_flat[:, None, :], det_flat[None, :, :]).sum(axis=2)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(union > 0, intersection / union, 0.0)
 
 
 def _iou_matrix(gt_boxes: np.ndarray, det_boxes: np.ndarray) -> np.ndarray:
