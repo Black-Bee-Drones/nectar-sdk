@@ -209,9 +209,7 @@ def compute_curves(
             total_gt += len(gt_boxes)
 
             pred_cls_mask = (
-                preds.class_id == cls_id
-                if preds.class_id is not None
-                else np.zeros(0, dtype=bool)
+                preds.class_id == cls_id if preds.class_id is not None else np.zeros(0, dtype=bool)
             )
             if not pred_cls_mask.any():
                 continue

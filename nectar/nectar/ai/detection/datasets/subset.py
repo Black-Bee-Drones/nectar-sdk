@@ -113,7 +113,11 @@ class SubsetCreator:
 
             split_path = yaml_dir / dataset_config[split]
             if not split_path.exists():
-                split_name = Path(dataset_config[split]).parts[-2] if "/images" in dataset_config[split] else Path(dataset_config[split]).name
+                split_name = (
+                    Path(dataset_config[split]).parts[-2]
+                    if "/images" in dataset_config[split]
+                    else Path(dataset_config[split]).name
+                )
                 split_path = yaml_dir / split_name / "images"
             if not split_path.exists():
                 self._print(f"Split directory not found: {split_path}")

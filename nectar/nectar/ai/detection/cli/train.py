@@ -62,13 +62,13 @@ def main():
 
     from nectar.ai.detection import Detector
     from nectar.ai.detection.core.configs import EvaluationConfig
-    from nectar.ai.detection.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
     from nectar.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
     from nectar.ai.detection.training.config import (
         RFDETRTrainingConfig,
         TransformersTrainingConfig,
         UltralyticsTrainingConfig,
     )
+    from nectar.ai.detection.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
     from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
     from nectar.ai.detection.utils.tensorboard import TensorBoardManager
 

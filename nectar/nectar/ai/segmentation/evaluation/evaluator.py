@@ -171,7 +171,11 @@ class SegmentationEvaluator:
                     use_masks=use_masks,
                 )
                 visualizations[f"{prefix}PR_curve"] = plot_pr_curve(
-                    px, py_p, ap_curve, names, self.output_dir,
+                    px,
+                    py_p,
+                    ap_curve,
+                    names,
+                    self.output_dir,
                     title=f"{prefix} Precision-Recall Curve",
                     filename=f"{prefix}PR_curve.png",
                 )
@@ -181,7 +185,12 @@ class SegmentationEvaluator:
                     ("F1", py_f1, f"{prefix}F1_curve.png"),
                 ]:
                     visualizations[f"{prefix}{metric[0]}_curve"] = plot_confidence_curve(
-                        px, data, names, self.output_dir, metric, fname,
+                        px,
+                        data,
+                        names,
+                        self.output_dir,
+                        metric,
+                        fname,
                     )
             except Exception as e:
                 logger.error("Failed to generate %s curve plots: %s", prefix, e)
@@ -518,17 +527,22 @@ class SegmentationEvaluator:
 
         for pred, gt in zip(preds, gts):
             p = {
-                "boxes": torch.tensor(pred.xyxy, dtype=torch.float32) if len(pred) > 0
+                "boxes": torch.tensor(pred.xyxy, dtype=torch.float32)
+                if len(pred) > 0
                 else torch.zeros((0, 4), dtype=torch.float32),
-                "scores": torch.tensor(pred.confidence, dtype=torch.float32) if pred.confidence is not None and len(pred) > 0
+                "scores": torch.tensor(pred.confidence, dtype=torch.float32)
+                if pred.confidence is not None and len(pred) > 0
                 else torch.zeros(0, dtype=torch.float32),
-                "labels": torch.tensor(pred.class_id, dtype=torch.int64) if pred.class_id is not None and len(pred) > 0
+                "labels": torch.tensor(pred.class_id, dtype=torch.int64)
+                if pred.class_id is not None and len(pred) > 0
                 else torch.zeros(0, dtype=torch.int64),
             }
             t = {
-                "boxes": torch.tensor(gt.xyxy, dtype=torch.float32) if len(gt) > 0
+                "boxes": torch.tensor(gt.xyxy, dtype=torch.float32)
+                if len(gt) > 0
                 else torch.zeros((0, 4), dtype=torch.float32),
-                "labels": torch.tensor(gt.class_id, dtype=torch.int64) if gt.class_id is not None and len(gt) > 0
+                "labels": torch.tensor(gt.class_id, dtype=torch.int64)
+                if gt.class_id is not None and len(gt) > 0
                 else torch.zeros(0, dtype=torch.int64),
             }
 

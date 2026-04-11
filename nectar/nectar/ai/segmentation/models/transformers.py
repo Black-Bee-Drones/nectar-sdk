@@ -539,7 +539,9 @@ class TransformersSegModel(BaseSegmentationModel):
             train_dataset.label2id,
         )
 
-    def _setup_callbacks(self, config: SegTrainingConfig, output_dir: Optional[Path] = None) -> List:
+    def _setup_callbacks(
+        self, config: SegTrainingConfig, output_dir: Optional[Path] = None
+    ) -> List:
         """Setup training callbacks."""
         callbacks = []
         if config.early_stopping_patience:
