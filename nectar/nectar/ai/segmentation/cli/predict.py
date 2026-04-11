@@ -1,4 +1,4 @@
-"""CLI for running inference with detection models."""
+"""CLI for running inference with segmentation models."""
 
 import argparse
 import logging
@@ -16,76 +16,75 @@ from nectar.ai.cli.common import add_common_predict_args
 
 
 def parse_args():
-    """Parse command line arguments for detection prediction."""
-    parser = argparse.ArgumentParser(description="Run inference with detection models")
+    """Parse command line arguments for segmentation prediction."""
+    parser = argparse.ArgumentParser(description="Run inference with segmentation models")
     add_common_predict_args(parser)
-    parser.add_argument("--save-txt", action="store_true", help="Save predictions to text")
+    parser.add_argument("--save-masks", action="store_true", help="Save individual mask PNGs")
     return parser.parse_args()
 
 
 def process_image(
-    detector,
+    segmentor,
     image_path: str,
     conf_threshold: float,
     iou_threshold: float,
     output_dir: Path,
     show: bool = False,
-    save_txt: bool = False,
+    save_masks: bool = False,
 ) -> None:
     """Process a single image."""
     logger = logging.getLogger(__name__)
 
     logger.info("Processing: %s", image_path)
 
-    result = detector.detect(image_path, conf=conf_threshold, iou=iou_threshold)
+    result = segmentor.segment(image_path, conf=conf_threshold, iou=iou_threshold)
 
     image = cv2.imread(image_path)
     image_name = Path(image_path).stem
-    output_path = output_dir / f"{image_name}_prediction.jpg"
+    output_path = output_dir / f"{image_name}_segmentation.jpg"
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if len(result) > 0:
-        annotated = detector.draw_detections(image.copy(), result)
+        annotated = segmentor.draw_segmentations(image.copy(), result)
         cv2.imwrite(str(output_path), annotated)
         logger.info("Saved: %s", output_path)
 
         if show:
-            cv2.imshow("Prediction", annotated)
+            cv2.imshow("Segmentation", annotated)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-        if save_txt:
-            txt_path = output_dir / f"{image_name}_prediction.txt"
-            with open(txt_path, "w") as f:
-                for det in result.detections:
-                    x1, y1, x2, y2 = det.bbox
-                    w, h = x2 - x1, y2 - y1
-                    x_c, y_c = x1 + w / 2, y1 + h / 2
-                    f.write(f"{det.class_id} {x_c} {y_c} {w} {h} {det.confidence}\n")
+        if save_masks:
+            masks_dir = output_dir / f"{image_name}_masks"
+            masks_dir.mkdir(parents=True, exist_ok=True)
+            for idx, seg in enumerate(result.segmentations):
+                if seg.mask is not None:
+                    mask_path = masks_dir / f"mask_{idx}_{seg.class_name}_{seg.confidence:.2f}.png"
+                    mask_img = (seg.mask > 0).astype("uint8") * 255
+                    cv2.imwrite(str(mask_path), mask_img)
     else:
-        logger.info("No detections in %s", image_path)
+        logger.info("No segmentations in %s", image_path)
         cv2.imwrite(str(output_path), image)
 
     logger.info("Inference time: %.3fs", result.inference_time)
-    logger.info("Detections: %d", len(result))
+    logger.info("Segmentations: %d", len(result))
 
 
 def process_directory(
-    detector,
+    segmentor,
     image_dir: str,
     conf_threshold: float,
     iou_threshold: float,
     output_dir: Path,
     batch_size: int = 1,
-    save_txt: bool = False,
+    save_masks: bool = False,
 ) -> None:
     """Process directory of images."""
     logger = logging.getLogger(__name__)
 
     extensions = [".jpg", ".jpeg", ".png", ".bmp"]
     image_paths = []
-
     for ext in extensions:
         image_paths.extend(Path(image_dir).glob(f"*{ext}"))
         image_paths.extend(Path(image_dir).glob(f"*{ext.upper()}"))
@@ -103,40 +102,16 @@ def process_directory(
         total_batches = (len(image_paths) + batch_size - 1) // batch_size
         logger.info("Batch %d/%d", batch_num, total_batches)
 
-        if batch_size == 1:
-            for img_path in batch_paths:
-                process_image(
-                    detector,
-                    str(img_path),
-                    conf_threshold,
-                    iou_threshold,
-                    output_dir,
-                    show=False,
-                    save_txt=save_txt,
-                )
-        else:
-            results = detector.detect_batch(
-                [str(p) for p in batch_paths],
-                conf=conf_threshold,
-                iou=iou_threshold,
+        for img_path in batch_paths:
+            process_image(
+                segmentor,
+                str(img_path),
+                conf_threshold,
+                iou_threshold,
+                output_dir,
+                show=False,
+                save_masks=save_masks,
             )
-            for img_path, result in zip(batch_paths, results):
-                image = cv2.imread(str(img_path))
-                image_name = img_path.stem
-                out = output_dir / f"{image_name}_prediction.jpg"
-                if len(result) > 0:
-                    annotated = detector.draw_detections(image.copy(), result)
-                    cv2.imwrite(str(out), annotated)
-                    if save_txt:
-                        txt_path = output_dir / f"{image_name}_prediction.txt"
-                        with open(txt_path, "w") as f:
-                            for det in result.detections:
-                                x1, y1, x2, y2 = det.bbox
-                                w, h = x2 - x1, y2 - y1
-                                x_c, y_c = x1 + w / 2, y1 + h / 2
-                                f.write(f"{det.class_id} {x_c} {y_c} {w} {h} {det.confidence}\n")
-                else:
-                    cv2.imwrite(str(out), image)
 
     logger.info("Results saved to %s", output_dir)
 
@@ -155,39 +130,39 @@ def main():
 
     args = parse_args()
 
-    from nectar.ai.detection import Detector
+    from nectar.ai.segmentation import Segmentor
 
     logger.info("Loading model: %s", args.model)
 
-    detector = Detector(
+    segmentor = Segmentor(
         model_source=args.model,
         device=args.device,
         confidence_threshold=args.conf_threshold,
     )
-    detector.load()
+    segmentor.load()
 
     input_path = Path(args.input)
     output_dir = Path(args.output)
 
     if input_path.is_file():
         process_image(
-            detector,
+            segmentor,
             str(input_path),
             args.conf_threshold,
             args.iou_threshold,
             output_dir,
             args.show,
-            args.save_txt,
+            args.save_masks,
         )
     elif input_path.is_dir():
         process_directory(
-            detector,
+            segmentor,
             str(input_path),
             args.conf_threshold,
             args.iou_threshold,
             output_dir,
             args.batch_size,
-            args.save_txt,
+            args.save_masks,
         )
     else:
         logger.error("Invalid input: %s", args.input)

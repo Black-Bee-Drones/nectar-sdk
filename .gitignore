@@ -17,9 +17,13 @@ log/
 *.tlog
 *.tlog.raw
 
-# Datasets and outputs
+# AI datasets and outputs
+nectar/nectar/ai/data/
+nectar/nectar/ai/outputs/
 nectar/nectar/ai/detection/data/
 nectar/nectar/ai/detection/outputs/
+nectar/nectar/ai/segmentation/data/
+nectar/nectar/ai/segmentation/outputs/
 
 *.pt
 *.pth

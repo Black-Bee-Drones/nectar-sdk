@@ -1,4 +1,4 @@
-"""CLI for evaluating detection models."""
+"""CLI for evaluating segmentation models."""
 
 import argparse
 import logging
@@ -8,22 +8,9 @@ from nectar.ai.cli.common import add_common_eval_args
 
 
 def parse_args():
-    """Parse command line arguments for detection evaluation."""
-    parser = argparse.ArgumentParser(description="Evaluate object detection models")
+    """Parse command line arguments for segmentation evaluation."""
+    parser = argparse.ArgumentParser(description="Evaluate segmentation models")
     add_common_eval_args(parser)
-
-    # Detection-specific slicing options
-    parser.add_argument("--use-slicing", action="store_true", help="Enable slicing inference")
-    parser.add_argument(
-        "--slicing-strategy",
-        type=str,
-        default="grid",
-        choices=["grid", "adaptive", "clustering", "none"],
-    )
-    parser.add_argument("--slice-size", type=int, nargs=2, default=[640, 640])
-    parser.add_argument("--slice-overlap", type=float, default=0.2)
-    parser.add_argument("--max-slices", type=int, default=16)
-
     return parser.parse_args()
 
 
@@ -37,20 +24,20 @@ def main():
 
     args = parse_args()
 
-    from nectar.ai.detection.core.configs import EvaluationConfig
-    from nectar.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
-    from nectar.ai.detection.models.rfdetr import RFDETRModel
-    from nectar.ai.detection.models.transformers import TransformersModel
-    from nectar.ai.detection.models.ultralytics import UltralyticsModel
+    from nectar.ai.segmentation.core.configs import SegEvaluationConfig
+    from nectar.ai.segmentation.evaluation.evaluator import SegmentationEvaluator
+    from nectar.ai.segmentation.models.rfdetr import RFDETRSegModel
+    from nectar.ai.segmentation.models.transformers import TransformersSegModel
+    from nectar.ai.segmentation.models.ultralytics import UltralyticsSegModel
 
     logger.info("Loading %s model from %s", args.framework, args.model_path)
 
     if args.framework == "ultralytics":
-        model = UltralyticsModel(args.model_path)
+        model = UltralyticsSegModel(args.model_path)
     elif args.framework == "transformers":
-        model = TransformersModel(args.model_path)
+        model = TransformersSegModel(args.model_path)
     elif args.framework == "rfdetr":
-        model = RFDETRModel(
+        model = RFDETRSegModel(
             args.model_path,
             rfdetr_size=args.rfdetr_size,
             resolution=args.resolution,
@@ -62,21 +49,7 @@ def main():
 
     model.load_model()
 
-    if args.use_slicing:
-        from nectar.ai.detection.slicing import SlicingConfig, SlicingStrategy
-
-        slicing_config = SlicingConfig(
-            strategy=SlicingStrategy(args.slicing_strategy),
-            slice_size=tuple(args.slice_size),
-            overlap_ratio=args.slice_overlap,
-            iou_threshold=args.iou_threshold,
-            conf_threshold=args.conf_threshold,
-            max_slices=args.max_slices,
-        )
-        model.enable_slicing(slicing_config)
-        logger.info("Slicing enabled: %s", args.slicing_strategy)
-
-    config = EvaluationConfig(
+    config = SegEvaluationConfig(
         model_path=args.model_path,
         dataset_path=args.dataset_path,
         framework=args.framework,
@@ -94,7 +67,7 @@ def main():
     logger.info("Dataset: %s", args.dataset_path)
     logger.info("Output: %s", args.output_dir)
 
-    evaluator = ObjectDetectionEvaluator(model, config)
+    evaluator = SegmentationEvaluator(model, config)
     metrics = evaluator.evaluate()
 
     logger.info("=" * 50)
@@ -102,8 +75,7 @@ def main():
     logger.info("=" * 50)
     logger.info("mAP@50:      %.4f", metrics.map50)
     logger.info("mAP@50-95:   %.4f", metrics.map50_95)
-    logger.info("mAR@50:      %.4f", metrics.mar50)
-    logger.info("mAR@50-95:   %.4f", metrics.mar50_95)
+    logger.info("mIoU:        %.4f", metrics.mean_iou)
     logger.info("Precision:   %.4f", metrics.precision)
     logger.info("Recall:      %.4f", metrics.recall)
     logger.info("F1-score:    %.4f", metrics.f1_score)

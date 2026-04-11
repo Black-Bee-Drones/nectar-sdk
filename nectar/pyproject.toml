@@ -40,17 +40,17 @@ vision = [
 ]
 
 ai = [
-    "ultralytics==8.4.17",
-    "huggingface-hub==0.32.4",
-    "transformers==4.53.3",
-    "timm==1.0.24",
-    "accelerate==1.12.0",
-    "datasets==3.6.0",
-    "rfdetr==1.5.2",
+    "ultralytics==8.4.36",
+    "huggingface-hub==1.9.2",
+    "transformers==5.5.0",
+    "timm==1.0.26",
+    "accelerate==1.13.0",
+    "datasets==4.8.4",
+    "rfdetr[train] @ git+https://github.com/roboflow/rf-detr.git@develop",
     "supervision==0.27.0",
     "tensorboard==2.20.0",
     "roboflow==1.2.13",
-    "albumentations>=1.4.0",
+    "albumentations==2.0.8",
 ]
 
 interface = [
@@ -75,7 +75,7 @@ full = [
 ]
 
 [project.scripts]
-nectar-od = "nectar.ai.detection.cli.main:main"
+nectar-ai = "nectar.ai.cli.main:main"
 
 [tool.ruff]
 target-version = "py310"
@@ -105,4 +105,5 @@ exclude = ["test*"]
 [tool.setuptools.package-data]
 "nectar.interface" = ["images/*.png"]
 "nectar.ai.detection" = ["configs/*.yaml"]
+"nectar.ai.segmentation" = ["configs/*.yaml"]
 "nectar.control" = ["config/**/*.yaml"]

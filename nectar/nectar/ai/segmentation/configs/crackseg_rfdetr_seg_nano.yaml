@@ -1,0 +1,38 @@
+# Crack Segmentation - RF-DETR Seg Nano
+# Dataset auto-converted from YOLO-seg to COCO-seg by the trainer
+# Usage: nectar-ai segment train --config <path-to-this-file>
+
+data:
+  dataset_path: nectar/ai/data/crack-seg
+  dataset_format: yolo
+
+train:
+  framework: rfdetr
+  model: rfdetr-seg-nano
+  epochs: 10
+  batch_size: 8
+  learning_rate: 5e-5
+  lr_encoder: 1e-5
+  output_dir: nectar/ai/outputs/crackseg-rfdetr-seg-nano
+  device: cuda
+  seed: 42
+  tensorboard: true
+  start_tensorboard: false
+  gradient_accumulation_steps: 2
+  resolution: 312
+  use_ema: true
+  gradient_checkpointing: true
+  lr_scheduler_type: cosine
+  warmup_epochs: 2
+  max_grad_norm: 1.0
+  early_stopping_patience: 0
+  push_to_hub: true
+  hub_model_id: blackbeedrones/crackseg-rfdetr-seg-nano
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 1
+  device: cuda

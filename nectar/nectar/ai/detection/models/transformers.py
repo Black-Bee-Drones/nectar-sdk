@@ -266,10 +266,6 @@ class TransformersModel(BaseDetectionModel):
                 seed=config.seed,
                 report_to=["tensorboard"] if config.tensorboard else None,
                 run_name=run_name,
-                push_to_hub=config.push_to_hub,
-                hub_model_id=config.hub_model_id if config.push_to_hub else None,
-                hub_strategy="all_checkpoints" if config.push_to_hub else None,
-                hub_private_repo=True,
                 fp16=(config.mixed_precision == "fp16"),
                 bf16=(config.mixed_precision == "bf16"),
                 dataloader_pin_memory=False,
@@ -416,7 +412,6 @@ class TransformersModel(BaseDetectionModel):
         """Setup training callbacks."""
         callbacks = []
 
-        # Early stopping
         if config.early_stopping_patience:
             callbacks.append(
                 EarlyStoppingCallback(
@@ -425,9 +420,15 @@ class TransformersModel(BaseDetectionModel):
                 )
             )
 
-        # GC callback
         if getattr(config, "gc_per_accumulation", True):
             callbacks.append(_GCCallback(config.gradient_accumulation_steps))
+
+        if config.push_to_hub and config.hub_model_id:
+            from nectar.ai.detection.utils.callbacks import get_hf_upload_transformers_callback
+
+            callbacks.append(
+                get_hf_upload_transformers_callback(config.hub_model_id, output_dir, self.logger)
+            )
 
         return callbacks
 
