@@ -168,7 +168,7 @@ result = segmentor.train(SegTrainingConfig(dataset_path="data/crack-seg/data.yam
 
 ## Evaluation
 
-Both modules generate the same set of evaluation artifacts: PR curves, confusion matrix, error analysis, prediction samples, per-class metrics CSV/JSON.
+Both modules generate evaluation artifacts: confusion matrix, error analysis, prediction samples, per-class metrics CSV/JSON. Detection produces 4 curve plots (PR, P, R, F1). Segmentation produces 8 curve plots (4 Box + 4 Mask) with separate box and mask mAP via `torchmetrics`.
 
 ```python
 # Detection
@@ -178,7 +178,7 @@ from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
 from nectar.ai.segmentation.evaluation import SegmentationEvaluator
 ```
 
-The segmentation evaluator uses `load_segmentation_dataset()` which loads ground truth with binary masks from YOLO-seg polygon labels or COCO segmentation annotations, producing proper mask-aware evaluation.
+The segmentation evaluator uses `load_segmentation_dataset()` which loads ground truth with binary masks from YOLO-seg polygon labels or COCO segmentation annotations. Mask mAP is computed via `torchmetrics` (`iou_type="segm"`), while P/R/F1 use `supervision` with `MetricTarget.MASKS`.
 
 ## Shared Paths
 
@@ -197,7 +197,7 @@ These directories are gitignored.
 | Framework | Detection | Segmentation |
 |-----------|-----------|--------------|
 | Ultralytics (YOLO) | Train, Eval, Predict | Train, Eval, Predict |
-| RF-DETR | Train, Eval, Predict | Train, Predict (eval limited) |
+| RF-DETR | Train, Eval, Predict | Train, Eval, Predict |
 | HuggingFace Transformers | Train, Eval, Predict | Predict (training WIP) |
 
 ## Device Management
@@ -216,7 +216,7 @@ segmentor = Segmentor("model.pt", device="0")      # GPU 0
 |---------|---------|---------|
 | `ultralytics` | 8.4.36 | YOLO models |
 | `transformers` | 5.5.0 | DETR, MaskFormer, SegFormer |
-| `rfdetr` | 1.6.3 | RF-DETR detection + segmentation |
+| `rfdetr` | 1.6.0 (develop) | RF-DETR detection + segmentation |
 | `supervision` | 0.27.0 | Metrics, visualization, Detections bridge |
 | `huggingface-hub` | 1.9.2 | Model upload/download |
 | `tensorboard` | 2.20.0 | Training visualization |
