@@ -52,6 +52,26 @@ install(TARGETS depth_cluster_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# depth_cluster_uf_node — Union-Find depth clustering obstacle detector.
+# Same interface as depth_cluster_node but uses scanline union-find
+# for better cache locality on constrained platforms.
+add_executable(depth_cluster_uf_node
+  nectar/control/obstacles/depth_cluster_uf.cpp
+)
+ament_target_dependencies(depth_cluster_uf_node
+  rclcpp
+  std_msgs
+  sensor_msgs
+  cv_bridge
+)
+target_link_libraries(depth_cluster_uf_node
+  ${OpenCV_LIBS}
+  ${realsense2_LIBRARY}
+)
+install(TARGETS depth_cluster_uf_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 
 ament_python_install_package(${PROJECT_NAME})
 

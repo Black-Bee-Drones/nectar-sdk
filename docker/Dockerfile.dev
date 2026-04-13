@@ -1,0 +1,151 @@
+# syntax=docker/dockerfile:1
+# =============================================================================
+# Nectar SDK — Development Dockerfile (volume-mounted workflow)
+#
+# Builds a full dev image with:
+#   - All SDK Python/ROS2 dependencies
+#   - Gazebo Harmonic + ArduPilot Gazebo plugin (ArduPilotPlugin)
+#   - ArduPilot SITL (built from source)
+#   - ros_gz bridge (Harmonic-compatible apt packages)
+#
+# The SITL and Gazebo install steps are inlined rather than calling the
+# project scripts, because those scripts assume a non-root user and use
+# `set -u` which conflicts with ROS2's setup.bash in Docker.
+#
+# Build:
+#   ./docker/run_docker_dev.sh build
+#
+# Run:
+#   ./docker/run_docker_dev.sh run
+# =============================================================================
+
+ARG ROS_DISTRO=jazzy
+FROM osrf/ros:${ROS_DISTRO}-desktop-full
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG ROS_DISTRO
+ENV NON_INTERACTIVE=true
+ENV ROS2_WORKSPACE=/home/ros2_ws
+ENV ROS_DISTRO=${ROS_DISTRO}
+
+# ---------- system deps ----------
+COPY scripts/ /tmp/setup/scripts/
+
+RUN /tmp/setup/scripts/setup.sh system
+RUN /tmp/setup/scripts/setup.sh geographiclib
+RUN rm -f /usr/lib/python*/EXTERNALLY-MANAGED
+RUN python3 -m pip install --ignore-installed pip
+RUN rm -rf /var/lib/apt/lists/*
+
+# ---------- ROS2 environment ----------
+WORKDIR /home/ros2_ws/src
+RUN /tmp/setup/scripts/setup.sh ros2-env
+
+# ---------- Python dependencies ----------
+COPY . /tmp/nectar-sdk-deps
+WORKDIR /tmp/nectar-sdk-deps
+
+RUN --mount=type=cache,target=/root/.cache/pip make install-all
+
+RUN rosdep init 2>/dev/null || true
+RUN rosdep update --rosdistro=${ROS_DISTRO}
+
+# Prepare workspace source path used by RealSense install/rebuild steps
+RUN mkdir -p /home/ros2_ws/src && cp -a /tmp/nectar-sdk-deps /home/ros2_ws/src/nectar-sdk
+
+# =============================================================================
+# 1. ArduPilot SITL
+#    Inlined because install-prereqs-ubuntu.sh refuses to run as root.
+# =============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-dev python3-pip python3-setuptools python3-wheel \
+    python3-pexpect python3-future python3-lxml python3-empy \
+    python3-matplotlib python3-serial python3-scipy python3-opencv \
+    build-essential ccache g++ gawk \
+    libxml2-dev libxslt1-dev \
+    procps xterm sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir MAVProxy pymavlink empy==3.3.4
+
+ENV ARDUPILOT_DIR=/home/ardupilot
+RUN git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git ${ARDUPILOT_DIR}
+
+WORKDIR ${ARDUPILOT_DIR}
+RUN ./waf configure --board sitl && ./waf copter -j2
+ENV PATH="${ARDUPILOT_DIR}/Tools/autotest:${PATH}"
+
+# =============================================================================
+# 2. Gazebo Harmonic (from OSRF APT repo)
+# =============================================================================
+ENV GZ_VERSION=harmonic
+
+RUN apt-get update && apt-get install -y lsb-release wget gnupg \
+    && wget -q https://packages.osrfoundation.org/gazebo.gpg \
+        -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/gazebo-stable.list \
+    && apt-get update \
+    && apt-get install -y gz-harmonic \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ros_gz bridge + sim (native Harmonic support on Jazzy)
+RUN apt-get update && apt-get install -y \
+    ros-${ROS_DISTRO}-ros-gz \
+    ros-${ROS_DISTRO}-vision-opencv \
+    ros-${ROS_DISTRO}-cv-bridge \
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# 3. ArduPilot Gazebo Plugin (ArduPilotPlugin)
+#    Build with GStreamer made optional (only needed for camera streaming).
+# =============================================================================
+RUN apt-get update && apt-get install -y \
+    libgz-sim8-dev rapidjson-dev libopencv-dev \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/ArduPilot/ardupilot_gazebo.git /home/ardupilot_gazebo
+
+WORKDIR /home/ardupilot_gazebo
+RUN mkdir -p build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    && make -j2
+
+# Gazebo environment
+ENV GZ_SIM_RESOURCE_PATH="/home/ardupilot_gazebo/models:/home/ardupilot_gazebo/worlds"
+ENV GZ_SIM_SYSTEM_PLUGIN_PATH="/home/ardupilot_gazebo/build"
+
+# =============================================================================
+# 4. RealSense (always built in dev image)
+# =============================================================================
+COPY docker/realsense/ /opt/realsense/
+RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
+RUN mkdir -p /etc/udev/rules.d && \
+    cp /opt/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/99-realsense-libusb.rules 2>/dev/null || true
+
+ARG REALSENSE_CUDA=false
+ENV REALSENSE_CUDA=${REALSENSE_CUDA}
+WORKDIR /home/ros2_ws/src/nectar-sdk
+RUN make realsense
+
+# After RealSense build, stale scipy/numpy .so files from --ignore-installed
+# can conflict. Purge and reinstall cleanly.
+RUN rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-* \
+    && pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2
+
+# =============================================================================
+# Cleanup + workspace skeleton + entrypoint
+# =============================================================================
+RUN rm -rf /tmp/nectar-sdk-deps
+RUN mkdir -p /home/ros2_ws/build /home/ros2_ws/install /home/ros2_ws/log
+WORKDIR /home/ros2_ws
+
+COPY docker/dev_entrypoint.sh /ros_entrypoint_dev.sh
+RUN chmod +x /ros_entrypoint_dev.sh
+
+ENTRYPOINT ["/ros_entrypoint_dev.sh"]
+CMD ["bash"]

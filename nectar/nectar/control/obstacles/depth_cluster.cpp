@@ -110,12 +110,13 @@ public:
     }
 
 private:
-    std::vector<double> decimation_cost;
     // ----------------------------------------------------------------
     // Depth callback — replaces the timer + rs2::pipeline polling
     // ----------------------------------------------------------------
     void depth_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
     {
+        auto t0 = std::chrono::high_resolution_clock::now();
+
         // Convert ROS Image to cv::Mat
         cv_bridge::CvImageConstPtr cv_ptr;
         try
@@ -147,27 +148,7 @@ private:
         }
 
         // Apply decimation filter on raw uint16 data
-        auto start = std::chrono::high_resolution_clock::now();
         cv::Mat decimated = decimate_.apply(depth_u16);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        this->decimation_cost.push_back(duration.count());
-
-        if (this->decimation_cost.size() > 500) {
-            double sum = 0;
-            for (size_t i = 0; i < this->decimation_cost.size(); i++) {
-                sum += this->decimation_cost[i];
-            }
-            double avg = sum / static_cast<double>(this->decimation_cost.size());
-            RCLCPP_INFO(this->get_logger(), "Average decimation time: %f us", avg);
-            double std_dev = 0;
-            for (size_t i = 0; i < this->decimation_cost.size(); i++) {
-                std_dev += (this->decimation_cost[i] - avg) * (this->decimation_cost[i] - avg);
-            }
-            std_dev = std_dev / static_cast<double>(this->decimation_cost.size());
-            std_dev = std::sqrt(std_dev);
-            RCLCPP_INFO(this->get_logger(), "Standard deviation of decimation time: %f us", std_dev);
-        }
 
         const int width  = decimated.cols;
         const int height = decimated.rows;
@@ -183,9 +164,11 @@ private:
                 width, height, fov_h_, fov_v_);
         }
 
-        // Apply threshold matrix — zero out pixels beyond adaptive distance
-        // Both decimated and thresh_mat_ are CV_16U, so this comparison is integer-only.
-        decimated.setTo(0, decimated >= thresh_mat_);
+        // Build seed mask — pixels that are non-zero AND closer than the
+        // per-pixel threshold (i.e. could hit the drone).  BFS will start only
+        // from these seeds but is allowed to expand into any depth-similar
+        // neighbour so that the resulting bbox covers the full object.
+        cv::Mat seed_mask = (decimated < thresh_mat_) & (decimated > 0);
 
         // ----------------------------------------------------------------
         // BFS clustering and on-the-fly metric computation
@@ -210,13 +193,15 @@ private:
             const uint16_t* depth_row = decimated.ptr<uint16_t>(y);
             uchar* visited_row = visited.ptr<uchar>(y);
 
+            const uchar* seed_row = seed_mask.ptr<uchar>(y);
+
             for (int x = 0; x < width; x++)
             {
                 if (visited_row[x])
                     continue;
 
-                uint16_t d = depth_row[x];
-                if (d == 0)
+                // Only start a new BFS from seed pixels (could hit the drone)
+                if (!seed_row[x])
                     continue;
 
                 q.clear();
@@ -305,7 +290,10 @@ private:
         pub_detected_->publish(det_msg);
 
         if (!any_detected)
+        {
+            record_frame_time(t0);
             return;
+        }
 
         // ----------------------------------------------------------------
         // Format output as a Float32MultiArray [min_x, max_x, min_y, max_y, depth_m, ...]
@@ -344,6 +332,32 @@ private:
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
             "Obstacle detected | clusters: %zu | distance: %.2fm",
             cluster_counts.size(), avg_depth_m);
+
+        record_frame_time(t0);
+    }
+
+    // ----------------------------------------------------------------
+    // Frame timing metrics
+    // ----------------------------------------------------------------
+    static constexpr size_t kMetricWindow = 1000;
+
+    void record_frame_time(std::chrono::high_resolution_clock::time_point t0)
+    {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+        frame_times_.push_back(us);
+
+        if (frame_times_.size() >= kMetricWindow)
+        {
+            double sum = 0.0, sq_sum = 0.0;
+            for (double t : frame_times_) { sum += t; sq_sum += t * t; }
+            double avg = sum / kMetricWindow;
+            double std_dev = std::sqrt(sq_sum / kMetricWindow - avg * avg);
+            RCLCPP_INFO(this->get_logger(),
+                "Frame time (%zu frames): avg=%.1f us, std=%.1f us",
+                kMetricWindow, avg, std_dev);
+            frame_times_.clear();
+        }
     }
 
     /**
@@ -406,6 +420,7 @@ private:
     uint16_t    max_obstacle_dist_raw_;   // max obstacle distance in raw units
     float       drone_radius_;
     cv::Mat     thresh_mat_;              // CV_16U threshold matrix in raw units
+    std::vector<double> frame_times_;    // metrics accumulator
 
     // ----------------------------------------------------------------
     // ROS subscriber
