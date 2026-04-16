@@ -8,6 +8,7 @@ Working examples for vision module camera drivers and image processing.
 |---------|--------|-------------|
 | **Camera Capture** | `camera_example.py` | Multi-camera support with configuration options |
 | **Depth Visualization** | `depth_example.py` | RGB-D camera depth measurement and colormap display |
+| **Photo Collection** | `collect_photos.py` | Save frames at intervals for dataset creation |
 
 ## Camera Example
 
@@ -87,6 +88,70 @@ ros2 run nectar depth_example --camera oakd
 |-----|--------|
 | `q` | Quit application |
 | Mouse click | Select pixel for distance measurement |
+
+---
+
+## Photo Collection
+
+Captures frames at a configurable interval and saves them to an organized directory structure. Useful for building training datasets — fly the drone via RC or the Nectar interface while this node records frames.
+
+### Usage
+
+```bash
+# Default (webcam, 1 photo/sec, timestamped run folder)
+ros2 run nectar collect_photos.py
+
+# Custom output directory and interval (2 photos/sec)
+ros2 run nectar collect_photos.py --ros-args \
+    -p output_dir:=hook_photos \
+    -p capture_interval:=0.5
+
+# Named run for a specific flight session
+ros2 run nectar collect_photos.py --ros-args \
+    -p output_dir:=hook_photos \
+    -p run_name:=flight_01_low_alt
+
+# RealSense camera with preview window
+ros2 run nectar collect_photos.py --ros-args \
+    -p camera_type:=realsense \
+    -p show_preview:=true
+
+# High-res webcam, PNG format, max 500 photos
+ros2 run nectar collect_photos.py --ros-args \
+    -p width:=1920 -p height:=1080 \
+    -p image_format:=png \
+    -p max_photos:=500
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `camera_type` | string | webcam | Camera source (same as camera_example) |
+| `output_dir` | string | collected_photos | Base output directory under `~/` |
+| `run_name` | string | *(timestamp)* | Sub-folder name for this run |
+| `capture_interval` | float | 1.0 | Seconds between captures |
+| `image_format` | string | jpg | Output format: `jpg` or `png` |
+| `jpeg_quality` | int | 90 | JPEG quality 0-100 |
+| `show_preview` | bool | false | Show live OpenCV preview window |
+| `max_photos` | int | 0 | Stop after N photos (0 = unlimited) |
+
+Camera-specific parameters (`width`, `height`, `fps`, `device_index`, etc.) are inherited from the camera publisher node — see [Vision README](../../vision/README.md#webcam-publisher-node).
+
+### Output Structure
+
+```
+~/hook_photos/
+├── flight_01_low_alt/
+│   ├── frame_00001.jpg
+│   ├── frame_00002.jpg
+│   └── ...
+├── flight_02_high_alt/
+│   ├── frame_00001.jpg
+│   └── ...
+└── 20260416_143022/          # auto-named when run_name is empty
+    └── ...
+```
 
 ---
 
