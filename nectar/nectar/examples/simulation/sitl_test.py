@@ -28,8 +28,8 @@ from nectar.control import (
     SITL_VISION_CONFIG,
     DroneFactory,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
 from nectar.control.mavros.setpoint_config import SetpointNavConfig
 from nectar.utils.position_utils import PositionUtils
@@ -267,7 +267,7 @@ class SITLTest(Node):
             y=0.0,
             yaw=90.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID_LOCAL,
+            method=NavigationMethod.PID_EKF,
             precision=0.3,
             timeout=20.0,
         )
@@ -369,22 +369,22 @@ class SITLTest(Node):
 
     def test_pid_fwd(self) -> bool:
         """PID (GPS) forward 2m, BODY frame."""
-        return self._test_nav("PID_FWD", 2.0, 0.0, NavigationStrategy.PID)
+        return self._test_nav("PID_FWD", 2.0, 0.0, NavigationMethod.PID)
 
     def test_pid_lat(self) -> bool:
         """PID (GPS) left 2m, BODY frame."""
-        return self._test_nav("PID_LAT", 0.0, 2.0, NavigationStrategy.PID)
+        return self._test_nav("PID_LAT", 0.0, 2.0, NavigationMethod.PID)
 
     def test_pid_alt(self) -> bool:
         """PID altitude: up 1m then down 1m."""
         d = self.drone
         alt0 = d.get_altitude() or 0.0
 
-        r1 = d.move_to(z=1.0, precision=0.2, timeout=20.0, strategy=NavigationStrategy.PID)
+        r1 = d.move_to(z=1.0, precision=0.2, timeout=20.0, method=NavigationMethod.PID)
         d.delay(2.0)
         alt_up = d.get_altitude() or 0.0
 
-        r2 = d.move_to(z=-1.0, precision=0.2, timeout=20.0, strategy=NavigationStrategy.PID)
+        r2 = d.move_to(z=-1.0, precision=0.2, timeout=20.0, method=NavigationMethod.PID)
         d.delay(2.0)
         alt_dn = d.get_altitude() or 0.0
 
@@ -400,11 +400,11 @@ class SITLTest(Node):
 
     def test_pid_yaw(self) -> bool:
         """PID move_to with yaw=90°, no position change."""
-        return self._test_yaw("PID_YAW", NavigationStrategy.PID, 90.0)
+        return self._test_yaw("PID_YAW", NavigationMethod.PID, 90.0)
 
     def test_pid_local_yaw(self) -> bool:
         """PID_LOCAL move_to with yaw=90°, no position change."""
-        return self._test_yaw("PID_LOCAL_YAW", NavigationStrategy.PID_LOCAL, 90.0)
+        return self._test_yaw("PID_LOCAL_YAW", NavigationMethod.PID_EKF, 90.0)
 
     def test_yaw_direction(self) -> bool:
         """Verify +90° rotates CCW and -90° rotates CW (ENU convention)."""
@@ -417,7 +417,7 @@ class SITLTest(Node):
             y=0.0,
             yaw=90.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID_LOCAL,
+            method=NavigationMethod.PID_EKF,
             precision=0.3,
             timeout=20.0,
         )
@@ -431,7 +431,7 @@ class SITLTest(Node):
             y=0.0,
             yaw=-90.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID_LOCAL,
+            method=NavigationMethod.PID_EKF,
             precision=0.3,
             timeout=20.0,
         )
@@ -461,7 +461,7 @@ class SITLTest(Node):
             y=0.0,
             yaw=60.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID_LOCAL,
+            method=NavigationMethod.PID_EKF,
             precision=0.3,
             timeout=20.0,
         )
@@ -475,7 +475,7 @@ class SITLTest(Node):
             z=0.0,
             yaw=0.0,
             reference=MoveReference.TAKEOFF,
-            strategy=NavigationStrategy.PID_LOCAL,
+            method=NavigationMethod.PID_EKF,
             precision=0.3,
             timeout=20.0,
         )
@@ -494,33 +494,33 @@ class SITLTest(Node):
 
     def test_pid_local_fwd(self) -> bool:
         """PID_LOCAL (EKF) forward 2m, BODY frame."""
-        return self._test_nav("PID_LOCAL_FWD", 2.0, 0.0, NavigationStrategy.PID_LOCAL)
+        return self._test_nav("PID_LOCAL_FWD", 2.0, 0.0, NavigationMethod.PID_EKF)
 
     def test_pid_local_lat(self) -> bool:
         """PID_LOCAL (EKF) left 2m, BODY frame."""
-        return self._test_nav("PID_LOCAL_LAT", 0.0, 2.0, NavigationStrategy.PID_LOCAL, yaw=0.0)
+        return self._test_nav("PID_LOCAL_LAT", 0.0, 2.0, NavigationMethod.PID_EKF, yaw=0.0)
 
     # L4: Setpoint navigation
 
     def test_setpoint_fwd(self) -> bool:
         """SETPOINT forward 2m, BODY frame."""
-        return self._test_nav("SETPOINT_FWD", 2.0, 0.0, NavigationStrategy.SETPOINT)
+        return self._test_nav("SETPOINT_FWD", 2.0, 0.0, NavigationMethod.POSITION)
 
     def test_setpoint_lat(self) -> bool:
         """SETPOINT left 2m, BODY frame."""
-        return self._test_nav("SETPOINT_LAT", 0.0, 2.0, NavigationStrategy.SETPOINT)
+        return self._test_nav("SETPOINT_LAT", 0.0, 2.0, NavigationMethod.POSITION)
 
     def test_setpoint_global(self) -> bool:
         """SETPOINT_GLOBAL forward 2m."""
-        return self._test_nav("SETPOINT_GLOBAL", 2.0, 0.0, NavigationStrategy.SETPOINT_GLOBAL)
+        return self._test_nav("SETPOINT_GLOBAL", 2.0, 0.0, NavigationMethod.POSITION_GLOBAL)
 
     def test_setpoint_yaw(self) -> bool:
         """SETPOINT move_to with yaw=90°, no position change."""
-        return self._test_yaw("SETPOINT_YAW", NavigationStrategy.SETPOINT, 90.0)
+        return self._test_yaw("SETPOINT_YAW", NavigationMethod.POSITION, 90.0)
 
     def test_setpoint_global_yaw(self) -> bool:
         """SETPOINT_GLOBAL move_to with yaw=90°."""
-        return self._test_yaw("SETPOINT_GLOBAL_YAW", NavigationStrategy.SETPOINT_GLOBAL, 90.0)
+        return self._test_yaw("SETPOINT_GLOBAL_YAW", NavigationMethod.POSITION_GLOBAL, 90.0)
 
     def test_setpoint_wpnav(self) -> bool:
         """SETPOINT with WPNav S-curve (GUID_OPTIONS=65), custom speed/radius.
@@ -548,7 +548,7 @@ class SITLTest(Node):
             result = d.move_to(
                 x=2.0,
                 reference=MoveReference.BODY,
-                strategy=NavigationStrategy.SETPOINT,
+                method=NavigationMethod.POSITION,
                 precision=0.5,
                 timeout=30.0,
             )
@@ -582,13 +582,13 @@ class SITLTest(Node):
         d.move_to(
             x=3.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID,
+            method=NavigationMethod.PID,
             precision=0.2,
             timeout=30.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
-        result = d.rtl(precision=0.2, strategy=RTLStrategy.PID, land=False)
+        result = d.rtl(precision=0.2, method=RTLMethod.NAVIGATE, land=False)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
         p_after = pos_xyz(d.local_pos)
@@ -610,13 +610,13 @@ class SITLTest(Node):
         d.move_to(
             x=3.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID,
+            method=NavigationMethod.PID,
             precision=0.2,
             timeout=30.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
-        result = d.rtl(strategy=RTLStrategy.ARDUPILOT, land=False)
+        result = d.rtl(method=RTLMethod.NATIVE, land=False)
         if result:
             d.delay(16.0)  # wait for ArduPilot to navigate back
             # ArduPilot RTL switches mode; switch back to GUIDED
@@ -651,7 +651,7 @@ class SITLTest(Node):
             y=0.0,
             z=0.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID,
+            method=NavigationMethod.PID,
             precision=0.2,
             timeout=30.0,
         )
@@ -667,7 +667,7 @@ class SITLTest(Node):
             z=0.0,
             yaw=0.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID_LOCAL,
+            method=NavigationMethod.PID_EKF,
             precision=0.2,
             timeout=30.0,
         )
@@ -690,7 +690,7 @@ class SITLTest(Node):
             y=0.0,
             z=0.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID,
+            method=NavigationMethod.PID,
             precision=0.2,
             timeout=30.0,
         )
@@ -703,7 +703,7 @@ class SITLTest(Node):
             z=0.0,
             yaw=0.0,
             reference=MoveReference.TAKEOFF,
-            strategy=NavigationStrategy.PID,
+            method=NavigationMethod.PID,
             precision=0.2,
             timeout=45.0,
         )
@@ -725,23 +725,23 @@ class SITLTest(Node):
 
     def test_sq_pid(self) -> bool:
         """Square 3m: PID + BODY."""
-        return self._test_square("SQ_PID", NavigationStrategy.PID)
+        return self._test_square("SQ_PID", NavigationMethod.PID)
 
     def test_sq_pid_takeoff(self) -> bool:
         """Square 3m: PID + TAKEOFF."""
-        return self._test_square("SQ_PID_TAKEOFF", NavigationStrategy.PID, MoveReference.TAKEOFF)
+        return self._test_square("SQ_PID_TAKEOFF", NavigationMethod.PID, MoveReference.TAKEOFF)
 
     def test_sq_pid_local(self) -> bool:
         """Square 3m: PID_LOCAL + BODY."""
-        return self._test_square("SQ_PID_LOCAL", NavigationStrategy.PID_LOCAL)
+        return self._test_square("SQ_PID_LOCAL", NavigationMethod.PID_EKF)
 
     def test_sq_setpoint(self) -> bool:
         """Square 3m: SETPOINT + BODY."""
-        return self._test_square("SQ_SETPOINT", NavigationStrategy.SETPOINT, timeout=45.0)
+        return self._test_square("SQ_SETPOINT", NavigationMethod.POSITION, timeout=45.0)
 
     def test_sq_setpoint_global(self) -> bool:
         """Square 3m: SETPOINT_GLOBAL + BODY."""
-        return self._test_square("SQ_SETPOINT_GLOBAL", NavigationStrategy.SETPOINT_GLOBAL)
+        return self._test_square("SQ_SETPOINT_GLOBAL", NavigationMethod.POSITION_GLOBAL)
 
     def test_sq_wpnav(self) -> bool:
         """Square 3m: SETPOINT + WPNav S-curve (GUID_OPTIONS=65)."""
@@ -751,7 +751,7 @@ class SITLTest(Node):
         wpnav_cfg = SetpointNavConfig(guid_options=65, speed=3.0, accel=1.5, radius=0.5)
         d.set_setpoint_config(wpnav_cfg)
         try:
-            result = self._test_square("SQ_WPNAV", NavigationStrategy.SETPOINT, timeout=45.0)
+            result = self._test_square("SQ_WPNAV", NavigationMethod.POSITION, timeout=45.0)
         finally:
             d.set_param("WP_JERK", 1.0)
             if orig_cfg:
@@ -763,7 +763,7 @@ class SITLTest(Node):
     def _test_square(
         self,
         name: str,
-        strategy: NavigationStrategy,
+        method: NavigationMethod,
         reference: MoveReference = MoveReference.BODY,
         side: float = 3.0,
         precision: float = 0.2,
@@ -798,7 +798,7 @@ class SITLTest(Node):
                     x=x,
                     y=y,
                     reference=reference,
-                    strategy=strategy,
+                    method=method,
                     precision=precision,
                     timeout=timeout,
                 )
@@ -829,7 +829,7 @@ class SITLTest(Node):
         name: str,
         x: float,
         y: float,
-        strategy: NavigationStrategy,
+        method: NavigationMethod,
         yaw=None,
         precision: float = 0.2,
         timeout: float = 30.0,
@@ -846,7 +846,7 @@ class SITLTest(Node):
                 z=None,
                 yaw=yaw,
                 reference=MoveReference.BODY,
-                strategy=strategy,
+                method=method,
                 precision=precision,
                 timeout=timeout,
             )
@@ -870,7 +870,7 @@ class SITLTest(Node):
     def _test_yaw(
         self,
         name: str,
-        strategy: NavigationStrategy,
+        method: NavigationMethod,
         target_yaw_deg: float,
         timeout: float = 20.0,
     ) -> bool:
@@ -885,7 +885,7 @@ class SITLTest(Node):
                 y=0.0,
                 yaw=target_yaw_deg,
                 reference=MoveReference.BODY,
-                strategy=strategy,
+                method=method,
                 precision=0.3,
                 timeout=timeout,
             )

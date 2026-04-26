@@ -9,7 +9,7 @@ from nectar.control import (
     DroneFactory,
     MavrosConfig,
     MoveReference,
-    NavigationStrategy,
+    NavigationMethod,
     PoseSource,
     strategies,
 )
@@ -69,7 +69,7 @@ class MavrosObstaclesExample(Node):
             y=0.0,
             z=0.0,
             reference=MoveReference.BODY,
-            strategy=NavigationStrategy.PID,
+            method=NavigationMethod.PID,
             precision=0.5,
             timeout=60.0,
         )

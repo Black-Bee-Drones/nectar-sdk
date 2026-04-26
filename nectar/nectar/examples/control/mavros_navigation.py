@@ -8,7 +8,7 @@ from nectar.control import (
     DroneFactory,
     MavrosConfig,
     MoveReference,
-    NavigationStrategy,
+    NavigationMethod,
     PoseSource,
 )
 from nectar.utils.gps_calculate import GPSCalculate
@@ -16,10 +16,10 @@ from nectar.utils.gps_calculate import GPSCalculate
 AVAILABLE_TESTS = ["body", "takeoff-ref", "altitude", "velocity", "gps"]
 
 STRATEGY_MAP = {
-    "pid": NavigationStrategy.PID,
-    "pid-local": NavigationStrategy.PID_LOCAL,
-    "setpoint": NavigationStrategy.SETPOINT,
-    "setpoint-global": NavigationStrategy.SETPOINT_GLOBAL,
+    "pid": NavigationMethod.PID,
+    "pid-ekf": NavigationMethod.PID_EKF,
+    "position": NavigationMethod.POSITION,
+    "position-global": NavigationMethod.POSITION_GLOBAL,
 }
 
 
@@ -40,10 +40,10 @@ class NavigationTest(Node):
         self.dist = args.distance
         self.prec = args.precision
         self.tout = args.timeout
-        self.strategy = STRATEGY_MAP.get(args.strategy, NavigationStrategy.PID)
+        self.method = STRATEGY_MAP.get(args.strategy, NavigationMethod.PID)
 
         self.get_logger().info(
-            f"Initialized | mode={args.mode} | strategy={args.strategy} | "
+            f"Initialized | mode={args.mode} | method={args.strategy} | "
             f"no_takeoff={args.no_takeoff} | "
             f"distance={self.dist}m | precision={self.prec}m | timeout={self.tout}s"
         )
@@ -116,7 +116,7 @@ class NavigationTest(Node):
                 reference=MoveReference.BODY,
                 precision=self.prec,
                 timeout=self.tout,
-                strategy=self.strategy,
+                method=self.method,
             )
             if not reached:
                 self.get_logger().warn(f"  ⚠ {label}: timeout")
@@ -150,7 +150,7 @@ class NavigationTest(Node):
                 reference=MoveReference.TAKEOFF,
                 precision=self.prec,
                 timeout=self.tout,
-                strategy=self.strategy,
+                method=self.method,
             )
             if not reached:
                 self.get_logger().warn(f"  ⚠ {label}: timeout")
@@ -175,7 +175,7 @@ class NavigationTest(Node):
             z=dz,
             precision=self.prec,
             timeout=self.tout,
-            strategy=self.strategy,
+            method=self.method,
         )
         self.drone.delay(1.5)
 
@@ -184,7 +184,7 @@ class NavigationTest(Node):
             z=-dz,
             precision=self.prec,
             timeout=self.tout,
-            strategy=self.strategy,
+            method=self.method,
         )
         self.drone.delay(1.0)
 
@@ -246,17 +246,17 @@ class NavigationTest(Node):
         self.get_logger().info(f"  → Target: lat={lat:.6f}, lon={lon:.6f}")
         gps_prec = max(self.prec, 0.5)
 
-        # move_to_gps supports PID, PID_LOCAL, and SETPOINT_GLOBAL (not SETPOINT)
-        gps_strategy = self.strategy
-        if gps_strategy == NavigationStrategy.SETPOINT:
-            gps_strategy = NavigationStrategy.SETPOINT_GLOBAL
+        # move_to_gps supports PID, PID_EKF, and POSITION_GLOBAL (not POSITION)
+        gps_method = self.method
+        if gps_method == NavigationMethod.POSITION:
+            gps_method = NavigationMethod.POSITION_GLOBAL
 
         reached = self.drone.move_to_gps(
             latitude=lat,
             longitude=lon,
             precision=gps_prec,
             timeout=self.tout,
-            strategy=gps_strategy,
+            method=gps_method,
         )
         if not reached:
             self.get_logger().warn("  ⚠ GPS waypoint: timeout")
@@ -328,9 +328,9 @@ def parse_args() -> argparse.Namespace:
             "examples:\n"
             "  python3 mavros_navigation.py --mode outdoor\n"
             "  python3 mavros_navigation.py --mode indoor --no-takeoff --test body\n"
-            "  python3 mavros_navigation.py --strategy pid-local --test body\n"
-            "  python3 mavros_navigation.py --strategy setpoint --test takeoff-ref\n"
-            "  python3 mavros_navigation.py --mode outdoor --test gps --strategy setpoint-global\n"
+            "  python3 mavros_navigation.py --strategy pid-ekf --test body\n"
+            "  python3 mavros_navigation.py --strategy position --test takeoff-ref\n"
+            "  python3 mavros_navigation.py --mode outdoor --test gps --strategy position-global\n"
             "  python3 mavros_navigation.py --no-takeoff --test body --distance 1.0\n"
         ),
     )
@@ -384,7 +384,7 @@ def parse_args() -> argparse.Namespace:
         "--strategy",
         choices=list(STRATEGY_MAP.keys()),
         default="pid",
-        help="Navigation strategy. Default: pid",
+        help="Navigation method. Default: pid",
     )
 
     args, _ = parser.parse_known_args()
