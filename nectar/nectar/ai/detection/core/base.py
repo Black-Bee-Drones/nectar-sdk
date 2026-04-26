@@ -2,19 +2,12 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import numpy as np
 
-try:
-    import torch
-except ImportError:
-    torch = None
-
-try:
-    import supervision as sv
-except ImportError:
-    sv = None
+if TYPE_CHECKING:
+    pass
 
 from nectar.ai.detection.core.configs import (
     EvaluationConfig,
@@ -187,6 +180,11 @@ class BaseDetectionModel(ABC):
         Prediction
             Batch prediction results.
         """
+        try:
+            import supervision as sv
+        except ImportError:
+            sv = None
+
         images = detection_input.image
         batch_detections = []
         image_paths = []
@@ -395,6 +393,8 @@ class BaseDetectionModel(ABC):
         if self._slicing_inference is None:
             raise RuntimeError("Slicing not enabled. Call enable_slicing() first.")
 
+        import supervision as sv
+
         def inference_callback(image):
             """Callback for slice inference."""
             slice_input = DetectionInput(
@@ -527,8 +527,12 @@ class BaseDetectionModel(ABC):
         >>> annotated = model.draw_detections(image, result)
         >>> cv2.imshow("Detections", annotated)
         """
-        if sv is None:
-            raise ImportError("supervision is required. Install with: pip install supervision")
+        try:
+            import supervision as sv
+        except ImportError as e:
+            raise ImportError(
+                "supervision is required. Install with: pip install supervision"
+            ) from e
 
         if not result.detections:
             return image.copy()

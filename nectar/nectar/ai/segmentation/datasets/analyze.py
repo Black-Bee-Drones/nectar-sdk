@@ -1,23 +1,19 @@
 """Segmentation dataset analysis and visualization."""
 
+import importlib.util
 import json
 import logging
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import cv2
+import numpy as np
 import yaml
 
-try:
-    import cv2
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-
 from nectar.ai.detection.datasets.format import FormatDetector
+
+MATPLOTLIB_AVAILABLE = importlib.util.find_spec("matplotlib") is not None
 
 logger = logging.getLogger(__name__)
 
@@ -417,6 +413,8 @@ class SegDatasetAnalyzer:
         self._print(f"Saved: {path}")
 
     def _plot_class_distribution(self, results: Dict, class_ids, labels, splits) -> None:
+        import matplotlib.pyplot as plt
+
         totals = [results["class_distribution"][cid] for cid in class_ids]
         sorted_idx = np.argsort(totals)[::-1]
         sorted_labels = [labels[i] for i in sorted_idx]
@@ -478,6 +476,8 @@ class SegDatasetAnalyzer:
         if len(areas) == 0:
             return
 
+        import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.hist(areas, bins=60, color=_TEAL, alpha=0.85, edgecolor="white", linewidth=0.3)
         med = float(np.median(areas))
@@ -499,6 +499,8 @@ class SegDatasetAnalyzer:
             all_api.extend(stats.get("annotations_per_image", []))
         if not all_api:
             return
+
+        import matplotlib.pyplot as plt
 
         api = np.array(all_api)
         null_count = int(np.sum(api == 0))
@@ -546,6 +548,8 @@ class SegDatasetAnalyzer:
         dims = [(w, h) for w, h in results.get("image_dims", []) if w > 0 and h > 0]
         if not dims:
             return
+
+        import matplotlib.pyplot as plt
 
         widths = np.array([d[0] for d in dims])
         heights = np.array([d[1] for d in dims])

@@ -1,13 +1,15 @@
-"""Visualization for evaluation"""
+"""Visualization for evaluation."""
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import supervision as sv
 
 try:
     import supervision as sv
@@ -35,6 +37,8 @@ def plot_pr_curve(
     output_dir: Path,
 ) -> str:
     """Plot Precision-Recall curve (Ultralytics style)."""
+    import matplotlib.pyplot as plt
+
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
@@ -79,6 +83,8 @@ def plot_confidence_curve(
     filename: str = "curve.png",
 ) -> str:
     """Plot metric-vs-confidence curve (Ultralytics mc_curve style)."""
+    import matplotlib.pyplot as plt
+
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
@@ -116,6 +122,8 @@ def plot_confusion_matrix(
     output_dir: Path,
     classes: List[str],
 ) -> str:
+    import matplotlib.pyplot as plt
+
     output_dir.mkdir(parents=True, exist_ok=True)
     fig = cm.plot(classes=classes)
     fig.set_size_inches(12, 10)
@@ -133,6 +141,9 @@ def plot_error_analysis(
     class_names: List[str],
     output_dir: Path,
 ) -> str:
+    import matplotlib.pyplot as plt
+    import pandas as pd
+
     output_dir.mkdir(parents=True, exist_ok=True)
     num_classes = len(class_names)
 
@@ -264,11 +275,13 @@ def plot_error_analysis(
 
 
 def plot_performance_analysis(
-    per_class_df: pd.DataFrame,
+    per_class_df: "pd.DataFrame",
     output_dir: Path,
 ) -> str:
     if per_class_df.empty or "ap50" not in per_class_df.columns:
         return ""
+
+    import matplotlib.pyplot as plt
 
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(2, 1, figsize=(14, 10))
@@ -351,6 +364,8 @@ def plot_performance_analysis(
 
 
 def plot_metrics_summary(metrics: Dict[str, float], output_dir: Path) -> str:
+    import matplotlib.pyplot as plt
+
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=(10, 5), tight_layout=True)
 
@@ -394,6 +409,9 @@ def plot_prediction_samples(
 ) -> Optional[str]:
     if not images or sv is None:
         return None
+
+    import matplotlib.pyplot as plt
+
     output_dir.mkdir(parents=True, exist_ok=True)
     n = min(max_samples, len(images))
     indices = np.random.choice(len(images), n, replace=False)
@@ -448,6 +466,8 @@ def plot_prediction_samples(
 
 
 def save_per_class_metrics(per_class_metrics: List[Dict], output_dir: Path) -> Tuple[str, str]:
+    import pandas as pd
+
     output_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(per_class_metrics)
     csv_path = output_dir / "per_class_metrics.csv"
