@@ -61,7 +61,6 @@ _LAZY_ATTRS = {
     "GPSUtils": "nectar.control.mavros.gps_utils",
     # Camera-based obstacle detectors (pyrealsense2 / sklearn)
     "DepthObstacleDetector": "nectar.control.obstacles.depth_camera",
-    "T265ObstacleDetector": "nectar.control.obstacles.t265_obstacle",
 }
 
 
@@ -85,7 +84,6 @@ if TYPE_CHECKING:
     from nectar.control.mavros.gps_utils import GPSUtils
     from nectar.control.mavros.navigator import MavrosNavigator
     from nectar.control.obstacles.depth_camera import DepthObstacleDetector
-    from nectar.control.obstacles.t265_obstacle import T265ObstacleDetector
 
 
 __all__ = [
@@ -124,7 +122,6 @@ __all__ = [
     "GPSUtils",
     "BaseObstacleDetector",
     "DepthObstacleDetector",
-    "T265ObstacleDetector",
     "ObstacleInfo",
     "ObstacleDirection",
     "ObstacleHandlerConfig",

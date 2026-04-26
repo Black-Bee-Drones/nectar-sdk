@@ -11,7 +11,6 @@ from nectar.control.protocols import ObstacleDirection, ObstacleInfo
 
 _LAZY_ATTRS = {
     "DepthObstacleDetector": "nectar.control.obstacles.depth_camera",
-    "T265ObstacleDetector": "nectar.control.obstacles.t265_obstacle",
 }
 
 
@@ -30,13 +29,11 @@ def __dir__():
 
 if TYPE_CHECKING:
     from nectar.control.obstacles.depth_camera import DepthObstacleDetector
-    from nectar.control.obstacles.t265_obstacle import T265ObstacleDetector
 
 
 __all__ = [
     "BaseObstacleDetector",
     "DepthObstacleDetector",
-    "T265ObstacleDetector",
     "ObstacleHandlerConfig",
     "ObstacleHandler",
     "ObstacleManager",
