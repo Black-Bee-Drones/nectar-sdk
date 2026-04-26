@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 if TYPE_CHECKING:
     pass
 import json
+import logging
 import os
 import time
 
@@ -34,6 +35,8 @@ from nectar.interface.widgets import (
     DualVideoDisplay,
     LabeledSlider,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ColorCalibrationManager:
@@ -2074,12 +2077,15 @@ class OpenCVUtils:
                 self._hand_tracker.start()
             except Exception as e:
                 self._hand_init_failed = True
-                print(f"[nectar] HandTracker init failed: {e}")
+                logger.error("HandTracker init failed: %s", e, exc_info=True)
                 return frame
 
         try:
             return self._hand_tracker.detect(frame, draw=True)
-        except Exception:
+        except Exception as e:
+            if not getattr(self, "_hand_detect_warned", False):
+                self._hand_detect_warned = True
+                logger.error("HandTracker.detect failed: %s", e, exc_info=True)
             return frame
 
     def detect_faces(self, frame: np.ndarray) -> np.ndarray:
@@ -2094,12 +2100,15 @@ class OpenCVUtils:
                 self._face_tracker.start()
             except Exception as e:
                 self._face_init_failed = True
-                print(f"[nectar] FaceMeshTracker init failed: {e}")
+                logger.error("FaceMeshTracker init failed: %s", e, exc_info=True)
                 return frame
 
         try:
             return self._face_tracker.detect(frame, draw=True)
-        except Exception:
+        except Exception as e:
+            if not getattr(self, "_face_detect_warned", False):
+                self._face_detect_warned = True
+                logger.error("FaceMeshTracker.detect failed: %s", e, exc_info=True)
             return frame
 
     def detect_aruco_markers(self, frame: np.ndarray, dict_type: str) -> np.ndarray:
