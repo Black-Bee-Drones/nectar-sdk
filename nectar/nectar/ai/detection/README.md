@@ -925,9 +925,12 @@ nectar-od dataset subset --input datasets/full --output datasets/subset --max-tr
 nectar-od dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train --num-workers 8
 nectar-od dataset analyze --input datasets/my_dataset
 nectar-od dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
-nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --message "Upload dataset"
-nectar-od dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset
+nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --title "My Dataset" --model-repo user/my-model
+nectar-od dataset upload --target huggingface --raw --repo user/my-dataset --dataset datasets/my_dataset
+nectar-od dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset --splits train valid test
+nectar-od dataset upload --target roboflow --images-only --api-key KEY --project my-project --dataset images/
 nectar-od dataset upload-images --api-key KEY --project my-project --directory images/
+nectar-od dataset download --source huggingface --repo user/my-dataset --format yolo --output data/local
 ```
 
 ### Training
@@ -1138,28 +1141,127 @@ merger = DatasetMerger(
 
 ### Dataset Upload
 
-Upload datasets to HuggingFace Hub or Roboflow:
+Upload datasets to HuggingFace Hub or Roboflow with images **and** annotations.
+
+#### HuggingFace: native Parquet (recommended)
+
+`upload_native()` converts a local COCO/YOLO dataset to the Hub-native schema
+(`image` column + `objects.{bbox, category, area}` with `ClassLabel`). The Hub
+dataset viewer renders bounding box overlays automatically.
 
 ```python
-from nectar.ai.detection.datasets import HuggingFaceDatasetUploader, RoboflowUploader
+from nectar.ai.detection.datasets import HuggingFaceDatasetUploader
 
-# HuggingFace dataset upload
-hf_uploader = HuggingFaceDatasetUploader(
-    repo_id="user/my-dataset",
-    private=True,
+uploader = HuggingFaceDatasetUploader(repo_id="user/my-dataset", private=False)
+
+result = uploader.upload_native(
+    dataset_path="datasets/my_dataset",   # COCO or YOLO, auto-detected
+    commit_message="Upload v1.0",
+    card_metadata={
+        "title": "My Dataset",
+        "description": "Aerial gate detection.",
+        "license": "apache-2.0",
+        "tags": ["drone", "uav"],
+        "model_repo": "user/my-model",     # optional, links the trained model
+    },
 )
-hf_uploader.upload_dataset(
+print(result["splits"], result["class_names"])
+
+# Legacy raw-files upload (no viewer):
+uploader.upload_dataset(dataset_path="datasets/my_dataset")
+```
+
+#### Roboflow: dataset (images + annotations)
+
+`upload_dataset()` auto-detects COCO/YOLO format, pairs each image with its
+annotation, preserves the train/valid/test split assignment, and uploads in
+parallel.
+
+```python
+from nectar.ai.detection.datasets import RoboflowUploader
+
+uploader = RoboflowUploader(api_key="YOUR_KEY")
+
+stats = uploader.upload_dataset(
     dataset_path="datasets/my_dataset",
-    commit_message="Upload dataset v1.0"
+    project_name="my-project",
+    annotation_format=None,   # auto-detect ("coco" or "yolo")
+    splits=["train", "valid", "test"],
+    batch_name="batch-1",
+    tag_names=["robotics"],
+    max_workers=10,
+)
+print(stats["per_split"], stats["failed_files"])
+
+# Legacy: upload images only (no annotations) for an annotation workflow.
+uploader.upload_directory(directory_path="images/", project_name="my-project")
+```
+
+#### CLI
+
+```bash
+# HuggingFace native upload (Parquet + viewer)
+nectar-od dataset upload --target huggingface \
+    --repo user/my-dataset --dataset datasets/my_dataset \
+    --public --title "My Dataset" --model-repo user/my-model
+
+# HuggingFace raw-files fallback
+nectar-od dataset upload --target huggingface --raw \
+    --repo user/my-dataset --dataset datasets/my_dataset
+
+# Roboflow dataset (images + annotations, default)
+nectar-od dataset upload --target roboflow --api-key KEY \
+    --project my-project --dataset datasets/my_dataset \
+    --splits train valid test
+
+# Roboflow images-only (legacy)
+nectar-od dataset upload --target roboflow --images-only \
+    --api-key KEY --project my-project --dataset images/
+```
+
+### Dataset Download
+
+The `huggingface` (alias `hf`) handler downloads a HF dataset and materializes
+it on disk in COCO or YOLO format ready for training.
+
+```python
+from nectar.ai.detection.datasets import HuggingFaceHandler
+
+handler = HuggingFaceHandler("data/imav-gate", token=None)  # uses HF_TOKEN
+handler.download(
+    repo_id="blackbeedrones/imav-2025-gate-dataset",
+    format_type="yolo",   # or "coco"
+)
+# data/imav-gate now has data.yaml + train/images + train/labels (YOLO)
+# or train/_annotations.coco.json + image files (COCO)
+```
+
+CLI:
+
+```bash
+nectar-od dataset download --source huggingface \
+    --repo blackbeedrones/imav-2025-gate-dataset \
+    --format yolo --output data/imav-gate
+
+nectar-od dataset download --source roboflow \
+    --workspace WS --project P --version 1 --format coco \
+    --api-key KEY --output data/roboflow
+```
+
+### HF format converters
+
+Low-level converters used by both upload and download:
+
+```python
+from nectar.ai.detection.datasets import (
+    coco_to_hf, yolo_to_hf, hf_to_coco, hf_to_yolo, generate_dataset_card,
 )
 
-# Roboflow dataset upload (for annotation workflow)
-roboflow_uploader = RoboflowUploader(api_key="YOUR_KEY")
-roboflow_uploader.upload_directory(
-    directory_path="images/",
-    project_name="my-project",
-    batch_name="batch-1"
-)
+ds = coco_to_hf("datasets/my_dataset")          # COCO -> DatasetDict
+ds = yolo_to_hf("datasets/my_dataset")          # YOLO -> DatasetDict
+hf_to_coco(ds, "out/coco")                      # DatasetDict -> COCO files
+hf_to_yolo(ds, "out/yolo")                      # DatasetDict -> YOLO files + data.yaml
+card = generate_dataset_card(ds, "user/repo", title="My Dataset")
 ```
 
 ## Config Files
@@ -1246,19 +1348,21 @@ detection/
 │   ├── wbf.py           # WBFStrategy
 │   ├── nmm.py           # NMMStrategy
 │   └── filtering.py     # PerClassConfidenceFilter
-├── datasets/           # Dataset management utilities
-│   ├── format.py       # FormatDetector, FormatConverter
-│   ├── subset.py       # SubsetCreator
-│   ├── stratify.py     # Stratifier
-│   ├── augment.py      # AugmentationBuilder
-│   ├── analyze.py      # DatasetAnalyzer
-│   ├── merge.py        # DatasetMerger
-│   ├── handlers.py     # DatasetHandlerRegistry
-│   ├── handlers/       # Dataset download handlers
-│   │   ├── base.py     # BaseDatasetHandler
-│   │   ├── visdrone.py # VisDroneHandler
-│   │   └── roboflow.py # RoboflowHandler
-│   └── upload.py       # RoboflowUploader, HuggingFaceDatasetUploader
+├── datasets/             # Dataset management utilities
+│   ├── format.py         # FormatDetector, FormatConverter
+│   ├── hf_converter.py   # COCO/YOLO <-> HuggingFace DatasetDict + dataset card
+│   ├── subset.py         # SubsetCreator
+│   ├── stratify.py       # Stratifier
+│   ├── augment.py        # AugmentationBuilder
+│   ├── analyze.py        # DatasetAnalyzer
+│   ├── merge.py          # DatasetMerger
+│   ├── handlers.py       # DatasetHandlerRegistry
+│   ├── handlers/         # Dataset download handlers
+│   │   ├── base.py         # BaseDatasetHandler
+│   │   ├── visdrone.py     # VisDroneHandler
+│   │   ├── roboflow.py     # RoboflowHandler
+│   │   └── huggingface.py  # HuggingFaceHandler
+│   └── upload.py         # RoboflowUploader, HuggingFaceDatasetUploader
 └── utils/
     ├── device.py        # DeviceManager, get_device
     ├── huggingface.py   # HuggingFaceUploader

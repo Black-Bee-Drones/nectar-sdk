@@ -53,6 +53,18 @@ def cmd_download(args):
             version=args.version,
             format_type=args.format,
         )
+    elif handler_name in ("huggingface", "hf"):
+        if not args.repo:
+            logger.error("--repo is required for huggingface source (e.g. user/dataset)")
+            sys.exit(1)
+        hf_format = args.format if args.format in ("coco", "yolo") else "coco"
+        handler = handler_class(str(output_dir), token=args.token)
+        handler.download(
+            repo_id=args.repo,
+            format_type=hf_format,
+            split=getattr(args, "split", None),
+            revision=getattr(args, "revision", None),
+        )
     else:
         logger.error(f"Handler {handler_name} not yet supported in CLI")
         sys.exit(1)
@@ -210,11 +222,36 @@ def cmd_upload(args):
             logger.error(f"Failed to create/access repository: {args.repo}")
             sys.exit(1)
 
-        uploader.upload_dataset(
-            dataset_path=args.dataset,
-            commit_message=args.message,
-            ignore_patterns=args.ignore,
-        )
+        if args.raw:
+            uploader.upload_dataset(
+                dataset_path=args.dataset,
+                commit_message=args.message,
+                ignore_patterns=args.ignore,
+            )
+        else:
+            card_metadata = {}
+            if args.title:
+                card_metadata["title"] = args.title
+            if args.description:
+                card_metadata["description"] = args.description
+            if args.license:
+                card_metadata["license"] = args.license
+            if args.tag:
+                card_metadata["tags"] = args.tag
+            if args.model_repo:
+                card_metadata["model_repo"] = args.model_repo
+
+            result = uploader.upload_native(
+                dataset_path=args.dataset,
+                source_format=args.annotation_format,
+                commit_message=args.message,
+                card_metadata=card_metadata or None,
+            )
+            logger.info(
+                "Pushed splits %s with classes %s",
+                result["splits"],
+                result["class_names"],
+            )
         logger.info(f"Dataset uploaded to: https://huggingface.co/datasets/{args.repo}")
     elif args.target == "roboflow":
         from nectar.ai.detection.datasets.upload import RoboflowUploader
@@ -224,15 +261,29 @@ def cmd_upload(args):
             sys.exit(1)
 
         uploader = RoboflowUploader(api_key=args.api_key, workspace=args.workspace)
-        uploader.upload_directory(
-            directory_path=args.dataset,
-            project_name=args.project,
-            batch_name=args.batch_name,
-            recursive=args.recursive,
-            verbose=True,
-            max_workers=args.max_workers,
-        )
-        logger.info(f"Images uploaded to Roboflow project: {args.project}")
+
+        if args.images_only:
+            uploader.upload_directory(
+                directory_path=args.dataset,
+                project_name=args.project,
+                batch_name=args.batch_name,
+                recursive=args.recursive,
+                verbose=True,
+                max_workers=args.max_workers,
+            )
+            logger.info(f"Images uploaded to Roboflow project: {args.project}")
+        else:
+            uploader.upload_dataset(
+                dataset_path=args.dataset,
+                project_name=args.project,
+                annotation_format=args.annotation_format,
+                splits=args.splits,
+                batch_name=args.batch_name,
+                tag_names=args.tag,
+                max_workers=args.max_workers,
+                verbose=True,
+            )
+            logger.info(f"Dataset (images + annotations) uploaded to: {args.project}")
     else:
         logger.error(f"Unknown upload target: {args.target}")
         sys.exit(1)
@@ -261,7 +312,9 @@ def main():
 
     download_parser = subparsers.add_parser("download", help="Download dataset")
     download_parser.add_argument(
-        "--source", required=True, help="Dataset source (visdrone, roboflow)"
+        "--source",
+        required=True,
+        help="Dataset source (visdrone, roboflow, huggingface)",
     )
     from nectar.ai.detection.core.configs import DEFAULT_DATA_DIR
 
@@ -288,6 +341,20 @@ def main():
     download_parser.add_argument("--project", help="Roboflow project (for roboflow source)")
     download_parser.add_argument(
         "--version", type=int, help="Roboflow version (for roboflow source)"
+    )
+    download_parser.add_argument(
+        "--repo", help="HuggingFace dataset repo (user/name) (for huggingface source)"
+    )
+    download_parser.add_argument(
+        "--token",
+        help="HuggingFace API token (for huggingface source; falls back to HF_TOKEN)",
+    )
+    download_parser.add_argument(
+        "--split",
+        help="Single split to load (for huggingface source: train/validation/test)",
+    )
+    download_parser.add_argument(
+        "--revision", help="Git revision/branch/tag (for huggingface source)"
     )
     download_parser.add_argument(
         "--num-workers",
@@ -435,7 +502,25 @@ def main():
     upload_parser.add_argument(
         "--ignore",
         nargs="*",
-        help="Patterns to ignore (e.g., '*.log', for huggingface)",
+        help="Patterns to ignore (e.g., '*.log', for huggingface --raw)",
+    )
+    upload_parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="huggingface: upload files as-is instead of converting to native Parquet",
+    )
+    upload_parser.add_argument("--title", help="Dataset card title (huggingface native)")
+    upload_parser.add_argument(
+        "--description", help="Dataset card description (huggingface native)"
+    )
+    upload_parser.add_argument(
+        "--license",
+        default=None,
+        help="Dataset license tag (huggingface native, default apache-2.0)",
+    )
+    upload_parser.add_argument(
+        "--model-repo",
+        help="Linked trained-model repo id (huggingface native dataset card)",
     )
 
     upload_parser.add_argument("--api-key", help="Roboflow API key (required for roboflow)")
@@ -443,10 +528,32 @@ def main():
     upload_parser.add_argument("--workspace", help="Roboflow workspace (for roboflow)")
     upload_parser.add_argument("--batch-name", help="Batch name (for roboflow)")
     upload_parser.add_argument(
-        "--recursive", action="store_true", help="Include subdirectories (for roboflow)"
+        "--recursive",
+        action="store_true",
+        help="Include subdirectories (for roboflow --images-only)",
     )
     upload_parser.add_argument(
         "--max-workers", type=int, default=10, help="Parallel threads (for roboflow)"
+    )
+    upload_parser.add_argument(
+        "--images-only",
+        action="store_true",
+        help="roboflow: upload images without annotations (legacy behavior)",
+    )
+    upload_parser.add_argument(
+        "--annotation-format",
+        choices=["coco", "yolo"],
+        help="Override annotation format detection (default: auto-detect)",
+    )
+    upload_parser.add_argument(
+        "--splits",
+        nargs="+",
+        help="Limit upload to these splits (e.g. train valid test). Defaults to all available.",
+    )
+    upload_parser.add_argument(
+        "--tag",
+        action="append",
+        help="Tag to apply (repeatable). Used as image tag for Roboflow and as dataset tag for HuggingFace.",
     )
 
     upload_images_parser = subparsers.add_parser(
