@@ -4,14 +4,12 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import numpy as np
 
-try:
-    import supervision as sv
-except ImportError:
-    sv = None
+if TYPE_CHECKING:
+    pass
 
 from nectar.ai.detection.core.configs import TrainingResult
 from nectar.ai.segmentation.core.configs import (
@@ -72,6 +70,11 @@ class BaseSegmentationModel(ABC):
 
     def _predict_batch(self, seg_input: SegmentationInput) -> SegPrediction:
         """Run inference on a batch of images (default: sequential)."""
+        try:
+            import supervision as sv
+        except ImportError:
+            sv = None
+
         images = seg_input.image
         batch_detections = []
         image_paths = []
@@ -219,8 +222,12 @@ class BaseSegmentationModel(ABC):
         np.ndarray
             Annotated image.
         """
-        if sv is None:
-            raise ImportError("supervision is required. Install with: pip install supervision")
+        try:
+            import supervision as sv
+        except ImportError as e:
+            raise ImportError(
+                "supervision is required. Install with: pip install supervision"
+            ) from e
 
         if not result.segmentations:
             return image.copy()

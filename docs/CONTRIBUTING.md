@@ -206,6 +206,23 @@ When adding new components:
 4. **Export**: Add public symbols to `__init__.py`
 5. **Document**: Update module README.md
 
+### Import-time Contract
+
+Heavy third-party dependencies (`torch`, `transformers`, `rfdetr`, `tensorflow`, `jax`, `matplotlib`, `mediapipe`, `pyrealsense2`, `depthai`, `supervision`, `ultralytics`, `pandas`, `geopy`) **must not** be imported at module load time on the path of `from nectar.ai import Detector`, `from nectar.vision import ImageHandler`, or `from nectar.control import MavrosConfig`.
+
+Two patterns are used to enforce this, both standard ([PEP 562](https://peps.python.org/pep-0562/), the same approach as scikit-learn / NumPy / SciPy):
+
+1. **Lazy package surface in `__init__.py`**: heavy re-exports go through a `_LAZY_ATTRS` dict and `__getattr__`. Lightweight types (dataclasses, enums, exceptions) stay eager. See `nectar/ai/detection/__init__.py` and `nectar/vision/__init__.py` for the canonical pattern.
+2. **Local imports in functions**: when a module needs `matplotlib` / `pandas` only inside a plotting helper, the import lives inside the function body, not at the top of the file. See `nectar/vision/algorithms/distance/calibrator.py::ModelCalibrator.plot`.
+
+The contract is enforced by `nectar/test/test_lazy_imports.py`, which spawns a fresh interpreter and asserts that the forbidden modules are not in `sys.modules` after the public import. Run it locally with:
+
+```bash
+python -m pytest nectar/test/test_lazy_imports.py
+```
+
+If you add a new heavy dependency or re-export, either add it to `_LAZY_ATTRS` or extend the forbidden list and the test together.
+
 ## Review Process 👀
 
 After submission:

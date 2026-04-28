@@ -2,29 +2,20 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
-
-try:
-    import torch
-except ImportError:
-    torch = None
-
-try:
-    import supervision as sv
-except ImportError:
-    sv = None
-
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
 
 try:
     import cv2
 except ImportError:
     cv2 = None
+
+if TYPE_CHECKING:
+    import supervision as sv
+    import torch
+    from PIL import Image
+
 
 ImageType = Union[str, Path, np.ndarray, "torch.Tensor", "Image.Image"]
 BatchImageType = Union[
@@ -199,8 +190,12 @@ class SegmentationResult:
 
     def to_supervision(self) -> "sv.Detections":
         """Convert instance segmentations to supervision Detections with masks."""
-        if sv is None:
-            raise ImportError("supervision is required. Install with: pip install supervision")
+        try:
+            import supervision as sv
+        except ImportError as e:
+            raise ImportError(
+                "supervision is required. Install with: pip install supervision"
+            ) from e
         if not self.segmentations:
             return sv.Detections.empty()
 
@@ -307,7 +302,11 @@ class SegmentationInput:
         """Check if input contains a batch of images."""
         if isinstance(self.image, (list, tuple)):
             return True
-        if torch is not None and isinstance(self.image, torch.Tensor):
+        try:
+            import torch
+        except ImportError:
+            return False
+        if isinstance(self.image, torch.Tensor):
             return self.image.dim() == 4
         return False
 
