@@ -6,6 +6,7 @@
 | `sensors.py` | Monitor GPS/vision/local data | `--source gps\|vision` |
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |
 | `mavros_navigation.py` | Navigation test (BODY, TAKEOFF, GPS) | `--mode --strategy --test --distance` |
+| `interactive_nav.py` | Interactive REPL — type waypoints live | `--mode --strategy --altitude` |
 | `mavros_obstacles.py` | Obstacle avoidance | - |
 
 ## Basic Flight
@@ -79,6 +80,35 @@ python3 mavros_navigation.py --test rectangle --strategy pid-ekf --distance 4.0
 
 # GPS rectangle (4 GPS waypoints, outdoor only)
 python3 mavros_navigation.py --test gps-rectangle --strategy position-global --distance 5.0
+```
+
+## Interactive Navigation
+
+```bash
+# Outdoor with default PID
+python3 interactive_nav.py --mode outdoor
+
+# Outdoor with EKF, 3m altitude
+python3 interactive_nav.py --mode outdoor --strategy pid-ekf --altitude 3.0
+
+# Hand-held testing (no arm/takeoff)
+python3 interactive_nav.py --no-takeoff
+```
+
+Once running, type waypoints at the `nav>` prompt:
+
+```
+nav> 2 0           # 2m forward
+nav> 0 3 0         # 3m left, hold altitude
+nav> -2 -3 0       # back
+nav> set ref takeoff
+nav> 5 0 0         # 5m forward from takeoff origin
+nav> 0 0 0         # return to takeoff
+nav> set method pid-ekf
+nav> 3 2            # now uses PID_EKF
+nav> gps -22.413 -45.449 15
+nav> status         # show drone state + settings
+nav> land
 ```
 
 ### Navigation Strategies
