@@ -13,7 +13,16 @@ from nectar.control import (
 )
 from nectar.utils.gps_calculate import GPSCalculate
 
-AVAILABLE_TESTS = ["body", "takeoff-ref", "altitude", "velocity", "gps"]
+AVAILABLE_TESTS = [
+    "body",
+    "takeoff-ref",
+    "altitude",
+    "velocity",
+    "gps",
+    "figure8",
+    "rectangle",
+    "gps-rectangle",
+]
 
 STRATEGY_MAP = {
     "pid": NavigationMethod.PID,
@@ -264,6 +273,150 @@ class NavigationTest(Node):
         self._log_test_result("GPS Navigation", reached)
         return reached
 
+    def test_figure8(self) -> bool:
+        """
+        Figure-8 pattern using TAKEOFF reference.
+
+        Two diamonds (forward and backward) sharing the origin, 8 waypoints total.
+        Tests sequential precision and return-to-origin accuracy.
+
+        ::
+
+                  (d, 0)
+                  /    \
+            (d/2,-d/2) (d/2, d/2)
+                  \\    /
+            ─── (0, 0) ───
+                  /    \
+           (-d/2,-d/2) (-d/2, d/2)
+                  \\    /
+                 (-d, 0)
+        """
+        d = self.dist
+        h = d / 2
+        self._log_test_header("Figure-8", f"{d}m diamonds")
+
+        waypoints = [
+            (h, h, None, "Front-left"),
+            (d, 0.0, None, "Front apex"),
+            (h, -h, None, "Front-right"),
+            (0.0, 0.0, None, "Center (cross)"),
+            (-h, h, None, "Rear-left"),
+            (-d, 0.0, None, "Rear apex"),
+            (-h, -h, None, "Rear-right"),
+            (0.0, 0.0, None, "Origin (return)"),
+        ]
+
+        return self._run_waypoints("Figure-8", waypoints, MoveReference.TAKEOFF)
+
+    def test_rectangle(self) -> bool:
+        """
+        Rectangle with midpoints using TAKEOFF reference (8 waypoints).
+
+        Visits corners and edge midpoints for denser precision sampling.
+
+        ::
+
+            (d, d/2) ── (d, 0) ── (d, -d/2)
+               |                      |
+            (0, d/2)              (0, -d/2)
+               |                      |
+            (-d, d/2)──(-d, 0)──(-d, -d/2)  (not visited, returns to origin)
+        """
+        d = self.dist
+        h = d / 2
+        self._log_test_header("Rectangle 8-pt", f"{d}×{d}m")
+
+        waypoints = [
+            (h, 0.0, None, "Front mid"),
+            (d, 0.0, None, "Front-right corner"),
+            (d, h, None, "Right mid-front"),
+            (d, d, None, "Right-back corner"),
+            (h, d, None, "Back mid"),
+            (0.0, d, None, "Left-back corner"),
+            (0.0, h, None, "Left mid-front"),
+            (0.0, 0.0, None, "Origin (return)"),
+        ]
+
+        return self._run_waypoints("Rectangle 8-pt", waypoints, MoveReference.TAKEOFF)
+
+    def test_gps_rectangle(self) -> bool:
+        """
+        GPS rectangle using move_to_gps (outdoor only, 4 corners).
+
+        Computes GPS waypoints offset from current position at current heading.
+        """
+        if self.args.mode == "indoor":
+            self.get_logger().warn("GPS rectangle skipped: not available in indoor mode")
+            return False
+
+        d = self.dist
+        self._log_test_header("GPS Rectangle", f"{d}m sides")
+
+        gps = self.drone.gps
+        hdg = self.drone.heading
+        gps_prec = max(self.prec, 0.5)
+
+        gps_method = self.method
+        if gps_method == NavigationMethod.POSITION:
+            gps_method = NavigationMethod.POSITION_GLOBAL
+
+        offsets = [
+            (d, 0.0, "Forward"),
+            (d, d, "Forward+Left"),
+            (0.0, d, "Left"),
+            (0.0, 0.0, "Return"),
+        ]
+
+        all_reached = True
+        for fx, fy, label in offsets:
+            lat, lon, _ = GPSCalculate.calculate_gps_offset(
+                fx,
+                fy,
+                0.0,
+                gps.latitude,
+                gps.longitude,
+                gps.altitude,
+                hdg,
+            )
+            self.get_logger().info(f"  → {label}: lat={lat:.6f}, lon={lon:.6f}")
+            reached = self.drone.move_to_gps(
+                latitude=lat,
+                longitude=lon,
+                precision=gps_prec,
+                timeout=self.tout,
+                method=gps_method,
+            )
+            if not reached:
+                self.get_logger().warn(f"  ⚠ {label}: timeout")
+                all_reached = False
+            self.drone.delay(1.5)
+
+        self._log_test_result("GPS Rectangle", all_reached)
+        return all_reached
+
+    def _run_waypoints(self, name: str, waypoints: list, reference: MoveReference) -> bool:
+        """Navigate a list of (x, y, z, label) waypoints and report result."""
+        all_reached = True
+        for i, (x, y, z, label) in enumerate(waypoints, 1):
+            self.get_logger().info(f"  → [{i}/{len(waypoints)}] {label}: x={x}, y={y}")
+            reached = self.drone.move_to(
+                x=x,
+                y=y,
+                z=z,
+                reference=reference,
+                precision=self.prec,
+                timeout=self.tout,
+                method=self.method,
+            )
+            if not reached:
+                self.get_logger().warn(f"  ⚠ {label}: timeout")
+                all_reached = False
+            self.drone.delay(1.5)
+
+        self._log_test_result(name, all_reached)
+        return all_reached
+
     def _log_test_header(self, name: str, detail: str) -> None:
         self.get_logger().info(f"\n{'─' * 50}")
         self.get_logger().info(f"  TEST: {name} ({detail})")
@@ -285,6 +438,9 @@ class NavigationTest(Node):
             "altitude": self.test_altitude,
             "velocity": self.test_velocity,
             "gps": self.test_gps,
+            "figure8": self.test_figure8,
+            "rectangle": self.test_rectangle,
+            "gps-rectangle": self.test_gps_rectangle,
         }
 
         tests_to_run = self.args.test
@@ -332,6 +488,9 @@ def parse_args() -> argparse.Namespace:
             "  python3 mavros_navigation.py --strategy position --test takeoff-ref\n"
             "  python3 mavros_navigation.py --mode outdoor --test gps --strategy position-global\n"
             "  python3 mavros_navigation.py --no-takeoff --test body --distance 1.0\n"
+            "  python3 mavros_navigation.py --test figure8 --distance 3.0\n"
+            "  python3 mavros_navigation.py --test rectangle --strategy pid-ekf --distance 4.0\n"
+            "  python3 mavros_navigation.py --test gps-rectangle --strategy position-global --distance 5.0\n"
         ),
     )
     parser.add_argument(

@@ -57,19 +57,28 @@ python3 pid_simulation.py --plot
 python3 mavros_navigation.py --mode outdoor
 
 # Use EKF local position instead of raw GPS
-python3 mavros_navigation.py --strategy pid-local
+python3 mavros_navigation.py --strategy pid-ekf
 
 # Local setpoint (FCU handles position control)
-python3 mavros_navigation.py --strategy setpoint --test body
+python3 mavros_navigation.py --strategy position --test body
 
 # GPS global setpoint for long-range waypoints
-python3 mavros_navigation.py --mode outdoor --test gps --strategy setpoint-global
+python3 mavros_navigation.py --mode outdoor --test gps --strategy position-global
 
 # Hand-held test (no takeoff, verify navigation logic)
 python3 mavros_navigation.py --no-takeoff --test body
 
 # Custom distance, specific tests
 python3 mavros_navigation.py --test body takeoff-ref --distance 3.0
+
+# Figure-8 pattern (8 waypoints, tests sequential precision)
+python3 mavros_navigation.py --test figure8 --distance 3.0
+
+# Rectangle with midpoints (8 waypoints, denser precision sampling)
+python3 mavros_navigation.py --test rectangle --strategy pid-ekf --distance 4.0
+
+# GPS rectangle (4 GPS waypoints, outdoor only)
+python3 mavros_navigation.py --test gps-rectangle --strategy position-global --distance 5.0
 ```
 
 ### Navigation Strategies
@@ -77,6 +86,6 @@ python3 mavros_navigation.py --test body takeoff-ref --distance 3.0
 | Strategy | Description |
 |----------|-------------|
 | `pid` (default) | PID velocity control using raw sensors (vision/GPS) |
-| `pid-local` | PID velocity control using EKF local position |
-| `setpoint` | Local position setpoint via `setpoint_raw/local` |
-| `setpoint-global` | GPS global setpoint (outdoor only, long range) |
+| `pid-ekf` | PID velocity control using EKF local position |
+| `position` | Local position setpoint via `setpoint_raw/local` |
+| `position-global` | GPS global setpoint (outdoor only, long range) |
