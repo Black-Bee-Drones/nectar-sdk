@@ -281,8 +281,12 @@ class ObjectDetectionEvaluator:
             batch_paths = paths[i : i + self.config.batch_size]
             batch_gts = gts[i : i + self.config.batch_size]
 
+            # Pass file paths to inference. Each model wrapper loads with the
+            # correct color order itself (cv2/BGR for Ultralytics, PIL/RGB for
+            # transformers/rfdetr); passing the RGB np.ndarray we hold for
+            # plotting silently feeds RGB to BGR-expecting models.
             detection_input = DetectionInput(
-                image=batch_imgs,
+                image=batch_paths,
                 conf_threshold=_RAW_CONF_THRESHOLD,
                 iou_threshold=self.config.iou_threshold,
                 device=self.device,
@@ -296,8 +300,8 @@ class ObjectDetectionEvaluator:
             batch_preds = prediction.batch_detections or [prediction.detections]
             preds.extend(batch_preds)
 
-            per_image_time = elapsed / len(batch_imgs)
-            for _ in batch_imgs:
+            per_image_time = elapsed / len(batch_paths)
+            for _ in batch_paths:
                 times.append(per_image_time)
 
             for pred, gt, path in zip(batch_preds, batch_gts, batch_paths):

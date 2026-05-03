@@ -357,20 +357,33 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
             with open(label_path) as f:
                 for line in f:
                     parts = line.strip().split()
-                    if len(parts) >= 5:
+                    if len(parts) < 5:
+                        continue
+                    try:
                         cls_id = int(parts[0])
-                        x_center = float(parts[1]) * width
-                        y_center = float(parts[2]) * height
-                        w = float(parts[3]) * width
-                        h = float(parts[4]) * height
+                        coords = [float(x) for x in parts[1:]]
+                    except ValueError:
+                        continue
 
-                        x1 = x_center - w / 2
-                        y1 = y_center - h / 2
-                        x2 = x_center + w / 2
-                        y2 = y_center + h / 2
+                    if len(coords) == 4:
+                        # YOLO bbox: class cx cy w h (normalized).
+                        cx, cy, bw, bh = coords
+                        x1 = (cx - bw / 2) * width
+                        y1 = (cy - bh / 2) * height
+                        x2 = (cx + bw / 2) * width
+                        y2 = (cy + bh / 2) * height
+                    elif len(coords) >= 6 and len(coords) % 2 == 0:
+                        # YOLO polygon (segmentation/OBB): class x1 y1 x2 y2 ...
+                        # Roboflow exports segmentation projects this way even
+                        # when format=yolo. Reduce to bbox via min/max.
+                        xs = [coords[i] * width for i in range(0, len(coords), 2)]
+                        ys = [coords[i] * height for i in range(1, len(coords), 2)]
+                        x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+                    else:
+                        continue
 
-                        boxes.append([x1, y1, x2, y2])
-                        class_ids.append(cls_id)
+                    boxes.append([x1, y1, x2, y2])
+                    class_ids.append(cls_id)
 
             if boxes:
                 detection = sv.Detections(
