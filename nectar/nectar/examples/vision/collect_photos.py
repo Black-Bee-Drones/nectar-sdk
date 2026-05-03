@@ -25,6 +25,16 @@ Usage:
     ros2 run nectar collect_photos.py --ros-args \
         -p camera_type:=webcam \
         -p width:=1920 -p height:=1080
+
+    # Publish images to ROS topic (view with rqt or ros2 topic echo)
+    ros2 run nectar collect_photos.py --ros-args \
+        -p publish:=true
+
+    # Custom topic and scale (30% of original for low bandwidth)
+    ros2 run nectar collect_photos.py --ros-args \
+        -p publish:=true \
+        -p publish_topic:=drone_cam/compressed \
+        -p publish_scale:=0.3
 """
 
 import time
@@ -32,8 +42,10 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import CompressedImage
 
 from nectar.vision.camera.config_builder import ConfigBuilder
 from nectar.vision.camera.handler import ImageHandler
@@ -53,6 +65,9 @@ class CollectPhotosNode(Node):
         self.declare_parameter("jpeg_quality", 90)
         self.declare_parameter("show_preview", False)
         self.declare_parameter("max_photos", 0)
+        self.declare_parameter("publish", False)
+        self.declare_parameter("publish_topic", "collect_photos/compressed")
+        self.declare_parameter("publish_scale", 0.5)
         self.declare_parameter("width", 1280)
         self.declare_parameter("height", 720)
         self.declare_parameter("fps", 30)
@@ -65,6 +80,14 @@ class CollectPhotosNode(Node):
         self._jpeg_quality: int = self.get_parameter("jpeg_quality").value
         show_preview: bool = self.get_parameter("show_preview").value
         self._max_photos: int = self.get_parameter("max_photos").value
+
+        self._publish: bool = self.get_parameter("publish").value
+        self._publish_scale: float = self.get_parameter("publish_scale").value
+        self._image_pub = None
+        if self._publish:
+            topic = self.get_parameter("publish_topic").value
+            self._image_pub = self.create_publisher(CompressedImage, topic, 1)
+            self.get_logger().info(f"Publishing images to /{topic}")
 
         self._output_path = self._setup_output_dir(output_dir, run_name)
         self._photo_count = 0
@@ -168,9 +191,29 @@ class CollectPhotosNode(Node):
             f"[{self._photo_count}] Saved {filename} ({frame.shape[1]}x{frame.shape[0]})"
         )
 
+        if self._image_pub is not None:
+            self._publish_frame(frame)
+
         if self._max_photos > 0 and self._photo_count >= self._max_photos:
             self.get_logger().info(f"Reached max_photos ({self._max_photos}). Stopping.")
             raise SystemExit(0)
+
+    def _publish_frame(self, frame: np.ndarray) -> None:
+        """Publish frame as CompressedImage, downscaled for bandwidth."""
+        if self._publish_scale < 1.0:
+            frame = cv2.resize(
+                frame,
+                None,
+                fx=self._publish_scale,
+                fy=self._publish_scale,
+                interpolation=cv2.INTER_AREA,
+            )
+        _, data = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        msg = CompressedImage()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.format = "jpeg"
+        msg.data = data.tobytes()
+        self._image_pub.publish(msg)
 
     def destroy_node(self) -> None:
         self.image_handler.cleanup()
