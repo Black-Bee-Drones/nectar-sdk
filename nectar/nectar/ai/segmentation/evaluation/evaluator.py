@@ -328,12 +328,15 @@ class SegmentationEvaluator:
         results: list = []
 
         for i in tqdm(range(len(images)), desc="Evaluating"):
-            img = images[i]
             img_path = paths[i]
             gt = gts[i]
 
+            # Pass file path to inference. The model wrapper loads with the
+            # correct color order itself (cv2/BGR for Ultralytics); passing the
+            # RGB np.ndarray we hold for plotting silently feeds RGB to a
+            # BGR-expecting model and predictions land in the wrong place.
             seg_input = SegmentationInput(
-                image=img,
+                image=img_path,
                 conf_threshold=_RAW_CONF_THRESHOLD,
                 iou_threshold=self.config.iou_threshold,
                 device=self.device,
@@ -501,7 +504,9 @@ class SegmentationEvaluator:
         results = {}
         iou_types = ["segm", "bbox"] if has_masks else ["bbox"]
         for iou_type in iou_types:
-            metric = TorchMeanAP(iou_type=iou_type)
+            # class_metrics=True is required to populate map_per_class;
+            # otherwise torchmetrics returns -1 for every class.
+            metric = TorchMeanAP(iou_type=iou_type, class_metrics=True)
             metric.update(tm_preds, tm_targets)
             r = metric.compute()
 

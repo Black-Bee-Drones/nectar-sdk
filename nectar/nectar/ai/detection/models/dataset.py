@@ -320,12 +320,23 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
     names = data.get("names", {})
     classes = names if isinstance(names, list) else list(names.values())
 
-    # Get split directory
+    # Resolve the split's directory. Honor the YAML's optional `path:` root
+    # (Ultralytics convention) and fall back to stripping leading '..'
+    # segments to handle Roboflow's YOLOv8 quirk where exports contain paths
+    # like '../test/images' that assume an outer datasets_dir.
+    root = dataset_path
+    if data.get("path"):
+        p = Path(data["path"])
+        root = p if p.is_absolute() else (dataset_path / p).resolve()
+
     split_path = data.get(split, data.get("val", "valid"))
-    if not Path(split_path).is_absolute():
-        split_dir = dataset_path / split_path
-    else:
+    if Path(split_path).is_absolute():
         split_dir = Path(split_path)
+    else:
+        split_dir = (root / split_path).resolve()
+        if not split_dir.exists():
+            stripped = tuple(p for p in Path(split_path).parts if p != "..")
+            split_dir = root.joinpath(*stripped) if stripped else root
 
     # Get image and label directories
     images_dir = split_dir

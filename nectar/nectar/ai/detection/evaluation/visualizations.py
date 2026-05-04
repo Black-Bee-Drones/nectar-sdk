@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-import cv2
 import numpy as np
 
 if TYPE_CHECKING:
@@ -451,10 +450,9 @@ def plot_prediction_samples(
     axes = axes.flatten()
     for i, ax in enumerate(axes):
         if i < len(annotated):
-            img = annotated[i]
-            if img.ndim == 3 and img.shape[2] == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            ax.imshow(img)
+            # Arrays from the evaluator are RGB (loaded via PIL.convert('RGB')),
+            # which is what matplotlib's imshow expects. No channel swap.
+            ax.imshow(annotated[i])
             ax.set_title(titles[i], fontsize=10)
         ax.axis("off")
     plt.suptitle("Prediction Samples (GT vs Pred)", fontsize=13, fontweight="bold")
