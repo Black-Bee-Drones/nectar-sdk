@@ -4,7 +4,7 @@ import argparse
 import logging
 import sys
 
-from nectar.ai.cli.common import add_common_eval_args
+from nectar.ai.cli.common import add_common_eval_args, parse_conf_per_class
 
 
 def parse_args():
@@ -61,6 +61,7 @@ def main():
         device=args.device,
         batch_size=args.batch_size,
         num_samples=args.num_samples,
+        prediction_samples_max=args.num_prediction_samples,
     )
 
     logger.info("Starting evaluation on %s split", args.split)
@@ -68,6 +69,18 @@ def main():
     logger.info("Output: %s", args.output_dir)
 
     evaluator = SegmentationEvaluator(model, config)
+
+    if args.conf_per_class:
+        from nectar.ai.detection.postprocess import PerClassConfidenceFilter
+
+        mapping = parse_conf_per_class(args.conf_per_class, model.class_names)
+        evaluator.set_post_processor(
+            filter_strategy=PerClassConfidenceFilter(
+                threshold_mapping=mapping, default_threshold=args.conf_threshold
+            )
+        )
+        logger.info("Per-class confidence thresholds: %s", mapping)
+
     metrics = evaluator.evaluate()
 
     logger.info("=" * 50)

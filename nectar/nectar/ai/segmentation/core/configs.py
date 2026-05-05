@@ -170,6 +170,7 @@ class SegEvaluationConfig:
     batch_size: int = 16
     num_samples: Optional[int] = None
     imgsz: Optional[int] = None
+    prediction_samples_max: int = 4
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

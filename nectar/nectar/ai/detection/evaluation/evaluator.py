@@ -72,6 +72,7 @@ class ObjectDetectionEvaluator:
         self.config = config
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._filter_strategy = None
 
         if config.device != "auto":
             self.device = config.device
@@ -81,6 +82,16 @@ class ObjectDetectionEvaluator:
             self.device = "mps"
         else:
             self.device = "cpu"
+
+    def set_post_processor(self, filter_strategy=None):
+        """Attach a post-processing filter applied at the user's operating point.
+
+        Currently supports `nectar.ai.detection.postprocess.PerClassConfidenceFilter`.
+        When set, it replaces the single ``conf_threshold`` filter for P/R/F1
+        reporting and for the prediction sample plot. mAP curves still use raw
+        predictions.
+        """
+        self._filter_strategy = filter_strategy
 
     def evaluate(self) -> EvaluationMetrics:
         if sv is None:
@@ -111,7 +122,10 @@ class ObjectDetectionEvaluator:
             json.dump(raw_results, f, indent=2)
 
         # Filter predictions at user's conf_threshold for supervision metrics
-        filtered_preds = self._filter_by_confidence(all_preds, self.config.conf_threshold)
+        if self._filter_strategy is not None:
+            filtered_preds = [self._filter_strategy.filter(p) for p in all_preds]
+        else:
+            filtered_preds = self._filter_by_confidence(all_preds, self.config.conf_threshold)
 
         # Compute supervision metrics on filtered predictions
         metrics_dict, per_class_metrics = self._compute_metrics(
@@ -230,6 +244,7 @@ class ObjectDetectionEvaluator:
                 all_paths,
                 dataset.classes,
                 self.output_dir,
+                max_samples=self.config.prediction_samples_max,
             )
             if path:
                 visualizations["prediction_samples"] = path

@@ -246,9 +246,51 @@ def add_common_eval_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     parser.add_argument("--device", type=str, default="auto", help="Device")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     parser.add_argument("--num-samples", type=int, help="Number of samples to evaluate")
+    parser.add_argument(
+        "--num-prediction-samples",
+        type=int,
+        default=4,
+        help="Number of test images to render in prediction_samples.png",
+    )
+    parser.add_argument(
+        "--conf-per-class",
+        type=str,
+        help=(
+            "Per-class confidence thresholds for the operating-point report. "
+            "Comma-separated 'name=value' pairs (e.g. 'rose=0.47,sphere=0.70'). "
+            "When set, replaces --conf-threshold for P/R/F1 and prediction "
+            "samples; mAP curves are unaffected."
+        ),
+    )
     parser.add_argument("--rfdetr-size", type=str, help="RF-DETR model size")
     parser.add_argument("--resolution", type=int, help="Resolution for RF-DETR")
     return parser
+
+
+def parse_conf_per_class(spec: str, class_names) -> Dict[int, float]:
+    """Parse 'name=value,name=value' into {class_id: threshold}.
+
+    `class_names` may be a list (`['rose', 'sphere']`) or a dict
+    (`{0: 'rose', 1: 'sphere'}`). Names not present in the model's class list
+    raise ValueError so typos fail loudly.
+    """
+    if isinstance(class_names, dict):
+        name_to_id = {v: k for k, v in class_names.items()}
+    else:
+        name_to_id = {n: i for i, n in enumerate(class_names)}
+
+    mapping: Dict[int, float] = {}
+    for chunk in spec.split(","):
+        if not chunk.strip():
+            continue
+        name, _, value = chunk.partition("=")
+        name = name.strip()
+        if name not in name_to_id:
+            raise ValueError(
+                f"Unknown class '{name}' in --conf-per-class; expected one of {list(name_to_id)}"
+            )
+        mapping[name_to_id[name]] = float(value)
+    return mapping
 
 
 def collect_common_train_params(
