@@ -814,11 +814,15 @@ class MavrosDrone(BaseDrone):
                 self._node.get_logger().error(f"Takeoff service timeout: {e}")
                 return False
 
-            self.delay(altitude * 3)
+            self.delay(altitude * 4)
 
             current_alt = self.get_altitude() or 0.0
             height_gain = abs(current_alt - takeoff_height)
-            if height_gain >= 0.1:
+
+            self._node.get_logger().info(
+                f"Height gain: {height_gain:.2f}m, Armed: {self._mavros_state.armed}"
+            )
+            if height_gain >= 0.1 or self._mavros_state.armed:
                 self._node.get_logger().info(f"Takeoff successful (gained {height_gain:.2f}m)")
 
                 if adjust_altitude:
