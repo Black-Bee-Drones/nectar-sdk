@@ -48,7 +48,6 @@ from rclpy.node import Node
 
 from nectar.control import DroneFactory, MavrosConfig, PoseSource
 
-
 HELP_TEXT = """
 Commands:
   <pwm>                       Send PWM to current channel (e.g. 1500)
@@ -287,19 +286,27 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--channel", type=int, default=3,
+        "--channel",
+        type=int,
+        default=3,
         help="initial AUX OUT number (default: 3 -> FCU ch 11)",
     )
     parser.add_argument(
-        "--hold", type=int, default=1000,
+        "--hold",
+        type=int,
+        default=1000,
         help="'hold' preset PWM in us (default: 1000)",
     )
     parser.add_argument(
-        "--release", type=int, default=2000,
+        "--release",
+        type=int,
+        default=2000,
         help="'release' preset PWM in us (default: 2000)",
     )
     parser.add_argument(
-        "--sensor-timeout", type=float, default=2.0,
+        "--sensor-timeout",
+        type=float,
+        default=2.0,
         help="MAVROS sensor wait timeout in seconds (default: 2.0)",
     )
     args, _ = parser.parse_known_args()

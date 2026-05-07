@@ -11,6 +11,7 @@ Usage:
     python3 interactive_nav.py --mode outdoor --strategy pid-ekf --altitude 3.0
     python3 interactive_nav.py --mode indoor --no-takeoff
 """
+
 import argparse
 import shlex
 
@@ -153,7 +154,9 @@ class InteractiveNav(Node):
             f"method={self.method.name} prec={self.precision}m"
         )
         reached = self.drone.move_to(
-            x=x, y=y, z=z,
+            x=x,
+            y=y,
+            z=z,
             reference=self.reference,
             precision=self.precision,
             timeout=self.timeout,
@@ -193,8 +196,12 @@ class InteractiveNav(Node):
             f"method={gps_method.name} prec={gps_prec}m"
         )
         reached = self.drone.move_to_gps(
-            latitude=lat, longitude=lon, altitude=alt,
-            precision=gps_prec, timeout=self.timeout, method=gps_method,
+            latitude=lat,
+            longitude=lon,
+            altitude=alt,
+            precision=gps_prec,
+            timeout=self.timeout,
+            method=gps_method,
         )
         if reached:
             self.get_logger().info("GPS target reached")
@@ -274,7 +281,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--mode", choices=["indoor", "outdoor"], default="outdoor")
     parser.add_argument("--no-takeoff", action="store_true", help="Hand-held testing")
-    parser.add_argument("--altitude", type=float, default=2.0, help="Takeoff altitude. Default: 2.0")
+    parser.add_argument(
+        "--altitude", type=float, default=2.0, help="Takeoff altitude. Default: 2.0"
+    )
     parser.add_argument("--strategy", choices=list(STRATEGY_MAP.keys()), default="pid")
     parser.add_argument("--precision", type=float, default=0.2)
     parser.add_argument("--timeout", type=float, default=30.0)
