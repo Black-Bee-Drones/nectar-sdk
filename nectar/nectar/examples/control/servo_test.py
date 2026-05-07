@@ -100,7 +100,7 @@ class ServoTester(Node):
             self.last_pwm = int(pwm)
         return ok
 
-    def handle(self, line: str) -> bool:
+    def handle_command(self, line: str) -> bool:
         """Parse and execute one REPL line. Returns False to quit."""
         line = line.strip()
         if not line:
@@ -331,7 +331,7 @@ def main(args=None) -> None:
                 line = input("servo> ")
             except EOFError:
                 break
-            if not node.handle(line):
+            if not node.handle_command(line):
                 break
     except KeyboardInterrupt:
         node.get_logger().info("Interrupted")
