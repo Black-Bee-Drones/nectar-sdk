@@ -22,6 +22,7 @@ from nectar.ai.detection.core.types import (
     Prediction,
 )
 
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 class BaseDetectionModel(ABC):
     """
