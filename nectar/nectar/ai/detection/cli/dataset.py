@@ -47,11 +47,14 @@ def cmd_download(args):
         )
     elif handler_name == "roboflow":
         handler = handler_class(str(output_dir), args.api_key)
+        # Allow overriding the Roboflow export format (e.g., 'coco-mmdetection'
+        # to keep brush-mask RLE on OD projects, 'coco-segmentation', etc).
+        roboflow_format = getattr(args, "roboflow_format", None) or args.format
         handler.download(
             workspace=args.workspace,
             project=args.project,
             version=args.version,
-            format_type=args.format,
+            format_type=roboflow_format,
         )
     elif handler_name in ("huggingface", "hf"):
         if not args.repo:
@@ -341,6 +344,14 @@ def main():
     download_parser.add_argument("--project", help="Roboflow project (for roboflow source)")
     download_parser.add_argument(
         "--version", type=int, help="Roboflow version (for roboflow source)"
+    )
+    download_parser.add_argument(
+        "--roboflow-format",
+        help=(
+            "Override Roboflow export format passed through to the API "
+            "(e.g. 'coco-mmdetection', 'coco-segmentation', 'yolov8-obb'). "
+            "Falls back to --format when omitted."
+        ),
     )
     download_parser.add_argument(
         "--repo", help="HuggingFace dataset repo (user/name) (for huggingface source)"

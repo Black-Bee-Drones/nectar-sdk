@@ -71,20 +71,17 @@ class RoboflowHandler(BaseDatasetHandler):
         except ImportError as exc:
             raise ImportError("roboflow required. Install: pip install roboflow") from exc
 
-        yolo_formats = ["yolo", "yolov8", "yolov9", "yolov11", "yolov12", "yolo26"]
-        if format_type not in yolo_formats + ["coco"]:
-            raise ValueError(
-                f"Unsupported format: {format_type}. "
-                f"Use 'yolo', 'yolov8', 'yolov9', 'yolov11', 'yolov12', 'yolo26', or 'coco'"
-            )
+        # Known short aliases. Anything else is passed through to Roboflow as-is,
+        # so callers can request formats like ``coco-mmdetection``, ``coco-segmentation``,
+        # ``yolov8-obb``, etc. Roboflow validates the final string against the project type.
+        download_format = "yolo26" if format_type == "yolo" else format_type
 
-        self._print(f"Downloading {workspace}/{project} v{version} ({format_type} format)")
+        self._print(f"Downloading {workspace}/{project} v{version} ({download_format} format)")
 
         rf = Roboflow(api_key=self.api_key)
         project_obj = rf.workspace(workspace).project(project)
         version_obj = project_obj.version(version)
 
-        download_format = "yolo26" if format_type == "yolo" else format_type
         dataset = version_obj.download(
             download_format, location=str(self.output_dir), overwrite=True
         )
