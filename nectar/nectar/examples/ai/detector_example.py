@@ -40,6 +40,7 @@ import os
 import cv2
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import CompressedImage
 
 from nectar.ai.detection import Detector, Framework
 from nectar.vision.camera import ImageHandler, OpenCVConfig
@@ -65,6 +66,9 @@ class DetectorStreamNode(Node):
         self.declare_parameter("show_class", True)
         self.declare_parameter("device", "auto")
         self.declare_parameter("hf_token", "")
+        self.declare_parameter("publish_result", False)
+        self.declare_parameter("topic", "/inference/compressed")
+        self.declare_parameter("jpeg_quality", 80)
 
         # Get parameters
         model_source = self.get_parameter("model_source").value
@@ -78,6 +82,9 @@ class DetectorStreamNode(Node):
         self.show_class = self.get_parameter("show_class").value
         device = self.get_parameter("device").value
         hf_token = self.get_parameter("hf_token").value
+        self.publish_result = self.get_parameter("publish_result").value
+        topic = self.get_parameter("topic").get_parameter_value().string_value
+        self.jpeg_quality = int(self.get_parameter("jpeg_quality").value)
 
         # Set HF token if provided
         if hf_token:
@@ -110,6 +117,10 @@ class DetectorStreamNode(Node):
         self.get_logger().info(
             f"Model loaded successfully! Framework: {self.detector.framework.value}"
         )
+
+        self.pub = self.create_publisher(CompressedImage, topic, 1) if self.publish_result else None
+        if self.publish_result:
+            self.get_logger().info(f"Publishing annotated frames on {topic}")
 
         # Log class names
         if self.detector.class_names:
@@ -184,6 +195,21 @@ class DetectorStreamNode(Node):
             frame[:] = annotated
 
         self._add_stats_overlay(frame, result)
+
+        if self.pub is None:
+            return
+
+        ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
+        if not ok:
+            return
+
+        msg = CompressedImage()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "down_camera"
+        msg.format = "jpeg"
+        msg.data = buf.tobytes()
+
+        self.pub.publish(msg)
 
     def _add_stats_overlay(self, frame, result):
         """Add statistics overlay to the frame."""
