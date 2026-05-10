@@ -1,10 +1,10 @@
+import time
 from abc import ABC, abstractmethod
 from typing import Callable, List, Optional, Union
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.client import Client
-from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.qos import QoSProfile
@@ -50,6 +50,7 @@ class BaseDrone(ABC):
         self._callback_group = ReentrantCallbackGroup()
         self._driver_running = False
         self._obstacle_manager = ObstacleManager()
+        self._owns_spin = node.executor is None
 
         if config.start_driver:
             self._init_driver()
@@ -774,14 +775,14 @@ class BaseDrone(ABC):
 
         if sync:
             future = client.call_async(request)
-            start_time = self._node.get_clock().now()
+            deadline = time.time() + timeout
 
             while not future.done():
-                rclpy.spin_once(self._node, timeout_sec=0.05)
-                if (self._node.get_clock().now() - start_time).nanoseconds / 1e9 > timeout:
+                if time.time() > deadline:
                     if fail_msg:
                         self._node.get_logger().error(f"{fail_msg}: Timeout waiting for response")
                     return None
+                self._wait(0.05)
 
             try:
                 result = future.result()
@@ -820,20 +821,41 @@ class BaseDrone(ABC):
 
     def delay(self, seconds: float) -> None:
         """
-        Delay with ROS spinning.
-
-        Maintains ROS communication during delay with spin_once.
+        Delay while keeping ROS communication alive.
 
         Parameters
         ----------
         seconds : float
             Delay duration in seconds.
         """
-        duration = Duration(seconds=seconds)
-        start_time = self._node.get_clock().now()
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            self._wait(min(0.05, deadline - time.time()))
 
-        while (self._node.get_clock().now() - start_time) < duration:
-            rclpy.spin_once(self._node, timeout_sec=0.1)
+    def _wait(self, timeout_sec: float) -> None:
+        """
+        Cooperative wait tick.
+
+        When the SDK owns ROS spinning (no external executor was bound to
+        the node at init), spins the global executor once with the user's
+        ``node.executor`` binding restored after the call so future
+        ``create_subscription`` wakes still target the right executor.
+        Otherwise sleeps so the user's executor keeps driving callbacks.
+
+        Parameters
+        ----------
+        timeout_sec : float
+            Maximum time to block in seconds. ``0`` is non-blocking.
+        """
+        if self._owns_spin:
+            saved = self._node.executor
+            try:
+                rclpy.spin_once(self._node, timeout_sec=max(timeout_sec, 0.0))
+            finally:
+                self._node.executor = saved
+        else:
+            if timeout_sec > 0.0:
+                time.sleep(timeout_sec)
 
     def cleanup(self) -> None:
         """

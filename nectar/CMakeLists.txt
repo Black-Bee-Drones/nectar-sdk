@@ -46,7 +46,9 @@ install(PROGRAMS
   nectar/examples/vision/t265_example.py
   nectar/examples/vision/collect_photos.py
   nectar/examples/ai/detector_example.py
+  nectar/examples/sensors/rangefinder_example.py
   nectar/control/pid/pid_node.py
+  nectar/sensors/nodes/rangefinder_node.py
   ../scripts/simulation/vision_pose_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )

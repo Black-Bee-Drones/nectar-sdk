@@ -1,7 +1,7 @@
 # Thin wrapper around scripts/setup.sh.
 
 .PHONY: help setup system update ros2 geographiclib ros2-env rosdep-init \
-        python python-control python-vision python-ai python-interface \
+        python python-control python-vision python-ai python-interface python-sensors \
         install-all install-full pytorch \
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
@@ -35,6 +35,7 @@ python-control:     ; @$(SETUP) python control
 python-vision:      ; @$(SETUP) python vision
 python-ai:          ; @$(SETUP) python ai
 python-interface:   ; @$(SETUP) python interface
+python-sensors:     ; @$(SETUP) python sensors
 install-all:        ; @$(SETUP) python all
 install-full:       ; @$(SETUP) python full
 pytorch:            ; @$(SETUP) pytorch

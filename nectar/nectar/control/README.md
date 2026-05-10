@@ -196,6 +196,13 @@ classDiagram
     DroneConfig <|-- BebopConfig
 ```
 
+## Spinning Model
+
+The SDK supports two usage patterns transparently:
+
+- **SDK-owned spin (Pattern A)**: user creates a plain `Node` (or subclasses one) and passes it to `DroneFactory.create`. No external executor is bound. The SDK drives ROS internally via `BaseDrone._wait`, which calls `rclpy.spin_once` and restores `node.executor` afterwards. Examples: [examples/control/sensors.py](examples/control/sensors.py), [examples/control/basic.py](examples/control/basic.py).
+- **User-owned spin (Pattern B)**: user passes a node already attached to an executor running in a background thread (Yasmin's `YasminNode`, the GUI's `ROSExecutor`, any custom `MultiThreadedExecutor`). The SDK detects this at init and `_wait` just sleeps; the user's executor keeps firing callbacks. The SDK never mutates `node.executor`, so subscriptions added after the drone is created (camera handler, custom subs in Yasmin states, etc.) still wake the right executor and stay fresh.
+
 ## Core Components
 
 ### DroneFactory
