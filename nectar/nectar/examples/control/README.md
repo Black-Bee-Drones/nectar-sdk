@@ -7,6 +7,7 @@
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |
 | `mavros_navigation.py` | Navigation test (BODY, TAKEOFF, GPS) | `--mode --strategy --test --distance` |
 | `interactive_nav.py` | Interactive REPL — type waypoints live | `--mode --strategy --altitude` |
+| `servo_test.py` | Interactive REPL — pre-flight servo / PWM tester via `MAV_CMD_DO_SET_SERVO` | `--channel --hold --release` |
 | `mavros_obstacles.py` | Obstacle avoidance | - |
 
 ## Basic Flight
@@ -119,3 +120,39 @@ nav> land
 | `pid-ekf` | PID velocity control using EKF local position |
 | `position` | Local position setpoint via `setpoint_raw/local` |
 | `position-global` | GPS global setpoint (outdoor only, long range) |
+
+## Servo / PWM Test
+
+Drives `MavrosDrone.do_servo` (`MAV_CMD_DO_SET_SERVO`, 183) from a REPL so you
+can verify the correct AUX OUT channel and the PWM endpoints (e.g. hook hold /
+release) on the bench. The script never arms the drone and never takes off —
+keep props off.
+
+```bash
+# MAVROS already running. Defaults: channel=3 (FCU ch 11 = AUX OUT 3),
+# hold=1000us, release=2000us.
+python3 servo_test.py
+
+# Custom channel and presets
+python3 servo_test.py --channel 4 --hold 1100 --release 1900
+```
+
+At the `servo>` prompt:
+
+```
+servo> 1500              # send PWM 1500 to current channel
+servo> ch 3              # switch to AUX OUT 3 (FCU ch 11)
+servo> hold              # send 'hold' preset
+servo> release           # send 'release' preset
+servo> sweep 1000 2000 100 0.3
+servo> cycle 3 0.8       # toggle hold<->release 3 times, 0.8s apart
+servo> set hold 1100     # update presets at runtime
+servo> status            # channel, last PWM, FCU state
+```
+
+`do_servo(N, pwm)` maps to FCU servo number `N + 8`, so `ch 3` drives AUX OUT 3
+on a Pixhawk-style FCU (Copter recommends AUX OUT 1-4 for hobby servos at 50 Hz;
+avoid MAIN OUT 1-8, which run at 400 Hz). If a write returns `OK` but the servo
+does not move, check the safety switch and that `SERVOx_FUNCTION = 0` in
+ArduPilot. See [common-servo](https://ardupilot.org/copter/docs/common-servo.html)
+and [MAV_CMD_DO_SET_SERVO](https://mavlink.io/en/messages/common.html#MAV_CMD_DO_SET_SERVO).

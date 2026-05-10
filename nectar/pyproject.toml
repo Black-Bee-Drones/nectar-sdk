@@ -66,8 +66,13 @@ oakd = [
     "depthai==2.32.0.0",
 ]
 
+sensors = [
+    "pyserial>=3.5,<4.0",
+    "pymavlink>=2.4.40,<3.0",
+]
+
 all = [
-    "nectar-sdk[control,vision,interface,realsense,oakd]",
+    "nectar-sdk[control,vision,interface,realsense,oakd,sensors]",
 ]
 
 full = [

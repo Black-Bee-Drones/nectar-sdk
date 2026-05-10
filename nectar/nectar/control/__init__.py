@@ -61,6 +61,8 @@ _LAZY_ATTRS = {
     "GPSUtils": "nectar.control.mavros.gps_utils",
     # Camera-based obstacle detectors (pyrealsense2 / sklearn)
     "DepthObstacleDetector": "nectar.control.obstacles.depth_camera",
+    # Direct MAVLink connection (pymavlink)
+    "MavlinkConnection": "nectar.control.mavlink.connection",
 }
 
 
@@ -80,6 +82,7 @@ def __dir__():
 if TYPE_CHECKING:
     from nectar.control.bebop.drone import BebopDrone
     from nectar.control.crazyflie.drone import CrazyflieDrone
+    from nectar.control.mavlink.connection import MavlinkConnection
     from nectar.control.mavros.drone import MavrosDrone
     from nectar.control.mavros.gps_utils import GPSUtils
     from nectar.control.mavros.navigator import MavrosNavigator
@@ -120,6 +123,7 @@ __all__ = [
     "BebopDrone",
     "CrazyflieDrone",
     "GPSUtils",
+    "MavlinkConnection",
     "BaseObstacleDetector",
     "DepthObstacleDetector",
     "ObstacleInfo",
