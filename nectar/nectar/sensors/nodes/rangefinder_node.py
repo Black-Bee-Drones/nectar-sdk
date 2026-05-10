@@ -13,8 +13,7 @@ Run::
     ros2 run nectar rangefinder_node.py --ros-args \\
         -p serial_port:=/dev/ttyUSB0 \\
         -p mavlink_url:=udp:127.0.0.1:14551 \\
-        -p filter:=obstacle_mask \\
-        -p obstacle_height_m:=1.7
+        -p filter:=obstacle_mask
 """
 
 import rclpy
@@ -58,6 +57,7 @@ class RangefinderNode(Node):
         self.declare_parameter("obstacle_height_m", 0.0)
         self.declare_parameter("max_change_m", 0.30)
         self.declare_parameter("avg_window", 10)
+        self.declare_parameter("estimate_lock_s", 0.2)
         self.declare_parameter("timeout_s", 5.0)
 
         self._sensor: TFLuna | None = None
@@ -112,20 +112,28 @@ class RangefinderNode(Node):
             return None
 
         if kind == self.FILTER_OBSTACLE_MASK:
-            obstacle_height = float(self.get_parameter("obstacle_height_m").value)
+            obstacle_height_raw = float(self.get_parameter("obstacle_height_m").value)
+            obstacle_height = obstacle_height_raw if obstacle_height_raw > 0 else None
             max_change = float(self.get_parameter("max_change_m").value)
             avg_window = int(self.get_parameter("avg_window").value)
+            estimate_lock = float(self.get_parameter("estimate_lock_s").value)
             timeout_raw = float(self.get_parameter("timeout_s").value)
             timeout = timeout_raw if timeout_raw > 0 else None
+            height_label = (
+                f"fixed={obstacle_height:.2f}m"
+                if obstacle_height is not None
+                else f"auto-estimated (lock={estimate_lock:.2f}s)"
+            )
             self.get_logger().info(
                 f"Filter: obstacle_mask "
-                f"(height={obstacle_height:.2f}m, max_change={max_change:.2f}m, "
+                f"(height={height_label}, max_change={max_change:.2f}m, "
                 f"window={avg_window}, timeout={timeout})"
             )
             return ObstacleMaskFilter(
                 obstacle_height_m=obstacle_height,
                 max_change_m=max_change,
                 avg_window=avg_window,
+                estimate_lock_s=estimate_lock,
                 timeout_s=timeout,
             )
 

@@ -10,7 +10,7 @@ Usage::
 
     python rangefinder_example.py --port /dev/ttyUSB0 \\
         --mavlink udp:127.0.0.1:14551 \\
-        --filter obstacle_mask --obstacle-height 1.7
+        --filter obstacle_mask
 """
 
 import argparse
@@ -42,10 +42,14 @@ def parse_args() -> argparse.Namespace:
         help="Filter to apply before publishing (default: none)",
     )
     parser.add_argument(
-        "--obstacle-height", type=float, default=1.7, help="Obstacle height in meters"
+        "--obstacle-height",
+        type=float,
+        default=0.0,
+        help="Obstacle height in meters. <= 0 enables auto-estimation.",
     )
     parser.add_argument("--max-change", type=float, default=0.30)
     parser.add_argument("--avg-window", type=int, default=10)
+    parser.add_argument("--estimate-lock-s", type=float, default=0.2)
     parser.add_argument("--timeout-s", type=float, default=5.0)
     parser.add_argument("--rate", type=float, default=50.0, help="Publish rate (Hz)")
     parser.add_argument(
@@ -61,10 +65,12 @@ def build_filter(args: argparse.Namespace):
     if args.filter == "none":
         return None
     timeout = args.timeout_s if args.timeout_s > 0 else None
+    height = args.obstacle_height if args.obstacle_height > 0 else None
     return ObstacleMaskFilter(
-        obstacle_height_m=args.obstacle_height,
+        obstacle_height_m=height,
         max_change_m=args.max_change,
         avg_window=args.avg_window,
+        estimate_lock_s=args.estimate_lock_s,
         timeout_s=timeout,
     )
 

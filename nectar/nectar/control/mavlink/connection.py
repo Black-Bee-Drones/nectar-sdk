@@ -60,7 +60,7 @@ class MavlinkConnection:
         """
         Open the MAVLink endpoint and complete the heartbeat handshake.
 
-        Blocks until the first non-GCS heartbeat arrives or until 
+        Blocks until the first non-GCS heartbeat arrives or until
         ``heartbeat_timeout``
         elapses.
 
