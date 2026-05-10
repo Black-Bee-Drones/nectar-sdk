@@ -292,7 +292,6 @@ class ObjectDetectionEvaluator:
         results = []
 
         for i in tqdm(range(0, len(images), self.config.batch_size), desc="Evaluating"):
-            batch_imgs = images[i : i + self.config.batch_size]
             batch_paths = paths[i : i + self.config.batch_size]
             batch_gts = gts[i : i + self.config.batch_size]
 
