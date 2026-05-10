@@ -280,7 +280,7 @@ class CrazyflieDrone(BaseDrone):
         start = self._node.get_clock().now()
 
         while self._node.get_clock().now() - start < timeout:
-            rclpy.spin_once(self._node, timeout_sec=0.1)
+            self._wait(0.1)
             if self._status is not None:
                 self._connected = True
                 self._node.get_logger().info(
@@ -403,7 +403,7 @@ class CrazyflieDrone(BaseDrone):
         deadline = Duration(seconds=timeout)
 
         while self._node.get_clock().now() - start < deadline:
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+            self._wait(0.05)
             if self.height >= threshold:
                 self.delay(1.0)
                 self._node.get_logger().info(
@@ -469,7 +469,7 @@ class CrazyflieDrone(BaseDrone):
         deadline = Duration(seconds=timeout)
 
         while self._node.get_clock().now() - start < deadline:
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+            self._wait(0.05)
             if self.height <= landed_threshold:
                 self.delay(0.5)
                 self._node.get_logger().info(f"Landing complete (height={self.height:.3f}m)")
@@ -876,7 +876,7 @@ class CrazyflieDrone(BaseDrone):
         start = self._node.get_clock().now()
         timeout = Duration(seconds=10.0)
         while not future.done():
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+            self._wait(0.05)
             if self._node.get_clock().now() - start > timeout:
                 self._node.get_logger().error("Upload trajectory timeout")
                 return
@@ -976,7 +976,7 @@ class CrazyflieDrone(BaseDrone):
         start = self._node.get_clock().now()
         timeout = Duration(seconds=5.0)
         while not future.done():
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+            self._wait(0.05)
             if self._node.get_clock().now() - start > timeout:
                 self._node.get_logger().error(f"Get param {name} timeout")
                 return None
@@ -1056,10 +1056,10 @@ class CrazyflieDrone(BaseDrone):
         log_interval = Duration(seconds=2.0)
 
         while self._node.get_clock().now() - start < duration_deadline:
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+            self._wait(0.05)
 
         while self._node.get_clock().now() - start < deadline:
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+            self._wait(0.05)
             dist = self._distance_to(goal)
 
             if dist <= precision:

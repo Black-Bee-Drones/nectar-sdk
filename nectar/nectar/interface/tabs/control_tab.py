@@ -1709,10 +1709,8 @@ class ControlTab(QWidget):
             self._clear_telemetry()
             return
 
-        import rclpy
-
         if self._node:
-            rclpy.spin_once(self._node, timeout_sec=0)
+            self._drone._wait(0)
 
         try:
             if self._drone_type == "mavros":

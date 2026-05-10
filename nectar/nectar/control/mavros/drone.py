@@ -1,8 +1,8 @@
+import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import numpy as np
-import rclpy
 from geographic_msgs.msg import GeoPoseStamped
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from mavros_msgs.msg import GlobalPositionTarget, PositionTarget, State
@@ -437,47 +437,45 @@ class MavrosDrone(BaseDrone):
         Stores initial altitude and heading for GPS offset calculations.
         """
         config: MavrosConfig = self._config
-        timeout = Duration(seconds=config.sensor_timeout)
+        timeout = config.sensor_timeout
 
         self._node.get_logger().info("Starting sensor initialization...")
 
         if config.expect_lidar:
-            start = self._node.get_clock().now()
-            while self._node.get_clock().now() - start < timeout:
-                rclpy.spin_once(self._node, timeout_sec=0.1)
-                if self._rng_alt is not None:
-                    self._node.get_logger().info("LiDAR available")
-                    break
-            if self._rng_alt is None:
+            if self._wait_until(lambda: self._rng_alt is not None, timeout):
+                self._node.get_logger().info("LiDAR available")
+            else:
                 self._node.get_logger().warn("LiDAR not available")
         else:
             self._node.get_logger().info("LiDAR not checked")
 
-        start = self._node.get_clock().now()
-        sensors_ok = False
-
         if self.is_indoor:
-            while self._node.get_clock().now() - start < timeout:
-                rclpy.spin_once(self._node, timeout_sec=0.1)
-                if self._vision_pos is not None:
-                    sensors_ok = True
-                    self._node.get_logger().info("Vision pose received")
-                    break
+            sensors_ok = self._wait_until(lambda: self._vision_pos is not None, timeout)
+            if sensors_ok:
+                self._node.get_logger().info("Vision pose received")
             self._initial_altitude = 0.0
             self._initial_heading = 0.0
         else:
-            while self._node.get_clock().now() - start < timeout:
-                rclpy.spin_once(self._node, timeout_sec=0.1)
-                if self._gps is not None and self._heading is not None:
-                    sensors_ok = True
-                    self._node.get_logger().info("GPS and heading received")
-                    break
+            sensors_ok = self._wait_until(
+                lambda: self._gps is not None and self._heading is not None,
+                timeout,
+            )
             if sensors_ok:
+                self._node.get_logger().info("GPS and heading received")
                 self._initial_altitude = self._gps.altitude
                 self._initial_heading = self._heading.data
 
         if not sensors_ok:
             self._node.get_logger().warn("Sensor initialization incomplete")
+
+    def _wait_until(self, predicate: Callable[[], bool], timeout: float) -> bool:
+        """Wait until ``predicate()`` is true or ``timeout`` seconds elapse."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if predicate():
+                return True
+            self._wait(0.05)
+        return predicate()
 
     def _load_pid_config(self) -> None:
         """Load PID configuration from file or use defaults based on indoor/outdoor mode."""
@@ -791,7 +789,7 @@ class MavrosDrone(BaseDrone):
                 self._node.get_logger().error("Arm failed, cannot takeoff")
                 return False
 
-            self.delay(3.0)
+            self.delay(6.0)
 
             if attempt == 0:
                 if not self._set_takeoff_position():
@@ -814,7 +812,7 @@ class MavrosDrone(BaseDrone):
                 self._node.get_logger().error(f"Takeoff service timeout: {e}")
                 return False
 
-            self.delay(altitude * 4)
+            self.delay(altitude * 5)
 
             current_alt = self.get_altitude() or 0.0
             height_gain = abs(current_alt - takeoff_height)
@@ -822,7 +820,7 @@ class MavrosDrone(BaseDrone):
             self._node.get_logger().info(
                 f"Height gain: {height_gain:.2f}m, Armed: {self._mavros_state.armed}"
             )
-            if height_gain >= 0.1 or self._mavros_state.armed:
+            if height_gain >= 0.1 and self._mavros_state.armed:
                 self._node.get_logger().info(f"Takeoff successful (gained {height_gain:.2f}m)")
 
                 if adjust_altitude:
@@ -887,14 +885,7 @@ class MavrosDrone(BaseDrone):
             if not res:
                 return False
 
-            duration = Duration(seconds=timeout)
-            start = self._node.get_clock().now()
-
-            while self._node.get_clock().now() - start < duration:
-                rclpy.spin_once(self._node, timeout_sec=0.1)
-                if not self._mavros_state.armed:
-                    break
-
+            self._wait_until(lambda: not self._mavros_state.armed, timeout)
             self.delay(0.1)
             return not self._mavros_state.armed
         except TimeoutError as e:

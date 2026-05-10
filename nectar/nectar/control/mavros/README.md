@@ -1127,14 +1127,15 @@ reached, distance, alt_diff = GPSUtils.check_reached(
 
 All MAVROS service calls use `_call_service` with automatic response validation and deadlock-safe execution.
 
-Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), we use `call_async()` with a spin loop to avoid deadlock:
+Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), we use `call_async()` with a cooperative wait that drives the global executor when no external one is bound to the node, and just sleeps when the user owns spinning (Yasmin singleton, Qt executor, etc.). The wait helper preserves `node.executor` so subscriptions added after a service call still wake the right executor:
 
 ```python
 future = service.call_async(request)
+deadline = time.time() + timeout
 while not future.done():
-    rclpy.spin_once(self._node, timeout_sec=0.05)
-    if elapsed > timeout:
+    if time.time() > deadline:
         raise TimeoutError(...)
+    self._wait(0.05)  # spin_once with executor-binding restore, or time.sleep
 result = future.result()
 ```
 

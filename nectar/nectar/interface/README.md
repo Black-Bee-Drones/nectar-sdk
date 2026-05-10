@@ -235,12 +235,12 @@ worker_thread.start()
 
 ### Service Calls
 
-ROS2 services use async pattern to avoid deadlocks:
+ROS2 services use async pattern to avoid deadlocks. The SDK's `BaseDrone._wait` is the cooperative tick — it spins when the SDK owns ROS, sleeps when the user's executor (e.g. `ROSExecutor`) is already running. Either way, `node.executor` is preserved so later subscriptions still wake the right executor:
 
 ```python
 future = service.call_async(request)
 while not future.done():
-    rclpy.spin_once(node, timeout_sec=0.05)
+    self._wait(0.05)  # spin (SDK-owned) or sleep (user-owned executor)
 result = future.result()
 ```
 
