@@ -746,6 +746,24 @@ class MavrosDrone(BaseDrone):
             self._node.get_logger().error(f"Disarm failed: {e}")
             return False
 
+    # MAV_STATE_ACTIVE (4) is set by ArduCopter only when armed and not landed.
+    # See ArduCopter/GCS_Copter::system_status() and MAVLink HEARTBEAT.
+    _MAV_STATE_ACTIVE = 4
+    _AIRBORNE_THRESHOLD = 0.5
+
+    def _is_airborne(self) -> bool:
+        """True if FCU reports active flight or any altitude source exceeds threshold."""
+        if self._mavros_state.system_status == self._MAV_STATE_ACTIVE:
+            return True
+        thr = self._AIRBORNE_THRESHOLD
+        if self._local_pos is not None and self._local_pos.pose.position.z > thr:
+            return True
+        if not self.is_indoor and self._rel_alt is not None and self._rel_alt.data > thr:
+            return True
+        if self._rng_alt is not None and self._rng_alt.range > thr:
+            return True
+        return False
+
     def takeoff(
         self,
         altitude: float,
@@ -759,7 +777,8 @@ class MavrosDrone(BaseDrone):
 
         Arms drone, stores takeoff position, sends takeoff command, and verifies altitude gain.
         If altitude doesn't change significantly, disarms and retries up to max_retries times.
-        Optionally fine-tunes altitude using move_to to reach target precisely.
+        Optionally fine-tunes altitude using move_to to reach target precisely. If the drone
+        is already airborne, the retry loop is skipped to avoid force-disarming in flight.
 
         Parameters
         ----------
@@ -779,6 +798,14 @@ class MavrosDrone(BaseDrone):
         bool
             True if takeoff successful, False if all retries exhausted or service timeout.
         """
+        if self._is_airborne():
+            self._node.get_logger().warn(
+                f"Already airborne at {self.get_altitude() or 0.0:.2f}m, skipping takeoff"
+            )
+            if self._takeoff_position is None:
+                self._set_takeoff_position()
+            return True
+
         req = CommandTOL.Request()
         req.altitude = float(altitude)
 
@@ -848,6 +875,13 @@ class MavrosDrone(BaseDrone):
                                 f"Altitude adjustment incomplete, current: {final_alt:.2f}m"
                             )
 
+                return True
+
+            if self._is_airborne():
+                self._node.get_logger().warn(
+                    f"Low height gain ({height_gain:.2f}m) but airborne at "
+                    f"{current_alt:.2f}m, accepting"
+                )
                 return True
 
             if attempt < max_retries - 1:
