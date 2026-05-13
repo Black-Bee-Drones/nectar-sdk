@@ -1251,35 +1251,120 @@ ros2 run nectar webcam_publisher --ros-args \
 
 ## Camera Calibration
 
-Chessboard-based intrinsic calibration using `cv2.calibrateCamera`. Computes 3×3 camera matrix (fx, fy, cx, cy) and distortion coefficients (k1, k2, p1, p2, k3).
+Intrinsic calibration computes the 3×3 camera matrix (fx, fy, cx, cy) and distortion coefficients (k1, k2, p1, p2, k3). Two pipelines are available; both share the same output files (`camera_matrix.txt`, `camera_distortion.txt`) and the same `load_calibration()` API.
+
+| Pipeline | Class | Pattern | When to use |
+|----------|-------|---------|-------------|
+| Chessboard | `Calibration` | Printed chessboard, fully visible per frame | Legacy pipeline, kept for backward compatibility |
+| **ChArUco** | `CharucoCalibration` | Printed ChArUco board (recommended) | New code. Subpixel chessboard accuracy + ArUco robustness to occlusion and partial views |
+
+### ChArUco Calibration (recommended)
+
+Uses `cv2.aruco.CharucoDetector` (OpenCV ≥ 4.7) to extract subpixel chessboard corners identified by ArUco markers, then runs `cv2.calibrateCamera` on the accumulated correspondences. Frames where the board is partially out of view or partially occluded still contribute their visible corners, which is essential for sampling the image edges where distortion is strongest.
+
+**Print the board**: any board PDF from [`carlosmccosta/charuco_detector`](https://github.com/carlosmccosta/charuco_detector/tree/master/boards/vector_format/black_and_white) at 100% scale. The default constructor parameters match the **A4, 5×7, 40 mm square, 30 mm marker, DICT_4X4_1000** PDF. Glue the print to a rigid flat surface (foam board, MDF, clipboard).
+
+**Measure after printing**: printers always rescale by ~0.5–2%. Use a caliper to measure N squares along the long axis and compute the real square size; the marker length scales by the same factor (30/40 = 0.75 for this board).
 
 **Run Calibration**:
 ```bash
-ros2 run nectar camera_calibration --ros-args \
-    -p chessboard_size:="9,7"
+ros2 run nectar charuco_calibration.py
 ```
 
-**Workflow**:
-1. Node captures 50 images automatically (every ~1 second)
-2. Detects chessboard corners in each image
-3. Computes camera matrix and distortion coefficients
-4. Saves results to `vision/camera/calibration/`
+Calibrate at the **same resolution you'll use in production** (intrinsics are resolution-specific). For a 1080p webcam:
+```bash
+ros2 run nectar charuco_calibration.py --ros-args \
+    -p width:=1920 \
+    -p height:=1080
+```
 
-**Output Files**:
-- `camera_matrix.txt`: 3x3 intrinsic matrix
-- `camera_distortion.txt`: Distortion coefficients
+Use a non-default webcam (e.g. `/dev/video1`):
+```bash
+ros2 run nectar charuco_calibration.py --ros-args \
+    -p device_index:=1 \
+    -p width:=1920 \
+    -p height:=1080
+```
+
+With all parameters explicit (defaults match the A4 5×7, 40 mm / 30 mm, `DICT_4X4_1000` board):
+```bash
+ros2 run nectar charuco_calibration.py --ros-args \
+    -p image_source:=webcam \
+    -p device_index:=0 \
+    -p width:=0 \
+    -p height:=0 \
+    -p squares_x:=5 \
+    -p squares_y:=7 \
+    -p square_length:=0.040 \
+    -p marker_length:=0.030 \
+    -p aruco_dict:=DICT_4X4_1000 \
+    -p num_photos:=30 \
+    -p min_corners_per_frame:=6 \
+    -p show_preview:=true \
+    -p show_corners:=true
+```
+
+**Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `image_source` | string | `webcam` | Camera source (any value accepted by `CameraFactory`: `webcam`, `realsense`, `c920`, a ROS topic like `/camera/image_raw`, etc.) |
+| `device_index` | int | `0` | OpenCV `VideoCapture` index. Only applies when `image_source` is `webcam` or `opencv`; ignored otherwise |
+| `width` | int | `0` | Requested capture width in pixels. `0` keeps the camera default. Calibrate at the resolution you will use in production |
+| `height` | int | `0` | Requested capture height in pixels. `0` keeps the camera default |
+| `squares_x` | int | `5` | Board squares in X direction |
+| `squares_y` | int | `7` | Board squares in Y direction |
+| `square_length` | float | `0.040` | **Measured** square side in meters (use a caliper after printing) |
+| `marker_length` | float | `0.030` | **Measured** marker side in meters (scale together with `square_length`) |
+| `aruco_dict` | string | `DICT_4X4_1000` | Predefined dictionary name. Shorthand `4X4_50` is also accepted |
+| `num_photos` | int | `30` | Frames to capture for the dataset |
+| `min_corners_per_frame` | int | `6` | Minimum ChArUco corners required to keep a frame |
+| `show_preview` | bool | `true` | Live preview window during capture, with ChArUco detection overlay and progress counter |
+| `show_corners` | bool | `true` | After capture, step through dataset frames with detected corners drawn |
+| `output_dir` | string | `""` | Directory for `camera_matrix.txt`, `camera_distortion.txt`, and `dataset_charuco/`. Empty resolves to the `nectar.vision.camera.calibration` package directory so `load_calibration()` finds the result automatically |
+
+Move the board to fill different regions of the image and use strong tilts (pitch/yaw ±30°). The node captures `num_photos` frames automatically and runs calibration on completion.
 
 **Programmatic Access**:
 ```python
+import cv2
+from nectar.vision.camera import CharucoCalibration
+
+node = CharucoCalibration(
+    squares_x=5,
+    squares_y=7,
+    square_length=0.040,    # MEASURED, in meters
+    marker_length=0.030,    # MEASURED, in meters
+    aruco_dict_id=cv2.aruco.DICT_4X4_1000,
+    num_photos=30,
+    image_source="webcam",
+)
+node.run_photos()
+
+matrix, distortion = CharucoCalibration.load_calibration()
+```
+
+**Quality check**: aim for `reprojection_error < 0.5 px` (logged after calibration). Values above 1.0 px trigger a warning and usually mean a flexed board, motion blur, or poor pose coverage.
+
+### Chessboard Calibration (legacy)
+
+```bash
+ros2 run nectar calibration.py
+```
+
+Captures 50 images, detects chessboard corners in each, computes camera matrix and distortion coefficients via `cv2.calibrateCamera`, saves results to `vision/camera/calibration/`.
+
+```python
 from nectar.vision.camera import Calibration
 
-# Run calibration
 node = Calibration(chessboard_size=(9, 7))
 node.run_photos(num_photos=50)
 
-# Load existing calibration
 matrix, distortion = Calibration.load_calibration()
 ```
+
+**Output Files** (both pipelines):
+- `camera_matrix.txt`: 3x3 intrinsic matrix
+- `camera_distortion.txt`: Distortion coefficients
 
 ## Utilities
 
@@ -1409,7 +1494,9 @@ vision/
 | `cv2.fitLine` | [Fitting a Line](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#gaf849da1fdafa67ee84b1e9a23b93f91f) | `HoughLinesP`, `RansacLine` |
 | `cv2.minAreaRect` | [Contour Features](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#ga3d476a3417130ae5154aea421ca7ead9) | `RotatedRect.estimate()` |
 | `cv2.fitEllipse` | [Contour Features](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#gaf259efaad93098103d6c27b9e4900ffa) | `FitEllipse.estimate()` |
-| `cv2.calibrateCamera` | [Camera Calibration](https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html) | `Calibration` |
+| `cv2.calibrateCamera` | [Camera Calibration](https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html) | `Calibration`, `CharucoCalibration` |
+| `cv2.aruco.CharucoDetector` | [ChArUco Board Detection](https://docs.opencv.org/4.x/df/d4a/tutorial_charuco_detection.html) | `CharucoCalibration` |
+| `cv2.aruco.CharucoBoard.matchImagePoints` | [Calibration with ChArUco](https://docs.opencv.org/4.x/da/d13/tutorial_aruco_calibration.html) | `CharucoCalibration` |
 | `cv2.VideoCapture` | [Video I/O](https://docs.opencv.org/4.x/d8/dfe/classcv_1_1VideoCapture.html) | `OpenCVCam` |
 
 ### ROS2

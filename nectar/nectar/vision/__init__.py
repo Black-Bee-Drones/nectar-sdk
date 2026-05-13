@@ -23,6 +23,7 @@ from nectar.vision.camera import (
     Calibration,
     CameraConfig,
     CameraFactory,
+    CharucoCalibration,
     DepthCam,
     FileImageConfig,
     ImageHandler,
@@ -126,6 +127,7 @@ __all__ = [
     # Camera
     "AbstractCam",
     "Calibration",
+    "CharucoCalibration",
     "DepthCam",
     "CameraConfig",
     "ROSConfig",

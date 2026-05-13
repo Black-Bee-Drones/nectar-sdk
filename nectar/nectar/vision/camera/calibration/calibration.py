@@ -22,6 +22,13 @@ class Calibration(Node):
     ----------
     chessboard_size : tuple of int, optional
         Number of inner corners (width, height). Default is (9, 7).
+    output_dir : str, optional
+        Directory where ``camera_matrix.txt`` and ``camera_distortion.txt``
+        will be written, and where the ``dataset/`` capture folder will
+        be created. Empty string (the default) resolves to the
+        ``nectar.vision.camera.calibration`` package directory so that
+        ``load_calibration()`` finds the result without further
+        configuration.
 
     Attributes
     ----------
@@ -39,10 +46,17 @@ class Calibration(Node):
     4. Results are saved to camera_matrix.txt and camera_distortion.txt
     """
 
-    PATH = os.path.dirname(__file__)
+    DATASET_DIR = "dataset"
 
-    def __init__(self, chessboard_size: Tuple[int, int] = (9, 7)) -> None:
+    def __init__(
+        self,
+        chessboard_size: Tuple[int, int] = (9, 7),
+        output_dir: str = "",
+    ) -> None:
         super().__init__("camera_calibration_node")
+
+        self.declare_parameter("output_dir", str(output_dir))
+        self.output_dir = str(self.get_parameter("output_dir").value) or self._package_dir()
 
         self.chessboard_size = chessboard_size
 
@@ -62,6 +76,11 @@ class Calibration(Node):
         self._photos_taken: int = 0
         self._image_handler: Optional[ImageHandler] = None
 
+        os.makedirs(
+            os.path.join(self.output_dir, Calibration.DATASET_DIR),
+            exist_ok=True,
+        )
+
     def _capture_callback(self, img: np.ndarray) -> None:
         """Callback for capturing calibration images at intervals."""
         if img is None:
@@ -71,7 +90,11 @@ class Calibration(Node):
 
         if self._frame_count >= 30:
             self._photos_taken += 1
-            filepath = f"{Calibration.PATH}/dataset/chessboard{self._photos_taken}.jpg"
+            filepath = os.path.join(
+                self.output_dir,
+                Calibration.DATASET_DIR,
+                f"chessboard{self._photos_taken}.jpg",
+            )
             cv2.imwrite(filepath, img)
             self.get_logger().info(f"Captured photo {self._photos_taken}/{self._num_photos}")
             self._frame_count = 0
@@ -122,7 +145,7 @@ class Calibration(Node):
         int
             Number of images with successfully detected corners.
         """
-        image_files = glob.glob(f"{Calibration.PATH}/dataset/*.jpg")
+        image_files = glob.glob(os.path.join(self.output_dir, Calibration.DATASET_DIR, "*.jpg"))
         detected_count = 0
 
         for image_file in image_files:
@@ -201,23 +224,44 @@ class Calibration(Node):
             self.get_logger().error("No calibration data to save")
             return
 
-        matrix_path = f"{Calibration.PATH}/camera_matrix.txt"
+        matrix_path = os.path.join(self.output_dir, "camera_matrix.txt")
         with open(matrix_path, "w", encoding="utf-8") as f:
             for i, row in enumerate(self.calibration_matrix):
                 f.write(",".join(str(v) for v in row))
                 if i < len(self.calibration_matrix) - 1:
                     f.write("\n")
 
-        distortion_path = f"{Calibration.PATH}/camera_distortion.txt"
+        distortion_path = os.path.join(self.output_dir, "camera_distortion.txt")
         with open(distortion_path, "w", encoding="utf-8") as f:
             f.write(",".join(str(v) for v in self.distortion_list))
 
-        self.get_logger().info(f"Saved calibration to {Calibration.PATH}")
+        self.get_logger().info(f"Saved calibration to {self.output_dir}")
+
+    @staticmethod
+    def _package_dir() -> str:
+        """
+        Resolve the calibration package directory.
+
+        Uses a lazy import so the result is stable regardless of whether
+        this module is loaded as ``__main__`` (via ``ros2 run``) or as a
+        regular package member. Save and load operations agree on a
+        single location.
+        """
+        import nectar.vision.camera.calibration as _calib_pkg
+
+        return os.path.dirname(os.path.abspath(_calib_pkg.__file__))
 
     @classmethod
-    def load_calibration(cls) -> Tuple[np.ndarray, np.ndarray]:
+    def load_calibration(cls, output_dir: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Load calibration data from files.
+
+        Parameters
+        ----------
+        output_dir : str, optional
+            Directory containing ``camera_matrix.txt`` and
+            ``camera_distortion.txt``. Defaults to the calibration
+            package directory, matching the save default.
 
         Returns
         -------
@@ -229,11 +273,14 @@ class Calibration(Node):
         FileNotFoundError
             If calibration files do not exist.
         """
-        matrix_path = f"{cls.PATH}/camera_matrix.txt"
-        distortion_path = f"{cls.PATH}/camera_distortion.txt"
+        base_dir = output_dir or cls._package_dir()
+        matrix_path = os.path.join(base_dir, "camera_matrix.txt")
+        distortion_path = os.path.join(base_dir, "camera_distortion.txt")
 
         if not os.path.exists(matrix_path) or not os.path.exists(distortion_path):
-            raise FileNotFoundError("Calibration files not found. Run calibration first.")
+            raise FileNotFoundError(
+                f"Calibration files not found in {base_dir}. Run calibration first."
+            )
 
         camera_matrix = np.loadtxt(matrix_path, delimiter=",")
         distortion = np.loadtxt(distortion_path, delimiter=",")

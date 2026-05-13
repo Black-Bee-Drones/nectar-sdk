@@ -4,7 +4,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 from nectar.vision.camera.abstract import AbstractCam, DepthCam
-from nectar.vision.camera.calibration import Calibration
+from nectar.vision.camera.calibration import Calibration, CharucoCalibration
 from nectar.vision.camera.config import (
     C920Config,
     CameraConfig,
@@ -66,6 +66,7 @@ if TYPE_CHECKING:
 __all__ = [
     "AbstractCam",
     "Calibration",
+    "CharucoCalibration",
     "DepthCam",
     "CameraConfig",
     "ROSConfig",
