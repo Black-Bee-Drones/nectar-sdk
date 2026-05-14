@@ -24,6 +24,7 @@ from nectar.control.types import (
     NavigationMethod,
     RTLMethod,
 )
+from nectar.utils.log import ERR, OK
 from nectar.utils.process import ProcessUtils
 
 
@@ -768,7 +769,7 @@ class BaseDrone(ABC):
             if elapsed >= timeout:
                 msg = f"Service {client.srv_name} not available after {timeout}s"
                 if fail_msg:
-                    self._node.get_logger().error(f"{fail_msg} - {msg}")
+                    self._node.get_logger().error(f"{ERR} {fail_msg} — {msg}")
                 raise TimeoutError(msg)
 
         self._node.get_logger().debug(f"Calling service {client.srv_name} | sync={sync}")
@@ -780,7 +781,9 @@ class BaseDrone(ABC):
             while not future.done():
                 if time.time() > deadline:
                     if fail_msg:
-                        self._node.get_logger().error(f"{fail_msg}: Timeout waiting for response")
+                        self._node.get_logger().error(
+                            f"{ERR} {fail_msg}: timeout waiting for response"
+                        )
                     return None
                 self._wait(0.05)
 
@@ -788,16 +791,16 @@ class BaseDrone(ABC):
                 result = future.result()
                 if result is None:
                     if fail_msg:
-                        self._node.get_logger().error(fail_msg)
+                        self._node.get_logger().error(f"{ERR} {fail_msg}")
                     return None
                 if validator:
                     validator(result, client.srv_name)
                 if success_msg:
-                    self._node.get_logger().info(success_msg)
+                    self._node.get_logger().info(f"{OK} {success_msg}")
                 return result
             except Exception as e:
                 if fail_msg:
-                    self._node.get_logger().error(f"{fail_msg}: {e}")
+                    self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
                 return None
         else:
             future = client.call_async(request)
@@ -809,12 +812,12 @@ class BaseDrone(ABC):
                         if validator:
                             validator(result, client.srv_name)
                         if success_msg:
-                            self._node.get_logger().info(success_msg)
+                            self._node.get_logger().info(f"{OK} {success_msg}")
                     elif fail_msg:
-                        self._node.get_logger().error(fail_msg)
+                        self._node.get_logger().error(f"{ERR} {fail_msg}")
                 except Exception as e:
                     if fail_msg:
-                        self._node.get_logger().error(f"{fail_msg}: {e}")
+                        self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
 
             future.add_done_callback(_handle_response)
             return None
