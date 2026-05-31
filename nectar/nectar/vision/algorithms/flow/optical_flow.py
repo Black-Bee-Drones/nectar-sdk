@@ -38,7 +38,6 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-
 METHOD_LUCAS_KANADE = "lucas_kanade"
 METHOD_FARNEBACK = "farneback"
 _SUPPORTED_METHODS = (METHOD_LUCAS_KANADE, METHOD_FARNEBACK)
@@ -128,9 +127,7 @@ class OpticalFlowConfig:
 
     def __post_init__(self) -> None:
         if self.method not in _SUPPORTED_METHODS:
-            raise ValueError(
-                f"method must be one of {_SUPPORTED_METHODS}, got {self.method!r}"
-            )
+            raise ValueError(f"method must be one of {_SUPPORTED_METHODS}, got {self.method!r}")
 
 
 @dataclass
@@ -506,13 +503,9 @@ class OpticalFlowEstimator:
             f"flow: ({mean_px_per_s[0]:+6.1f}, {mean_px_per_s[1]:+6.1f}) px/s",
         ]
         if angular is not None:
-            lines.append(
-                f"omega: ({angular[0]:+6.3f}, {angular[1]:+6.3f}) rad/s"
-            )
+            lines.append(f"omega: ({angular[0]:+6.3f}, {angular[1]:+6.3f}) rad/s")
         if velocity is not None:
-            lines.append(
-                f"v:     ({velocity[0]:+6.3f}, {velocity[1]:+6.3f}) m/s"
-            )
+            lines.append(f"v:     ({velocity[0]:+6.3f}, {velocity[1]:+6.3f}) m/s")
 
         y = 22
         for text in lines:

@@ -35,9 +35,7 @@ log = logging.getLogger("optical_flow_example")
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--device", type=int, default=0, help="Camera device index (default: 0)"
-    )
+    parser.add_argument("--device", type=int, default=0, help="Camera device index (default: 0)")
     parser.add_argument(
         "--method",
         choices=["farneback", "lucas_kanade"],
@@ -56,15 +54,9 @@ def _parse_args() -> argparse.Namespace:
         default=0.0,
         help="Camera altitude in meters (0 = disable m/s decode)",
     )
-    parser.add_argument(
-        "--width", type=int, default=640, help="Capture width (default: 640)"
-    )
-    parser.add_argument(
-        "--height", type=int, default=480, help="Capture height (default: 480)"
-    )
-    parser.add_argument(
-        "--no-show", action="store_true", help="Disable preview window"
-    )
+    parser.add_argument("--width", type=int, default=640, help="Capture width (default: 640)")
+    parser.add_argument("--height", type=int, default=480, help="Capture height (default: 480)")
+    parser.add_argument("--no-show", action="store_true", help="Disable preview window")
     return parser.parse_args()
 
 
@@ -98,9 +90,7 @@ def main() -> int:
             if not ok or frame is None:
                 continue
 
-            result = estimator.process(
-                frame, focal_px=focal_px, altitude_m=altitude_m
-            )
+            result = estimator.process(frame, focal_px=focal_px, altitude_m=altitude_m)
 
             display = result.visualization if result is not None else frame
 
