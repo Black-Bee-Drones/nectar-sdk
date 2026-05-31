@@ -125,7 +125,6 @@ class Calibration(Node):
         self._photos_taken = 0
 
         self._image_handler = ImageHandler(
-            node=self,
             image_source="webcam",
             image_processing_callback=self._capture_callback,
         )
@@ -290,7 +289,10 @@ class Calibration(Node):
 
 def main(args=None) -> None:
     """Entry point for camera calibration node."""
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     node = Calibration(chessboard_size=(9, 7))
 

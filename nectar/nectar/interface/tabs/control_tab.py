@@ -144,7 +144,7 @@ class DroneInstanceWorker(QObject):
             from nectar.control import DroneFactory
 
             self.progress.emit("Creating drone instance...")
-            drone = DroneFactory.create(self._drone_type, self._config, self._node)
+            drone = DroneFactory.create(self._drone_type, self._config)
 
             self.progress.emit("Initializing...")
             drone.connect()
@@ -1708,9 +1708,6 @@ class ControlTab(QWidget):
         if not self._drone:
             self._clear_telemetry()
             return
-
-        if self._node:
-            self._drone._wait(0)
 
         try:
             if self._drone_type == "mavros":

@@ -229,7 +229,10 @@ classDiagram
 ### Initialization
 
 ```python
+import nectar
 from nectar.control import DroneFactory, MavrosConfig, PoseSource
+
+nectar.init()
 
 config = MavrosConfig(
     pose_source=PoseSource.VISION,          # or GPS
@@ -240,7 +243,7 @@ config = MavrosConfig(
     apply_setpoint_params=False,            # True to push WPNAV params to FCU on arm
 )
 
-drone = DroneFactory.create("mavros", config, node)
+drone = DroneFactory.create("mavros", config)
 ```
 
 ### Pose Sources
@@ -300,11 +303,27 @@ drone.takeoff(altitude=1.5, precision=0.15, timeout=30.0)
 
 | Constant | Default | Meaning |
 |---|---|---|
-| `_SPIN_UP_DELAY` | 0.5 s | Post-arm hardware safety delay |
+| `_SPIN_UP_DELAY` | 2.7 s | Post-arm hardware safety delay |
 | `_LIFTOFF_DELTA` | 0.08 m | Rise above `start_alt` to consider lifted |
-| `_SETTLE_DELTA` | 0.10 m | Max altitude variation over the window to consider stable |
-| `_SETTLE_WINDOW` | 1.0 s | Rolling window for stability detection |
+| `_SETTLE_WINDOW` | 0.8 s | Rolling window over which vertical velocity is averaged |
+| `_SETTLE_VELOCITY` | 0.20 m/s | `|dz/dt|` below which the hover is declared settled |
 | `_SETTLE_POLL` | 0.1 s | Poll interval for settle/landed loops |
+
+Detection is velocity-based: a hovering airframe has `|dz/dt| ≈ 0` even
+when LiDAR/EKF/vision spike ±0.20–0.30 m for a fraction of a second.
+This is the same approach used by `_wait_landed` and works reliably on
+real drones where an absolute-spread check would keep resetting on
+sensor noise. The end-of-takeoff `move_to(z=altitude)` adjustment still
+pulls the drone to within `precision`, so a permissive velocity
+threshold costs nothing in final altitude accuracy.
+
+If detection still times out (very noisy lidar, slow climb that never
+fully stops), raise `_SETTLE_VELOCITY` (e.g. 0.30) or shorten
+`_SETTLE_WINDOW` (e.g. 0.5). Override per-instance:
+
+```python
+drone._SETTLE_VELOCITY = 0.30
+```
 
 ### Land
 
@@ -1177,16 +1196,11 @@ reached, distance, alt_diff = GPSUtils.check_reached(
 
 All MAVROS service calls use `_call_service` with automatic response validation and deadlock-safe execution.
 
-Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), we use `call_async()` with a cooperative wait that drives the global executor when no external one is bound to the node, and just sleeps when the user owns spinning (Yasmin singleton, Qt executor, etc.). The wait helper preserves `node.executor` so subscriptions added after a service call still wake the right executor:
+Per [ROS 2 guidelines](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html), sync calls block on the future while the SDK runtime executor keeps spinning callbacks on a background thread. `_call_service` collapses to:
 
 ```python
 future = service.call_async(request)
-deadline = time.time() + timeout
-while not future.done():
-    if time.time() > deadline:
-        raise TimeoutError(...)
-    self._wait(0.05)  # spin_once with executor-binding restore, or time.sleep
-result = future.result()
+result = future.result(timeout=timeout)
 ```
 
 | Parameter | Default | Description |

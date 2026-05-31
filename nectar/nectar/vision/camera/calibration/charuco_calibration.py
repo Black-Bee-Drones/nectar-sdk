@@ -314,7 +314,6 @@ class CharucoCalibration(Node):
         )
 
         self._image_handler = ImageHandler(
-            node=self,
             image_source=self.image_source,
             image_processing_callback=self._capture_callback,
             show_result=(CharucoCalibration.PREVIEW_WINDOW if self.show_preview else None),
@@ -544,7 +543,10 @@ class CharucoCalibration(Node):
 
 def main(args=None) -> None:
     """Entry point for ChArUco camera calibration node."""
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     node = CharucoCalibration()
 

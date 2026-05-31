@@ -525,7 +525,6 @@ class LineDetectionNode(Node):
     def run(self):
         """Start the line detection processing loop."""
         self.image_handler = ImageHandler(
-            node=self,
             image_source=self.image_source,
             image_processing_callback=self.process_image,
         )
@@ -561,7 +560,10 @@ class LineDetectionNode(Node):
 
 def main(args=None):
     """Entry point for line detection node."""
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     detector = LineDetectionNode()
 

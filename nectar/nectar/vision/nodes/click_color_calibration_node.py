@@ -76,7 +76,6 @@ class ClickColorCalibrationNode(Node):
         self.window_initialized = False
 
         self.image_handler = ImageHandler(
-            node=self,
             image_source=image_source,
             image_processing_callback=self._process,
         )
@@ -341,7 +340,10 @@ class ClickColorCalibrationNode(Node):
 
 
 def main(args=None) -> None:
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     import argparse
 

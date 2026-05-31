@@ -10,6 +10,11 @@ from .distance import (
     ModelType,
     create_model,
 )
+from .flow import (
+    OpticalFlowConfig,
+    OpticalFlowEstimator,
+    OpticalFlowResult,
+)
 from .line import (
     AdaptiveHoughLinesP,
     FitEllipse,
@@ -85,6 +90,10 @@ __all__ = [
     "create_model",
     "ModelCalibrator",
     "CalibrationResult",
+    # Flow
+    "OpticalFlowEstimator",
+    "OpticalFlowConfig",
+    "OpticalFlowResult",
     # MediaPipe
     "HandTracker",
     "HandTrackerConfig",

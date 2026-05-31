@@ -6,10 +6,16 @@ from PySide6.QtCore import QObject, Signal
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
+from nectar import runtime as nectar_runtime
+
 
 class ROSExecutor(QObject):
-    """
-    ROS2 executor manager for Qt applications.
+    """ROS 2 executor manager for the Qt GUI.
+
+    Owns the GUI's main node and a :class:`MultiThreadedExecutor` running on a
+    background thread. Registers the executor with :mod:`nectar.runtime` so any
+    SDK subsystem (drone, image handler) created from within the GUI shares this
+    executor instead of spawning its own spin thread.
     """
 
     status_changed = Signal(bool)
@@ -32,7 +38,7 @@ class ROSExecutor(QObject):
         return self._running and rclpy.ok()
 
     def start(self, node_name: str = "nectar_gui") -> bool:
-        """Start ROS2 context and executor in background thread."""
+        """Start ROS 2 context and executor in a background thread."""
         with self._lock:
             if self._running:
                 return True
@@ -44,6 +50,7 @@ class ROSExecutor(QObject):
                 self._node = Node(node_name)
                 self._executor = MultiThreadedExecutor()
                 self._executor.add_node(self._node)
+                nectar_runtime.use_executor(self._executor)
 
                 self._running = True
                 self._thread = threading.Thread(target=self._spin, daemon=True)

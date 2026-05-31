@@ -1,241 +1,195 @@
 #!/usr/bin/env python3
-"""
-Usage:
-    # Default (webcam, 1 photo/sec, auto-named run)
-    ros2 run nectar collect_photos.py
+"""Capture and save frames from any supported camera.
 
-    # USB camera with custom output and interval
-    ros2 run nectar collect_photos.py --ros-args \
-        -p camera_type:=webcam \
-        -p output_dir:=hook_photos \
-        -p capture_interval:=0.5
+Examples::
 
-    # Named run for a specific flight session
-    ros2 run nectar collect_photos.py --ros-args \
-        -p output_dir:=hook_photos \
-        -p run_name:=flight_01_low_alt
-
-    # RealSense camera, JPEG quality 95, with preview
-    ros2 run nectar collect_photos.py --ros-args \
-        -p camera_type:=realsense \
-        -p jpeg_quality:=95 \
-        -p show_preview:=true
-
-    # Higher resolution webcam
-    ros2 run nectar collect_photos.py --ros-args \
-        -p camera_type:=webcam \
-        -p width:=1920 -p height:=1080
-
-    # Publish images to ROS topic (view with rqt or ros2 topic echo)
-    ros2 run nectar collect_photos.py --ros-args \
-        -p publish:=true
-
-    # Custom topic and scale (30% of original for low bandwidth)
-    ros2 run nectar collect_photos.py --ros-args \
-        -p publish:=true \
-        -p publish_topic:=drone_cam/compressed \
-        -p publish_scale:=0.3
+    python collect_photos.py --camera-type webcam --interval 0.5
+    python collect_photos.py --camera-type realsense --jpeg-quality 95 --show
+    python collect_photos.py --camera-type webcam --publish --publish-scale 0.3
 """
 
+import argparse
+import logging
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import cv2
 import numpy as np
-import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 
+import nectar
 from nectar.vision.camera.config_builder import ConfigBuilder
 from nectar.vision.camera.handler import ImageHandler
 
+log = logging.getLogger("collect_photos")
 
-class CollectPhotosNode(Node):
-    """ROS 2 node that captures and saves camera frames."""
 
-    def __init__(self) -> None:
-        super().__init__("collect_photos")
+def _camera_config(camera_type: str, width: int, height: int, fps: int):
+    source_key = camera_type
+    if camera_type == "webcam":
+        params = {"device_index": 0, "width": width, "height": height, "fps": fps}
+    elif camera_type == "realsense":
+        params = {
+            "color_width": width,
+            "color_height": height,
+            "depth_width": width,
+            "depth_height": height,
+            "fps": fps,
+        }
+    elif camera_type == "realsense_ros":
+        params = {
+            "topic": "/camera/color/image_raw/compressed",
+            "compressed": True,
+            "depth_topic": "/camera/depth/image_rect_raw",
+            "depth_compressed": False,
+        }
+        source_key = "ros_depth"
+    elif camera_type == "c920":
+        params = {"profile": 1}
+    elif camera_type == "imx219":
+        params = {"sensor_id": 0, "width": width, "height": height, "flip": 2, "fps": fps}
+    elif camera_type == "oakd":
+        params = {}
+    elif camera_type == "ros":
+        params = {"topic": "/camera/color/image_raw/compressed", "compressed": True}
+    else:
+        return None, camera_type
+    return ConfigBuilder.build(source_key, params), source_key
 
-        self.declare_parameter("camera_type", "webcam")
-        self.declare_parameter("output_dir", "collected_photos")
-        self.declare_parameter("run_name", "")
-        self.declare_parameter("capture_interval", 1.0)
-        self.declare_parameter("image_format", "jpg")
-        self.declare_parameter("jpeg_quality", 90)
-        self.declare_parameter("show_preview", False)
-        self.declare_parameter("max_photos", 0)
-        self.declare_parameter("publish", False)
-        self.declare_parameter("publish_topic", "collect_photos/compressed")
-        self.declare_parameter("publish_scale", 0.5)
-        self.declare_parameter("width", 1280)
-        self.declare_parameter("height", 720)
-        self.declare_parameter("fps", 30)
 
-        camera_type = self.get_parameter("camera_type").value
-        output_dir = self.get_parameter("output_dir").value
-        run_name = self.get_parameter("run_name").value
-        self._capture_interval: float = self.get_parameter("capture_interval").value
-        self._image_format: str = self.get_parameter("image_format").value
-        self._jpeg_quality: int = self.get_parameter("jpeg_quality").value
-        show_preview: bool = self.get_parameter("show_preview").value
-        self._max_photos: int = self.get_parameter("max_photos").value
-
-        self._publish: bool = self.get_parameter("publish").value
-        self._publish_scale: float = self.get_parameter("publish_scale").value
-        self._image_pub = None
-        if self._publish:
-            topic = self.get_parameter("publish_topic").value
-            self._image_pub = self.create_publisher(CompressedImage, topic, 1)
-            self.get_logger().info(f"Publishing images to /{topic}")
-
-        self._output_path = self._setup_output_dir(output_dir, run_name)
-        self._photo_count = 0
-        self._last_capture_time = 0.0
-
-        config, source = self._get_camera_config(camera_type)
-        window_name = "Collect Photos" if show_preview else None
-
-        self.image_handler = ImageHandler(
-            node=self,
-            image_source=source,
-            config=config,
-            show_result=window_name,
-            image_processing_callback=self._on_frame,
-            poll_interval=0.01,
+class _Publisher:
+    def __init__(self, topic: str, scale: float) -> None:
+        self._scale = scale
+        self._node = Node(
+            f"nectar_collect_photos_pub_{uuid.uuid4().hex[:8]}",
+            start_parameter_services=False,
         )
-        self.image_handler.run()
+        nectar.add_node(self._node)
+        self._pub = self._node.create_publisher(CompressedImage, topic, 1)
 
-        self.get_logger().info(
-            f"Collecting photos — camera: {camera_type}, "
-            f"interval: {self._capture_interval}s, "
-            f"output: {self._output_path}"
-        )
-
-    def _setup_output_dir(self, output_dir: str, run_name: str) -> Path:
-        """Create output directory: ~/<output_dir>/<run_name>/"""
-        if not run_name:
-            run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        path = Path.home() / output_dir / run_name
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def _get_camera_config(self, camera_type: str) -> tuple:
-        """Return (config, source_key) using declared ROS params directly."""
-        source_key = camera_type
-        w = self.get_parameter("width").value
-        h = self.get_parameter("height").value
-        fps = self.get_parameter("fps").value
-
-        if camera_type == "webcam":
-            params = {"device_index": 0, "width": w, "height": h, "fps": fps}
-        elif camera_type == "realsense":
-            params = {
-                "color_width": w,
-                "color_height": h,
-                "depth_width": w,
-                "depth_height": h,
-                "fps": fps,
-            }
-        elif camera_type == "realsense_ros":
-            params = {
-                "topic": "/camera/color/image_raw/compressed",
-                "compressed": True,
-                "depth_topic": "/camera/depth/image_rect_raw",
-                "depth_compressed": False,
-            }
-            source_key = "ros_depth"
-        elif camera_type == "c920":
-            params = {"profile": 1}
-        elif camera_type == "imx219":
-            params = {"sensor_id": 0, "width": w, "height": h, "flip": 2, "fps": fps}
-        elif camera_type == "oakd":
-            params = {}
-        elif camera_type == "ros":
-            params = {
-                "topic": "/camera/color/image_raw/compressed",
-                "compressed": True,
-            }
-        else:
-            return None, camera_type
-
-        config = ConfigBuilder.build(source_key, params)
-        self.get_logger().info(f"Camera config: {camera_type} {w}x{h} @ {fps}fps")
-        return config, source_key
-
-    def _on_frame(self, frame) -> None:
-        """Save frame if the capture interval has elapsed."""
-        if frame is None:
-            return
-
-        now = time.time()
-        if now - self._last_capture_time < self._capture_interval:
-            return
-
-        self._photo_count += 1
-        self._last_capture_time = now
-
-        ext = self._image_format
-        filename = f"frame_{self._photo_count:05d}.{ext}"
-        filepath = self._output_path / filename
-
-        params = []
-        if ext in ("jpg", "jpeg"):
-            params = [cv2.IMWRITE_JPEG_QUALITY, self._jpeg_quality]
-        elif ext == "png":
-            params = [cv2.IMWRITE_PNG_COMPRESSION, 3]
-
-        cv2.imwrite(str(filepath), frame, params)
-        self.get_logger().info(
-            f"[{self._photo_count}] Saved {filename} ({frame.shape[1]}x{frame.shape[0]})"
-        )
-
-        if self._image_pub is not None:
-            self._publish_frame(frame)
-
-        if self._max_photos > 0 and self._photo_count >= self._max_photos:
-            self.get_logger().info(f"Reached max_photos ({self._max_photos}). Stopping.")
-            raise SystemExit(0)
-
-    def _publish_frame(self, frame: np.ndarray) -> None:
-        """Publish frame as CompressedImage, downscaled for bandwidth."""
-        if self._publish_scale < 1.0:
+    def publish(self, frame: np.ndarray) -> None:
+        if self._scale < 1.0:
             frame = cv2.resize(
-                frame,
-                None,
-                fx=self._publish_scale,
-                fy=self._publish_scale,
-                interpolation=cv2.INTER_AREA,
+                frame, None, fx=self._scale, fy=self._scale, interpolation=cv2.INTER_AREA
             )
         _, data = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
         msg = CompressedImage()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.format = "jpeg"
         msg.data = data.tobytes()
-        self._image_pub.publish(msg)
+        self._pub.publish(msg)
 
-    def destroy_node(self) -> None:
-        self.image_handler.cleanup()
-        self.get_logger().info(
-            f"Collection finished — {self._photo_count} photos saved to {self._output_path}"
+    def cleanup(self) -> None:
+        nectar.remove_node(self._node)
+        try:
+            self._node.destroy_node()
+        except Exception:
+            pass
+
+
+def _setup_output_dir(output_dir: str, run_name: str) -> Path:
+    run_name = run_name or datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = Path.home() / output_dir / run_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+class Collector:
+    def __init__(self, args: argparse.Namespace) -> None:
+        self._args = args
+        self._output_path = _setup_output_dir(args.output_dir, args.run_name)
+        self._count = 0
+        self._last_capture = 0.0
+        self._publisher: Optional[_Publisher] = (
+            _Publisher(args.publish_topic, args.publish_scale) if args.publish else None
         )
-        super().destroy_node()
+
+        config, source = _camera_config(args.camera_type, args.width, args.height, args.fps)
+        log.info(
+            "Camera config: %s %dx%d @ %dfps", args.camera_type, args.width, args.height, args.fps
+        )
+
+        self.handler = ImageHandler(
+            image_source=source,
+            config=config,
+            show_result="Collect Photos" if args.show else None,
+            image_processing_callback=self._on_frame,
+            poll_interval=0.01,
+        )
+        self.handler.run()
+        log.info("Saving to %s (interval=%ss)", self._output_path, args.capture_interval)
+
+    def _on_frame(self, frame) -> None:
+        if frame is None:
+            return
+        now = time.time()
+        if now - self._last_capture < self._args.capture_interval:
+            return
+        self._count += 1
+        self._last_capture = now
+
+        ext = self._args.image_format
+        filepath = self._output_path / f"frame_{self._count:05d}.{ext}"
+        params = []
+        if ext in ("jpg", "jpeg"):
+            params = [cv2.IMWRITE_JPEG_QUALITY, self._args.jpeg_quality]
+        elif ext == "png":
+            params = [cv2.IMWRITE_PNG_COMPRESSION, 3]
+        cv2.imwrite(str(filepath), frame, params)
+        log.info(
+            "[%d] Saved %s (%dx%d)", self._count, filepath.name, frame.shape[1], frame.shape[0]
+        )
+
+        if self._publisher is not None:
+            self._publisher.publish(frame)
+
+        if self._args.max_photos > 0 and self._count >= self._args.max_photos:
+            log.info("Reached max_photos (%d). Stopping.", self._args.max_photos)
+            raise SystemExit(0)
+
+    def cleanup(self) -> None:
+        self.handler.cleanup()
+        if self._publisher is not None:
+            self._publisher.cleanup()
+        log.info("Collection finished -- %d photos saved to %s", self._count, self._output_path)
 
 
-def main(args=None) -> None:
-    rclpy.init(args=args)
-    node = None
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Capture and save camera frames")
+    p.add_argument("--camera-type", default="webcam")
+    p.add_argument("--output-dir", default="collected_photos")
+    p.add_argument("--run-name", default="")
+    p.add_argument("--capture-interval", type=float, default=1.0)
+    p.add_argument("--image-format", default="jpg")
+    p.add_argument("--jpeg-quality", type=int, default=90)
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--max-photos", type=int, default=0)
+    p.add_argument("--publish", action="store_true")
+    p.add_argument("--publish-topic", default="collect_photos/compressed")
+    p.add_argument("--publish-scale", type=float, default=0.5)
+    p.add_argument("--width", type=int, default=1280)
+    p.add_argument("--height", type=int, default=720)
+    p.add_argument("--fps", type=int, default=30)
+    args, _ = p.parse_known_args()
+    return args
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+    nectar.init()
+    args = parse_args()
+    collector = Collector(args)
     try:
-        node = CollectPhotosNode()
-        rclpy.spin(node)
+        nectar.spin()
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
-        if node:
-            node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        collector.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

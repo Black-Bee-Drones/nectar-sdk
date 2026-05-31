@@ -1,10 +1,12 @@
 import math
+import threading
+import time
 from typing import List, Optional
 
 import rclpy
 from geometry_msgs.msg import Point, PoseStamped
 from rclpy.duration import Duration
-from rclpy.node import Node
+from rclpy.executors import Executor
 from std_srvs.srv import Empty
 from tf2_msgs.msg import TFMessage
 
@@ -61,8 +63,9 @@ class CrazyflieDrone(BaseDrone):
     ----------
     config : CrazyflieConfig
         Crazyflie-specific configuration.
-    node : Node
-        ROS2 node for communication.
+    executor : Executor, optional
+        ROS 2 executor to register this drone's node with. Defaults to
+        the shared :mod:`nectar.runtime` executor.
     """
 
     # Status supervisor_info bitmask constants
@@ -74,14 +77,18 @@ class CrazyflieDrone(BaseDrone):
     SUPERVISOR_IS_TUMBLED = 32
     SUPERVISOR_IS_LOCKED = 64
 
-    def __init__(self, config: CrazyflieConfig, node: Node) -> None:
+    def __init__(
+        self,
+        config: CrazyflieConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
         if not _CF_INTERFACES_AVAILABLE:
             raise ImportError(
                 "crazyflie_interfaces not found. Install Crazyswarm2: "
                 "sudo apt install ros-${ROS_DISTRO}-crazyflie ros-${ROS_DISTRO}-crazyflie-interfaces"
             )
 
-        super().__init__(config, node)
+        super().__init__(config, executor)
 
         self._status: Optional[Status] = None
         self._pose: Optional[PoseStamped] = None
@@ -102,25 +109,15 @@ class CrazyflieDrone(BaseDrone):
         self._node.get_logger().info(f"CrazyflieDrone initialized: {config.cf_name} ({config.uri})")
 
     @classmethod
-    def from_config(cls, config: DroneConfig, node: Node) -> "CrazyflieDrone":
-        """
-        Factory method for DroneFactory registration.
-
-        Parameters
-        ----------
-        config : DroneConfig
-            Configuration (converted to CrazyflieConfig if needed).
-        node : Node
-            ROS2 node.
-
-        Returns
-        -------
-        CrazyflieDrone
-            Configured drone instance.
-        """
+    def from_config(
+        cls,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> "CrazyflieDrone":
+        """Factory entry point for :class:`DroneFactory`."""
         if not isinstance(config, CrazyflieConfig):
             config = CrazyflieConfig()
-        return cls(config, node)
+        return cls(config, executor)
 
     # Properties
 
@@ -280,7 +277,7 @@ class CrazyflieDrone(BaseDrone):
         start = self._node.get_clock().now()
 
         while self._node.get_clock().now() - start < timeout:
-            self._wait(0.1)
+            time.sleep(0.1)
             if self._status is not None:
                 self._connected = True
                 self._node.get_logger().info(
@@ -403,7 +400,7 @@ class CrazyflieDrone(BaseDrone):
         deadline = Duration(seconds=timeout)
 
         while self._node.get_clock().now() - start < deadline:
-            self._wait(0.05)
+            time.sleep(0.05)
             if self.height >= threshold:
                 self.delay(1.0)
                 self._node.get_logger().info(
@@ -469,7 +466,7 @@ class CrazyflieDrone(BaseDrone):
         deadline = Duration(seconds=timeout)
 
         while self._node.get_clock().now() - start < deadline:
-            self._wait(0.05)
+            time.sleep(0.05)
             if self.height <= landed_threshold:
                 self.delay(0.5)
                 self._node.get_logger().info(f"Landing complete (height={self.height:.3f}m)")
@@ -873,13 +870,16 @@ class CrazyflieDrone(BaseDrone):
         req.pieces = pieces
 
         future = self._upload_traj_srv.call_async(req)
-        start = self._node.get_clock().now()
-        timeout = Duration(seconds=10.0)
-        while not future.done():
-            self._wait(0.05)
-            if self._node.get_clock().now() - start > timeout:
-                self._node.get_logger().error("Upload trajectory timeout")
-                return
+        done = threading.Event()
+        future.add_done_callback(lambda _f: done.set())
+        if not done.wait(timeout=10.0):
+            self._node.get_logger().error("Upload trajectory timeout")
+            return
+        try:
+            future.result()
+        except Exception as e:
+            self._node.get_logger().error(f"Upload trajectory failed: {e}")
+            return
         self._node.get_logger().info(f"Trajectory {trajectory_id} uploaded")
 
     def start_trajectory(
@@ -973,14 +973,11 @@ class CrazyflieDrone(BaseDrone):
         req.names = [param_name]
 
         future = self._get_params_srv.call_async(req)
-        start = self._node.get_clock().now()
-        timeout = Duration(seconds=5.0)
-        while not future.done():
-            self._wait(0.05)
-            if self._node.get_clock().now() - start > timeout:
-                self._node.get_logger().error(f"Get param {name} timeout")
-                return None
-
+        done = threading.Event()
+        future.add_done_callback(lambda _f: done.set())
+        if not done.wait(timeout=5.0):
+            self._node.get_logger().error(f"Get param {name} timeout")
+            return None
         try:
             result = future.result()
             val = result.values[0]
@@ -1056,10 +1053,10 @@ class CrazyflieDrone(BaseDrone):
         log_interval = Duration(seconds=2.0)
 
         while self._node.get_clock().now() - start < duration_deadline:
-            self._wait(0.05)
+            time.sleep(0.05)
 
         while self._node.get_clock().now() - start < deadline:
-            self._wait(0.05)
+            time.sleep(0.05)
             dist = self._distance_to(goal)
 
             if dist <= precision:

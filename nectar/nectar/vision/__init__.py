@@ -14,6 +14,9 @@ from nectar.vision.algorithms import (
     ILineEstimationMethod,
     LineDetector,
     ModelType,
+    OpticalFlowConfig,
+    OpticalFlowEstimator,
+    OpticalFlowResult,
     RansacLine,
     RotatedRect,
 )
@@ -172,6 +175,10 @@ __all__ = [
     "ModelType",
     "ModelCalibrator",
     "CalibrationResult",
+    # Flow
+    "OpticalFlowEstimator",
+    "OpticalFlowConfig",
+    "OpticalFlowResult",
     # MediaPipe
     "HandTracker",
     "HandTrackerConfig",

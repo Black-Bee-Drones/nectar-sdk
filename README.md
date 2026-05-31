@@ -29,6 +29,7 @@ ROS 2 software development kit for autonomous aerial systems. Provides unified i
   - [Drone Control](#drone-control)
   - [Computer Vision](#computer-vision)
   - [AI / Detection](#ai--detection)
+  - [Sensors](#sensors)
   - [Interface](#interface)
   - [Nectar Interfaces](#nectar-interfaces)
 - [Installation](#installation)
@@ -60,16 +61,20 @@ Protocol-based drone interface with factory instantiation. `DroneFactory` create
 - Per-axis PID tuning via YAML with runtime updates
 
 ```python
+import nectar
 from nectar.control import DroneFactory, MavrosConfig, BebopConfig, PoseSource
 
+nectar.init()
+
 # Same interface, different platforms
-drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS), node)
-# drone  = DroneFactory.create("bebop", BebopConfig(), node)
+drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS))
+# drone  = DroneFactory.create("bebop", BebopConfig())
 
 drone.takeoff(altitude=2.0)
 drone.move_to(x=5.0, y=0.0, z=0.0, precision=0.3)
 drone.move_to_gps(lat=-22.413, lon=-45.449, alt=15.0)
 drone.land()
+nectar.shutdown()
 ```
 
 [Control overview](nectar/nectar/control/README.md) · [MAVROS details](nectar/nectar/control/mavros/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md)
@@ -86,22 +91,26 @@ Camera abstraction and image processing. `CameraFactory` auto-detects the source
 - Hand and face tracking via [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions)
 
 ```python
+import nectar
 from nectar.vision import CameraFactory, ImageHandler, OpenCVConfig, Aruco
+
+nectar.init()
 
 # One factory, any camera
 camera = CameraFactory.from_source("webcam", config=OpenCVConfig(width=1280, height=720))
 camera = CameraFactory.from_source("realsense")
-camera = CameraFactory.from_source("/camera/image_raw", node=node)  # ROS 2 topic
+camera = CameraFactory.from_source("/camera/image_raw")   # ROS 2 topic
 
 # Timer-based capture with processing callback
 aruco = Aruco(marker_dict=5, tag_size=0.05)
 
 handler = ImageHandler(
-    node=self, image_source="webcam",
+    image_source="webcam",
     image_processing_callback=lambda frame: aruco.pose_estimate(frame, draw=True),
     show_result="Camera",
 )
 handler.run()
+nectar.spin()
 ```
 
 [Vision overview](nectar/nectar/vision/README.md) — camera classes, algorithm API, node parameters, calibration, module structure
@@ -133,6 +142,33 @@ annotated = detector.draw_detections(image, result)
 ```
 
 [AI overview](nectar/nectar/ai/README.md) · [Detection details](nectar/nectar/ai/detection/README.md) — class diagram, core types, framework configs, slicing, CLI, extension guide
+
+### [Sensors](nectar/nectar/sensors/README.md)
+
+Companion-side sensor drivers and value filters, plus a ready-made ROS 2 node that bridges a serial rangefinder to MAVLink `DISTANCE_SENSOR` so an ArduPilot/PX4 FCU can consume it as its primary rangefinder. Composition-first: any `DistanceSensor` driver and optional `DistanceFilter` plug into a `RangefinderPublisher` that pushes filtered samples into a [`MavlinkConnection`](nectar/nectar/control/mavlink/README.md). Designed to run in parallel with MAVROS so missions stay unchanged.
+
+- [Benewake TF-Luna](https://en.benewake.com/TFLuna/index.html) UART driver with checksum and signal-strength gating
+- `ObstacleMaskFilter` for masking step-drops in the rangefinder when crossing obstacles (the canonical case where ArduPilot would otherwise climb to "compensate"). Auto-estimates the obstacle height from the entry drop magnitude; pass `obstacle_height_m` to lock it.
+- ROS 2 node fully parameterized via launch file — start it alongside the mission, no mission code changes needed
+
+```python
+from nectar.control import MavlinkConnection
+from nectar.sensors import ObstacleMaskFilter, RangefinderPublisher, TFLuna
+
+sensor = TFLuna(port="/dev/ttyUSB0")
+conn = MavlinkConnection()
+conn.connect("udp:127.0.0.1:14551")
+
+publisher = RangefinderPublisher(
+    sensor=sensor,
+    connection=conn,
+    rate_hz=50.0,
+    filter=ObstacleMaskFilter(),  # auto-detect; pass obstacle_height_m=X to lock
+)
+publisher.start()
+```
+
+[Sensors overview](nectar/nectar/sensors/README.md) · [MAVLink connection](nectar/nectar/control/mavlink/README.md)
 
 ### [Interface](nectar/nectar/interface/README.md)
 
@@ -178,6 +214,7 @@ make python-control    # GPS, PID, MAVROS navigation
 make python-vision     # Camera drivers, ArUco, color, line detection
 make python-ai         # YOLO, DETR, RF-DETR (requires PyTorch)
 make python-interface  # Qt6 / PySide6 GUI
+make python-sensors    # pyserial + pymavlink (TF-Luna driver, MAVLink bridge)
 make pytorch           # PyTorch (auto-detects CUDA)
 ```
 
@@ -622,6 +659,8 @@ detector = Detector("model.bin", framework="custom")
 | [Bebop Implementation](nectar/nectar/control/bebop/README.md) | Bebop 2 control, velocity, acrobatics |
 | [Obstacle Detection](nectar/nectar/control/obstacles/README.md) | Detector protocol, avoidance strategies, handler configuration |
 | [PID Controller](nectar/nectar/control/pid/README.md) | Tuning guide, YAML config, runtime updates, default indoor/outdoor configs |
+| [MAVLink Connection](nectar/nectar/control/mavlink/README.md) | Direct pymavlink connection wrapper; planned `MavlinkDrone` scope |
+| [Sensors Module](nectar/nectar/sensors/README.md) | TF-Luna driver, rangefinder filters, MAVLink `DISTANCE_SENSOR` bridge, ROS 2 node |
 | [Vision Module](nectar/nectar/vision/README.md) | Camera drivers, ArUco, color, line, distance, MediaPipe, nodes, calibration |
 | [AI Module](nectar/nectar/ai/README.md) | Detector API, training, evaluation, device management |
 | [Detection Module](nectar/nectar/ai/detection/README.md) | Class diagram, core types, framework configs, slicing, CLI, extension guide |
@@ -658,6 +697,11 @@ ros2 run nectar webcam_publisher_node.py --ros-args -p width:=1280 -p height:=72
 
 # Object detection
 ros2 run nectar detector_example.py --ros-args -p model_source:=yolov8n.pt
+
+# Rangefinder bridge (TF-Luna over UART -> MAVLink DISTANCE_SENSOR)
+ros2 run nectar rangefinder_node.py --ros-args \
+    -p serial_port:=/dev/ttyUSB0 -p mavlink_url:=udp:127.0.0.1:14551 \
+    -p filter:=obstacle_mask
 ```
 
 ## Examples
@@ -675,8 +719,9 @@ Working examples in `nectar/nectar/examples/`:
 | [depth_example.py](nectar/nectar/examples/vision/depth_example.py) | Depth visualization |
 | [detector_example.py](nectar/nectar/examples/ai/detector_example.py) | Object detection |
 | [batch_detector.py](nectar/nectar/examples/ai/batch_detector.py) | Batch image/video processing |
+| [rangefinder_example.py](nectar/nectar/examples/sensors/rangefinder_example.py) | TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` bench test |
 
-See: [control examples](nectar/nectar/examples/control/README.md) · [vision examples](nectar/nectar/examples/vision/README.md) · [AI examples](nectar/nectar/examples/ai/README.md)
+See: [control examples](nectar/nectar/examples/control/README.md) · [vision examples](nectar/nectar/examples/vision/README.md) · [AI examples](nectar/nectar/examples/ai/README.md) · [sensors examples](nectar/nectar/examples/sensors/README.md)
 
 ## Directory Structure
 
@@ -711,9 +756,10 @@ nectar-sdk/
 │   ├── package.xml
 │   ├── pyproject.toml
 │   └── nectar/                 # Python package
-│       ├── control/            # Drone control
+│       ├── control/            # Drone control (mavros, mavlink, bebop, crazyflie)
 │       ├── vision/             # Computer vision
 │       ├── ai/                 # AI / detection
+│       ├── sensors/            # Sensor drivers, filters, MAVLink bridges
 │       ├── interface/          # Qt6 GUI
 │       ├── examples/
 │       └── utils/

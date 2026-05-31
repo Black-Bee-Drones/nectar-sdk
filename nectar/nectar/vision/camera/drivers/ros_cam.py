@@ -1,4 +1,5 @@
 import threading
+import uuid
 from typing import Optional
 
 import numpy as np
@@ -8,6 +9,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from sensor_msgs.msg import CompressedImage as RosCompressedImage
 from sensor_msgs.msg import Image as RosImage
 
+from nectar import runtime as nectar_runtime
 from nectar.vision.camera.abstract import AbstractCam
 from nectar.vision.camera.config import QoSDurability, QoSReliability, ROSConfig
 
@@ -16,34 +18,25 @@ class ROSCam(AbstractCam):
     """
     Camera driver for ROS image topics.
 
-    Subscribes to sensor_msgs/Image or sensor_msgs/CompressedImage topics
-    with configurable QoS settings.
-
-    Parameters
-    ----------
-    node : Node
-        ROS2 node for subscription creation.
-    config : ROSConfig
-        Configuration with topic, compression, and QoS settings.
-
-    Examples
-    --------
-    >>> from rclpy.node import Node
-    >>> from nectar.vision.camera import ROSCam, ROSConfig, QoSReliability
-    >>>
-    >>> config = ROSConfig(
-    ...     topic="/camera/image_raw",
-    ...     compressed=False,
-    ...     reliability=QoSReliability.BEST_EFFORT
-    ... )
-    >>> cam = ROSCam(node, config)
-    >>> cam.start()
-    >>> frame = cam.get_frame()
+    Subscribes to sensor_msgs/Image or sensor_msgs/CompressedImage topics.
+    When ``node`` is omitted, an internal node is created and registered with
+    :mod:`nectar.runtime`; otherwise the provided node is used (this is the
+    path taken when wrapped by :class:`ImageHandler`).
     """
 
-    def __init__(self, node: Node, config: ROSConfig) -> None:
+    def __init__(self, node: Optional[Node] = None, config: Optional[ROSConfig] = None) -> None:
+        if config is None:
+            raise ValueError("ROSCam requires a ROSConfig")
         super().__init__(name=config.name)
-        self._node = node
+        self._owns_node = node is None
+        if node is None:
+            self._node = Node(
+                f"nectar_ros_cam_{uuid.uuid4().hex[:8]}",
+                start_parameter_services=False,
+            )
+            nectar_runtime.add_node(self._node)
+        else:
+            self._node = node
         self._config = config
         self._bridge = CvBridge()
         self._frame: Optional[np.ndarray] = None
@@ -180,8 +173,14 @@ class ROSCam(AbstractCam):
             try:
                 self._node.destroy_subscription(self._sub)
             except Exception:
-                # Subscription may already be destroyed during node shutdown
                 pass
             self._sub = None
         self._is_running = False
         self._frame_event.set()
+        if self._owns_node:
+            nectar_runtime.remove_node(self._node)
+            try:
+                self._node.destroy_node()
+            except Exception:
+                pass
+            self._owns_node = False

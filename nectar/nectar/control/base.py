@@ -1,15 +1,18 @@
+import threading
 import time
+import uuid
 from abc import ABC, abstractmethod
 from typing import Callable, List, Optional, Union
 
-import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.client import Client
+from rclpy.executors import Executor
 from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.qos import QoSProfile
 from rclpy.subscription import Subscription
 
+from nectar import runtime as nectar_runtime
 from nectar.control.config import DroneConfig
 from nectar.control.exceptions import (
     CapabilityNotSupportedError,
@@ -32,18 +35,31 @@ class BaseDrone(ABC):
     """
     Abstract base class for drone implementations.
 
+    Each drone owns its own ROS 2 ``Node``, which is registered with the
+    SDK-wide executor at construction time (see :mod:`nectar.runtime`).
+    Callers may pass an explicit ``executor`` to share an existing one
+    (e.g. the GUI's or Yasmin's). All blocking methods rely on that
+    executor to spin in the background.
+
     Parameters
     ----------
     config : DroneConfig
         Drone configuration dataclass.
-    node : Node
-        ROS2 node for communication.
-
+    executor : Executor, optional
+        Executor to register this drone's node with. Defaults to the
+        shared SDK executor from :func:`nectar.runtime.get_executor`.
     """
 
-    def __init__(self, config: DroneConfig, node: Node) -> None:
+    def __init__(
+        self,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
         self._config = config
-        self._node = node
+        self._node = Node(
+            f"nectar_{self._sanitize(config.name)}_{uuid.uuid4().hex[:8]}",
+            start_parameter_services=False,
+        )
         self._connected = False
         self._subscribers: List[Subscription] = []
         self._publishers: List[Publisher] = []
@@ -51,10 +67,20 @@ class BaseDrone(ABC):
         self._callback_group = ReentrantCallbackGroup()
         self._driver_running = False
         self._obstacle_manager = ObstacleManager()
-        self._owns_spin = node.executor is None
+
+        if executor is not None:
+            executor.add_node(self._node)
+            self._external_executor = True
+        else:
+            nectar_runtime.add_node(self._node)
+            self._external_executor = False
 
         if config.start_driver:
             self._init_driver()
+
+    @staticmethod
+    def _sanitize(name: str) -> str:
+        return "".join(c if c.isalnum() else "_" for c in name).strip("_") or "drone"
 
     @property
     def config(self) -> DroneConfig:
@@ -727,146 +753,102 @@ class BaseDrone(ABC):
         validator: Optional[Callable] = None,
     ):
         """
-        Call a ROS2 service with deadlock-safe async+spin pattern.
+        Call a ROS 2 service. Blocks on the future when ``sync=True``;
+        relies on the SDK executor spinning in the background.
 
         Parameters
         ----------
         client : Client
-            ROS2 service client.
+            ROS 2 service client.
         request : SrvTypeRequest
             Service request message.
-        success_msg : str, default=""
-            Message to log on success.
-        fail_msg : str, default=""
-            Message to log on failure.
+        success_msg, fail_msg : str
+            Optional log messages on success / failure.
         sync : bool, default=True
-            If True, blocks (spins) until service completes and returns response.
-            If False, fire-and-forget with optional done callback.
+            Block until the future completes when True; fire-and-forget when False.
         timeout : float, default=10.0
-            Maximum time in seconds to wait for service availability and response.
+            Combined timeout for service availability and the response.
         validator : callable, optional
-            Function ``(response, service_name) -> bool`` for response validation.
-            If None, response is assumed valid.
+            ``(response, service_name) -> bool``. Raises or returns False to mark failure.
 
         Returns
         -------
         Any or None
-            Service response if sync=True and successful, None otherwise.
+            Response object when ``sync=True``, otherwise ``None``.
 
         Raises
         ------
         TimeoutError
-            If service not available within timeout.
+            If the service is not available within ``timeout``.
         """
-        elapsed = 0.0
-        wait_interval = 1.0
+        if not client.wait_for_service(timeout_sec=timeout):
+            msg = f"Service {client.srv_name} not available after {timeout}s"
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg} - {msg}")
+            raise TimeoutError(msg)
 
-        while not client.wait_for_service(timeout_sec=wait_interval):
-            elapsed += wait_interval
-            self._node.get_logger().info(
-                f"Service {client.srv_name} not available, waiting... ({elapsed:.0f}s)"
-            )
-            if elapsed >= timeout:
-                msg = f"Service {client.srv_name} not available after {timeout}s"
-                if fail_msg:
-                    self._node.get_logger().error(f"{ERR} {fail_msg} — {msg}")
-                raise TimeoutError(msg)
+        future = client.call_async(request)
 
-        self._node.get_logger().debug(f"Calling service {client.srv_name} | sync={sync}")
+        if not sync:
+            future.add_done_callback(self._make_service_callback(success_msg, fail_msg, validator))
+            return None
 
-        if sync:
-            future = client.call_async(request)
-            deadline = time.time() + timeout
+        done = threading.Event()
+        future.add_done_callback(lambda _f: done.set())
+        if not done.wait(timeout=timeout):
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg}: timeout waiting for response")
+            return None
 
-            while not future.done():
-                if time.time() > deadline:
-                    if fail_msg:
-                        self._node.get_logger().error(
-                            f"{ERR} {fail_msg}: timeout waiting for response"
-                        )
-                    return None
-                self._wait(0.05)
+        try:
+            result = future.result()
+        except Exception as e:
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
+            return None
 
+        if result is None:
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg}")
+            return None
+
+        if validator:
+            validator(result, client.srv_name)
+        if success_msg:
+            self._node.get_logger().info(f"{OK} {success_msg}")
+        return result
+
+    def _make_service_callback(
+        self,
+        success_msg: str,
+        fail_msg: str,
+        validator: Optional[Callable],
+    ) -> Callable:
+        def _handle(fut):
             try:
-                result = future.result()
-                if result is None:
-                    if fail_msg:
-                        self._node.get_logger().error(f"{ERR} {fail_msg}")
-                    return None
-                if validator:
-                    validator(result, client.srv_name)
-                if success_msg:
-                    self._node.get_logger().info(f"{OK} {success_msg}")
-                return result
+                result = fut.result()
             except Exception as e:
                 if fail_msg:
                     self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
-                return None
-        else:
-            future = client.call_async(request)
+                return
+            if result is None:
+                if fail_msg:
+                    self._node.get_logger().error(f"{ERR} {fail_msg}")
+                return
+            if validator:
+                validator(result, fut.client.srv_name if hasattr(fut, "client") else "")
+            if success_msg:
+                self._node.get_logger().info(f"{OK} {success_msg}")
 
-            def _handle_response(fut):
-                try:
-                    result = fut.result()
-                    if result is not None:
-                        if validator:
-                            validator(result, client.srv_name)
-                        if success_msg:
-                            self._node.get_logger().info(f"{OK} {success_msg}")
-                    elif fail_msg:
-                        self._node.get_logger().error(f"{ERR} {fail_msg}")
-                except Exception as e:
-                    if fail_msg:
-                        self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
-
-            future.add_done_callback(_handle_response)
-            return None
+        return _handle
 
     def delay(self, seconds: float) -> None:
-        """
-        Delay while keeping ROS communication alive.
-
-        Parameters
-        ----------
-        seconds : float
-            Delay duration in seconds.
-        """
-        deadline = time.time() + seconds
-        while time.time() < deadline:
-            self._wait(min(0.05, deadline - time.time()))
-
-    def _wait(self, timeout_sec: float) -> None:
-        """
-        Cooperative wait tick.
-
-        When the SDK owns ROS spinning (no external executor was bound to
-        the node at init), spins the global executor once with the user's
-        ``node.executor`` binding restored after the call so future
-        ``create_subscription`` wakes still target the right executor.
-        Otherwise sleeps so the user's executor keeps driving callbacks.
-
-        Parameters
-        ----------
-        timeout_sec : float
-            Maximum time to block in seconds. ``0`` is non-blocking.
-        """
-        if self._owns_spin:
-            saved = self._node.executor
-            try:
-                rclpy.spin_once(self._node, timeout_sec=max(timeout_sec, 0.0))
-            finally:
-                self._node.executor = saved
-        else:
-            if timeout_sec > 0.0:
-                time.sleep(timeout_sec)
+        """Sleep for ``seconds``. SDK executor keeps spinning in the background."""
+        if seconds > 0.0:
+            time.sleep(seconds)
 
     def cleanup(self) -> None:
-        """
-        Cleanup all ROS2 resources.
-
-        Destroys all subscribers, publishers, clients, and obstacle detectors.
-        Called automatically on object deletion.
-        """
+        """Destroy all ROS resources and unregister the drone's node."""
         self._obstacle_manager.cleanup()
 
         for sub in self._subscribers:
@@ -879,7 +861,16 @@ class BaseDrone(ABC):
         self._subscribers.clear()
         self._publishers.clear()
         self._clients.clear()
-        self._node.get_logger().debug("Drone resources cleaned up")
+
+        if not self._external_executor:
+            nectar_runtime.remove_node(self._node)
+        try:
+            self._node.destroy_node()
+        except Exception:
+            pass
 
     def __del__(self) -> None:
-        self.cleanup()
+        try:
+            self.cleanup()
+        except Exception:
+            pass

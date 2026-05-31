@@ -58,7 +58,6 @@ class ColorCalibrationNode(Node):
         self.get_logger().info(f"Using webcam index: {self.cap}")
 
         self.image_handler = ImageHandler(
-            node=self,
             image_source=self.image_source,
             image_processing_callback=self.process,
         )
@@ -152,9 +151,12 @@ def main(args=None):
     --cap : int
         Webcam index for OpenCV.
     """
-    rclpy.init(args=args)
-
     import argparse
+
+    import nectar
+
+    rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     parser = argparse.ArgumentParser(description="Color Calibration Node")
     parser.add_argument(

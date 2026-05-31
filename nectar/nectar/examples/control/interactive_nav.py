@@ -13,11 +13,10 @@ Usage:
 """
 
 import argparse
+import logging
 import shlex
 
-import rclpy
-from rclpy.node import Node
-
+import nectar
 from nectar.control import (
     DroneFactory,
     MavrosConfig,
@@ -25,6 +24,8 @@ from nectar.control import (
     NavigationMethod,
     PoseSource,
 )
+
+log = logging.getLogger("interactive_nav")
 
 STRATEGY_MAP = {
     "pid": NavigationMethod.PID,
@@ -63,14 +64,11 @@ Examples:
 """
 
 
-class InteractiveNav(Node):
+class InteractiveNav:
     def __init__(self, args: argparse.Namespace):
-        super().__init__("interactive_nav")
-
         pose_source = PoseSource.VISION if args.mode == "indoor" else PoseSource.GPS
         config = MavrosConfig(pose_source=pose_source, start_driver=False)
-
-        self.drone = DroneFactory.create("mavros", config, self)
+        self.drone = DroneFactory.create("mavros", config)
         self.method = STRATEGY_MAP.get(args.strategy, NavigationMethod.PID)
         self.reference = MoveReference.BODY
         self.precision = args.precision
@@ -81,15 +79,14 @@ class InteractiveNav(Node):
     def setup(self, altitude: float) -> bool:
         if self._no_takeoff:
             if not self.drone.set_mode("GUIDED"):
-                self.get_logger().error("Failed to set GUIDED mode")
+                log.error("Failed to set GUIDED mode")
                 return False
             self.drone.delay(1.0)
             self.drone.set_takeoff_position()
-            self.get_logger().info("No-takeoff mode: takeoff position set to current")
+            log.info("No-takeoff mode: takeoff position set to current")
             return True
-
         if not self.drone.takeoff(altitude=altitude):
-            self.get_logger().error("Takeoff failed")
+            log.error("Takeoff failed")
             return False
         self.drone.delay(3.0)
         return True
@@ -111,12 +108,12 @@ class InteractiveNav(Node):
             return True
 
         if cmd == "land":
-            self.get_logger().info("Landing...")
+            log.info("Landing...")
             self.drone.land()
             return True
 
         if cmd == "rtl":
-            self.get_logger().info("RTL...")
+            log.info("RTL...")
             self.drone.rtl()
             return True
 
@@ -149,9 +146,14 @@ class InteractiveNav(Node):
         x, y = vals[0], vals[1]
         z = vals[2] if len(vals) >= 3 else None
 
-        self.get_logger().info(
-            f"move_to x={x} y={y} z={z} ref={self.reference.name} "
-            f"method={self.method.name} prec={self.precision}m"
+        log.info(
+            "move_to x=%s y=%s z=%s ref=%s method=%s prec=%sm",
+            x,
+            y,
+            z,
+            self.reference.name,
+            self.method.name,
+            self.precision,
         )
         reached = self.drone.move_to(
             x=x,
@@ -163,9 +165,9 @@ class InteractiveNav(Node):
             method=self.method,
         )
         if reached:
-            self.get_logger().info("Target reached")
+            log.info("Target reached")
         else:
-            self.get_logger().warn("Timeout — target not reached within precision")
+            log.warning("Timeout - target not reached within precision")
 
     def _handle_gps(self, parts: list) -> None:
         if not self.is_outdoor:
@@ -188,12 +190,16 @@ class InteractiveNav(Node):
         gps_method = self.method
         if gps_method == NavigationMethod.POSITION:
             gps_method = NavigationMethod.POSITION_GLOBAL
-            self.get_logger().info("POSITION not supported for GPS, using POSITION_GLOBAL")
+            log.info("POSITION not supported for GPS, using POSITION_GLOBAL")
 
         gps_prec = max(self.precision, 0.5)
-        self.get_logger().info(
-            f"move_to_gps lat={lat:.6f} lon={lon:.6f} alt={alt} "
-            f"method={gps_method.name} prec={gps_prec}m"
+        log.info(
+            "move_to_gps lat=%.6f lon=%.6f alt=%s method=%s prec=%sm",
+            lat,
+            lon,
+            alt,
+            gps_method.name,
+            gps_prec,
         )
         reached = self.drone.move_to_gps(
             latitude=lat,
@@ -204,9 +210,9 @@ class InteractiveNav(Node):
             method=gps_method,
         )
         if reached:
-            self.get_logger().info("GPS target reached")
+            log.info("GPS target reached")
         else:
-            self.get_logger().warn("Timeout — GPS target not reached")
+            log.warning("Timeout - GPS target not reached")
 
     def _handle_set(self, parts: list) -> None:
         if len(parts) < 2:
@@ -292,13 +298,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+    nectar.init()
     parsed = parse_args()
-    node = InteractiveNav(parsed)
+    nav = InteractiveNav(parsed)
 
-    if not node.setup(parsed.altitude):
-        node.destroy_node()
-        rclpy.shutdown()
+    if not nav.setup(parsed.altitude):
+        nav.drone.cleanup()
+        nectar.shutdown()
         return
 
     print(HELP_TEXT)
@@ -310,16 +317,16 @@ def main(args=None):
                 line = input("nav> ")
             except EOFError:
                 break
-            if not node.handle_input(line):
+            if not nav.handle_input(line):
                 break
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted")
+        log.info("Interrupted")
     finally:
         if not parsed.no_takeoff:
-            node.get_logger().info("Landing...")
-            node.drone.land()
-        node.destroy_node()
-        rclpy.shutdown()
+            log.info("Landing...")
+            nav.drone.land()
+        nav.drone.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

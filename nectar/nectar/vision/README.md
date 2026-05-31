@@ -323,19 +323,20 @@ camera = CameraFactory.from_source("/path/to/image.jpg")
 
 ### ImageHandler
 
-ROS2 timer-based camera interface. Creates `rclpy.Timer` for periodic frame polling and invokes callback on each frame. Handles OpenCV window display if `show_result` is set.
+Timer-based camera interface backed by an internal ROS 2 `Node` (registered with the SDK runtime executor — see [`nectar.runtime`](../runtime.py)). Invokes a processing callback on every frame and optionally renders to an OpenCV window.
 
 **API**:
 ```python
 ImageHandler(
-    node: Node,
     image_source: str,
     image_processing_callback: Callable = None,
     show_result: str = None,             # OpenCV window name
+    *,
     config: CameraConfig = None,
     camera: AbstractCam = None,          # Pre-configured camera
     poll_interval: float = 0.01,         # Timer period (seconds)
-    frame_timeout: float = 0.1           # Frame wait timeout (async)
+    frame_timeout: float = 0.1,          # Frame wait timeout (async)
+    executor: Executor = None,           # Defaults to nectar.runtime executor
 )
 ```
 
@@ -344,29 +345,23 @@ ImageHandler(
 - `open()`: Manual camera initialization
 - `close()`: Stop camera
 - `take_photo(timeout, wait_for_new)`: Single-shot capture
-- `cleanup()`: Release all resources
+- `cleanup()`: Release the camera, destroy the timer, and unregister the internal node
 
 **Example**:
 ```python
+import nectar
 from nectar.vision import ImageHandler, OpenCVConfig
 
-class CameraNode(Node):
-    def __init__(self):
-        super().__init__('camera_node')
+nectar.init()
 
-        self.handler = ImageHandler(
-            node=self,
-            image_source="webcam",
-            config=OpenCVConfig(width=1280, height=720),
-            image_processing_callback=self.process_frame,
-            show_result="Camera View"
-        )
-        self.handler.run()
-
-    def process_frame(self, frame):
-        # Process each frame
-        detections = self.detector.detect(frame)
-        return detections
+handler = ImageHandler(
+    image_source="webcam",
+    config=OpenCVConfig(width=1280, height=720),
+    image_processing_callback=lambda frame: detector.detect(frame),
+    show_result="Camera View",
+)
+handler.run()
+nectar.spin()
 ```
 
 ### AbstractCam

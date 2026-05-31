@@ -1,12 +1,12 @@
 from importlib import import_module
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
-from rclpy.node import Node
+from rclpy.executors import Executor
 
 from nectar.control.config import DroneConfig
 from nectar.control.protocols import Drone
 
-BuilderFunc = Callable[[DroneConfig, Node], Drone]
+BuilderFunc = Callable[[DroneConfig, Optional[Executor]], Drone]
 
 # Built-in drone types are lazy-loaded so importing ``nectar.control`` does
 # not pull MAVROS / olympe (Bebop) / cflib (Crazyflie) until needed.
@@ -70,7 +70,7 @@ class DroneFactory:
         cls,
         drone_type: str,
         config: DroneConfig,
-        node: Node,
+        executor: Optional[Executor] = None,
     ) -> Drone:
         """
         Create drone instance of specified type.
@@ -81,8 +81,9 @@ class DroneFactory:
             Drone type identifier (e.g., 'mavros', 'bebop').
         config : DroneConfig
             Type-specific configuration dataclass.
-        node : Node
-            ROS2 node for communication.
+        executor : Executor, optional
+            ROS 2 executor to register the drone's internal node with. Defaults
+            to the shared :mod:`nectar.runtime` executor.
 
         Returns
         -------
@@ -94,7 +95,7 @@ class DroneFactory:
         ValueError
             If drone_type not registered.
         """
-        return cls._resolve(drone_type)(config, node)
+        return cls._resolve(drone_type)(config, executor)
 
     @classmethod
     def available_types(cls) -> list[str]:

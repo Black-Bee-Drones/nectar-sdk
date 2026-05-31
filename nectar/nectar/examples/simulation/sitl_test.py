@@ -16,13 +16,12 @@ Usage:
     python3 sitl_test.py --list           # list available tests
 """
 
+import logging
 import math
 import sys
 import time
 
-import rclpy
-from rclpy.node import Node
-
+import nectar
 from nectar.control import (
     SITL_GPS_CONFIG,
     SITL_VISION_CONFIG,
@@ -33,6 +32,8 @@ from nectar.control import (
 )
 from nectar.control.mavros.setpoint_config import SetpointNavConfig
 from nectar.utils.position_utils import PositionUtils
+
+log = logging.getLogger("sitl_test")
 
 # Helpers
 
@@ -65,68 +66,53 @@ def get_yaw_deg(local_pos) -> float:
 # Test runner
 
 
-class SITLTest(Node):
+class SITLTest:
     """Isolated SITL test runner."""
 
     ALTITUDE = 3.0
 
     def __init__(self, fresh: bool = False, indoor: bool = False):
-        super().__init__("sitl_test")
         self.indoor = indoor
         config = SITL_VISION_CONFIG if indoor else SITL_GPS_CONFIG
-        self.drone = DroneFactory.create("mavros", config, self)
+        self.drone = DroneFactory.create("mavros", config)
         self.results: dict[str, bool] = {}
         self.fresh = fresh
         mode = "indoor (vision)" if indoor else "outdoor (GPS)"
-        self.get_logger().info(
-            f"SITLTest initialized — {mode} (reset={'land/takeoff' if fresh else 'LOITER'})"
+        log.info(
+            "SITLTest initialized -- %s (reset=%s)", mode, "land/takeoff" if fresh else "LOITER"
         )
 
     # State management
 
     def ensure_airborne(self):
-        """Takeoff if not already in the air."""
         d = self.drone
-        rclpy.spin_once(self, timeout_sec=0.5)
+        d.delay(0.5)
         if not d.is_armed:
-            self.get_logger().info(f"Taking off to {self.ALTITUDE}m...")
+            log.info("Taking off to %sm...", self.ALTITUDE)
             if not d.takeoff(
                 altitude=self.ALTITUDE,
                 adjust_altitude=True,
                 precision=0.2,
                 timeout=30.0,
             ):
-                self.get_logger().error("Takeoff FAILED — aborting")
+                log.error("Takeoff FAILED -- aborting")
                 raise RuntimeError("Takeoff failed")
             d.delay(3.0)
-            # SITL position controller is jerk-limited; raise PSC_JERK
-            # from ArduPilot default (5 m/s³) so setpoint navigation is usable.
-
             if not d.set_param("PSC_JERK_XY", 50.0):
                 d.set_param("PSC_JERK_NE", 50.0)
-            self.get_logger().info(f"Airborne at {pos_str(d.local_pos)}")
+            log.info("Airborne at %s", pos_str(d.local_pos))
         else:
             d.set_takeoff_position()
-            self.get_logger().info(f"Already armed at {pos_str(d.local_pos)}")
+            log.info("Already armed at %s", pos_str(d.local_pos))
 
     def reset_hover(self):
-        """Reset to clean hover between tests.
-
-        Stays in GUIDED mode and publishes zero velocity for 5s.
-        NOTE: LOITER→GUIDED mode switch breaks ArduPilot SITL's
-        velocity controller — all subsequent velocity commands are
-        ignored until a land/retakeoff cycle.
-        """
         d = self.drone
-
         if self.fresh:
-            self.get_logger().info("  [reset] Landing for full reset...")
+            log.info("  [reset] Landing for full reset...")
             d.land(timeout=20.0)
             d.delay(3.0)
             self.ensure_airborne()
             return
-
-        # Light reset: zero velocity in GUIDED (no mode switch)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=5.0)
 
     def measure_drift(self, duration: float = 2.0) -> float:
@@ -161,7 +147,7 @@ class SITLTest(Node):
 
         for name, ok in checks.items():
             status = "OK" if ok else "MISSING"
-            self.get_logger().info(f"  {name:15s} {status}")
+            log.info(f"  {name:15s} {status}")
 
         passed = all(checks.values())
         self._result(
@@ -528,7 +514,7 @@ class SITLTest(Node):
         Also raises WP_JERK (default 1 m/s³) to match PSC_JERK_NE tuning
         """
         d = self.drone
-        log = self.get_logger()
+        log = logging.getLogger("sitl_test")
 
         # Save original config
         orig_cfg = d.setpoint_config
@@ -645,7 +631,7 @@ class SITLTest(Node):
         d = self.drone
 
         # Step 1: PID forward
-        self.get_logger().info("  [seq] PID forward 2m...")
+        log.info("  [seq] PID forward 2m...")
         r1 = d.move_to(
             x=2.0,
             y=0.0,
@@ -657,10 +643,10 @@ class SITLTest(Node):
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
         drift = self.measure_drift(2.0)
-        self.get_logger().info(f"  [seq] Drift after PID: {drift:.3f}m")
+        log.info(f"  [seq] Drift after PID: {drift:.3f}m")
 
         # Step 2: PID_LOCAL lateral
-        self.get_logger().info("  [seq] PID_LOCAL left 2m...")
+        log.info("  [seq] PID_LOCAL left 2m...")
         r2 = d.move_to(
             x=0.0,
             y=2.0,
@@ -771,7 +757,7 @@ class SITLTest(Node):
     ) -> bool:
         """Fly a square pattern and check closing error."""
         d = self.drone
-        log = self.get_logger()
+        log = logging.getLogger("sitl_test")
         p_start = pos_xyz(d.local_pos)
 
         if reference == MoveReference.TAKEOFF:
@@ -851,7 +837,7 @@ class SITLTest(Node):
                 timeout=timeout,
             )
         except Exception as e:
-            self.get_logger().error(f"  {name} exception: {e}")
+            log.error(f"  {name} exception: {e}")
             self._result(name, False, f"exception: {e}")
             return False
         elapsed = time.time() - t0
@@ -890,7 +876,7 @@ class SITLTest(Node):
                 timeout=timeout,
             )
         except Exception as e:
-            self.get_logger().error(f"  {name} exception: {e}")
+            log.error(f"  {name} exception: {e}")
             self._result(name, False, f"exception: {e}")
             return False
         elapsed = time.time() - t0
@@ -911,16 +897,16 @@ class SITLTest(Node):
         return passed
 
     def _header(self, title: str):
-        self.get_logger().info(f"\n{'=' * 60}")
-        self.get_logger().info(f"TEST: {title}")
-        self.get_logger().info(f"{'=' * 60}")
+        log.info(f"\n{'=' * 60}")
+        log.info(f"TEST: {title}")
+        log.info(f"{'=' * 60}")
 
     def _result(self, name: str, passed: bool, detail: str = ""):
         status = "\033[32;1mPASS\033[0m" if passed else "\033[31;1mFAIL\033[0m"
         msg = f"  [{status}] {name}"
         if detail:
             msg += f" — {detail}"
-        self.get_logger().info(msg)
+        log.info(msg)
         self.results[name] = passed
 
 
@@ -1074,16 +1060,17 @@ def main():
         if skipped:
             print(f"Indoor mode: skipping GPS-only tests: {', '.join(skipped)}")
 
-    rclpy.init()
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+    nectar.init()
     node = SITLTest(fresh=fresh, indoor=indoor)
 
     try:
         mode = "indoor (vision)" if indoor else "outdoor (GPS)"
-        node.get_logger().info(f"\n{'═' * 60}")
-        node.get_logger().info(f"  SITL TEST — {len(test_names)} test(s) [{mode}]")
-        node.get_logger().info(f"  Tests: {', '.join(test_names)}")
-        node.get_logger().info(f"  Reset: {'land/takeoff' if fresh else 'LOITER'}")
-        node.get_logger().info(f"{'═' * 60}")
+        log.info(f"\n{'═' * 60}")
+        log.info(f"  SITL TEST — {len(test_names)} test(s) [{mode}]")
+        log.info(f"  Tests: {', '.join(test_names)}")
+        log.info(f"  Reset: {'land/takeoff' if fresh else 'LOITER'}")
+        log.info(f"{'═' * 60}")
 
         # Pre-flight tests (don't need airborne)
         pre = [t for t in test_names if t in PRE_FLIGHT_TESTS]
@@ -1095,7 +1082,7 @@ def main():
             try:
                 method()
             except Exception as e:
-                node.get_logger().error(f"Test {name} raised: {e}")
+                log.error(f"Test {name} raised: {e}")
                 node.results[name] = False
 
         if flight:
@@ -1103,7 +1090,7 @@ def main():
 
             for i, name in enumerate(flight):
                 if i > 0:
-                    node.get_logger().info("\n  ── reset between tests ──")
+                    log.info("\n  ── reset between tests ──")
                     node.reset_hover()
 
                 node._header(name)
@@ -1111,42 +1098,42 @@ def main():
                 try:
                     method()
                 except Exception as e:
-                    node.get_logger().error(f"Test {name} raised: {e}")
+                    log.error(f"Test {name} raised: {e}")
                     import traceback
 
                     traceback.print_exc()
                     node.results[name] = False
 
         # Summary
-        node.get_logger().info(f"\n{'═' * 60}")
-        node.get_logger().info("  SUMMARY")
-        node.get_logger().info(f"{'═' * 60}")
+        log.info(f"\n{'═' * 60}")
+        log.info("  SUMMARY")
+        log.info(f"{'═' * 60}")
 
         passed = failed = 0
         for name, result in node.results.items():
             status = "\033[32;1mPASS\033[0m" if result else "\033[31;1mFAIL\033[0m"
-            node.get_logger().info(f"  {name:25s} {status}")
+            log.info(f"  {name:25s} {status}")
             if result:
                 passed += 1
             else:
                 failed += 1
 
-        node.get_logger().info(f"{'─' * 60}")
-        node.get_logger().info(
+        log.info(f"{'─' * 60}")
+        log.info(
             f"  Total: {passed + failed} | "
             f"\033[32;1m{passed} passed\033[0m | "
             f"\033[31;1m{failed} failed\033[0m"
         )
 
         if flight:
-            node.get_logger().info("\nLanding...")
+            log.info("\nLanding...")
             node.drone.land(timeout=30.0)
 
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted — landing")
+        log.info("Interrupted — landing")
         node.drone.land()
     except Exception as e:
-        node.get_logger().error(f"Error: {e}")
+        log.error(f"Error: {e}")
         import traceback
 
         traceback.print_exc()
@@ -1155,8 +1142,8 @@ def main():
         except Exception:
             pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        node.drone.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

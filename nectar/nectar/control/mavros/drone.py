@@ -10,7 +10,7 @@ from mavros_msgs.srv import CommandBool, CommandHome, CommandLong, CommandTOL, S
 from rcl_interfaces.msg import Parameter, ParameterType
 from rcl_interfaces.srv import SetParameters
 from rclpy.duration import Duration
-from rclpy.node import Node
+from rclpy.executors import Executor
 from rclpy.qos import (
     DurabilityPolicy,
     QoSProfile,
@@ -53,8 +53,9 @@ class MavrosDrone(BaseDrone):
     ----------
     config : MavrosConfig
         MAVROS-specific configuration.
-    node : Node
-        ROS2 node for communication.
+    executor : Executor, optional
+        ROS 2 executor to register this drone's node with. Defaults to
+        the shared :mod:`nectar.runtime` executor.
     """
 
     # ArduCopter sets HEARTBEAT.system_status = MAV_STATE_ACTIVE only when
@@ -62,11 +63,12 @@ class MavrosDrone(BaseDrone):
     _MAV_STATE_ACTIVE = 4
     _AIRBORNE_THRESHOLD = 0.5  # m, altitude fallback for _is_airborne
 
-    # Takeoff settle (tight: clear climb signal, fast detection)
-    _SPIN_UP_DELAY = 0.5  # s, post-arm delay before takeoff command
+    # Takeoff settle. Velocity-based detection absorbs sensor spikes that
+    # would otherwise reset an absolute-spread check on real airframes.
+    _SPIN_UP_DELAY = 2.7  # s, post-arm delay before takeoff command
     _LIFTOFF_DELTA = 0.08  # m, altitude rise required to consider lifted
-    _SETTLE_DELTA = 0.1  # m, max |Δalt| over window to consider stable
-    _SETTLE_WINDOW = 1.0  # s, rolling window for takeoff stability
+    _SETTLE_WINDOW = 0.8  # s, rolling window for vertical-velocity check
+    _SETTLE_VELOCITY = 0.25  # m/s, |dz/dt| below which the hover is declared settled
     _SETTLE_POLL = 0.1  # s, poll period for settle/landed loops
 
     # Landing settle (velocity-based, drone-size agnostic)
@@ -74,7 +76,11 @@ class MavrosDrone(BaseDrone):
     _LAND_SETTLE_WINDOW = 1.2  # s, rolling window for descent velocity
     _LAND_STOP_VELOCITY = 0.05  # m/s, descent rate below which touchdown is declared
 
-    def __init__(self, config: MavrosConfig, node: Node) -> None:
+    def __init__(
+        self,
+        config: MavrosConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
         self._mavros_state = State()
         self._gps: Optional[NavSatFix] = None
         self._heading: Optional[Float64] = None
@@ -92,7 +98,7 @@ class MavrosDrone(BaseDrone):
         self._initial_heading: float = 0.0
         self._pose_source = config.pose_source
 
-        super().__init__(config, node)
+        super().__init__(config, executor)
         self._setup_subscribers()
         self._setup_publishers()
         self._setup_services()
@@ -104,25 +110,15 @@ class MavrosDrone(BaseDrone):
         self._node.get_logger().info("MavrosDrone initialized")
 
     @classmethod
-    def from_config(cls, config: DroneConfig, node: Node) -> "MavrosDrone":
-        """
-        Factory method for DroneFactory registration.
-
-        Parameters
-        ----------
-        config : DroneConfig
-            Configuration object (converted to MavrosConfig if needed).
-        node : Node
-            ROS2 node.
-
-        Returns
-        -------
-        MavrosDrone
-            Configured drone instance.
-        """
+    def from_config(
+        cls,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> "MavrosDrone":
+        """Factory entry point for :class:`DroneFactory`."""
         if not isinstance(config, MavrosConfig):
             config = MavrosConfig()
-        return cls(config, node)
+        return cls(config, executor)
 
     @property
     def is_indoor(self) -> bool:
@@ -505,7 +501,7 @@ class MavrosDrone(BaseDrone):
         while time.time() < deadline:
             if predicate():
                 return True
-            self._wait(0.05)
+            time.sleep(0.05)
         return predicate()
 
     def _load_pid_config(self) -> None:
@@ -779,15 +775,19 @@ class MavrosDrone(BaseDrone):
             return False
 
     def _is_airborne(self) -> bool:
-        """True if FCU reports active flight or any altitude source exceeds threshold."""
-        if self._mavros_state.system_status == self._MAV_STATE_ACTIVE:
-            return True
+        """True when altitude clears ``_AIRBORNE_THRESHOLD``.
+
+        Prefers the rangefinder when available (ground-truth proximity);
+        falls back to vision/EKF and GPS ``rel_alt`` with a looser
+        threshold to absorb their on-ground noise.
+        """
         thr = self._AIRBORNE_THRESHOLD
-        if self._local_pos is not None and self._local_pos.pose.position.z > thr:
+        if self._rng_alt is not None:
+            return self._rng_alt.range > thr
+        looser = max(thr, 1.0)
+        if self._local_pos is not None and self._local_pos.pose.position.z > looser:
             return True
-        if not self.is_indoor and self._rel_alt is not None and self._rel_alt.data > thr:
-            return True
-        if self._rng_alt is not None and self._rng_alt.range > thr:
+        if not self.is_indoor and self._rel_alt is not None and self._rel_alt.data > looser:
             return True
         return False
 
@@ -816,7 +816,7 @@ class MavrosDrone(BaseDrone):
         history: list = [(time.time(), last_alt)]
         descended = False
         while time.time() < deadline:
-            self._wait(self._SETTLE_POLL)
+            time.sleep(self._SETTLE_POLL)
             if not self._mavros_state.armed:
                 return True
             now = time.time()
@@ -836,19 +836,12 @@ class MavrosDrone(BaseDrone):
         return False
 
     def _wait_takeoff_settle(self, start_alt: float, timeout: float) -> tuple:
-        """
-        Wait for liftoff and altitude stabilization after a takeoff command.
+        """Wait for liftoff and hover stabilization after a takeoff command.
 
-        Lifted when altitude rises more than ``_LIFTOFF_DELTA`` from
-        ``start_alt``. Stable when ``|alt - alt_window_ago|`` is less than
-        ``_SETTLE_DELTA`` over ``_SETTLE_WINDOW``. Aborts on disarm.
-
-        Parameters
-        ----------
-        start_alt : float
-            Altitude in meters at the time the takeoff command was sent.
-        timeout : float
-            Maximum seconds to wait for liftoff and stabilization.
+        Lifted when altitude rises by ``_LIFTOFF_DELTA`` from ``start_alt``.
+        Settled when the mean vertical velocity over ``_SETTLE_WINDOW`` falls
+        below ``_SETTLE_VELOCITY``. Velocity is robust to sensor spikes that
+        would otherwise reset an absolute-spread check. Aborts on disarm.
 
         Returns
         -------
@@ -860,23 +853,21 @@ class MavrosDrone(BaseDrone):
         history: list = [(time.time(), last_alt)]
         lifted = False
         while time.time() < deadline:
-            self._wait(self._SETTLE_POLL)
+            time.sleep(self._SETTLE_POLL)
             if not self._mavros_state.armed:
                 break
             now = time.time()
             alt = self.get_altitude() or last_alt
             if alt - start_alt > self._LIFTOFF_DELTA:
                 lifted = True
-            # Drop samples older than the window
             cutoff = now - self._SETTLE_WINDOW
             while len(history) > 1 and history[0][0] < cutoff:
                 history.pop(0)
-            if (
-                lifted
-                and now - history[0][0] >= self._SETTLE_WINDOW
-                and abs(alt - history[0][1]) < self._SETTLE_DELTA
-            ):
-                return True, alt
+            window_dt = now - history[0][0]
+            if lifted and window_dt >= self._SETTLE_WINDOW:
+                velocity = (alt - history[0][1]) / window_dt
+                if abs(velocity) < self._SETTLE_VELOCITY:
+                    return True, alt
             history.append((now, alt))
             last_alt = alt
         return lifted, last_alt

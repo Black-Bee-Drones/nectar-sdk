@@ -255,7 +255,7 @@ class CameraPublisherNode(Node):
 
         # Build config & camera
         config = self._build_config()
-        camera = CameraFactory.from_source(self.camera_source, config=config, node=self)
+        camera = CameraFactory.from_source(self.camera_source, config=config)
         camera.start()
 
         self._log_camera_info(camera)
@@ -265,7 +265,6 @@ class CameraPublisherNode(Node):
         frame_timeout = self._resolve_frame_timeout(camera)
 
         self.image_handler = ImageHandler(
-            node=self,
             image_source=self.camera_source,
             image_processing_callback=self._publish_frame,
             config=config,
@@ -397,7 +396,10 @@ class CameraPublisherNode(Node):
 
 def main(args=None) -> None:
     """Entry point for camera publisher node."""
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     node = CameraPublisherNode()
 
