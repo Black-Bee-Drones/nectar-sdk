@@ -80,9 +80,10 @@ def _natural_key(name: str):
 @dataclass
 class ModelSpec:
     """Parsed model specifier from CLI."""
-    source: str          # e.g. ``blackbeedrones/sae-2026-hook-sphere-yolo26n:weights/best.pt``
-    task: str            # ``detection`` | ``segmentation``
-    name: str            # short label used for output dir / overlay
+
+    source: str  # e.g. ``blackbeedrones/sae-2026-hook-sphere-yolo26n:weights/best.pt``
+    task: str  # ``detection`` | ``segmentation``
+    name: str  # short label used for output dir / overlay
 
     @classmethod
     def parse(cls, raw: str) -> "ModelSpec":
@@ -164,7 +165,8 @@ def collect_frames(input_path: Path, tmp_dir: Path) -> Tuple[List[Path], float]:
 @dataclass
 class AnnotConfig:
     """How to render predictions on top of frames."""
-    palette: List[Tuple[int, int, int]]   # list of (R, G, B); None falls back to sv default
+
+    palette: List[Tuple[int, int, int]]  # list of (R, G, B); None falls back to sv default
     box_thickness: int = 3
     text_scale: float = 0.55
     mask_opacity: float = 0.35
@@ -210,6 +212,7 @@ def _filter_by_class_conf(items, class_conf: Dict[str, float], floor: float):
 def _make_palette(name: str, colors_csv: Optional[str]):
     """Build a supervision ColorPalette from a name or comma-separated hexes."""
     import supervision as sv  # local import to keep startup cost low
+
     if colors_csv:
         cols = [_hex_to_rgb(c) for c in colors_csv.split(",") if c.strip()]
     else:
@@ -222,6 +225,7 @@ def _make_palette(name: str, colors_csv: Optional[str]):
 def _annotate_detection(image: np.ndarray, result, palette, cfg: AnnotConfig) -> np.ndarray:
     """Draw thick coloured boxes + label chips on a detection result."""
     import supervision as sv
+
     if not result.detections:
         return image.copy()
 
@@ -231,10 +235,7 @@ def _annotate_detection(image: np.ndarray, result, palette, cfg: AnnotConfig) ->
     box = sv.BoxAnnotator(thickness=cfg.box_thickness, color=palette)
     annotated = box.annotate(scene=annotated, detections=detections)
 
-    labels = [
-        f"{d.class_name} {d.confidence:.2f}".strip()
-        for d in result.detections
-    ]
+    labels = [f"{d.class_name} {d.confidence:.2f}".strip() for d in result.detections]
     if any(labels):
         label = sv.LabelAnnotator(
             color=palette,
@@ -249,6 +250,7 @@ def _annotate_detection(image: np.ndarray, result, palette, cfg: AnnotConfig) ->
 def _annotate_segmentation(image: np.ndarray, result, palette, cfg: AnnotConfig) -> np.ndarray:
     """Draw low-opacity mask fill + sharp polygon outline + label chip."""
     import supervision as sv
+
     if not result.segmentations:
         return image.copy()
 
@@ -262,10 +264,7 @@ def _annotate_segmentation(image: np.ndarray, result, palette, cfg: AnnotConfig)
         poly = sv.PolygonAnnotator(color=palette, thickness=cfg.mask_outline_thickness)
         annotated = poly.annotate(scene=annotated, detections=detections)
 
-    labels = [
-        f"{s.class_name} {s.confidence:.2f}".strip()
-        for s in result.segmentations
-    ]
+    labels = [f"{s.class_name} {s.confidence:.2f}".strip() for s in result.segmentations]
     if any(labels):
         label = sv.LabelAnnotator(
             color=palette,
@@ -286,8 +285,9 @@ def _add_overlay(frame: np.ndarray, lines: Sequence[str]) -> None:
         y = 22 + i * 22
         (tw, th), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
         cv2.rectangle(frame, (5, y - th - pad), (10 + tw, y + pad // 2), (0, 0, 0), -1)
-        cv2.putText(frame, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                    (0, 255, 0), 1, cv2.LINE_AA)
+        cv2.putText(
+            frame, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1, cv2.LINE_AA
+        )
 
 
 def run_model(
@@ -313,9 +313,11 @@ def run_model(
     # Lazy import so each task only loads what it needs
     if spec.task == "segmentation":
         from nectar.ai.segmentation import Segmentor
+
         model = Segmentor(model_source=spec.source, device=device, confidence_threshold=conf)
     else:
         from nectar.ai.detection import Detector
+
         model = Detector(model_source=spec.source, device=device, confidence_threshold=conf)
 
     logger.info("[%s] Loading %s (task=%s)", spec.name, spec.source, spec.task)
@@ -326,8 +328,13 @@ def run_model(
     class_conf = class_conf or {}
     predict_conf = min([conf, *class_conf.values()]) if class_conf else conf
     if class_conf:
-        logger.info("[%s] class_conf=%s  predict_conf=%.2f  iou=%.2f",
-                    spec.name, class_conf, predict_conf, iou)
+        logger.info(
+            "[%s] class_conf=%s  predict_conf=%.2f  iou=%.2f",
+            spec.name,
+            class_conf,
+            predict_conf,
+            iou,
+        )
 
     # Probe frame size from first valid image
     first = cv2.imread(str(frames[0]))
@@ -355,16 +362,12 @@ def run_model(
         if spec.task == "segmentation":
             result = model.segment(frame, conf=predict_conf, iou=iou)
             if class_conf:
-                result.segmentations = _filter_by_class_conf(
-                    result.segmentations, class_conf, conf
-                )
+                result.segmentations = _filter_by_class_conf(result.segmentations, class_conf, conf)
             annotated = _annotate_segmentation(frame, result, palette, annot)
         else:
             result = model.detect(frame, conf=predict_conf)
             if class_conf:
-                result.detections = _filter_by_class_conf(
-                    result.detections, class_conf, conf
-                )
+                result.detections = _filter_by_class_conf(result.detections, class_conf, conf)
             annotated = _annotate_detection(frame, result, palette, annot)
         dt = time.perf_counter() - t0
         t_total += dt
@@ -385,24 +388,40 @@ def run_model(
             cv2.imwrite(str(frames_dir / f"frame_{i:06d}.jpg"), annotated)
 
         if (i + 1) % 25 == 0 or i == len(frames) - 1:
-            logger.info("[%s] %4d/%d frames | objs=%d | %.1f ms/frame",
-                        spec.name, i + 1, len(frames), n_total,
-                        (t_total / (i + 1)) * 1000)
+            logger.info(
+                "[%s] %4d/%d frames | objs=%d | %.1f ms/frame",
+                spec.name,
+                i + 1,
+                len(frames),
+                n_total,
+                (t_total / (i + 1)) * 1000,
+            )
 
     writer.release()
     avg_ms = (t_total / max(len(frames), 1)) * 1000
-    logger.info("[%s] DONE  frames=%d  total_objs=%d  avg=%.1f ms/frame  -> %s",
-                spec.name, len(frames), n_total, avg_ms, video_path)
-    return {"name": spec.name, "task": spec.task, "frames": len(frames),
-            "objects": n_total, "avg_ms": avg_ms, "video": str(video_path)}
+    logger.info(
+        "[%s] DONE  frames=%d  total_objs=%d  avg=%.1f ms/frame  -> %s",
+        spec.name,
+        len(frames),
+        n_total,
+        avg_ms,
+        video_path,
+    )
+    return {
+        "name": spec.name,
+        "task": spec.task,
+        "frames": len(frames),
+        "objects": n_total,
+        "avg_ms": avg_ms,
+        "video": str(video_path),
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run multiple detection/segmentation models over an image sequence or video."
     )
-    parser.add_argument("--input", required=True,
-                        help="Directory of images OR a video file")
+    parser.add_argument("--input", required=True, help="Directory of images OR a video file")
     parser.add_argument("--output-dir", required=True, help="Output root directory")
     parser.add_argument(
         "--models",
@@ -410,20 +429,34 @@ def main() -> int:
         nargs="+",
         help="One or more model sources. Suffix '@detection' or '@segmentation' to override auto-task.",
     )
-    parser.add_argument("--conf", type=float, default=0.25,
-                        help="Default / fallback confidence threshold")
-    parser.add_argument("--class-conf", default=None,
-                        help="Per-class confidence overrides, e.g. 'rose=0.47,sphere=0.70'. "
-                             "Predict is run at min(conf, *class_conf.values()) and the result "
-                             "is post-filtered per class.")
+    parser.add_argument(
+        "--conf", type=float, default=0.25, help="Default / fallback confidence threshold"
+    )
+    parser.add_argument(
+        "--class-conf",
+        default=None,
+        help="Per-class confidence overrides, e.g. 'rose=0.47,sphere=0.70'. "
+        "Predict is run at min(conf, *class_conf.values()) and the result "
+        "is post-filtered per class.",
+    )
     parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold (segmentation NMS)")
     parser.add_argument("--device", default="auto", help="Device: auto|cpu|cuda|0|...")
-    parser.add_argument("--fps", type=float, default=15.0,
-                        help="Output FPS for image-directory inputs (videos use source FPS)")
-    parser.add_argument("--no-save-frames", action="store_true",
-                        help="Skip writing per-frame JPGs (keeps only the MP4)")
-    parser.add_argument("--hf-token", default=os.environ.get("HF_TOKEN"),
-                        help="HuggingFace token (or set HF_TOKEN env var)")
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=15.0,
+        help="Output FPS for image-directory inputs (videos use source FPS)",
+    )
+    parser.add_argument(
+        "--no-save-frames",
+        action="store_true",
+        help="Skip writing per-frame JPGs (keeps only the MP4)",
+    )
+    parser.add_argument(
+        "--hf-token",
+        default=os.environ.get("HF_TOKEN"),
+        help="HuggingFace token (or set HF_TOKEN env var)",
+    )
 
     # Annotation styling (high-contrast defaults so warm targets stand out).
     parser.add_argument(
@@ -431,28 +464,39 @@ def main() -> int:
         choices=list(_PALETTES.keys()),
         default="contrast",
         help="Built-in colour palette (default: contrast = cyan/magenta/lime, "
-             "ideal for orange/red targets)",
+        "ideal for orange/red targets)",
     )
     parser.add_argument(
         "--colors",
         default=None,
         help="Override palette with comma-separated hex colours, e.g. '00FFFF,FF00FF,00FF00'",
     )
-    parser.add_argument("--box-thickness", type=int, default=3,
-                        help="Detection box / mask outline thickness (default 3)")
-    parser.add_argument("--text-scale", type=float, default=0.55,
-                        help="Label text scale (default 0.55)")
-    parser.add_argument("--mask-opacity", type=float, default=0.35,
-                        help="Segmentation mask fill opacity (default 0.35)")
-    parser.add_argument("--no-mask-outline", action="store_true",
-                        help="Disable the polygon outline drawn around each mask")
+    parser.add_argument(
+        "--box-thickness",
+        type=int,
+        default=3,
+        help="Detection box / mask outline thickness (default 3)",
+    )
+    parser.add_argument(
+        "--text-scale", type=float, default=0.55, help="Label text scale (default 0.55)"
+    )
+    parser.add_argument(
+        "--mask-opacity",
+        type=float,
+        default=0.35,
+        help="Segmentation mask fill opacity (default 0.35)",
+    )
+    parser.add_argument(
+        "--no-mask-outline",
+        action="store_true",
+        help="Disable the polygon outline drawn around each mask",
+    )
 
     parser.add_argument("--verbose", "-v", action="store_true")
 
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(message)s")
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
     if args.hf_token:
         os.environ["HF_TOKEN"] = args.hf_token
@@ -472,10 +516,14 @@ def main() -> int:
         mask_outline=not args.no_mask_outline,
         mask_outline_thickness=args.box_thickness,
     )
-    logger.info("Palette: %s%s | box_thickness=%d | mask_opacity=%.2f | outline=%s",
-                args.palette,
-                f" (override {args.colors})" if args.colors else "",
-                args.box_thickness, args.mask_opacity, annot.mask_outline)
+    logger.info(
+        "Palette: %s%s | box_thickness=%d | mask_opacity=%.2f | outline=%s",
+        args.palette,
+        f" (override {args.colors})" if args.colors else "",
+        args.box_thickness,
+        args.mask_opacity,
+        annot.mask_outline,
+    )
 
     input_path = Path(args.input)
     output_root = Path(args.output_dir)
@@ -514,8 +562,14 @@ def main() -> int:
         if "error" in r:
             logger.info("  %-40s  ERROR: %s", r["name"], r["error"])
         else:
-            logger.info("  %-40s  %4d frames | objs=%d | avg=%.1f ms | %s",
-                        r["name"], r["frames"], r["objects"], r["avg_ms"], r["video"])
+            logger.info(
+                "  %-40s  %4d frames | objs=%d | avg=%.1f ms | %s",
+                r["name"],
+                r["frames"],
+                r["objects"],
+                r["avg_ms"],
+                r["video"],
+            )
 
     return 0 if all("error" not in r for r in results) else 1
 

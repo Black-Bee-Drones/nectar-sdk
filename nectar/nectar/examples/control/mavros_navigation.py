@@ -380,52 +380,64 @@ class NavigationTest:
         return self._run_waypoints("Rectangle 8-pt", waypoints, MoveReference.TAKEOFF)
 
     def test_cube_xyz(self) -> bool:
-        """3-axis cube using TAKEOFF reference (8 corners, yaw held, CW).
+        """3-axis cube using BODY reference (8 closed-loop legs, CW, front first).
 
-        Same 8-corner geometry as :meth:`test_cube` without the yaw stress.
-        CW from above: forward, right, back, climb, forward, left, back, descend.
+        Each leg is a relative offset from the drone's current pose. The
+        offsets sum to (0, 0, 0), so the drone returns to its starting
+        pose at the end of every iteration -- safe to run under ``--loop``.
+
+        Requires ``--altitude > --distance`` so the final descend doesn't
+        hit the ground-collision safety check.
         """
         d = self.dist
-        self._log_test_header("Cube XYZ (no yaw)", f"{d}m side")
+        self._log_test_header("Cube XYZ (BODY, no yaw)", f"{d}m side")
 
         waypoints = [
-            (d, 0.0, 1.5, "1: forward (X)"),
-            (d, -d, 1.5, "2: + right"),
-            (0.0, -d, 1.5, "3: back to X=0"),
-            (d, -d, 3.0, "4: climb diagonal"),
-            (d, 0.0, 3.0, "5: left at altitude"),
-            (0.0, 0.0, 1.5, "6: tk home"),
-            (0.0, 0.0, 0.0, "8: descend home"),
+            # bottom face (CW from above)
+            (d, 0.0, 0.0, "1: forward"),
+            (0.0, -d, 0.0, "2: right"),
+            (-d, 0.0, 0.0, "3: back"),
+            # vertical
+            (0.0, 0.0, d, "4: climb"),
+            # top face (CW from above)
+            (d, 0.0, 0.0, "5: forward (top)"),
+            (0.0, d, 0.0, "6: left (top)"),
+            (-d, 0.0, 0.0, "7: back (top)"),
+            # close
+            (0.0, 0.0, -d, "8: descend home"),
         ]
 
-        return self._run_waypoints("Cube XYZ", waypoints, MoveReference.TAKEOFF)
+        return self._run_waypoints("Cube XYZ", waypoints, MoveReference.BODY)
 
     def test_cube(self) -> bool:
-        """4-axis cube using TAKEOFF reference (8 waypoints, CW geometry).
+        """4-axis cube using BODY reference (10 closed-loop legs, CW, front first).
 
-        Cube of side ``--distance`` traced clockwise from above, with yaw
-        rotating CW to match. Every leg changes at least two axes; legs 4
-        and 8 change three (XY + yaw, then Z + yaw). Closing error at leg
-        8 is the total drift after the full sequence.
+        Same 8-corner geometry as :meth:`test_cube_xyz` plus two
+        pure-rotation legs (+90, -90) at the top altitude to stress yaw
+        control without polluting the translation geometry. All offsets
+        sum to (0, 0, 0, 0deg), so position and heading return to start
+        every iteration -- safe under ``--loop``.
 
-        Yaw schedule (takeoff frame): 0 → -90 → -90 → 180 → 180 → 90 → 90 → 0.
+        Requires ``--altitude > --distance``.
         """
         d = self.dist
-        self._log_test_header("Cube 4-axis", f"{d}m side, yaw 0/±90/180 CW")
+        self._log_test_header("Cube 4-axis (BODY)", f"{d}m side, yaw +/-90 at top")
 
         waypoints = [
-            # x, y, z (above takeoff), yaw (deg, takeoff frame), label
-            (d, 0.0, 0.0, 0.0, "1: forward (X)"),
-            (d, -d, 0.0, -90.0, "2: + right + yaw -90"),
-            (0.0, -d, 0.0, -90.0, "3: back to X=0"),
-            (0.0, -d, d, 180.0, "4: climb + yaw 180"),
-            (d, -d, d, 180.0, "5: forward at altitude"),
-            (d, 0.0, d, 90.0, "6: + left + yaw 90"),
-            (0.0, 0.0, d, 90.0, "7: back to XY origin"),
-            (0.0, 0.0, 0.0, 0.0, "8: descend + yaw home"),
+            # x,    y,    z,    yaw_deg,  label
+            (d, 0.0, 0.0, None, "1: forward"),
+            (0.0, -d, 0.0, None, "2: right"),
+            (-d, 0.0, 0.0, None, "3: back"),
+            (0.0, 0.0, d, None, "4: climb"),
+            (None, None, None, 90.0, "5: yaw +90 (pure rotation)"),
+            (None, None, None, -90.0, "6: yaw -90 (back to home heading)"),
+            (d, 0.0, 0.0, None, "7: forward (top)"),
+            (0.0, d, 0.0, None, "8: left (top)"),
+            (-d, 0.0, 0.0, None, "9: back (top)"),
+            (0.0, 0.0, -d, None, "10: descend home"),
         ]
 
-        return self._run_waypoints("Cube 4-axis", waypoints, MoveReference.TAKEOFF)
+        return self._run_waypoints("Cube 4-axis", waypoints, MoveReference.BODY)
 
     def test_gps_rectangle(self) -> bool:
         """
