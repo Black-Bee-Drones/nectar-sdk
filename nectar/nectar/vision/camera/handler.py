@@ -61,10 +61,10 @@ class ImageHandler:
         )
         if executor is not None:
             executor.add_node(self._node)
-            self._external_executor = True
+            self._executor: Optional[Executor] = executor
         else:
             nectar_runtime.add_node(self._node)
-            self._external_executor = False
+            self._executor = None
 
         self.image_processing_callback = image_processing_callback
         self.image_source = image_source
@@ -211,8 +211,13 @@ class ImageHandler:
                 cv2.destroyWindow(self.show_result)
             except Exception:
                 cv2.destroyAllWindows()
-        if not self._external_executor:
+        if self._executor is None:
             nectar_runtime.remove_node(self._node)
+        else:
+            try:
+                self._executor.remove_node(self._node)
+            except Exception:
+                pass
         try:
             self._node.destroy_node()
         except Exception:

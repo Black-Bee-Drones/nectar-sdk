@@ -70,10 +70,10 @@ class BaseDrone(ABC):
 
         if executor is not None:
             executor.add_node(self._node)
-            self._external_executor = True
+            self._executor: Optional[Executor] = executor
         else:
             nectar_runtime.add_node(self._node)
-            self._external_executor = False
+            self._executor = None
 
         if config.start_driver:
             self._init_driver()
@@ -781,6 +781,7 @@ class BaseDrone(ABC):
         TimeoutError
             If the service is not available within ``timeout``.
         """
+        deadline = time.monotonic() + timeout
         if not client.wait_for_service(timeout_sec=timeout):
             msg = f"Service {client.srv_name} not available after {timeout}s"
             if fail_msg:
@@ -790,12 +791,15 @@ class BaseDrone(ABC):
         future = client.call_async(request)
 
         if not sync:
-            future.add_done_callback(self._make_service_callback(success_msg, fail_msg, validator))
+            future.add_done_callback(
+                self._make_service_callback(client.srv_name, success_msg, fail_msg, validator)
+            )
             return None
 
         done = threading.Event()
         future.add_done_callback(lambda _f: done.set())
-        if not done.wait(timeout=timeout):
+        remaining = max(0.0, deadline - time.monotonic())
+        if not done.wait(timeout=remaining):
             if fail_msg:
                 self._node.get_logger().error(f"{ERR} {fail_msg}: timeout waiting for response")
             return None
@@ -820,6 +824,7 @@ class BaseDrone(ABC):
 
     def _make_service_callback(
         self,
+        service_name: str,
         success_msg: str,
         fail_msg: str,
         validator: Optional[Callable],
@@ -836,7 +841,7 @@ class BaseDrone(ABC):
                     self._node.get_logger().error(f"{ERR} {fail_msg}")
                 return
             if validator:
-                validator(result, fut.client.srv_name if hasattr(fut, "client") else "")
+                validator(result, service_name)
             if success_msg:
                 self._node.get_logger().info(f"{OK} {success_msg}")
 
@@ -862,8 +867,13 @@ class BaseDrone(ABC):
         self._publishers.clear()
         self._clients.clear()
 
-        if not self._external_executor:
+        if self._executor is None:
             nectar_runtime.remove_node(self._node)
+        else:
+            try:
+                self._executor.remove_node(self._node)
+            except Exception:
+                pass
         try:
             self._node.destroy_node()
         except Exception:
