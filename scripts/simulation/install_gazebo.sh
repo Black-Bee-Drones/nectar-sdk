@@ -32,6 +32,15 @@ else
     WORKSPACE_DIR="${ROS2_WORKSPACE:-${HOME}/ros2_ws}"
 fi
 
+# Detect vendored gz packages shipped by recent ROS distros (Jazzy+ on Noble).
+# When present, Gazebo libraries live under /opt/ros/${ROS_DISTRO}/opt/gz_*_vendor
+# and CMake / runtime auto-discover them; installing gz-harmonic from OSRF would
+# create a second, conflicting Gazebo install.
+GZ_VENDORED=false
+if dpkg -s "ros-${ROS_DISTRO}-gz-sim-vendor" >/dev/null 2>&1; then
+    GZ_VENDORED=true
+fi
+
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  Nectar SDK — Gazebo Simulation Installer        ║"
 echo "╚══════════════════════════════════════════════════╝"
@@ -39,21 +48,27 @@ echo ""
 echo "  ROS distro:       ${ROS_DISTRO}"
 echo "  Gazebo version:   ${GZ_VERSION} (${GZ_APT_PACKAGE})"
 echo "  ros_gz method:    $([ "${GZ_ROS_FROM_SOURCE}" = true ] && echo 'source' || echo 'binary')"
+echo "  gz source:        $([ "${GZ_VENDORED}" = true ] && echo 'ROS vendor packages' || echo 'OSRF apt repo')"
 echo ""
 
 # ── Install Gazebo ───────────────────────────────────────────────────────────
-echo "[INFO] Installing ${GZ_APT_PACKAGE}..."
+if [ "${GZ_VENDORED}" = true ]; then
+    echo "[INFO] Skipping OSRF ${GZ_APT_PACKAGE} install — vendored gz from ROS ${ROS_DISTRO} is in use."
+    sudo apt-get update
+else
+    echo "[INFO] Installing ${GZ_APT_PACKAGE} from packages.osrfoundation.org..."
 
-sudo apt-get update
-sudo apt-get install -y lsb-release wget gnupg
+    sudo apt-get update
+    sudo apt-get install -y lsb-release wget gnupg
 
-sudo wget -q https://packages.osrfoundation.org/gazebo.gpg \
-    -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
-    | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
+    sudo wget -q https://packages.osrfoundation.org/gazebo.gpg \
+        -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+        | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
 
-sudo apt-get update
-sudo apt-get install -y "${GZ_APT_PACKAGE}"
+    sudo apt-get update
+    sudo apt-get install -y "${GZ_APT_PACKAGE}"
+fi
 
 # ── Install ros_gz bridge ───────────────────────────────────────────────────
 if [ "${GZ_ROS_FROM_SOURCE}" = true ]; then
@@ -113,7 +128,13 @@ fi
 echo ""
 echo "[INFO] Installing ardupilot_gazebo plugin..."
 
-sudo apt-get install -y "${GZ_SIM_DEV_PACKAGE}" rapidjson-dev libopencv-dev
+if [ "${GZ_VENDORED}" = true ]; then
+    # Vendor packages provide the gz headers; only build-time deps needed here.
+    sudo apt-get install -y rapidjson-dev libopencv-dev \
+        libprotobuf-dev libprotoc-dev protobuf-compiler
+else
+    sudo apt-get install -y "${GZ_SIM_DEV_PACKAGE}" rapidjson-dev libopencv-dev
+fi
 
 ARDUPILOT_GAZEBO_DIR="${HOME}/ardupilot_gazebo"
 
@@ -143,16 +164,32 @@ if ! grep -q "if(GST_FOUND)" CMakeLists.txt; then
 fi
 
 export GZ_VERSION="${GZ_VERSION}"
+# Vendored gz lives under /opt/ros/${ROS_DISTRO}/opt/gz_*_vendor; sourcing the
+# ROS overlay puts those CMake configs on CMAKE_PREFIX_PATH. Harmless on
+# Humble where the OSRF apt install provides them globally instead.
+if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
+    set +u
+    source "/opt/ros/${ROS_DISTRO}/setup.bash"
+    set -u
+fi
 rm -rf build
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
 make -j"$(nproc)"
 
-if [ ! -f "${ARDUPILOT_GAZEBO_DIR}/build/libArduPilotPlugin.so" ]; then
+PLUGIN_SO="${ARDUPILOT_GAZEBO_DIR}/build/libArduPilotPlugin.so"
+if [ ! -f "${PLUGIN_SO}" ]; then
     echo "[ERROR] Build failed: libArduPilotPlugin.so not found"
     exit 1
 fi
-echo "[OK] ArduPilotPlugin built successfully"
+if ldd "${PLUGIN_SO}" | grep -q "not found"; then
+    echo "[ERROR] ${PLUGIN_SO} has unresolved shared libraries:"
+    ldd "${PLUGIN_SO}" | grep "not found"
+    echo "        This is usually a stale build against an older protobuf/gz."
+    echo "        Wipe ~/ardupilot_gazebo/build and re-run this script."
+    exit 1
+fi
+echo "[OK] ArduPilotPlugin built successfully ($(ldd "${PLUGIN_SO}" | grep protobuf | awk '{print $1}'))"
 
 # ── Environment ─────────────────────────────────────────────────────────────
 echo ""
