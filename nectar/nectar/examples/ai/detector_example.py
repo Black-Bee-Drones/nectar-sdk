@@ -26,12 +26,19 @@ log = logging.getLogger("detector_example")
 
 
 def _camera_config(source: str):
-    """Return a config matching the camera source kind (ROS topic / file / device)."""
+    """Return a config matching the camera source kind.
+
+    For non-OpenCV registered sources (realsense, t265, oakd, c920, imx219, ...)
+    we return None so each driver uses its own default config; forwarding an
+    OpenCVConfig to those drivers would crash on missing fields.
+    """
     if source.startswith("/"):
         return ROSConfig(topic=source)
     if os.path.isfile(source):
-        return None  # FileImageCam picks its own default
-    return OpenCVConfig(device_index=0, width=1280, height=720)
+        return None
+    if source.lower() in ("webcam", "opencv"):
+        return OpenCVConfig(device_index=0, width=1280, height=720)
+    return None
 
 
 def _resolve_framework(framework_str: str) -> Optional[Framework]:

@@ -10,6 +10,8 @@ Examples::
 
 import argparse
 import logging
+import os
+import signal
 import time
 import uuid
 from datetime import datetime
@@ -104,6 +106,7 @@ class Collector:
         self._output_path = _setup_output_dir(args.output_dir, args.run_name)
         self._count = 0
         self._last_capture = 0.0
+        self._stopping = False
         self._publisher: Optional[_Publisher] = (
             _Publisher(args.publish_topic, args.publish_scale) if args.publish else None
         )
@@ -124,7 +127,7 @@ class Collector:
         log.info("Saving to %s (interval=%ss)", self._output_path, args.capture_interval)
 
     def _on_frame(self, frame) -> None:
-        if frame is None:
+        if frame is None or self._stopping:
             return
         now = time.time()
         if now - self._last_capture < self._args.capture_interval:
@@ -149,7 +152,8 @@ class Collector:
 
         if self._args.max_photos > 0 and self._count >= self._args.max_photos:
             log.info("Reached max_photos (%d). Stopping.", self._args.max_photos)
-            raise SystemExit(0)
+            self._stopping = True
+            os.kill(os.getpid(), signal.SIGINT)
 
     def cleanup(self) -> None:
         self.handler.cleanup()
