@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 _LAZY_ATTRS = {
     "ArucoNode": "nectar.vision.nodes.aruco_node",
     "CameraPublisherNode": "nectar.vision.nodes.camera_publisher_node",
-    "ClickColorCalibrationNode": "nectar.vision.nodes.click_color_calibration_node",
     "ColorCalibrationNode": "nectar.vision.nodes.color_calibration_node",
     "LineDetectionNode": "nectar.vision.nodes.line_detection_node",
 }
@@ -28,7 +27,6 @@ def __dir__():
 if TYPE_CHECKING:
     from .aruco_node import ArucoNode
     from .camera_publisher_node import CameraPublisherNode
-    from .click_color_calibration_node import ClickColorCalibrationNode
     from .color_calibration_node import ColorCalibrationNode
     from .line_detection_node import LineDetectionNode
 
@@ -36,7 +34,6 @@ if TYPE_CHECKING:
 __all__ = [
     "ArucoNode",
     "CameraPublisherNode",
-    "ClickColorCalibrationNode",
     "ColorCalibrationNode",
     "LineDetectionNode",
 ]

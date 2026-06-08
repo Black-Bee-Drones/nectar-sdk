@@ -1208,12 +1208,24 @@ ros2 run nectar line_detection_node --ros-args \
 ### Color Calibration Node
 
 ```bash
-ros2 run nectar color_calibration_node --ros-args \
+ros2 run nectar color_calibration_node.py --ros-args \
     -p image_source:=webcam \
-    -p color_space:=hsv
+    -p color_space:=hsv \
+    -p flood_tolerance:=15
 ```
 
-Interactive trackbar window for HSV/LAB calibration.
+Interactive HSV/LAB calibration in a single window: left-click a colored region to auto-compute thresholds via flood fill, then fine-tune with the 6 channel trackbars. The stacked view shows `original | mask | result`.
+
+**Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `image_source` | string | webcam | Camera source |
+| `color_space` | string | hsv | Initial color space (`hsv` or `lab`) |
+| `flood_tolerance` | int | 15 | Initial flood-fill tolerance for click sampling |
+
+**Controls**: left-click to sample; `c` switch HSV/LAB, `s` save (prompts a color name), `l` load a named color, `z` undo last sample, `r` reset, `q` quit.
+
+Saved colors are written to the shared `vision/algorithms/color/color_calibration.json` and load directly via `ColorDetector(mode="preset", color=<name>)` and `LineDetectionNode`. Requires an OpenCV GUI (mouse + trackbars).
 
 ### Webcam Publisher Node
 
@@ -1434,7 +1446,6 @@ vision/
 │   ├── __init__.py
 │   ├── aruco_node.py
 │   ├── color_calibration_node.py
-│   ├── click_color_calibration_node.py
 │   ├── line_detection_node.py
 │   └── webcam_publisher_node.py
 │

@@ -70,7 +70,6 @@ _LAZY_ATTRS = {
     # ROS 2 nodes (entry points; imported only when explicitly requested)
     "ArucoNode": "nectar.vision.nodes",
     "CameraPublisherNode": "nectar.vision.nodes",
-    "ClickColorCalibrationNode": "nectar.vision.nodes",
     "ColorCalibrationNode": "nectar.vision.nodes",
     "LineDetectionNode": "nectar.vision.nodes",
 }
@@ -118,7 +117,6 @@ if TYPE_CHECKING:
     from nectar.vision.nodes import (
         ArucoNode,
         CameraPublisherNode,
-        ClickColorCalibrationNode,
         ColorCalibrationNode,
         LineDetectionNode,
     )
@@ -190,7 +188,6 @@ __all__ = [
     "ImageCalculus",
     # Nodes
     "ArucoNode",
-    "ClickColorCalibrationNode",
     "ColorCalibrationNode",
     "LineDetectionNode",
     "CameraPublisherNode",
