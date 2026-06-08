@@ -13,6 +13,7 @@ from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -568,6 +569,10 @@ class VisionTab(QWidget):
         self._depth_min_m = 0.1
         self._depth_max_m = 5.0
 
+        # Optical flow demo state
+        self._flow_estimator = None
+        self._flow_method: str = "farneback"
+
         self._setup_ui()
         self._setup_timers()
         self._init_cv_utils()
@@ -609,6 +614,7 @@ class VisionTab(QWidget):
         layout.addWidget(self._create_transform_section())
         layout.addWidget(self._create_morphology_section())
         layout.addWidget(self._create_effects_section())
+        layout.addWidget(self._create_optical_flow_demo_section())
         layout.addWidget(self._create_detection_section())
         layout.addWidget(self._create_aruco_section())
         layout.addStretch()
@@ -1053,6 +1059,151 @@ class VisionTab(QWidget):
             section.add_widget(cb)
 
         return section
+
+    def _create_optical_flow_demo_section(self) -> CollapsibleSection:
+        """
+        Optical flow demo with sparse / dense backends and velocity decode.
+
+        Mirrors the model used by onboard flow sensors (MTF-01, PMW3901)
+        and the ArduPilot EKF. See ``drone/3-optical-flow.md`` for the
+        derivation and ``nectar.vision.algorithms.flow`` for the
+        underlying estimator.
+        """
+        section = CollapsibleSection("Optical Flow")
+
+        self._flow_demo_cb = QCheckBox("Enable Optical Flow")
+        self._flow_demo_cb.setToolTip(
+            "Compute optical flow on each frame. Mirrors the MTF-01 + "
+            "ArduPilot EKF pipeline: pixel flow -> rad/s -> m/s."
+        )
+        self._flow_demo_cb.stateChanged.connect(
+            lambda: self._toggle_filter("optical_flow_demo", self._flow_demo_cb.isChecked())
+        )
+
+        method_layout = QHBoxLayout()
+        method_layout.setSpacing(6)
+        method_lbl = QLabel("Method:")
+        method_lbl.setProperty("secondary", True)
+        self._flow_method_combo = QComboBox()
+        self._flow_method_combo.addItems(["Farneback (dense)", "Lucas-Kanade (sparse)"])
+        self._flow_method_combo.currentTextChanged.connect(self._on_flow_method_changed)
+        method_layout.addWidget(method_lbl)
+        method_layout.addWidget(self._flow_method_combo, 1)
+
+        focal_layout = QHBoxLayout()
+        focal_layout.setSpacing(6)
+        focal_lbl = QLabel("Focal (px):")
+        focal_lbl.setProperty("secondary", True)
+        focal_lbl.setToolTip(
+            "Camera focal length in pixels. Use 0 to skip rad/s and m/s "
+            "decoding. For a calibrated camera, this is fx from the "
+            "intrinsic matrix K."
+        )
+        self._flow_focal_spin = QDoubleSpinBox()
+        self._flow_focal_spin.setRange(0.0, 10000.0)
+        self._flow_focal_spin.setDecimals(1)
+        self._flow_focal_spin.setSingleStep(10.0)
+        self._flow_focal_spin.setValue(500.0)
+        focal_layout.addWidget(focal_lbl)
+        focal_layout.addWidget(self._flow_focal_spin, 1)
+
+        alt_layout = QHBoxLayout()
+        alt_layout.setSpacing(6)
+        alt_lbl = QLabel("Altitude (m):")
+        alt_lbl.setProperty("secondary", True)
+        alt_lbl.setToolTip(
+            "Height above the imaged surface in meters. Use 0 to skip "
+            "m/s decoding (rad/s still shown). On a real drone this is "
+            "the lidar reading."
+        )
+        self._flow_altitude_spin = QDoubleSpinBox()
+        self._flow_altitude_spin.setRange(0.0, 50.0)
+        self._flow_altitude_spin.setDecimals(2)
+        self._flow_altitude_spin.setSingleStep(0.1)
+        self._flow_altitude_spin.setValue(0.0)
+        alt_layout.addWidget(alt_lbl)
+        alt_layout.addWidget(self._flow_altitude_spin, 1)
+
+        ds_layout = QHBoxLayout()
+        ds_layout.setSpacing(6)
+        ds_lbl = QLabel("Downsample:")
+        ds_lbl.setProperty("secondary", True)
+        ds_tip = (
+            "Process the frame at a smaller resolution internally to save "
+            "CPU/GPU. 2x means the estimator sees half the width and half "
+            "the height (1/4 of the pixels), so it runs ~4x faster but "
+            "with coarser spatial resolution. 4x means 1/16 of the pixels. "
+            "The overlay you see is always rescaled back to the camera's "
+            "native resolution. Use 1x on a desktop, 2x or 4x on Jetson."
+        )
+        ds_lbl.setToolTip(ds_tip)
+        self._flow_downsample_combo = QComboBox()
+        self._flow_downsample_combo.addItems(["1x", "2x", "4x"])
+        self._flow_downsample_combo.setToolTip(ds_tip)
+        self._flow_downsample_combo.currentTextChanged.connect(
+            lambda _: setattr(self, "_flow_estimator", None)
+        )
+        ds_layout.addWidget(ds_lbl)
+        ds_layout.addWidget(self._flow_downsample_combo, 1)
+
+        info_label = QLabel("Numeric readouts are drawn on the video.")
+        info_label.setProperty("muted", True)
+        info_label.setWordWrap(True)
+
+        self._flow_reset_btn = QPushButton("Reset")
+        self._flow_reset_btn.clicked.connect(self._on_flow_reset)
+
+        section.add_widget(self._flow_demo_cb)
+        section.add_layout(method_layout)
+        section.add_layout(focal_layout)
+        section.add_layout(alt_layout)
+        section.add_layout(ds_layout)
+        section.add_widget(info_label)
+        section.add_widget(self._flow_reset_btn)
+
+        return section
+
+    @Slot(str)
+    def _on_flow_method_changed(self, label: str) -> None:
+        self._flow_method = "lucas_kanade" if label.startswith("Lucas") else "farneback"
+        # Rebuild on next frame to pick up the new method.
+        self._flow_estimator = None
+
+    @Slot()
+    def _on_flow_reset(self) -> None:
+        if self._flow_estimator is not None:
+            self._flow_estimator.reset()
+
+    def _ensure_flow_estimator(self) -> None:
+        if self._flow_estimator is not None:
+            return
+        from nectar.vision.algorithms.flow import (
+            OpticalFlowConfig,
+            OpticalFlowEstimator,
+        )
+
+        divisor = {"1x": 1, "2x": 2, "4x": 4}.get(self._flow_downsample_combo.currentText(), 1)
+        resize = None
+        if divisor > 1 and self._current_frame is not None:
+            h, w = self._current_frame.shape[:2]
+            resize = (max(64, w // divisor), max(48, h // divisor))
+
+        cfg = OpticalFlowConfig(method=self._flow_method, resize_to=resize)
+        self._flow_estimator = OpticalFlowEstimator(cfg)
+
+    def _apply_optical_flow_demo(self, frame: np.ndarray) -> np.ndarray:
+        self._ensure_flow_estimator()
+        focal = float(self._flow_focal_spin.value())
+        altitude = float(self._flow_altitude_spin.value())
+
+        result = self._flow_estimator.process(
+            frame,
+            focal_px=focal if focal > 0.0 else None,
+            altitude_m=altitude if altitude > 0.0 else None,
+        )
+        if result is None:
+            return frame
+        return result.visualization
 
     def _create_detection_section(self) -> CollapsibleSection:
         section = CollapsibleSection("AI Detection")
@@ -1547,6 +1698,7 @@ class VisionTab(QWidget):
         self._stop_btn.setEnabled(False)
         self._camera_config.setEnabled(True)
         self._prev_gray = None
+        self._flow_estimator = None
 
         # Reset depth state
         self._current_depth_frame = None
@@ -1815,6 +1967,9 @@ class VisionTab(QWidget):
             if self._prev_gray is not None:
                 frame = self._cv_utils.optical_flow(self._prev_gray, curr_gray, frame)
             self._prev_gray = curr_gray
+
+        if "optical_flow_demo" in self._filter_params:
+            frame = self._apply_optical_flow_demo(frame)
 
         # AI Object Detection
         if self._detection_enabled and self._ai_detector is not None:

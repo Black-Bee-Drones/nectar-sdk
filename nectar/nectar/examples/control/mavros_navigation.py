@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import csv
+import logging
+import math
+import time
+from pathlib import Path
+from typing import Optional
 
-import rclpy
-from rclpy.node import Node
-
+import nectar
 from nectar.control import (
     DroneFactory,
     MavrosConfig,
@@ -12,6 +16,9 @@ from nectar.control import (
     PoseSource,
 )
 from nectar.utils.gps_calculate import GPSCalculate
+from nectar.utils.position_utils import PositionUtils
+
+log = logging.getLogger("mavros_nav_test")
 
 AVAILABLE_TESTS = [
     "body",
@@ -21,6 +28,8 @@ AVAILABLE_TESTS = [
     "gps",
     "figure8",
     "rectangle",
+    "cube-xyz",
+    "cube",
     "gps-rectangle",
 ]
 
@@ -32,29 +41,70 @@ STRATEGY_MAP = {
 }
 
 
-class NavigationTest(Node):
-    """
-    MAVROS navigation test node.
-    """
+def _fmt(v: Optional[float]) -> str:
+    return f"{v:+.3f}" if isinstance(v, (int, float)) else "n/a"
+
+
+def _csv_num(v: Optional[float]) -> str:
+    return f"{v:.4f}" if isinstance(v, (int, float)) else ""
+
+
+class NavigationTest:
+    """MAVROS navigation test driver."""
 
     def __init__(self, args: argparse.Namespace):
-        super().__init__("mavros_nav_test")
         self.args = args
 
         pose_source = PoseSource.VISION if args.mode == "indoor" else PoseSource.GPS
         config = MavrosConfig(pose_source=pose_source, start_driver=False)
-
-        self.drone = DroneFactory.create("mavros", config, self)
+        self.drone = DroneFactory.create("mavros", config)
 
         self.dist = args.distance
         self.prec = args.precision
         self.tout = args.timeout
         self.method = STRATEGY_MAP.get(args.strategy, NavigationMethod.PID)
+        self._csv_path: Optional[Path] = Path(args.csv).expanduser() if args.csv else None
+        self._csv_writer = None
+        self._csv_file = None
+        self._battery_sub = None
+        self._battery_msg = None
 
-        self.get_logger().info(
-            f"Initialized | mode={args.mode} | method={args.strategy} | "
-            f"no_takeoff={args.no_takeoff} | "
-            f"distance={self.dist}m | precision={self.prec}m | timeout={self.tout}s"
+        if self._csv_path is not None:
+            new_file = not self._csv_path.exists()
+            self._csv_path.parent.mkdir(parents=True, exist_ok=True)
+            self._csv_file = self._csv_path.open("a", newline="")
+            self._csv_writer = csv.writer(self._csv_file)
+            if new_file:
+                self._csv_writer.writerow(
+                    [
+                        "timestamp",
+                        "test",
+                        "leg",
+                        "label",
+                        "method",
+                        "reference",
+                        "target_x",
+                        "target_y",
+                        "target_z",
+                        "target_yaw_deg",
+                        "actual_local_x",
+                        "actual_local_y",
+                        "actual_local_z",
+                        "actual_yaw_deg",
+                        "duration_s",
+                        "reached",
+                    ]
+                )
+
+        log.info(
+            "Initialized | mode=%s | method=%s | no_takeoff=%s | distance=%sm | precision=%sm | timeout=%ss | csv=%s",
+            args.mode,
+            args.strategy,
+            args.no_takeoff,
+            self.dist,
+            self.prec,
+            self.tout,
+            self._csv_path or "off",
         )
 
     def setup(self) -> bool:
@@ -71,53 +121,44 @@ class NavigationTest(Node):
         """
         if self.args.no_takeoff:
             if not self.drone.set_mode("GUIDED"):
-                self.get_logger().error("Failed to set GUIDED mode")
+                log.error("Failed to set GUIDED mode")
                 return False
-
             self.drone.delay(1.0)
             self.drone.set_takeoff_position()
-            self.get_logger().info("Takeoff position set to current position")
-            self.get_logger().info(
-                "╔══════════════════════════════════════════════════╗\n"
-                "║  NO-TAKEOFF MODE (hand-held testing)            ║\n"
-                "║  Drone will NOT arm. Pick it up by hand and     ║\n"
-                "║  move it to verify navigation logic via logs.   ║\n"
-                "╚══════════════════════════════════════════════════╝"
-            )
+            log.info("NO-TAKEOFF MODE: takeoff position set to current; drone will NOT arm")
             return True
 
         if not self.drone.takeoff(altitude=self.args.altitude):
-            self.get_logger().error("Takeoff failed")
+            log.error("Takeoff failed")
             return False
-
         self.drone.delay(3.0)
         return True
 
     def teardown(self) -> None:
-        """Land (normal) or just log"""
         if self.args.no_takeoff:
-            self.get_logger().info("No-takeoff mode: nothing to teardown")
+            log.info("No-takeoff mode: nothing to teardown")
         else:
-            self.get_logger().info("Landing...")
+            log.info("Landing...")
             self.drone.land()
+        if self._csv_file is not None:
+            self._csv_file.close()
+            log.info("CSV written: %s", self._csv_path)
 
     def test_body(self) -> bool:
-        """
-        BODY reference square pattern.
-        """
+        """BODY reference square pattern (clockwise: forward, right, back, left)."""
         d = self.dist
         self._log_test_header("BODY Square", f"{d}m sides")
 
         waypoints = [
             (d, 0.0, None, "Forward"),
-            (0.0, d, None, "Left"),
+            (0.0, -d, None, "Right"),
             (-d, 0.0, None, "Backward"),
-            (0.0, -d, None, "Right (return)"),
+            (0.0, d, None, "Left (return)"),
         ]
 
         all_reached = True
         for x, y, z, label in waypoints:
-            self.get_logger().info(f"  → {label}: x={x}, y={y}")
+            log.info(f"  → {label}: x={x}, y={y}")
             reached = self.drone.move_to(
                 x=x,
                 y=y,
@@ -128,7 +169,7 @@ class NavigationTest(Node):
                 method=self.method,
             )
             if not reached:
-                self.get_logger().warn(f"  ⚠ {label}: timeout")
+                log.warning(f"  ⚠ {label}: timeout")
                 all_reached = False
             self.drone.delay(1.5)
 
@@ -144,14 +185,14 @@ class NavigationTest(Node):
 
         waypoints = [
             (d, 0.0, None, f"{d}m forward from takeoff"),
-            (d, d, None, f"{d}m forward + {d}m left from takeoff"),
+            (d, -d, None, f"{d}m forward + {d}m right from takeoff"),
             (0.0, d, None, f"{d}m left from takeoff"),
             (0.0, 0.0, None, "Return to takeoff XY"),
         ]
 
         all_reached = True
         for x, y, z, label in waypoints:
-            self.get_logger().info(f"  → {label}: x={x}, y={y}")
+            log.info(f"  → {label}: x={x}, y={y}")
             reached = self.drone.move_to(
                 x=x,
                 y=y,
@@ -162,7 +203,7 @@ class NavigationTest(Node):
                 method=self.method,
             )
             if not reached:
-                self.get_logger().warn(f"  ⚠ {label}: timeout")
+                log.warning(f"  ⚠ {label}: timeout")
                 all_reached = False
             self.drone.delay(1.5)
 
@@ -179,7 +220,7 @@ class NavigationTest(Node):
         dz = self.dist / 2
         self._log_test_header("Altitude", f"±{dz}m")
 
-        self.get_logger().info(f"  → Up {dz}m")
+        log.info(f"  → Up {dz}m")
         r1 = self.drone.move_to(
             z=dz,
             precision=self.prec,
@@ -188,7 +229,7 @@ class NavigationTest(Node):
         )
         self.drone.delay(1.5)
 
-        self.get_logger().info(f"  → Down {dz}m")
+        log.info(f"  → Down {dz}m")
         r2 = self.drone.move_to(
             z=-dz,
             precision=self.prec,
@@ -217,7 +258,7 @@ class NavigationTest(Node):
         ]
 
         for ref, vx, vy, label in steps:
-            self.get_logger().info(f"  → {label}: vx={vx}, vy={vy}")
+            log.info(f"  → {label}: vx={vx}, vy={vy}")
             self.drone.move_velocity(vx=vx, vy=vy, duration=dur, reference=ref)
             self.drone.move_velocity(0.0, 0.0, 0.0, 0.0)
             self.drone.delay(1.5)
@@ -230,7 +271,7 @@ class NavigationTest(Node):
         GPS waypoint navigation (outdoor only).
         """
         if self.args.mode == "indoor":
-            self.get_logger().warn("GPS test skipped: not available in indoor mode")
+            log.warning("GPS test skipped: not available in indoor mode")
             return False
 
         self._log_test_header("GPS Navigation", f"{self.dist}m forward")
@@ -238,9 +279,7 @@ class NavigationTest(Node):
         gps = self.drone.gps
         hdg = self.drone.heading
 
-        self.get_logger().info(
-            f"  Current: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, hdg={hdg:.1f}°"
-        )
+        log.info(f"  Current: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, hdg={hdg:.1f}°")
 
         lat, lon, _ = GPSCalculate.calculate_gps_offset(
             self.dist,
@@ -252,7 +291,7 @@ class NavigationTest(Node):
             hdg,
         )
 
-        self.get_logger().info(f"  → Target: lat={lat:.6f}, lon={lon:.6f}")
+        log.info(f"  → Target: lat={lat:.6f}, lon={lon:.6f}")
         gps_prec = max(self.prec, 0.5)
 
         # move_to_gps supports PID, PID_EKF, and POSITION_GLOBAL (not POSITION)
@@ -268,7 +307,7 @@ class NavigationTest(Node):
             method=gps_method,
         )
         if not reached:
-            self.get_logger().warn("  ⚠ GPS waypoint: timeout")
+            log.warning("  ⚠ GPS waypoint: timeout")
 
         self._log_test_result("GPS Navigation", reached)
         return reached
@@ -340,6 +379,66 @@ class NavigationTest(Node):
 
         return self._run_waypoints("Rectangle 8-pt", waypoints, MoveReference.TAKEOFF)
 
+    def test_cube_xyz(self) -> bool:
+        """3-axis cube using BODY reference (8 closed-loop legs, CW, front first).
+
+        Each leg is a relative offset from the drone's current pose. The
+        offsets sum to (0, 0, 0), so the drone returns to its starting
+        pose at the end of every iteration -- safe to run under ``--loop``.
+
+        Requires ``--altitude > --distance`` so the final descend doesn't
+        hit the ground-collision safety check.
+        """
+        d = self.dist
+        self._log_test_header("Cube XYZ (BODY, no yaw)", f"{d}m side")
+
+        waypoints = [
+            # bottom face (CW from above)
+            (d, 0.0, 0.0, "1: forward"),
+            (0.0, -d, 0.0, "2: right"),
+            (-d, 0.0, 0.0, "3: back"),
+            # vertical
+            (0.0, 0.0, d, "4: climb"),
+            # top face (CW from above)
+            (d, 0.0, 0.0, "5: forward (top)"),
+            (0.0, d, 0.0, "6: left (top)"),
+            (-d, 0.0, 0.0, "7: back (top)"),
+            # close
+            (0.0, 0.0, -d, "8: descend home"),
+        ]
+
+        return self._run_waypoints("Cube XYZ", waypoints, MoveReference.BODY)
+
+    def test_cube(self) -> bool:
+        """4-axis cube using BODY reference (10 closed-loop legs, CW, front first).
+
+        Same 8-corner geometry as :meth:`test_cube_xyz` plus two
+        pure-rotation legs (+90, -90) at the top altitude to stress yaw
+        control without polluting the translation geometry. All offsets
+        sum to (0, 0, 0, 0deg), so position and heading return to start
+        every iteration -- safe under ``--loop``.
+
+        Requires ``--altitude > --distance``.
+        """
+        d = self.dist
+        self._log_test_header("Cube 4-axis (BODY)", f"{d}m side, yaw +/-90 at top")
+
+        waypoints = [
+            # x,    y,    z,    yaw_deg,  label
+            (d, 0.0, 0.0, None, "1: forward"),
+            (0.0, -d, 0.0, None, "2: right"),
+            (-d, 0.0, 0.0, None, "3: back"),
+            (0.0, 0.0, d, None, "4: climb"),
+            (None, None, None, 90.0, "5: yaw +90 (pure rotation)"),
+            (None, None, None, -90.0, "6: yaw -90 (back to home heading)"),
+            (d, 0.0, 0.0, None, "7: forward (top)"),
+            (0.0, d, 0.0, None, "8: left (top)"),
+            (-d, 0.0, 0.0, None, "9: back (top)"),
+            (0.0, 0.0, -d, None, "10: descend home"),
+        ]
+
+        return self._run_waypoints("Cube 4-axis", waypoints, MoveReference.BODY)
+
     def test_gps_rectangle(self) -> bool:
         """
         GPS rectangle using move_to_gps (outdoor only, 4 corners).
@@ -347,7 +446,7 @@ class NavigationTest(Node):
         Computes GPS waypoints offset from current position at current heading.
         """
         if self.args.mode == "indoor":
-            self.get_logger().warn("GPS rectangle skipped: not available in indoor mode")
+            log.warning("GPS rectangle skipped: not available in indoor mode")
             return False
 
         d = self.dist
@@ -379,7 +478,7 @@ class NavigationTest(Node):
                 gps.altitude,
                 hdg,
             )
-            self.get_logger().info(f"  → {label}: lat={lat:.6f}, lon={lon:.6f}")
+            log.info(f"  → {label}: lat={lat:.6f}, lon={lon:.6f}")
             reached = self.drone.move_to_gps(
                 latitude=lat,
                 longitude=lon,
@@ -388,7 +487,7 @@ class NavigationTest(Node):
                 method=gps_method,
             )
             if not reached:
-                self.get_logger().warn(f"  ⚠ {label}: timeout")
+                log.warning(f"  ⚠ {label}: timeout")
                 all_reached = False
             self.drone.delay(1.5)
 
@@ -396,37 +495,108 @@ class NavigationTest(Node):
         return all_reached
 
     def _run_waypoints(self, name: str, waypoints: list, reference: MoveReference) -> bool:
-        """Navigate a list of (x, y, z, label) waypoints and report result."""
+        """Navigate ``waypoints`` (tuples of ``(x, y, z, label)`` or
+        ``(x, y, z, yaw_deg, label)``) and report per-leg precision."""
         all_reached = True
-        for i, (x, y, z, label) in enumerate(waypoints, 1):
-            self.get_logger().info(f"  → [{i}/{len(waypoints)}] {label}: x={x}, y={y}")
+        for i, wp in enumerate(waypoints, 1):
+            if len(wp) == 4:
+                x, y, z, label = wp
+                yaw = None
+            else:
+                x, y, z, yaw, label = wp
+            log.info(f"  → [{i}/{len(waypoints)}] {label}: x={x}, y={y}, z={z}, yaw={yaw}")
+            t0 = time.time()
             reached = self.drone.move_to(
                 x=x,
                 y=y,
                 z=z,
+                yaw=yaw,
                 reference=reference,
                 precision=self.prec,
                 timeout=self.tout,
                 method=self.method,
             )
+            dur = time.time() - t0
+            self._record_leg(name, i, label, reference, x, y, z, yaw, reached, dur)
             if not reached:
-                self.get_logger().warn(f"  ⚠ {label}: timeout")
+                log.warning(f"  ⚠ {label}: timeout")
                 all_reached = False
             self.drone.delay(1.5)
 
         self._log_test_result(name, all_reached)
         return all_reached
 
+    def _record_leg(
+        self,
+        test: str,
+        leg: int,
+        label: str,
+        reference: MoveReference,
+        tx: Optional[float],
+        ty: Optional[float],
+        tz: Optional[float],
+        tyaw_deg: Optional[float],
+        reached: bool,
+        duration_s: float,
+    ) -> None:
+        """Log per-leg arrival and optionally append to the CSV.
+
+        EKF local pose (always ENU absolute) is logged as-is. Per-axis errors
+        against the call-time target are only meaningful for absolute references
+        (TAKEOFF/WORLD); for BODY they are offsets at call time. The boolean
+        ``reached`` from ``move_to`` is the authoritative pass/fail per leg.
+        """
+        ax, ay, az, ayaw_deg = self._current_local_pose()
+        log.info(
+            "    actual local: x=%s, y=%s, z=%s, yaw=%s | reached=%s in %.1fs",
+            _fmt(ax),
+            _fmt(ay),
+            _fmt(az),
+            _fmt(ayaw_deg),
+            reached,
+            duration_s,
+        )
+        if self._csv_writer is not None:
+            self._csv_writer.writerow(
+                [
+                    f"{time.time():.3f}",
+                    test,
+                    leg,
+                    label,
+                    self.args.strategy,
+                    reference.name,
+                    _csv_num(tx),
+                    _csv_num(ty),
+                    _csv_num(tz),
+                    _csv_num(tyaw_deg),
+                    _csv_num(ax),
+                    _csv_num(ay),
+                    _csv_num(az),
+                    _csv_num(ayaw_deg),
+                    f"{duration_s:.2f}",
+                    int(bool(reached)),
+                ]
+            )
+            self._csv_file.flush()
+
+    def _current_local_pose(self) -> tuple:
+        """Return absolute ENU local pose as ``(x, y, z, yaw_deg)``."""
+        pose = self.drone.local_pos
+        if pose is None:
+            return (None, None, None, None)
+        p = pose.pose.position
+        return (p.x, p.y, p.z, math.degrees(PositionUtils.get_yaw_from_pose(pose)))
+
     def _log_test_header(self, name: str, detail: str) -> None:
-        self.get_logger().info(f"\n{'─' * 50}")
-        self.get_logger().info(f"  TEST: {name} ({detail})")
-        self.get_logger().info(f"{'─' * 50}")
+        log.info(f"\n{'─' * 50}")
+        log.info(f"  TEST: {name} ({detail})")
+        log.info(f"{'─' * 50}")
 
     def _log_test_result(self, name: str, passed: bool) -> None:
         if passed:
-            self.get_logger().info(f"\033[32;1m  ✓ {name}: PASSED\033[0m")
+            log.info(f"\033[32;1m  ✓ {name}: PASSED\033[0m")
         else:
-            self.get_logger().warn(
+            log.warning(
                 f"\033[33;1m  ✗ {name}: INCOMPLETE (timeout on one or more waypoints)\033[0m"
             )
 
@@ -440,6 +610,8 @@ class NavigationTest(Node):
             "gps": self.test_gps,
             "figure8": self.test_figure8,
             "rectangle": self.test_rectangle,
+            "cube-xyz": self.test_cube_xyz,
+            "cube": self.test_cube,
             "gps-rectangle": self.test_gps_rectangle,
         }
 
@@ -447,7 +619,7 @@ class NavigationTest(Node):
         if "all" in tests_to_run:
             tests_to_run = list(test_map.keys())
 
-        self.get_logger().info(
+        log.info(
             f"\n{'═' * 50}\n"
             f"  MAVROS Navigation Test\n"
             f"  Mode: {self.args.mode} | Tests: {', '.join(tests_to_run)}\n"
@@ -457,23 +629,68 @@ class NavigationTest(Node):
         if not self.setup():
             return
 
-        results = {}
-        for name in tests_to_run:
-            if name not in test_map:
-                self.get_logger().warn(f"Unknown test: {name}, skipping")
-                continue
+        loop_n = self.args.loop
+        infinite = loop_n is not None and loop_n <= 0
+        iterations = []
+        iteration = 0
+        try:
+            while True:
+                iteration += 1
+                log.info(f"\n══ Iteration {iteration}{' (∞)' if infinite else f'/{loop_n}'} ══")
+                results = {}
+                for name in tests_to_run:
+                    if name not in test_map:
+                        log.warning(f"Unknown test: {name}, skipping")
+                        continue
+                    results[name] = test_map[name]()
+                    self.drone.delay(2.0)
+                iterations.append(results)
+                self._log_battery()
+                if loop_n is None or (not infinite and iteration >= loop_n):
+                    break
+        except KeyboardInterrupt:
+            log.info("Loop interrupted by user")
 
-            results[name] = test_map[name]()
-            self.drone.delay(2.0)
-
-        self.get_logger().info(f"\n{'═' * 50}")
-        self.get_logger().info("  RESULTS")
-        self.get_logger().info(f"{'═' * 50}")
-        for name, passed in results.items():
-            status = "\033[32;1mPASSED\033[0m" if passed else "\033[33;1mINCOMPLETE\033[0m"
-            self.get_logger().info(f"  {name:15s} {status}")
+        log.info(f"\n{'═' * 50}")
+        log.info(f"  RESULTS ({iteration} iteration{'s' if iteration != 1 else ''})")
+        log.info(f"{'═' * 50}")
+        for i, results in enumerate(iterations, 1):
+            for name, passed in results.items():
+                status = "\033[32;1mPASSED\033[0m" if passed else "\033[33;1mINCOMPLETE\033[0m"
+                log.info(f"  [{i}] {name:15s} {status}")
 
         self.teardown()
+
+    def _log_battery(self) -> None:
+        """One-shot snapshot of /mavros/battery (no-op if unavailable)."""
+        if self._battery_sub is None:
+            try:
+                from rclpy.qos import qos_profile_sensor_data
+                from sensor_msgs.msg import BatteryState
+            except Exception:
+                return
+            self._battery_msg = None
+
+            def _cb(msg):
+                self._battery_msg = msg
+
+            self._battery_sub = self.drone._node.create_subscription(
+                BatteryState, "/mavros/battery", _cb, qos_profile_sensor_data
+            )
+            deadline = time.time() + 2.0
+            while self._battery_msg is None and time.time() < deadline:
+                time.sleep(0.1)
+        msg = self._battery_msg
+        if msg is None:
+            log.info("  battery: (no /mavros/battery yet)")
+            return
+        pct = msg.percentage * 100 if msg.percentage and msg.percentage > 0 else None
+        log.info(
+            "  battery: V=%.2f I=%sA pct=%s",
+            msg.voltage,
+            f"{msg.current:.2f}" if msg.current is not None else "n/a",
+            f"{pct:.0f}%" if pct is not None else "n/a",
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -490,7 +707,12 @@ def parse_args() -> argparse.Namespace:
             "  python3 mavros_navigation.py --no-takeoff --test body --distance 1.0\n"
             "  python3 mavros_navigation.py --test figure8 --distance 3.0\n"
             "  python3 mavros_navigation.py --test rectangle --strategy pid-ekf --distance 4.0\n"
+            "  python3 mavros_navigation.py --test cube-xyz --strategy pid-ekf --distance 1.5\n"
+            "  python3 mavros_navigation.py --test cube --strategy pid-ekf --distance 1.5 --timeout 60\n"
+            "  python3 mavros_navigation.py --test cube-xyz cube --csv runs/cube.csv\n"
             "  python3 mavros_navigation.py --test gps-rectangle --strategy position-global --distance 5.0\n"
+            "  python3 mavros_navigation.py --test body --loop 5 --csv runs/battery_loop.csv\n"
+            "  python3 mavros_navigation.py --test cube-xyz --loop --csv runs/endurance.csv  # forever\n"
         ),
     )
     parser.add_argument(
@@ -545,25 +767,44 @@ def parse_args() -> argparse.Namespace:
         default="pid",
         help="Navigation method. Default: pid",
     )
+    parser.add_argument(
+        "--csv",
+        type=str,
+        default=None,
+        help="Append per-leg results to this CSV file (created if missing).",
+    )
+    parser.add_argument(
+        "--loop",
+        type=int,
+        nargs="?",
+        const=0,
+        default=None,
+        help=(
+            "Repeat the selected tests. ``--loop N`` runs N iterations; "
+            "``--loop`` with no value loops forever until Ctrl+C. "
+            "Takeoff happens once before the first iteration; landing once at the end."
+        ),
+    )
 
     args, _ = parser.parse_known_args()
     return args
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+    nectar.init()
     parsed = parse_args()
-    node = NavigationTest(parsed)
+    tester = NavigationTest(parsed)
 
     try:
-        node.run()
+        tester.run()
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted by user")
+        log.info("Interrupted by user")
         if not parsed.no_takeoff:
-            node.drone.land()
+            tester.drone.land()
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        tester.drone.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

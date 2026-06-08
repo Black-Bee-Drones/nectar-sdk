@@ -186,12 +186,20 @@ class CameraFactory:
         if os.path.isfile(source):
             from nectar.vision.camera.drivers.file_cam import FileImageCam
 
-            return FileImageCam(config or FileImageConfig(path=source))
+            cfg = config if isinstance(config, FileImageConfig) else FileImageConfig(path=source)
+            return FileImageCam(cfg)
 
         if source.startswith("/"):
             from nectar.vision.camera.drivers.ros_cam import ROSCam
 
-            return ROSCam(node, config or ROSConfig(topic=source))
+            cfg = config if isinstance(config, ROSConfig) else ROSConfig(topic=source)
+            if config is not None and not isinstance(config, ROSConfig):
+                # Forwarding the wrong config type to ROSCam used to fail deep inside
+                # _build_qos_profile with an opaque AttributeError. Make it explicit.
+                raise ValueError(
+                    f"ROS source {source!r} requires a ROSConfig, got {type(config).__name__}"
+                )
+            return ROSCam(node, cfg)
 
         key = source.lower()
 

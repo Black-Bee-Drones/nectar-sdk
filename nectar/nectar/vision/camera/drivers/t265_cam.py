@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from math import pi, tan
 from threading import Lock
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 import cv2
 import numpy as np
 
+from nectar import runtime as nectar_runtime
 from nectar.vision.camera.abstract import DepthCam
 from nectar.vision.camera.config import T265Config
 
@@ -68,6 +70,7 @@ class T265Cam(DepthCam):
         super().__init__(name=config.name)
         self._config = config
         self._node = node
+        self._owns_node = False
 
         self._mutex = Lock()
         self._left: Optional[np.ndarray] = None
@@ -137,7 +140,14 @@ class T265Cam(DepthCam):
 
     def _start_ros(self) -> None:
         if self._node is None:
-            raise ValueError("T265Cam with use_ros_topics=True requires a ROS node.")
+            from rclpy.node import Node as _Node
+
+            self._node = _Node(
+                f"nectar_t265_cam_{uuid.uuid4().hex[:8]}",
+                start_parameter_services=False,
+            )
+            nectar_runtime.add_node(self._node)
+            self._owns_node = True
 
         from cv_bridge import CvBridge
         from rclpy.qos import QoSProfile, ReliabilityPolicy
@@ -574,5 +584,14 @@ class T265Cam(DepthCam):
             for sub in self._ros_subs:
                 self._node.destroy_subscription(sub)
             self._ros_subs.clear()
+
+        if self._owns_node and self._node is not None:
+            nectar_runtime.remove_node(self._node)
+            try:
+                self._node.destroy_node()
+            except Exception:
+                pass
+            self._owns_node = False
+            self._node = None
 
         self._is_running = False

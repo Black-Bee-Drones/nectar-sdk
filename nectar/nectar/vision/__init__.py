@@ -14,16 +14,18 @@ from nectar.vision.algorithms import (
     ILineEstimationMethod,
     LineDetector,
     ModelType,
+    OpticalFlowConfig,
+    OpticalFlowEstimator,
+    OpticalFlowResult,
     RansacLine,
     RotatedRect,
 )
 from nectar.vision.camera import (
     AbstractCam,
     C920Config,
-    Calibration,
+    CameraCalibration,
     CameraConfig,
     CameraFactory,
-    CharucoCalibration,
     DepthCam,
     FileImageConfig,
     ImageHandler,
@@ -68,7 +70,6 @@ _LAZY_ATTRS = {
     # ROS 2 nodes (entry points; imported only when explicitly requested)
     "ArucoNode": "nectar.vision.nodes",
     "CameraPublisherNode": "nectar.vision.nodes",
-    "ClickColorCalibrationNode": "nectar.vision.nodes",
     "ColorCalibrationNode": "nectar.vision.nodes",
     "LineDetectionNode": "nectar.vision.nodes",
 }
@@ -116,7 +117,6 @@ if TYPE_CHECKING:
     from nectar.vision.nodes import (
         ArucoNode,
         CameraPublisherNode,
-        ClickColorCalibrationNode,
         ColorCalibrationNode,
         LineDetectionNode,
     )
@@ -126,8 +126,7 @@ if TYPE_CHECKING:
 __all__ = [
     # Camera
     "AbstractCam",
-    "Calibration",
-    "CharucoCalibration",
+    "CameraCalibration",
     "DepthCam",
     "CameraConfig",
     "ROSConfig",
@@ -172,6 +171,10 @@ __all__ = [
     "ModelType",
     "ModelCalibrator",
     "CalibrationResult",
+    # Flow
+    "OpticalFlowEstimator",
+    "OpticalFlowConfig",
+    "OpticalFlowResult",
     # MediaPipe
     "HandTracker",
     "HandTrackerConfig",
@@ -185,7 +188,6 @@ __all__ = [
     "ImageCalculus",
     # Nodes
     "ArucoNode",
-    "ClickColorCalibrationNode",
     "ColorCalibrationNode",
     "LineDetectionNode",
     "CameraPublisherNode",

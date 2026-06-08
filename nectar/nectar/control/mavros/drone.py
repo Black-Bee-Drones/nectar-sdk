@@ -10,8 +10,13 @@ from mavros_msgs.srv import CommandBool, CommandHome, CommandLong, CommandTOL, S
 from rcl_interfaces.msg import Parameter, ParameterType
 from rcl_interfaces.srv import SetParameters
 from rclpy.duration import Duration
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.executors import Executor
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import Imu, NavSatFix, Range
 from std_msgs.msg import Float64
 
@@ -35,6 +40,7 @@ from nectar.control.types import (
     PoseSource,
     RTLMethod,
 )
+from nectar.utils.log import ARROW, ERR, OK, WARN
 from nectar.utils.position_utils import PositionUtils
 from nectar.utils.process import ProcessUtils
 
@@ -47,11 +53,34 @@ class MavrosDrone(BaseDrone):
     ----------
     config : MavrosConfig
         MAVROS-specific configuration.
-    node : Node
-        ROS2 node for communication.
+    executor : Executor, optional
+        ROS 2 executor to register this drone's node with. Defaults to
+        the shared :mod:`nectar.runtime` executor.
     """
 
-    def __init__(self, config: MavrosConfig, node: Node) -> None:
+    # ArduCopter sets HEARTBEAT.system_status = MAV_STATE_ACTIVE only when
+    # armed AND not landed; useful for in-flight detection.
+    _MAV_STATE_ACTIVE = 4
+    _AIRBORNE_THRESHOLD = 0.5  # m, altitude fallback for _is_airborne
+
+    # Takeoff settle. Velocity-based detection absorbs sensor spikes that
+    # would otherwise reset an absolute-spread check on real airframes.
+    _SPIN_UP_DELAY = 2.7  # s, post-arm delay before takeoff command
+    _LIFTOFF_DELTA = 0.08  # m, altitude rise required to consider lifted
+    _SETTLE_WINDOW = 0.8  # s, rolling window for vertical-velocity check
+    _SETTLE_VELOCITY = 0.25  # m/s, |dz/dt| below which the hover is declared settled
+    _SETTLE_POLL = 0.1  # s, poll period for settle/landed loops
+
+    # Landing settle (velocity-based, drone-size agnostic)
+    _LANDED_THRESHOLD = 0.3  # m, absolute "already low" fallback for descent gate
+    _LAND_SETTLE_WINDOW = 1.2  # s, rolling window for descent velocity
+    _LAND_STOP_VELOCITY = 0.05  # m/s, descent rate below which touchdown is declared
+
+    def __init__(
+        self,
+        config: MavrosConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
         self._mavros_state = State()
         self._gps: Optional[NavSatFix] = None
         self._heading: Optional[Float64] = None
@@ -69,7 +98,7 @@ class MavrosDrone(BaseDrone):
         self._initial_heading: float = 0.0
         self._pose_source = config.pose_source
 
-        super().__init__(config, node)
+        super().__init__(config, executor)
         self._setup_subscribers()
         self._setup_publishers()
         self._setup_services()
@@ -81,25 +110,15 @@ class MavrosDrone(BaseDrone):
         self._node.get_logger().info("MavrosDrone initialized")
 
     @classmethod
-    def from_config(cls, config: DroneConfig, node: Node) -> "MavrosDrone":
-        """
-        Factory method for DroneFactory registration.
-
-        Parameters
-        ----------
-        config : DroneConfig
-            Configuration object (converted to MavrosConfig if needed).
-        node : Node
-            ROS2 node.
-
-        Returns
-        -------
-        MavrosDrone
-            Configured drone instance.
-        """
+    def from_config(
+        cls,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> "MavrosDrone":
+        """Factory entry point for :class:`DroneFactory`."""
         if not isinstance(config, MavrosConfig):
             config = MavrosConfig()
-        return cls(config, node)
+        return cls(config, executor)
 
     @property
     def is_indoor(self) -> bool:
@@ -318,11 +337,19 @@ class MavrosDrone(BaseDrone):
         """Initialize ROS2 subscribers for sensor data based on pose source."""
         config: MavrosConfig = self._config
 
+        # MAVROS publishes /mavros/state with TRANSIENT_LOCAL durability.
+        # Match it so we receive the cached latest state on subscribe and
+        # reliably catch arm/mode changes.
+        state_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10,
+        )
         self._create_subscriber(
             State,
             config.state_topic,
             lambda msg: setattr(self, "_mavros_state", msg),
-            10,
+            state_qos,
         )
 
         self._create_subscriber(
@@ -474,7 +501,7 @@ class MavrosDrone(BaseDrone):
         while time.time() < deadline:
             if predicate():
                 return True
-            self._wait(0.05)
+            time.sleep(0.05)
         return predicate()
 
     def _load_pid_config(self) -> None:
@@ -694,7 +721,7 @@ class MavrosDrone(BaseDrone):
         """
         Arm motors in GUIDED mode.
 
-        Sets mode to GUIDED, waits 0.5s, sends arm command, waits 1.5s.
+        Sets GUIDED mode and arms; waits for ``mavros_state`` to reflect each step.
 
         Returns
         -------
@@ -704,18 +731,19 @@ class MavrosDrone(BaseDrone):
         try:
             if not self.set_mode("GUIDED"):
                 return False
+            if not self._wait_until(lambda: self._mavros_state.mode == "GUIDED", 3.0):
+                self._node.get_logger().warn(f"{WARN} Mode change slow to reflect in state")
             if self._config.apply_setpoint_params:
                 self._apply_setpoint_config()
-            self.delay(0.5)
             req = CommandBool.Request()
             req.value = True
-            res = self._call_service(self._arm_srv, req, "Armed", "Arm failed", sync=True)
-            if res:
-                self.delay(1.5)
-                return True
-            return False
+            if not self._call_service(self._arm_srv, req, "Armed", "Arm failed", sync=True):
+                return False
+            if not self._wait_until(lambda: self._mavros_state.armed, 6.0):
+                self._node.get_logger().warn(f"{WARN} Arm ACKed but state slow to update")
+            return True
         except TimeoutError as e:
-            self._node.get_logger().error(f"Arm failed: {e}")
+            self._node.get_logger().error(f"{ERR} Arm failed: {e}")
             return False
 
     def disarm(self) -> bool:
@@ -746,23 +774,103 @@ class MavrosDrone(BaseDrone):
             self._node.get_logger().error(f"Disarm failed: {e}")
             return False
 
-    # MAV_STATE_ACTIVE (4) is set by ArduCopter only when armed and not landed.
-    # See ArduCopter/GCS_Copter::system_status() and MAVLink HEARTBEAT.
-    _MAV_STATE_ACTIVE = 4
-    _AIRBORNE_THRESHOLD = 0.5
-
     def _is_airborne(self) -> bool:
-        """True if FCU reports active flight or any altitude source exceeds threshold."""
-        if self._mavros_state.system_status == self._MAV_STATE_ACTIVE:
-            return True
+        """True when altitude clears ``_AIRBORNE_THRESHOLD``.
+
+        Prefers the rangefinder when available (ground-truth proximity);
+        falls back to vision/EKF and GPS ``rel_alt`` with a looser
+        threshold to absorb their on-ground noise.
+        """
         thr = self._AIRBORNE_THRESHOLD
-        if self._local_pos is not None and self._local_pos.pose.position.z > thr:
+        if self._rng_alt is not None:
+            return self._rng_alt.range > thr
+        looser = max(thr, 1.0)
+        if self._local_pos is not None and self._local_pos.pose.position.z > looser:
             return True
-        if not self.is_indoor and self._rel_alt is not None and self._rel_alt.data > thr:
-            return True
-        if self._rng_alt is not None and self._rng_alt.range > thr:
+        if not self.is_indoor and self._rel_alt is not None and self._rel_alt.data > looser:
             return True
         return False
+
+    def _wait_landed(self, start_alt: float, timeout: float) -> bool:
+        """
+        Wait for touchdown after a land command.
+
+        Returns when the drone has descended from ``start_alt`` AND its
+        descent velocity over ``_LAND_SETTLE_WINDOW`` has dropped below
+        ``_LAND_STOP_VELOCITY``, or when the FCU disarms.
+
+        Parameters
+        ----------
+        start_alt : float
+            Altitude in meters at the time the land command was sent.
+        timeout : float
+            Maximum seconds to wait for touchdown.
+
+        Returns
+        -------
+        bool
+            True on touchdown or disarm, False on timeout.
+        """
+        deadline = time.time() + timeout
+        last_alt = self.get_altitude() or start_alt
+        history: list = [(time.time(), last_alt)]
+        descended = False
+        while time.time() < deadline:
+            time.sleep(self._SETTLE_POLL)
+            if not self._mavros_state.armed:
+                return True
+            now = time.time()
+            alt = self.get_altitude() or last_alt
+            if start_alt - alt > self._LIFTOFF_DELTA or alt < self._LANDED_THRESHOLD:
+                descended = True
+            cutoff = now - self._LAND_SETTLE_WINDOW
+            while len(history) > 1 and history[0][0] < cutoff:
+                history.pop(0)
+            window_dt = now - history[0][0]
+            if descended and window_dt >= self._LAND_SETTLE_WINDOW:
+                descent_rate = (history[0][1] - alt) / window_dt
+                if descent_rate < self._LAND_STOP_VELOCITY:
+                    return True
+            history.append((now, alt))
+            last_alt = alt
+        return False
+
+    def _wait_takeoff_settle(self, start_alt: float, timeout: float) -> tuple:
+        """Wait for liftoff and hover stabilization after a takeoff command.
+
+        Lifted when altitude rises by ``_LIFTOFF_DELTA`` from ``start_alt``.
+        Settled when the mean vertical velocity over ``_SETTLE_WINDOW`` falls
+        below ``_SETTLE_VELOCITY``. Velocity is robust to sensor spikes that
+        would otherwise reset an absolute-spread check. Aborts on disarm.
+
+        Returns
+        -------
+        tuple of (bool, float)
+            ``(lifted_off, current_altitude)``.
+        """
+        deadline = time.time() + timeout
+        last_alt = self.get_altitude() or start_alt
+        history: list = [(time.time(), last_alt)]
+        lifted = False
+        while time.time() < deadline:
+            time.sleep(self._SETTLE_POLL)
+            if not self._mavros_state.armed:
+                break
+            now = time.time()
+            alt = self.get_altitude() or last_alt
+            if alt - start_alt > self._LIFTOFF_DELTA:
+                lifted = True
+            cutoff = now - self._SETTLE_WINDOW
+            while len(history) > 1 and history[0][0] < cutoff:
+                history.pop(0)
+            window_dt = now - history[0][0]
+            if lifted and window_dt >= self._SETTLE_WINDOW:
+                velocity = (alt - history[0][1]) / window_dt
+                if abs(velocity) < self._SETTLE_VELOCITY:
+                    return True, alt
+            history.append((now, alt))
+            last_alt = alt
+        return lifted, last_alt
 
     def takeoff(
         self,
@@ -773,12 +881,12 @@ class MavrosDrone(BaseDrone):
         timeout: float = 25.0,
     ) -> bool:
         """
-        Execute takeoff sequence with retry logic and optional altitude adjustment.
+        Execute takeoff with event-driven completion detection.
 
-        Arms drone, stores takeoff position, sends takeoff command, and verifies altitude gain.
-        If altitude doesn't change significantly, disarms and retries up to max_retries times.
-        Optionally fine-tunes altitude using move_to to reach target precisely. If the drone
-        is already airborne, the retry loop is skipped to avoid force-disarming in flight.
+        Per attempt: arm (state-polled) -> spin-up delay -> set takeoff position
+        (first attempt) -> takeoff command -> wait for liftoff and altitude
+        settling -> optional altitude adjustment. Skips entirely if already
+        airborne. Retries only on failed liftoff.
 
         Parameters
         ----------
@@ -787,20 +895,20 @@ class MavrosDrone(BaseDrone):
         max_retries : int, default=2
             Maximum number of takeoff attempts.
         adjust_altitude : bool, default=True
-            If True, fine-tune altitude using move_to after takeoff command.
+            If True, fine-tune altitude using move_to after settling.
         precision : float, default=0.12
             Altitude precision in meters for adjustment.
         timeout : float, default=25.0
-            Maximum time in seconds for altitude adjustment.
+            Maximum seconds to wait for altitude settling and for adjustment.
 
         Returns
         -------
         bool
-            True if takeoff successful, False if all retries exhausted or service timeout.
+            True if takeoff successful, False if all retries exhausted.
         """
         if self._is_airborne():
             self._node.get_logger().warn(
-                f"Already airborne at {self.get_altitude() or 0.0:.2f}m, skipping takeoff"
+                f"{WARN} Already airborne at {self.get_altitude() or 0.0:.2f}m, skipping takeoff"
             )
             if self._takeoff_position is None:
                 self._set_takeoff_position()
@@ -810,120 +918,115 @@ class MavrosDrone(BaseDrone):
         req.altitude = float(altitude)
 
         for attempt in range(max_retries):
-            self._node.get_logger().info(f"Takeoff attempt {attempt + 1}/{max_retries}")
+            self._node.get_logger().info(
+                f"{ARROW} Takeoff attempt {attempt + 1}/{max_retries} to {altitude:.2f}m"
+            )
 
             if not self.arm():
-                self._node.get_logger().error("Arm failed, cannot takeoff")
+                self._node.get_logger().error(f"{ERR} Arm failed, cannot takeoff")
                 return False
 
-            self.delay(6.0)
+            self.delay(self._SPIN_UP_DELAY)
 
-            if attempt == 0:
-                if not self._set_takeoff_position():
-                    self._node.get_logger().error("Failed to set takeoff position")
-                    return False
+            if attempt == 0 and not self._set_takeoff_position():
+                self._node.get_logger().error(f"{ERR} Failed to set takeoff position")
+                return False
 
-            takeoff_height = self.get_altitude() or 0.0
+            start_alt = self.get_altitude() or 0.0
 
             try:
-                res = self._call_service(
+                if not self._call_service(
                     self._takeoff_srv,
                     req,
-                    f"Takeoff to {altitude}m",
+                    f"Takeoff to {altitude:.2f}m",
                     "Takeoff command failed",
                     sync=True,
-                )
-                if not res:
+                ):
                     return False
             except TimeoutError as e:
-                self._node.get_logger().error(f"Takeoff service timeout: {e}")
+                self._node.get_logger().error(f"{ERR} Takeoff service timeout: {e}")
                 return False
 
-            self.delay(altitude * 5)
+            lifted, current_alt = self._wait_takeoff_settle(start_alt, timeout)
+            height_gain = current_alt - start_alt
+            armed = self._mavros_state.armed
 
-            current_alt = self.get_altitude() or 0.0
-            height_gain = abs(current_alt - takeoff_height)
-
-            self._node.get_logger().info(
-                f"Height gain: {height_gain:.2f}m, Armed: {self._mavros_state.armed}"
-            )
-            if height_gain >= 0.1 and self._mavros_state.armed:
-                self._node.get_logger().info(f"Takeoff successful (gained {height_gain:.2f}m)")
-
-                if adjust_altitude:
-                    altitude_diff = altitude - current_alt
-
-                    if abs(altitude_diff) > precision:
-                        self._node.get_logger().info(
-                            f"Adjusting altitude from {current_alt:.2f}m to {altitude:.2f}m"
-                        )
-                        adjustment_success = self.move_to(
-                            x=0.0,
-                            y=0.0,
-                            z=altitude,
-                            yaw=0.0,
-                            reference=MoveReference.TAKEOFF,
-                            method=NavigationMethod.PID,
-                            precision=precision,
-                            timeout=timeout,
-                        )
-                        final_alt = self.get_altitude() or 0.0
-                        if adjustment_success:
-                            self._node.get_logger().info(f"Altitude adjusted to {final_alt:.2f}m")
-                        else:
-                            self._node.get_logger().warn(
-                                f"Altitude adjustment incomplete, current: {final_alt:.2f}m"
-                            )
-
+            if lifted and armed:
+                self._node.get_logger().info(
+                    f"{OK} Settled at {current_alt:.2f}m (gain {height_gain:.2f}m)"
+                )
+                if adjust_altitude and abs(altitude - current_alt) > precision:
+                    self._node.get_logger().info(
+                        f"{ARROW} Adjusting altitude {current_alt:.2f}m → {altitude:.2f}m"
+                    )
+                    self.move_to(
+                        x=0.0,
+                        y=0.0,
+                        z=altitude,
+                        yaw=0.0,
+                        reference=MoveReference.TAKEOFF,
+                        method=NavigationMethod.PID,
+                        precision=precision,
+                        timeout=timeout,
+                    )
                 return True
 
             if self._is_airborne():
                 self._node.get_logger().warn(
-                    f"Low height gain ({height_gain:.2f}m) but airborne at "
+                    f"{WARN} Low gain ({height_gain:.2f}m) but airborne at "
                     f"{current_alt:.2f}m, accepting"
                 )
                 return True
 
             if attempt < max_retries - 1:
                 self._node.get_logger().warn(
-                    f"Takeoff failed (height gain: {height_gain:.2f}m), disarming for retry..."
+                    f"{WARN} No liftoff (gain {height_gain:.2f}m, armed={armed}), "
+                    f"disarming for retry"
                 )
                 self.disarm()
-                self.delay(2.0)
+                self.delay(1.5)
             else:
-                self._node.get_logger().error(f"Takeoff failed after {max_retries} attempts")
+                self._node.get_logger().error(f"{ERR} Takeoff failed after {max_retries} attempts")
 
         return False
 
-    def land(self, timeout: float = 30.0) -> bool:
+    def land(self, timeout: float = 60.0) -> bool:
         """
         Execute landing at current position.
 
-        Sends land command and waits for motors to disarm or timeout.
+        Sends the land command and waits for touchdown (descent velocity has
+        dropped below ``_LAND_STOP_VELOCITY``) or full disarm — whichever
+        happens first. Returning on touchdown avoids blocking for ArduPilot's
+        ``DISARM_DELAY``.
 
         Parameters
         ----------
-        timeout : float, default=30.0
-            Maximum time to wait for landing completion.
+        timeout : float, default=60.0
+            Maximum time to wait for landing completion. Defaults are
+            generous for slow SITL descents; real drones return early.
 
         Returns
         -------
         bool
-            True if motors disarmed (landed), False if still armed after timeout
-            or on service timeout.
+            True on touchdown or disarm, False on service failure or timeout.
         """
         try:
+            start_alt = self.get_altitude() or 0.0
             req = CommandTOL.Request()
             req.altitude = 0.0
-            res = self._call_service(self._land_srv, req, "Landing", "Land failed", sync=True)
-            if not res:
+            if not self._call_service(self._land_srv, req, "Landing", "Land failed", sync=True):
                 return False
 
-            self._wait_until(lambda: not self._mavros_state.armed, timeout)
-            self.delay(0.1)
-            return not self._mavros_state.armed
+            if self._wait_landed(start_alt, timeout):
+                self._node.get_logger().info(
+                    f"{OK} Landed at {self.get_altitude() or 0.0:.2f}m "
+                    f"(armed={self._mavros_state.armed})"
+                )
+                return True
+            self._node.get_logger().warn(f"{WARN} Land timed out before touchdown")
+            return False
         except TimeoutError as e:
-            self._node.get_logger().error(f"Land service timeout: {e}")
+            self._node.get_logger().error(f"{ERR} Land service timeout: {e}")
             return False
 
     def move_velocity(

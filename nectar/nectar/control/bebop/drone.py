@@ -2,7 +2,7 @@ from typing import Optional
 
 from geometry_msgs.msg import Twist, Vector3
 from rclpy.duration import Duration
-from rclpy.node import Node
+from rclpy.executors import Executor
 from std_msgs.msg import Bool, Empty, UInt8
 
 from nectar.control.base import BaseDrone
@@ -26,35 +26,30 @@ class BebopDrone(BaseDrone):
     ----------
     config : BebopConfig
         Bebop-specific configuration.
-    node : Node
-        ROS2 node for communication.
+    executor : Executor, optional
+        ROS 2 executor to register this drone's node with. Defaults to
+        the shared :mod:`nectar.runtime` executor.
     """
 
-    def __init__(self, config: BebopConfig, node: Node) -> None:
-        super().__init__(config, node)
+    def __init__(
+        self,
+        config: BebopConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
+        super().__init__(config, executor)
         self._setup_publishers()
         self._node.get_logger().info("BebopDrone initialized")
 
     @classmethod
-    def from_config(cls, config: DroneConfig, node: Node) -> "BebopDrone":
-        """
-        Factory method for DroneFactory registration.
-
-        Parameters
-        ----------
-        config : DroneConfig
-            Configuration (converted to BebopConfig if needed).
-        node : Node
-            ROS2 node.
-
-        Returns
-        -------
-        BebopDrone
-            Configured drone instance.
-        """
+    def from_config(
+        cls,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> "BebopDrone":
+        """Factory entry point for :class:`DroneFactory`."""
         if not isinstance(config, BebopConfig):
             config = BebopConfig()
-        return cls(config, node)
+        return cls(config, executor)
 
     def _setup_publishers(self) -> None:
         config: BebopConfig = self._config

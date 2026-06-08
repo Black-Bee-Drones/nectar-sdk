@@ -196,12 +196,15 @@ classDiagram
     DroneConfig <|-- BebopConfig
 ```
 
-## Spinning Model
+## Runtime Model
 
-The SDK supports two usage patterns transparently:
+Each drone owns its own ROS 2 `Node` (created internally with a UUID-suffixed name). All SDK subsystem nodes are added to a shared `MultiThreadedExecutor` managed by [`nectar.runtime`](../runtime.py), which spins on a background thread. Blocking calls (`takeoff`, `land`, `move_to`) sleep on the user's thread; the executor keeps firing callbacks (state, pose, GPS, lidar, IMU) without contention.
 
-- **SDK-owned spin (Pattern A)**: user creates a plain `Node` (or subclasses one) and passes it to `DroneFactory.create`. No external executor is bound. The SDK drives ROS internally via `BaseDrone._wait`, which calls `rclpy.spin_once` and restores `node.executor` afterwards. Examples: [examples/control/sensors.py](examples/control/sensors.py), [examples/control/basic.py](examples/control/basic.py).
-- **User-owned spin (Pattern B)**: user passes a node already attached to an executor running in a background thread (Yasmin's `YasminNode`, the GUI's `ROSExecutor`, any custom `MultiThreadedExecutor`). The SDK detects this at init and `_wait` just sleeps; the user's executor keeps firing callbacks. The SDK never mutates `node.executor`, so subscriptions added after the drone is created (camera handler, custom subs in Yasmin states, etc.) still wake the right executor and stay fresh.
+Three usage patterns share the same primitives:
+
+- **Standalone script**: `nectar.init()` lazily creates the shared executor and starts the spin thread. `DroneFactory.create("mavros", config)` registers the drone's node with it. Call `nectar.shutdown()` on exit.
+- **Yasmin mission**: call `nectar.use_executor(YasminNode.get_instance()._executor)` once at startup. SDK subsystems created afterwards register with the Yasmin executor instead of spawning a second spin thread.
+- **GUI**: `ROSExecutor.start()` registers its `MultiThreadedExecutor` with `nectar.runtime`. Drones/handlers created from inside tabs share that executor automatically.
 
 ## Core Components
 
@@ -211,7 +214,8 @@ Centralized drone instantiation with type registration.
 
 **API**:
 ```python
-DroneFactory.create(drone_type: str, config: DroneConfig, node: Node) -> BaseDrone
+DroneFactory.create(drone_type: str, config: DroneConfig,
+                    executor: Optional[Executor] = None) -> BaseDrone
 DroneFactory.register(drone_type: str, factory_func: Callable)
 ```
 

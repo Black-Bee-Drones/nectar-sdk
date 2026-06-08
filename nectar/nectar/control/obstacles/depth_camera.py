@@ -1,5 +1,5 @@
 from threading import Event
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -11,42 +11,34 @@ from nectar.vision.camera.config import RealSenseConfig
 from nectar.vision.camera.drivers.realsense_cam import RealsenseCam
 from nectar.vision.camera.handler import ImageHandler
 
-if TYPE_CHECKING:
-    from rclpy.node import Node
-
 
 class DepthObstacleDetector(BaseObstacleDetector):
     """
     RealSense D435i depth camera obstacle detector using DBSCAN clustering.
 
-    Processes depth frames to identify obstacle clusters, determines direction (LEFT, RIGHT, FRONT)
-    based on cluster position relative to image center, and returns closest obstacle distance.
+    Processes depth frames to identify obstacle clusters, determines direction
+    (LEFT, RIGHT, FRONT) from cluster position relative to image center, and
+    returns the closest obstacle distance.
+
+    The internal :class:`ImageHandler` owns its own ROS 2 node, registered
+    with :mod:`nectar.runtime`.
 
     Parameters
     ----------
-    node : Node
-        ROS2 node for camera subscription.
-    min_distance_mm : float, default=100
-        Minimum valid depth in millimeters (closer depths ignored).
-    max_distance_mm : float, default=1500
-        Maximum detection range in millimeters.
-    cluster_eps : float, default=20
-        DBSCAN epsilon parameter (max distance between points in same cluster).
-    cluster_min_samples : int, default=20
-        DBSCAN min_samples parameter (minimum points to form cluster).
-    min_cluster_pixels : int, default=50
+    min_distance_mm, max_distance_mm : float
+        Valid depth range. Pixels outside are ignored.
+    cluster_eps, cluster_min_samples : float
+        DBSCAN clustering parameters.
+    min_cluster_pixels : int
         Minimum total valid pixels to attempt clustering.
-    depth_threshold_mm : float, default=1300
+    depth_threshold_mm : float
         Maximum cluster mean depth to consider as obstacle.
-    color_topic : str, default="/camera/color/image_raw"
-        RealSense color image topic.
-    depth_topic : str, default="/camera/depth/image_rect_raw"
-        RealSense aligned depth topic.
+    color_topic, depth_topic : str
+        RealSense color and aligned-depth topics.
     """
 
     def __init__(
         self,
-        node: "Node",
         min_distance_mm: float = 100,
         max_distance_mm: float = 1500,
         cluster_eps: float = 20,
@@ -57,7 +49,6 @@ class DepthObstacleDetector(BaseObstacleDetector):
         depth_topic: str = "/camera/depth/image_rect_raw",
     ):
         super().__init__()
-        self._node = node
         self._color_topic = color_topic
         self._depth_topic = depth_topic
         self._min_distance_mm = min_distance_mm
@@ -72,8 +63,9 @@ class DepthObstacleDetector(BaseObstacleDetector):
         self._detection_event = Event()
 
     def _on_enable(self) -> None:
-        if self._camera is None:
-            self._camera = RealsenseCam(
+        if self._image_handler is None:
+            self._image_handler = ImageHandler(
+                image_source="realsense_ros",
                 config=RealSenseConfig(
                     use_ros_topics=True,
                     color_topic=self._color_topic,
@@ -81,32 +73,20 @@ class DepthObstacleDetector(BaseObstacleDetector):
                     color_compressed=True,
                     enable_depth=True,
                 ),
-                node=self._node,
-            )
-            self._camera.start()
-
-            self._image_handler = ImageHandler(
-                node=self._node,
-                image_source="realsense_ros",
-                camera=self._camera,
                 poll_interval=0.15,
-                image_processing_callback=None,
             )
+            self._image_handler.open()
+            self._camera = self._image_handler.camera  # type: ignore[assignment]
             self._image_handler.run()
 
-        self._node.get_logger().info("DepthObstacleDetector enabled")
+        self._image_handler.node.get_logger().info("DepthObstacleDetector enabled")
 
     def _on_disable(self) -> None:
         if self._image_handler:
-            self._image_handler.close()
             self._image_handler.cleanup()
             self._image_handler = None
-
-        if self._camera:
-            self._camera = None
-
+        self._camera = None
         self._detection_event.clear()
-        self._node.get_logger().info("DepthObstacleDetector disabled")
 
     def _on_reset(self) -> None:
         self._detection_event.clear()
@@ -202,11 +182,12 @@ class DepthObstacleDetector(BaseObstacleDetector):
             max_x = float(np.max(xs_l))
             cluster_info.append((min_x, max_x, depth_mean, len(xs_l)))
 
-            self._node.get_logger().info(
-                f"Cluster {lb}: depth={int(depth_mean)}mm, "
-                f"x=[{min_x:.1f}, {max_x:.1f}], pixels={len(xs_l)}",
-                throttle_duration_sec=1.0,
-            )
+            if self._image_handler is not None:
+                self._image_handler.node.get_logger().info(
+                    f"Cluster {lb}: depth={int(depth_mean)}mm, "
+                    f"x=[{min_x:.1f}, {max_x:.1f}], pixels={len(xs_l)}",
+                    throttle_duration_sec=1.0,
+                )
 
         if not cluster_info:
             return False, None, None

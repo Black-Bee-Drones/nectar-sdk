@@ -50,7 +50,6 @@ class ArucoNode(Node):
         self.aruco = Aruco(marker_dict=self.marker_dict, tag_size=self.tag_size)
 
         self.img_handler = ImageHandler(
-            node=self,
             image_source=self.image_source,
             image_processing_callback=self.process_image,
             show_result="Aruco",
@@ -88,7 +87,10 @@ class ArucoNode(Node):
 
 def main(args=None) -> None:
     """Entry point for ArUco node."""
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     node = ArucoNode()
 

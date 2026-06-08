@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
+import logging
 from functools import partial
 
-import rclpy
-from rclpy.node import Node
-
+import nectar
 from nectar.control import (
     DepthObstacleDetector,
     DroneFactory,
@@ -14,84 +13,64 @@ from nectar.control import (
     strategies,
 )
 
+log = logging.getLogger("mavros_obstacles")
 
-class MavrosObstaclesExample(Node):
-    def __init__(self):
-        super().__init__("mavros_obstacles_example")
 
-        config = MavrosConfig(
-            pose_source=PoseSource.GPS,
-            start_driver=False,
+def setup_obstacle_detection(drone) -> None:
+    detector = DepthObstacleDetector(
+        max_distance_mm=1500,
+        depth_threshold_mm=1300,
+        min_cluster_pixels=50,
+    )
+    strategy = strategies.SequenceStrategy(
+        partial(
+            strategies.lateral_pass_return_sequence,
+            lateral_distance=1.5,
+            forward_distance=2.5,
+            precision=0.3,
         )
-
-        self.drone = DroneFactory.create("mavros", config, self)
-        self._setup_obstacle_detection()
-        self.get_logger().info("Drone initialized with obstacle detection")
-
-    def _setup_obstacle_detection(self):
-        """Configure depth camera obstacle detection."""
-        detector = DepthObstacleDetector(
-            node=self,
-            max_distance_mm=1500,
-            depth_threshold_mm=1300,
-            min_cluster_pixels=50,
-        )
-
-        # strategy = strategies.PauseStrategy()
-
-        strategy = strategies.SequenceStrategy(
-            partial(
-                strategies.lateral_pass_return_sequence,
-                lateral_distance=1.5,
-                forward_distance=2.5,
-                precision=0.3,
-            )
-        )
-
-        self.drone.add_obstacle_detector("depth", detector, strategy)
-
-    def run(self):
-        """Execute navigation with obstacle avoidance."""
-        self.get_logger().info("Starting obstacle avoidance test")
-
-        if not self.drone.takeoff(altitude=1.5):
-            self.get_logger().error("Takeoff failed")
-            return
-
-        self.drone.delay(3.0)
-
-        self.drone.enable_obstacle_detector("depth")
-        self.get_logger().info("Obstacle detection enabled")
-
-        self.get_logger().info("Moving forward 10m with obstacle avoidance")
-        self.drone.move_to(
-            x=10.0,
-            y=0.0,
-            z=0.0,
-            reference=MoveReference.BODY,
-            method=NavigationMethod.PID,
-            precision=0.5,
-            timeout=60.0,
-        )
-
-        self.drone.disable_obstacle_detector("depth")
-        self.drone.land()
-        self.get_logger().info("Test complete")
+    )
+    drone.add_obstacle_detector("depth", detector, strategy)
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = MavrosObstaclesExample()
+def run(drone) -> None:
+    log.info("Starting obstacle avoidance test")
+    if not drone.takeoff(altitude=1.5):
+        log.error("Takeoff failed")
+        return
+    drone.delay(3.0)
+    drone.enable_obstacle_detector("depth")
+    log.info("Obstacle detection enabled")
+    log.info("Moving forward 10m with obstacle avoidance")
+    drone.move_to(
+        x=10.0,
+        y=0.0,
+        z=0.0,
+        reference=MoveReference.BODY,
+        method=NavigationMethod.PID,
+        precision=0.5,
+        timeout=60.0,
+    )
+    drone.disable_obstacle_detector("depth")
+    drone.land()
+    log.info("Test complete")
 
+
+def main(args=None) -> None:
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+    nectar.init()
+    config = MavrosConfig(pose_source=PoseSource.GPS, start_driver=False)
+    drone = DroneFactory.create("mavros", config)
+    setup_obstacle_detection(drone)
     try:
-        node.run()
+        run(drone)
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted")
-        node.drone.disable_all_obstacle_detectors()
-        node.drone.land()
+        log.info("Interrupted")
+        drone.disable_all_obstacle_detectors()
+        drone.land()
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        drone.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

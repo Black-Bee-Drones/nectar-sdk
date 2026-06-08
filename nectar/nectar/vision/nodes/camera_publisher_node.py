@@ -5,6 +5,7 @@ from typing import Any
 import cv2
 import rclpy
 from cv_bridge import CvBridge
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage, Image
@@ -179,8 +180,8 @@ class CameraPublisherNode(Node):
         self.declare_parameter("width", 640)
         self.declare_parameter("height", 480)
         self.declare_parameter("fourcc", "MJPG")
-        self.declare_parameter("autofocus", None)
-        self.declare_parameter("focus", None)
+        self.declare_parameter("autofocus", None, ParameterDescriptor(dynamic_typing=True))
+        self.declare_parameter("focus", None, ParameterDescriptor(dynamic_typing=True))
         self.declare_parameter("buffer_size", 2)
         self.declare_parameter("threaded", True)
 
@@ -255,7 +256,7 @@ class CameraPublisherNode(Node):
 
         # Build config & camera
         config = self._build_config()
-        camera = CameraFactory.from_source(self.camera_source, config=config, node=self)
+        camera = CameraFactory.from_source(self.camera_source, config=config)
         camera.start()
 
         self._log_camera_info(camera)
@@ -265,7 +266,6 @@ class CameraPublisherNode(Node):
         frame_timeout = self._resolve_frame_timeout(camera)
 
         self.image_handler = ImageHandler(
-            node=self,
             image_source=self.camera_source,
             image_processing_callback=self._publish_frame,
             config=config,
@@ -397,7 +397,10 @@ class CameraPublisherNode(Node):
 
 def main(args=None) -> None:
     """Entry point for camera publisher node."""
+    import nectar
+
     rclpy.init(args=args)
+    nectar.use_executor(rclpy.get_global_executor())
 
     node = CameraPublisherNode()
 

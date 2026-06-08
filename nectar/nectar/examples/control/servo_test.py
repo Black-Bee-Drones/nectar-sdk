@@ -43,9 +43,7 @@ import argparse
 import shlex
 import time
 
-import rclpy
-from rclpy.node import Node
-
+import nectar
 from nectar.control import DroneFactory, MavrosConfig, PoseSource
 
 HELP_TEXT = """
@@ -75,20 +73,17 @@ Tips:
 """
 
 
-class ServoTester(Node):
-    """ROS 2 node that drives ``MavrosDrone.do_servo`` from a REPL."""
+class ServoTester:
+    """REPL that drives ``MavrosDrone.do_servo`` against a MAVROS-connected FCU."""
 
     def __init__(self, args: argparse.Namespace) -> None:
-        super().__init__("servo_tester")
-
         config = MavrosConfig(
             pose_source=PoseSource.GPS,
             start_driver=False,
             expect_lidar=False,
             sensor_timeout=args.sensor_timeout,
         )
-        self.drone = DroneFactory.create("mavros", config, self)
-
+        self.drone = DroneFactory.create("mavros", config)
         self.channel: int = args.channel
         self.hold_pwm: int = args.hold
         self.release_pwm: int = args.release
@@ -314,14 +309,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args=None) -> None:
-    rclpy.init(args=args)
+    nectar.init()
     parsed = parse_args()
-    node = ServoTester(parsed)
+    tester = ServoTester(parsed)
 
     print(HELP_TEXT)
     print(
-        f"Ready. ch={node.channel} (FCU ch {node.channel + 8}), "
-        f"hold={node.hold_pwm}, release={node.release_pwm}"
+        f"Ready. ch={tester.channel} (FCU ch {tester.channel + 8}), "
+        f"hold={tester.hold_pwm}, release={tester.release_pwm}"
     )
     print("Type a PWM value or 'help'.\n")
 
@@ -331,13 +326,13 @@ def main(args=None) -> None:
                 line = input("servo> ")
             except EOFError:
                 break
-            if not node.handle_command(line):
+            if not tester.handle_command(line):
                 break
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted")
+        print("Interrupted")
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        tester.drone.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":
