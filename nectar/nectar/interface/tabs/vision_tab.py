@@ -1069,9 +1069,9 @@ class VisionTab(QWidget):
         derivation and ``nectar.vision.algorithms.flow`` for the
         underlying estimator.
         """
-        section = CollapsibleSection("Optical Flow (Demo)")
+        section = CollapsibleSection("Optical Flow")
 
-        self._flow_demo_cb = QCheckBox("Enable Optical Flow Demo")
+        self._flow_demo_cb = QCheckBox("Enable Optical Flow")
         self._flow_demo_cb.setToolTip(
             "Compute optical flow on each frame. Mirrors the MTF-01 + "
             "ArduPilot EKF pipeline: pixel flow -> rad/s -> m/s."
