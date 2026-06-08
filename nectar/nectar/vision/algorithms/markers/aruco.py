@@ -3,7 +3,7 @@ import cv2
 import cv2.aruco as aruco
 import numpy as np
 
-from nectar.vision.camera.calibration.calibration import Calibration
+from nectar.vision.camera.calibration import CameraCalibration
 
 
 class Aruco:
@@ -34,7 +34,7 @@ class Aruco:
 
     def __init__(self, marker_dict: int, tag_size: float):
         self._total_markers = 1000
-        self.camera_matrix, self.camera_distortion = Calibration.get_camera_matrix_distortion()
+        self.camera_matrix, self.camera_distortion = CameraCalibration.load_calibration()
 
         self._marker_dict = marker_dict
         self._tag_size = tag_size

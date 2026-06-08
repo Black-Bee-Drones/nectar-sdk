@@ -23,10 +23,9 @@ from nectar.vision.algorithms import (
 from nectar.vision.camera import (
     AbstractCam,
     C920Config,
-    Calibration,
+    CameraCalibration,
     CameraConfig,
     CameraFactory,
-    CharucoCalibration,
     DepthCam,
     FileImageConfig,
     ImageHandler,
@@ -129,8 +128,7 @@ if TYPE_CHECKING:
 __all__ = [
     # Camera
     "AbstractCam",
-    "Calibration",
-    "CharucoCalibration",
+    "CameraCalibration",
     "DepthCam",
     "CameraConfig",
     "ROSConfig",
