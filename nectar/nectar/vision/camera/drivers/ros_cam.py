@@ -30,6 +30,7 @@ class ROSCam(AbstractCam):
         super().__init__(name=config.name)
         self._owns_node = node is None
         if node is None:
+            nectar_runtime.ensure_context()
             self._node = Node(
                 f"nectar_ros_cam_{uuid.uuid4().hex[:8]}",
                 start_parameter_services=False,

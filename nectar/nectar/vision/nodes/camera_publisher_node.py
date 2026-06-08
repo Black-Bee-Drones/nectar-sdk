@@ -5,6 +5,7 @@ from typing import Any
 import cv2
 import rclpy
 from cv_bridge import CvBridge
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage, Image
@@ -179,8 +180,8 @@ class CameraPublisherNode(Node):
         self.declare_parameter("width", 640)
         self.declare_parameter("height", 480)
         self.declare_parameter("fourcc", "MJPG")
-        self.declare_parameter("autofocus", None)
-        self.declare_parameter("focus", None)
+        self.declare_parameter("autofocus", None, ParameterDescriptor(dynamic_typing=True))
+        self.declare_parameter("focus", None, ParameterDescriptor(dynamic_typing=True))
         self.declare_parameter("buffer_size", 2)
         self.declare_parameter("threaded", True)
 

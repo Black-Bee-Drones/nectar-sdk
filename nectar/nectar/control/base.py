@@ -56,6 +56,7 @@ class BaseDrone(ABC):
         executor: Optional[Executor] = None,
     ) -> None:
         self._config = config
+        nectar_runtime.ensure_context()
         self._node = Node(
             f"nectar_{self._sanitize(config.name)}_{uuid.uuid4().hex[:8]}",
             start_parameter_services=False,

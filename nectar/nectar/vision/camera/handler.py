@@ -55,6 +55,8 @@ class ImageHandler:
         frame_timeout: Optional[float] = None,
         executor: Optional[Executor] = None,
     ):
+        self.cleaned = False
+        nectar_runtime.ensure_context()
         self._node = Node(
             f"nectar_image_handler_{uuid.uuid4().hex[:8]}",
             start_parameter_services=False,
@@ -71,7 +73,6 @@ class ImageHandler:
         self.img = None
         self.show_result = show_result
         self.config = config
-        self.cleaned = False
 
         self.camera: Optional[AbstractCam] = camera
         self.poll_interval = poll_interval
