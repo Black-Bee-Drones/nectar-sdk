@@ -54,6 +54,12 @@ class _Runtime:
             self._owns_executor = True
             return self._executor
 
+    def ensure_context(self) -> None:
+        """Initialize the rclpy context if needed, without creating the executor."""
+        with self._lock:
+            if not rclpy.ok():
+                rclpy.init()
+
     def use_executor(self, executor: Executor) -> None:
         with self._lock:
             if self._executor is not None and self._owns_executor:
@@ -118,6 +124,11 @@ _runtime = _Runtime()
 def init(num_threads: Optional[int] = None) -> Executor:
     """Initialize the SDK runtime. Returns the shared executor."""
     return _runtime.init(num_threads)
+
+
+def ensure_context() -> None:
+    """Initialize the rclpy context if needed, without creating the executor."""
+    _runtime.ensure_context()
 
 
 def use_executor(executor: Executor) -> None:
