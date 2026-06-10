@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional
 
 from nectar.control.types import PoseSource
 
@@ -24,13 +24,33 @@ class MavrosConfig(DroneConfig):
     gps_topic: str = "/mavros/global_position/global"
     heading_topic: str = "/mavros/global_position/compass_hdg"
     rel_alt_topic: str = "/mavros/global_position/rel_alt"
-    imu_topic: str = "/mavros/imu/data"
     state_topic: str = "/mavros/state"
     local_position_topic: str = "/mavros/local_position/pose"
     pid_config_file: Optional[str] = None
     setpoint_config_file: Optional[str] = None
     apply_setpoint_params: bool = False
     connection_string: str = "serial:///dev/ttyUSB0:921600"
+
+
+@dataclass(frozen=True)
+class MavlinkConfig(DroneConfig):
+    name: str = "mavlink_drone"
+    pose_source: PoseSource = PoseSource.GPS
+    expect_lidar: bool = True
+    sensor_timeout: float = 10.0
+    connection_string: str = "/dev/ttyUSB0"
+    baud: int = 921600
+    source_system: int = 1
+    source_component: int = 191  # MAV_COMP_ID_ONBOARD_COMPUTER
+    heartbeat_timeout: float = 30.0
+    rx_rate_hz: float = 100.0
+    heartbeat_hz: float = 1.0
+    stream_rates: Optional[Dict[str, float]] = None
+    vision_pose_topic: str = "/vslam/pose"
+    vision_rate_hz: float = 90.0
+    pid_config_file: Optional[str] = None
+    setpoint_config_file: Optional[str] = None
+    apply_setpoint_params: bool = False
 
 
 @dataclass(frozen=True)
@@ -95,3 +115,38 @@ SITL_VISION_CONFIG = MavrosConfig(
     apply_setpoint_params=True,
 )
 """MavrosConfig preset for SITL indoor (no GPS, EKF3 ExternalNav, rangefinder enabled)."""
+
+MAVLINK_SITL_CONFIG = MavlinkConfig(
+    name="sitl_drone",
+    pose_source=PoseSource.GPS,
+    connection_string="tcp:127.0.0.1:5760",
+    expect_lidar=False,
+)
+"""MavlinkConfig preset for ArduPilot SITL over a direct pymavlink TCP link."""
+
+MAVLINK_SITL_GAZEBO_CONFIG = MavlinkConfig(
+    name="sitl_drone",
+    pose_source=PoseSource.GPS,
+    connection_string="tcp:127.0.0.1:5762",
+    expect_lidar=False,
+)
+"""MavlinkConfig preset for SITL + Gazebo over the SITL secondary MAVLink port.
+
+Connects on tcp 5762 (SERIAL1, added by start_sitl.sh) so a direct pymavlink
+link can run alongside MAVROS on 5760 against the same simulator. Mirrors
+``SITL_GPS_CONFIG`` so the two transports can be compared on equal footing.
+"""
+
+MAVLINK_SITL_VISION_CONFIG = MavlinkConfig(
+    name="sitl_drone",
+    pose_source=PoseSource.VISION,
+    connection_string="tcp:127.0.0.1:5762",
+    expect_lidar=False,
+    vision_pose_topic="/mavros/vision_pose/pose_cov",
+)
+"""MavlinkConfig preset for SITL + Gazebo indoor (vision pose).
+
+Best-effort: the Gazebo indoor launch already forwards ground-truth pose to the
+FCU through MAVROS, so run this without MAVROS vision injection to avoid a
+double source.
+"""

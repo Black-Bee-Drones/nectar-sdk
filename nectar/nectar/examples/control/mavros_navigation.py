@@ -16,7 +16,6 @@ from nectar.control import (
     PoseSource,
 )
 from nectar.utils.gps_calculate import GPSCalculate
-from nectar.utils.position_utils import PositionUtils
 
 log = logging.getLogger("mavros_nav_test")
 
@@ -581,11 +580,11 @@ class NavigationTest:
 
     def _current_local_pose(self) -> tuple:
         """Return absolute ENU local pose as ``(x, y, z, yaw_deg)``."""
-        pose = self.drone.local_pos
+        pose = self.drone.local_pose
         if pose is None:
             return (None, None, None, None)
-        p = pose.pose.position
-        return (p.x, p.y, p.z, math.degrees(PositionUtils.get_yaw_from_pose(pose)))
+        p = pose.position
+        return (p.x, p.y, p.z, math.degrees(pose.yaw))
 
     def _log_test_header(self, name: str, detail: str) -> None:
         log.info(f"\n{'─' * 50}")

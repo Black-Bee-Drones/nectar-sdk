@@ -1,18 +1,47 @@
+"""Geometry helpers for navigation.
+
+These work on two families of inputs:
+
+1. **Plain core types** (:mod:`nectar.control.ardupilot.types`) -
+   ``LocalPose``/``GeoPoint`` for the current position and
+   ``LocalTarget``/``GlobalTarget`` for the goal. The transport-agnostic
+   vehicle core uses only these, so the math never depends on ROS.
+2. **ROS messages** (``PoseStamped``/``NavSatFix``/``PositionTarget``/
+   ``GeoPoseStamped``) - kept for back-compat and the MAVROS transport.
+
+ROS message classes are imported lazily so that importing this module (and
+therefore the core) does not pull ``mavros_msgs``/``geometry_msgs``.
+"""
+
 from typing import Optional
 
 import numpy as np
-from geographic_msgs.msg import GeoPoseStamped
 from geographiclib.geodesic import Geodesic
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from mavros_msgs.msg import PositionTarget
-from sensor_msgs.msg import NavSatFix
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
+
+from nectar.control.ardupilot.types import (
+    GeoPoint,
+    GlobalTarget,
+    LocalPose,
+    LocalTarget,
+)
+
+
+def _ros_msgs():
+    """Lazily import the ROS message classes used by the back-compat paths."""
+    from geographic_msgs.msg import GeoPoseStamped
+    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+    from mavros_msgs.msg import PositionTarget
+    from sensor_msgs.msg import NavSatFix
+
+    return PoseStamped, PoseWithCovarianceStamped, PositionTarget, GeoPoseStamped, NavSatFix
 
 
 class PositionUtils:
     @staticmethod
     def _extract_pose(msg):
         """Extract geometry_msgs/Pose from stamped pose messages."""
+        PoseStamped, PoseWithCovarianceStamped, _, _, _ = _ros_msgs()
         if isinstance(msg, PoseWithCovarianceStamped):
             return msg.pose.pose
         if isinstance(msg, PoseStamped):
@@ -20,9 +49,47 @@ class PositionUtils:
         raise ValueError(f"Cannot extract pose from {type(msg).__name__}")
 
     @staticmethod
+    def _body_distance_local(
+        target_x: float,
+        target_y: float,
+        target_z: float,
+        cur_x: float,
+        cur_y: float,
+        cur_z: float,
+        yaw: float,
+    ) -> tuple[float, float, float]:
+        """Rotate a world-frame ENU delta into the body frame given ``yaw``."""
+        dx_world = target_x - cur_x
+        dy_world = target_y - cur_y
+        dz = target_z - cur_z
+        dx_body = np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
+        dy_body = -np.sin(yaw) * dx_world + np.cos(yaw) * dy_world
+        return dx_body, dy_body, dz
+
+    @staticmethod
+    def _body_distance_global(
+        t_lat: float,
+        t_lon: float,
+        t_alt: float,
+        c_lat: float,
+        c_lon: float,
+        c_alt: float,
+        heading: float,
+    ) -> tuple[float, float, float]:
+        """Geodesic body-frame delta from current GPS to target GPS."""
+        result = Geodesic.WGS84.Inverse(c_lat, c_lon, t_lat, t_lon)
+        dist = result["s12"]
+        bearing_to_target = result["azi1"]
+        relative_angle_rad = np.radians(bearing_to_target - heading)
+        dx_body = dist * np.cos(relative_angle_rad)
+        dy_body = -dist * np.sin(relative_angle_rad)
+        dz_body = t_alt - c_alt
+        return dx_body, dy_body, dz_body
+
+    @staticmethod
     def get_body_distance(
-        target: PositionTarget | GeoPoseStamped,
-        current: PoseStamped | PoseWithCovarianceStamped | NavSatFix,
+        target,
+        current,
         heading: float | None = None,
     ) -> tuple[float, float, float]:
         """
@@ -32,9 +99,9 @@ class PositionUtils:
 
         Parameters
         ----------
-        target : PositionTarget | GeoPoseStamped
+        target : LocalTarget | GlobalTarget | PositionTarget | GeoPoseStamped
             Target position.
-        current : PoseStamped | PoseWithCovarianceStamped | NavSatFix
+        current : LocalPose | GeoPoint | PoseStamped | PoseWithCovarianceStamped | NavSatFix
             Current position.
         heading : float, optional
             Compass heading in degrees. Required for GPS coordinates.
@@ -44,74 +111,102 @@ class PositionUtils:
         tuple[float, float, float]
             (dx_body, dy_body, dz_body) in meters.
         """
+        # --- Plain core types (no ROS) ---
+        if isinstance(target, LocalTarget) and isinstance(current, LocalPose):
+            return PositionUtils._body_distance_local(
+                target.position.x,
+                target.position.y,
+                target.position.z,
+                current.position.x,
+                current.position.y,
+                current.position.z,
+                current.yaw,
+            )
+
+        if (
+            isinstance(target, GlobalTarget)
+            and isinstance(current, GeoPoint)
+            and heading is not None
+        ):
+            return PositionUtils._body_distance_global(
+                target.latitude,
+                target.longitude,
+                target.altitude,
+                current.latitude,
+                current.longitude,
+                current.altitude,
+                heading,
+            )
+
+        # --- ROS message types (back-compat / MAVROS) ---
+        PoseStamped, PoseWithCovarianceStamped, PositionTarget, GeoPoseStamped, NavSatFix = (
+            _ros_msgs()
+        )
+
         if isinstance(target, PositionTarget) and isinstance(
             current, (PoseStamped, PoseWithCovarianceStamped)
         ):
             pose = PositionUtils._extract_pose(current)
-            cx, cy, cz = pose.position.x, pose.position.y, pose.position.z
-            tx, ty, tz = target.position.x, target.position.y, target.position.z
-
-            dx_world = tx - cx
-            dy_world = ty - cy
-            dz = tz - cz
-
             yaw = PositionUtils.get_yaw_from_pose(current)
-            dx_body = np.cos(yaw) * dx_world + np.sin(yaw) * dy_world
-            dy_body = -np.sin(yaw) * dx_world + np.cos(yaw) * dy_world
-
-            return dx_body, dy_body, dz
+            return PositionUtils._body_distance_local(
+                target.position.x,
+                target.position.y,
+                target.position.z,
+                pose.position.x,
+                pose.position.y,
+                pose.position.z,
+                yaw,
+            )
 
         if (
             isinstance(target, GeoPoseStamped)
             and isinstance(current, NavSatFix)
             and heading is not None
         ):
-            c_lat, c_lon, c_alt = current.latitude, current.longitude, current.altitude
-            t_lat = target.pose.position.latitude
-            t_lon = target.pose.position.longitude
-            t_alt = target.pose.position.altitude
-
-            # Geodesic: distance and forward azimuth
-            result = Geodesic.WGS84.Inverse(c_lat, c_lon, t_lat, t_lon)
-            dist = result["s12"]
-            bearing_to_target = result["azi1"]
-
-            relative_angle_rad = np.radians(bearing_to_target - heading)
-            dx_body = dist * np.cos(relative_angle_rad)
-            dy_body = -dist * np.sin(relative_angle_rad)
-            dz_body = t_alt - c_alt
-
-            return dx_body, dy_body, dz_body
+            return PositionUtils._body_distance_global(
+                target.pose.position.latitude,
+                target.pose.position.longitude,
+                target.pose.position.altitude,
+                current.latitude,
+                current.longitude,
+                current.altitude,
+                heading,
+            )
 
         raise ValueError("Invalid combination of target and current position types.")
 
     @staticmethod
-    def get_yaw_from_pose(
-        pose: PoseStamped | PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget,
-    ) -> float:
+    def get_yaw_from_pose(pose) -> float:
         """
-        Extract yaw angle from a pose message.
+        Extract yaw angle from a pose/target.
 
         Parameters
         ----------
-        pose : PoseStamped | PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget
-            Pose message containing orientation.
+        pose : LocalPose | LocalTarget | GlobalTarget | PoseStamped \
+            | PoseWithCovarianceStamped | GeoPoseStamped | PositionTarget
+            Pose containing orientation/yaw.
 
         Returns
         -------
         float
-            Yaw in radians (-π to π).
+            Yaw in radians (-π to π for quaternion sources).
         """
+        # --- Plain core types (no ROS) ---
+        if isinstance(pose, (LocalPose, LocalTarget)):
+            return pose.yaw
+        if isinstance(pose, GlobalTarget):
+            return pose.yaw if pose.yaw is not None else 0.0
+
+        # --- ROS message types ---
+        _, _, PositionTarget, GeoPoseStamped, _ = _ros_msgs()
         if isinstance(pose, PositionTarget):
             return pose.yaw
 
         if isinstance(pose, GeoPoseStamped):
             orientation_q = pose.pose.orientation
-        elif isinstance(pose, (PoseStamped, PoseWithCovarianceStamped)):
+        else:
             p = PositionUtils._extract_pose(pose)
             orientation_q = p.orientation
-        else:
-            raise ValueError(f"Unsupported pose type: {type(pose).__name__}")
 
         orientation_list = [
             orientation_q.x,
@@ -149,12 +244,12 @@ class PositionUtils:
 
     @staticmethod
     def convert_position_to_target(
-        pose: PoseStamped | PoseWithCovarianceStamped | NavSatFix,
+        pose,
         heading: Optional[float] = None,
         lidar: Optional[float] = None,
-    ) -> PositionTarget | GeoPoseStamped:
+    ):
         """
-        Convert position messages to their corresponding target types.
+        Convert ROS position messages to their corresponding target types.
 
         - PoseStamped / PoseWithCovarianceStamped → PositionTarget
         - NavSatFix → GeoPoseStamped (requires heading)
@@ -172,6 +267,10 @@ class PositionUtils:
         -------
         PositionTarget | GeoPoseStamped
         """
+        PoseStamped, PoseWithCovarianceStamped, PositionTarget, GeoPoseStamped, NavSatFix = (
+            _ros_msgs()
+        )
+
         if isinstance(pose, (PoseStamped, PoseWithCovarianceStamped)):
             p = PositionUtils._extract_pose(pose)
             msg = PositionTarget()

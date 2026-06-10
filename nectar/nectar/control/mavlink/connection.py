@@ -1,5 +1,6 @@
 """Minimal pymavlink connection wrapper."""
 
+import threading
 import time
 from typing import Optional
 
@@ -37,6 +38,13 @@ class MavlinkConnection:
     master : mavutil.mavfile
         Underlying pymavlink connection. Use ``master.mav.<message>_send(...)``
         to transmit. ``None`` until :meth:`connect` succeeds.
+
+    Notes
+    -----
+    A single endpoint must have **one** RX reader (only the owning transport
+    calls ``recv_match``) but may have **many** senders (setpoints, heartbeat,
+    rangefinder, vision bridge). pymavlink's ``mav.*_send`` is not thread-safe,
+    so every sender must serialize through :attr:`send_lock`.
     """
 
     def __init__(
@@ -49,7 +57,13 @@ class MavlinkConnection:
         self._source_system = source_system
         self._source_component = source_component
         self._heartbeat_timeout = heartbeat_timeout
+        self._send_lock = threading.Lock()
         self.master: Optional[mavutil.mavfile] = None
+
+    @property
+    def send_lock(self) -> threading.Lock:
+        """Mutex serializing all transmits on this endpoint."""
+        return self._send_lock
 
     @property
     def is_connected(self) -> bool:

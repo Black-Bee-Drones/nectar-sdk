@@ -3,13 +3,9 @@
 from importlib import import_module
 from typing import TYPE_CHECKING
 
-from nectar.control.mavros.setpoint_config import SetpointNavConfig
-
 _LAZY_ATTRS = {
-    "GPSUtils": "nectar.control.mavros.gps_utils",
     "MavrosDrone": "nectar.control.mavros.drone",
-    "MavrosNavigator": "nectar.control.mavros.navigator",
-    "TargetComputer": "nectar.control.mavros.target_computer",
+    "MavrosTransport": "nectar.control.mavros.transport",
 }
 
 
@@ -28,15 +24,10 @@ def __dir__():
 
 if TYPE_CHECKING:
     from nectar.control.mavros.drone import MavrosDrone
-    from nectar.control.mavros.gps_utils import GPSUtils
-    from nectar.control.mavros.navigator import MavrosNavigator
-    from nectar.control.mavros.target_computer import TargetComputer
+    from nectar.control.mavros.transport import MavrosTransport
 
 
 __all__ = [
     "MavrosDrone",
-    "MavrosNavigator",
-    "GPSUtils",
-    "SetpointNavConfig",
-    "TargetComputer",
+    "MavrosTransport",
 ]
