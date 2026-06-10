@@ -1,7 +1,8 @@
 import os
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
+from nectar.control.ardupilot.types import SensorOrientation
 from nectar.control.types import PoseSource
 
 _MAVROS_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config", "mavros")
@@ -11,6 +12,13 @@ _MAVROS_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config", "mavros")
 class DroneConfig:
     name: str = "drone"
     start_driver: bool = False
+
+
+@dataclass(frozen=True)
+class DistanceSensorTopic:
+    topic: str
+    orientation: SensorOrientation
+    sensor_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -26,6 +34,7 @@ class MavrosConfig(DroneConfig):
     rel_alt_topic: str = "/mavros/global_position/rel_alt"
     state_topic: str = "/mavros/state"
     local_position_topic: str = "/mavros/local_position/pose"
+    distance_sensors: Tuple[DistanceSensorTopic, ...] = ()
     pid_config_file: Optional[str] = None
     setpoint_config_file: Optional[str] = None
     apply_setpoint_params: bool = False

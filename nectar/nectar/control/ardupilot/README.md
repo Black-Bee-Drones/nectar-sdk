@@ -24,11 +24,11 @@ classDiagram
         -_setpoint_config SetpointNavConfig
         +takeoff() land() move_to() move_to_gps() move_velocity() rtl()
         +arm() disarm() set_mode() set_param() set_speed() do_servo()
-        +get_altitude() set_pid_config() set_setpoint_config()
+        +get_altitude() distance_sensors get_distance() set_pid_config() set_setpoint_config()
     }
     class MavlinkTransport {
         <<abstract>>
-        +state local_pose vision_pose gps heading rel_alt rangefinder
+        +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() command_land() set_param()
         +send_velocity_target() send_local_target() send_global_target()
     }
@@ -140,6 +140,17 @@ ArduPilot uses [several altitude definitions](https://ardupilot.org/copter/docs/
 **AMSL vs Ellipsoid**: GPS receivers output altitude above the WGS84 ellipsoid, but global setpoints expect AMSL. The difference is the [geoid height](https://en.wikipedia.org/wiki/EGM96), corrected by `GPSUtils` using the EGM96 model.
 
 **Surface Tracking**: with a [downward-facing rangefinder](https://ardupilot.org/copter/docs/common-rangefinder-landingpage.html) in range, ArduPilot performs [surface tracking](https://ardupilot.org/copter/docs/terrain-following.html) — holding constant AGL. `AltitudeSource.LIDAR` implements a similar concept at the SDK level via PID control.
+
+### Distance Sensors
+
+`rangefinder` / `AltitudeSource.LIDAR` exposes only the downward sensor used for altitude. Every rangefinder and proximity sector the FCU reports (one `DISTANCE_SENSOR` message per unit) is also available as raw telemetry, for obstacle detection, redundancy, or verification:
+
+- `drone.distance_sensors` — `dict[int, DistanceReading]` keyed by MAVLink sensor id, holding the most recent reading per sensor.
+- `drone.get_distance(orientation)` — the latest `DistanceReading` facing a given `SensorOrientation`, or `None`.
+
+`SensorOrientation` mirrors the [MAV_SENSOR_ORIENTATION](https://mavlink.io/en/messages/common.html#MAV_SENSOR_ORIENTATION) values ArduPilot uses for distance sensors: `FORWARD`, the yaw sectors (`FORWARD_RIGHT`, `RIGHT`, `BACK_RIGHT`, `BACK`, `BACK_LEFT`, `LEFT`, `FORWARD_LEFT`), `UP`, `DOWN`, and `OTHER`. Each `DistanceReading` carries `distance`, `orientation`, `min_distance` / `max_distance`, `sensor_id`, `sensor_type` ([MAV_DISTANCE_SENSOR](https://mavlink.io/en/messages/common.html#MAV_DISTANCE_SENSOR)), `signal_quality` (when reported), `raw_orientation`, and a monotonic `timestamp`.
+
+Sensor setup is on the FCU side: configure each unit with `RNGFNDx_*` ([rangefinder setup](https://ardupilot.org/copter/docs/common-rangefinder-setup.html)) and, for horizontal sectors, `PRXx_*` ([proximity sensors](https://ardupilot.org/copter/docs/common-proximity-landingpage.html)). The downward sensor (`SensorOrientation.DOWN`) also updates `rangefinder`. The direct MAVLink transport collects all readings automatically; the MAVROS transport requires them declared in config (see the [MAVROS README](../mavros/README.md)).
 
 ### Coordinate Frames
 

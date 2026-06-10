@@ -17,7 +17,7 @@
 classDiagram
     class MavlinkTransport {
         <<abstract>>
-        +state local_pose vision_pose gps heading rel_alt rangefinder
+        +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() command_land() set_param()
         +send_velocity_target() send_local_target() send_global_target()
     }
@@ -60,7 +60,7 @@ config = MavrosConfig(
 drone = DroneFactory.create("mavros", config)
 ```
 
-`MavrosConfig` exposes a topic name for every subscription (`state_topic`, `lidar_topic`, `local_position_topic`, `vision_topic`, `gps_topic`, `heading_topic`, `rel_alt_topic`) plus `pid_config_file` / `setpoint_config_file` / `apply_setpoint_params` (consumed by the shared core). The pose source selects the indoor vs outdoor subscription set.
+`MavrosConfig` exposes a topic name for every subscription (`state_topic`, `lidar_topic`, `local_position_topic`, `vision_topic`, `gps_topic`, `heading_topic`, `rel_alt_topic`), an optional `distance_sensors` tuple (see [Distance Sensors](#distance-sensors)), plus `pid_config_file` / `setpoint_config_file` / `apply_setpoint_params` (consumed by the shared core). The pose source selects the indoor vs outdoor subscription set.
 
 **SITL presets** (in [`config.py`](../config.py)): `SITL_CONFIG`, `SITL_GPS_CONFIG`, `SITL_GAZEBO_CONFIG`, `SITL_VISION_CONFIG`.
 
@@ -80,6 +80,26 @@ Subscriber callbacks convert ROS messages to the core's plain types:
 | `/mavros/rangefinder/rangefinder` | `sensor_msgs/Range` | `float` | `rangefinder` |
 
 `/mavros/state` is subscribed with `TRANSIENT_LOCAL` durability so the latest cached state is delivered on subscribe (reliably catching arm/mode changes). The vision subscription is chosen at runtime: a `PoseWithCovarianceStamped` callback when the topic name contains `pose_cov`, otherwise a plain `PoseStamped`. Indoor (`pose_source=VISION`) subscribes to the vision topic; outdoor subscribes to GPS, rel-alt, and compass heading.
+
+## Distance Sensors
+
+`lidar_topic` feeds the downward `rangefinder` used for altitude. To expose additional rangefinders or proximity sectors (`distance_sensors` / `get_distance(orientation)` on the drone), two sides must line up:
+
+1. MAVROS must publish them. Its [`distance_sensor`](https://github.com/mavlink/mavros/blob/ros2/mavros_extras/src/plugins/distance_sensor.cpp) plugin maps each FCU `DISTANCE_SENSOR` id to a `sensor_msgs/Range` topic through the plugin's per-sensor parameters.
+2. The SDK must subscribe to those topics. `Range` carries no id or orientation, so declare each one in `MavrosConfig.distance_sensors` to tag the incoming readings:
+
+```python
+from nectar.control import MavrosConfig, DistanceSensorTopic, SensorOrientation
+
+config = MavrosConfig(
+    distance_sensors=(
+        DistanceSensorTopic("/mavros/distance_sensor/rangefinder_fwd", SensorOrientation.FORWARD, sensor_id=1),
+        DistanceSensorTopic("/mavros/distance_sensor/rangefinder_left", SensorOrientation.LEFT, sensor_id=2),
+    ),
+)
+```
+
+`sensor_type` is derived from `Range.radiation_type`; `signal_quality` is not available over MAVROS and stays `None`. The direct [MAVLink transport](../mavlink/README.md) needs none of this, reading id and orientation straight from `DISTANCE_SENSOR`. See the [ArduPilot core README](../ardupilot/README.md#distance-sensors) for the data model.
 
 ## ROS2 Topics and Services
 

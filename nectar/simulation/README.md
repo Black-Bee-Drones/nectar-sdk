@@ -161,6 +161,35 @@ ros2 topic echo /front_camera/image --once
 ros2 topic echo /front_camera/depth_image --once
 ```
 
+### Multi-orientation rangefinders
+
+`rangefinder_test.sdf` places an iris with front and back single-ray lidars
+between two walls. The `iris_with_rangefinders` model forwards the front/back
+lidars to ArduPilot as `rng_2/rng_3`, and `rangefinder_test.parm` exposes them
+as `RNGFND2/3` (orientations forward/back). The downward rangefinder
+(`RNGFND1`, orientation down) stays on the analog SITL sonar from `gazebo.parm`:
+on the ground the airframe is only ~0.2 m tall, so a downward GPU lidar reads
+below its minimum range, while the sonar reports vehicle height above terrain
+reliably. ArduPilot emits one `DISTANCE_SENSOR` per instance, accessible through
+`drone.distance_sensors` and `drone.get_distance(orientation)`.
+
+```bash
+# Terminal 1: SITL with the three rangefinders
+./scripts/simulation/start_sitl.sh --gazebo \
+    --params nectar/simulation/params/rangefinder_test.parm
+
+# Terminal 2: Gazebo (and MAVROS) with the test world
+ros2 launch nectar sitl_gazebo.launch.py world:=rangefinder_test.sdf
+
+# Terminal 3: read the readings
+python3 nectar/nectar/examples/simulation/read_distance_sensors.py            # direct MAVLink
+python3 nectar/nectar/examples/simulation/read_distance_sensors.py --mavros   # MAVROS
+```
+
+The MAVROS path relies on the `distance_sensor` plugin entries in
+`config/apm_config_sitl.yaml` (`rangefinder/rangefinder`, `rangefinder/front`,
+`rangefinder/back`) mapped to orientations in the example via `DistanceSensorTopic`.
+
 ## Configuration Presets
 
 Defined in `nectar/control/config.py`:
@@ -273,10 +302,14 @@ simulation/
 ├── README.md                 # This file
 ├── params/
 │   ├── gazebo.parm           # Rangefinder params (all Gazebo sessions)
-│   └── indoor.parm           # No-GPS + EKF3 ExternalNav params
+│   ├── indoor.parm           # No-GPS + EKF3 ExternalNav params
+│   └── rangefinder_test.parm # RNGFND2/3 front/back for the test world (down stays analog)
+├── models/
+│   └── iris_with_rangefinders/  # iris + ArduPilotPlugin + down/front/back lidar
 └── worlds/
     ├── outdoor_field.sdf     # Open field + obstacles + GPS
-    └── indoor_room.sdf       # 20x20x12m room + obstacles + no GPS
+    ├── indoor_room.sdf       # 20x20x12m room + obstacles + no GPS
+    └── rangefinder_test.sdf  # iris between two walls for distance-sensor checks
 
 scripts/simulation/
 ├── install_sitl.sh           # Clone and build ArduPilot SITL
@@ -289,7 +322,8 @@ nectar/launch/
 └── sitl_gazebo.launch.py     # Gazebo + ros_gz_bridge (+ MAVROS unless mavros:=false)
 
 nectar/nectar/examples/simulation/
-└── sitl_test.py              # Navigation test suite (--indoor flag)
+├── sitl_test.py                # Navigation test suite (--indoor flag)
+└── read_distance_sensors.py    # Print distance_sensors map (MAVLink / MAVROS)
 ```
 
 ## References

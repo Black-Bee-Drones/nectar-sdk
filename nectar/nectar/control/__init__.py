@@ -4,6 +4,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
+from nectar.control.ardupilot.types import DistanceReading, SensorOrientation
 from nectar.control.base import BaseDrone
 from nectar.control.config import (
     MAVLINK_SITL_CONFIG,
@@ -15,6 +16,7 @@ from nectar.control.config import (
     SITL_VISION_CONFIG,
     BebopConfig,
     CrazyflieConfig,
+    DistanceSensorTopic,
     DroneConfig,
     MavlinkConfig,
     MavrosConfig,
@@ -104,8 +106,11 @@ __all__ = [
     "DroneConfig",
     "MavrosConfig",
     "MavlinkConfig",
+    "DistanceSensorTopic",
     "BebopConfig",
     "CrazyflieConfig",
+    "SensorOrientation",
+    "DistanceReading",
     "SITL_CONFIG",
     "SITL_GPS_CONFIG",
     "SITL_GAZEBO_CONFIG",

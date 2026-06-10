@@ -102,6 +102,7 @@ classDiagram
         +lidar_available bool
         +position position_as_target
         +get_altitude(source) Optional~float~
+        +distance_sensors get_distance(orientation)
         +set_mode(mode) set_param(id, value) set_speed(speed, type) do_servo()
         +set_home() set_takeoff_position() set_pid_config() set_setpoint_config()
     }
@@ -117,7 +118,7 @@ classDiagram
 
     class MavlinkTransport {
         <<abstract>>
-        +state local_pose vision_pose gps heading rel_alt rangefinder
+        +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() command_land() set_param()
         +send_velocity_target() send_local_target() send_global_target()
     }

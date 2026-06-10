@@ -40,6 +40,9 @@ class Capability(Enum):
     RANGEFINDER = auto()
     """Downward rangefinder altitude source."""
 
+    DISTANCE_SENSORS = auto()
+    """All-orientation distance sensor telemetry."""
+
     VISION_POSE = auto()
     """External-vision pose estimate (indoor / non-GPS)."""
 

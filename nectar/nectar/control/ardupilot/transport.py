@@ -10,10 +10,11 @@ flight thread never observes a half-written value.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from nectar.control.ardupilot.types import (
     Attitude,
+    DistanceReading,
     GeoPoint,
     GlobalTarget,
     LocalPose,
@@ -101,6 +102,16 @@ class MavlinkTransport(ABC):
     @abstractmethod
     def rangefinder(self) -> Optional[float]:
         """Downward rangefinder distance in meters, or ``None``."""
+
+    @property
+    def distance_sensors(self) -> Dict[int, DistanceReading]:
+        """Most recent reading per sensor id, any orientation.
+
+        Snapshot of every distance sensor the vehicle reports. Empty when the
+        transport exposes none. The downward sensor used for altitude remains
+        available via :attr:`rangefinder`. Optional; defaults to empty.
+        """
+        return {}
 
     @property
     def attitude(self) -> Optional[Attitude]:

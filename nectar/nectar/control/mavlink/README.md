@@ -13,7 +13,7 @@ classDiagram
     }
     class MavlinkTransport {
         <<abstract>>
-        +state local_pose vision_pose gps heading rel_alt rangefinder
+        +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() set_param()
         +send_velocity_target() send_local_target() send_global_target()
     }
@@ -50,6 +50,10 @@ MAVROS forwards FCU [`STATUSTEXT`](https://mavlink.io/en/messages/common.html#ST
 #### Parameter confirmation
 
 `set_param` clears any cached value, sends `PARAM_SET`, then waits up to **0.5 s** for the FCU's `PARAM_VALUE` echo and verifies the echoed value matches (within tolerance) before returning `True`/logging the confirmation. ArduPilot echoes a known parameter within a few milliseconds and stays silent for an unknown one, so the short timeout keeps alias probing (4.6 `WPNAV_*` → 4.8 `WP_*`) responsive without false negatives on a fast link. Unlike the MAVROS service result (which only confirms the request was accepted), this confirms the value actually took.
+
+#### Distance sensors
+
+Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by sensor id in a copy-on-write map, exposed as `distance_sensors` (and `get_distance(orientation)` on the drone). The downward sensor also updates `rangefinder`. Every reported orientation is collected automatically, with no SDK-side configuration beyond the FCU rangefinder/proximity setup. See the [ArduPilot core README](../ardupilot/README.md#distance-sensors) for the data model.
 
 #### Stream rates
 

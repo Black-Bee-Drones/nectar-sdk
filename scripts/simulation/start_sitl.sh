@@ -18,6 +18,7 @@
 #   --gazebo            Use Gazebo for physics (--model json). Start Gazebo
 #                       separately with: ros2 launch nectar sitl_gazebo.launch.py
 #   --indoor            Load indoor.parm (no GPS, EKF3 ExternalNav). Implies --gazebo.
+#   --params <file>     Extra .parm file appended last to --defaults (overrides)
 #   --map               Launch with MAVProxy + map (requires display)
 #   --extra <args>      Extra arguments passed to the binary or sim_vehicle.py
 #
@@ -39,6 +40,7 @@ USE_MAP=false
 USE_GAZEBO=false
 USE_INDOOR=false
 EXTRA_ARGS=""
+EXTRA_PARM=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --speedup)  SPEEDUP="$2"; shift 2 ;;
         --gazebo)   USE_GAZEBO=true; shift ;;
         --indoor)   USE_INDOOR=true; USE_GAZEBO=true; shift ;;
+        --params)   EXTRA_PARM="$2"; shift 2 ;;
         --map)      USE_MAP=true; shift ;;
         --extra)    EXTRA_ARGS="$2"; shift 2 ;;
         -h|--help)
@@ -106,6 +109,19 @@ if [ "${USE_INDOOR}" = true ]; then
     fi
 fi
 
+# Resolve optional --params file to an absolute path (SITL runs from ARDUPILOT_DIR).
+# Accept a path relative to the current directory or to the project root.
+if [ -n "${EXTRA_PARM}" ]; then
+    if [ -f "${EXTRA_PARM}" ]; then
+        EXTRA_PARM="$(cd "$(dirname "${EXTRA_PARM}")" && pwd)/$(basename "${EXTRA_PARM}")"
+    elif [ -f "${PROJECT_DIR}/${EXTRA_PARM}" ]; then
+        EXTRA_PARM="${PROJECT_DIR}/${EXTRA_PARM}"
+    else
+        echo "[ERROR] Param file not found: ${EXTRA_PARM}"
+        exit 1
+    fi
+fi
+
 # ── Launch ──────────────────────────────────────────────────────────────────
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  Nectar SDK — ArduPilot SITL                    ║"
@@ -155,6 +171,7 @@ else
     ALL_DEFAULTS="${DEFAULTS}"
     [ -n "${GAZEBO_PARM}" ] && ALL_DEFAULTS="${ALL_DEFAULTS},${GAZEBO_PARM}"
     [ -n "${INDOOR_PARM}" ] && ALL_DEFAULTS="${ALL_DEFAULTS},${INDOOR_PARM}"
+    [ -n "${EXTRA_PARM}" ] && ALL_DEFAULTS="${ALL_DEFAULTS},${EXTRA_PARM}"
 
     CMD="${BINARY} --model ${MODEL} --speedup ${SPEEDUP}"
     CMD="${CMD} --defaults ${ALL_DEFAULTS}"

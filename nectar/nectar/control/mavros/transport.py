@@ -6,7 +6,8 @@ publishers emit setpoints. Telemetry is converted to plain core types in the
 subscriber callbacks.
 """
 
-from typing import Optional, Union
+import time
+from typing import Dict, Optional, Union
 
 from geographic_msgs.msg import GeoPoseStamped
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
@@ -26,6 +27,7 @@ from tf_transformations import quaternion_from_euler
 
 from nectar.control.ardupilot.transport import MavlinkTransport
 from nectar.control.ardupilot.types import (
+    DistanceReading,
     GeoPoint,
     GlobalTarget,
     LocalPose,
@@ -34,9 +36,13 @@ from nectar.control.ardupilot.types import (
     Vec3,
     VehicleState,
 )
+from nectar.control.config import DistanceSensorTopic
 from nectar.control.types import PoseSource
 from nectar.utils.position_utils import PositionUtils
 from nectar.utils.process import ProcessUtils
+
+# sensor_msgs/Range.radiation_type -> MAV_DISTANCE_SENSOR kind.
+_RANGE_TYPE_TO_MAV = {Range.ULTRASOUND: 1, Range.INFRARED: 2}
 
 # Bitmask: position + yaw active (velocity/accel/yaw-rate ignored).
 _POSITION_MASK = (
@@ -68,6 +74,7 @@ class MavrosTransport(MavlinkTransport):
         self._heading_val: Optional[float] = None
         self._rel_alt_val: Optional[float] = None
         self._range_val: Optional[float] = None
+        self._distances: Dict[int, DistanceReading] = {}
 
         self._local_pub = None
         self._gps_pub = None
@@ -116,6 +123,14 @@ class MavrosTransport(MavlinkTransport):
         drone._create_subscriber(
             PoseStamped, config.local_position_topic, self._on_local, qos_profile_sensor_data
         )
+
+        for sensor in config.distance_sensors:
+            drone._create_subscriber(
+                Range,
+                sensor.topic,
+                lambda msg, s=sensor: self._on_distance_sensor(msg, s),
+                qos_profile_sensor_data,
+            )
 
         if self._is_indoor:
             if "pose_cov" in config.vision_topic:
@@ -211,6 +226,23 @@ class MavrosTransport(MavlinkTransport):
     def _on_range(self, msg: Range) -> None:
         self._range_val = msg.range
 
+    def _on_distance_sensor(self, msg: Range, sensor: DistanceSensorTopic) -> None:
+        # Range carries no id/orientation; both come from the config descriptor.
+        self._distances = {
+            **self._distances,
+            sensor.sensor_id: DistanceReading(
+                distance=msg.range,
+                orientation=sensor.orientation,
+                min_distance=msg.min_range,
+                max_distance=msg.max_range,
+                sensor_id=sensor.sensor_id,
+                sensor_type=_RANGE_TYPE_TO_MAV.get(msg.radiation_type, 0),
+                signal_quality=None,
+                raw_orientation=sensor.orientation.value,
+                timestamp=time.monotonic(),
+            ),
+        }
+
     # Telemetry (plain)
 
     @property
@@ -244,6 +276,10 @@ class MavrosTransport(MavlinkTransport):
     @property
     def rangefinder(self) -> Optional[float]:
         return self._range_val
+
+    @property
+    def distance_sensors(self) -> Dict[int, DistanceReading]:
+        return self._distances
 
     # Driver lifecycle
 
@@ -400,8 +436,7 @@ class MavrosTransport(MavlinkTransport):
         msg.pose.position.latitude = float(target.latitude)
         msg.pose.position.longitude = float(target.longitude)
         msg.pose.position.altitude = float(target.altitude)
-        yaw = target.yaw if target.yaw is not None else 0.0
-        quat = quaternion_from_euler(0, 0, yaw)
+        quat = quaternion_from_euler(0, 0, float(target.yaw))
         msg.pose.orientation.x = float(quat[0])
         msg.pose.orientation.y = float(quat[1])
         msg.pose.orientation.z = float(quat[2])

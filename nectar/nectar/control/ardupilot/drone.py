@@ -9,7 +9,7 @@ transport and subclass this.
 
 import math
 from pathlib import Path
-from typing import Optional, Union
+from typing import Dict, Optional, Union
 
 import numpy as np
 from rclpy.duration import Duration
@@ -22,10 +22,12 @@ from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
 from nectar.control.ardupilot.target_computer import TargetComputer
 from nectar.control.ardupilot.transport import MavlinkTransport
 from nectar.control.ardupilot.types import (
+    DistanceReading,
     GeoPoint,
     GlobalTarget,
     LocalPose,
     LocalTarget,
+    SensorOrientation,
     TargetFrame,
     Vec3,
 )
@@ -106,6 +108,7 @@ class ArduPilotDrone(BaseDrone):
             Capability.NATIVE_RTL,
             Capability.OBSTACLE_AVOIDANCE,
             Capability.RANGEFINDER,
+            Capability.DISTANCE_SENSORS,
         }
         if self.is_indoor:
             caps.add(Capability.VISION_POSE)
@@ -243,6 +246,29 @@ class ArduPilotDrone(BaseDrone):
         if rel is not None:
             return rel
         return None
+
+    @property
+    def distance_sensors(self) -> Dict[int, DistanceReading]:
+        """All distance-sensor readings the FCU reports, keyed by sensor id.
+
+        Covers every orientation (forward, the yaw sectors, up, down) and id, for
+        obstacle detection, redundancy, or verification. The downward sensor used
+        for altitude is also available through :meth:`get_altitude` with
+        ``AltitudeSource.LIDAR``.
+        """
+        return self._transport.distance_sensors
+
+    def get_distance(self, orientation: SensorOrientation) -> Optional[DistanceReading]:
+        """Most recent reading facing ``orientation``, or ``None`` if none.
+
+        When several sensors share an orientation, the latest one is returned.
+        """
+        matches = [
+            r for r in self._transport.distance_sensors.values() if r.orientation == orientation
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda r: r.timestamp)
 
     @property
     def position(self) -> Union[LocalPose, GeoPoint]:

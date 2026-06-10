@@ -369,12 +369,15 @@ class ControlTab(QWidget):
         Qt.Key_Right: ("vy", -1),
     }
 
+    _DRIVER_DOWN_STRIKES = 3
+
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
         self._drone = None
         self._drone_type: str = "mavros"
         self._driver_connected: bool = False
+        self._driver_missed_checks: int = 0
         self._instance_initialized: bool = False
         self._controls_enabled: bool = False
         self._key_states: Dict[int, bool] = {}
@@ -1169,6 +1172,7 @@ class ControlTab(QWidget):
         # Driver state is per-type; re-evaluate it for the new selection so a
         # driver from a different type does not lock the UI.
         self._driver_connected = False
+        self._driver_missed_checks = 0
 
         self._mavros_actions.setVisible(self._is_ardupilot())
         self._bebop_actions.setVisible(self._drone_type == "bebop")
@@ -1206,11 +1210,28 @@ class ControlTab(QWidget):
 
     @Slot(bool)
     def _on_driver_status_checked(self, is_running: bool) -> None:
-        if is_running != self._driver_connected:
-            self._driver_connected = is_running
-            if not is_running and self._instance_initialized:
-                self._cleanup_instance()
-            self._update_ui_state()
+        if is_running:
+            self._driver_missed_checks = 0
+            if not self._driver_connected:
+                self._driver_connected = True
+                self._update_ui_state()
+            return
+
+        if not self._driver_connected:
+            return
+
+        # Debounce: a single failed `ros2 node list` is most likely a transient
+        # discovery/timeout, not a real driver loss. Only act after repeated
+        # consecutive misses.
+        self._driver_missed_checks += 1
+        if self._driver_missed_checks < self._DRIVER_DOWN_STRIKES:
+            return
+
+        self._driver_missed_checks = 0
+        self._driver_connected = False
+        if self._instance_initialized:
+            self._cleanup_instance()
+        self._update_ui_state()
 
     @Slot()
     def _toggle_driver(self) -> None:
@@ -1271,6 +1292,7 @@ class ControlTab(QWidget):
 
         if success:
             self._driver_connected = True
+            self._driver_missed_checks = 0
             if self._node:
                 self._node.get_logger().info(f"Driver connected ({self._drone_type})")
         else:

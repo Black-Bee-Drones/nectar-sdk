@@ -25,10 +25,12 @@ from pymavlink import mavutil
 from nectar.control.ardupilot.transport import MavlinkTransport
 from nectar.control.ardupilot.types import (
     Attitude,
+    DistanceReading,
     GeoPoint,
     GlobalTarget,
     LocalPose,
     LocalTarget,
+    SensorOrientation,
     TargetFrame,
     Vec3,
     VehicleState,
@@ -115,6 +117,7 @@ class PymavlinkTransport(MavlinkTransport):
         self._heading_val: Optional[float] = None
         self._rel_alt_val: Optional[float] = None
         self._range_val: Optional[float] = None
+        self._distances: Dict[int, DistanceReading] = {}
 
         # Command bookkeeping (populated by the RX path).
         self._params: Dict[str, float] = {}
@@ -258,8 +261,23 @@ class PymavlinkTransport(MavlinkTransport):
         self._range_val = float(msg.distance)
 
     def _on_distance_sensor(self, msg) -> None:
-        if self._range_val is None:
-            self._range_val = msg.current_distance / 100.0
+        orientation = SensorOrientation.from_mavlink(msg.orientation)
+        reading = DistanceReading(
+            distance=msg.current_distance / 100.0,
+            orientation=orientation,
+            min_distance=msg.min_distance / 100.0,
+            max_distance=msg.max_distance / 100.0,
+            sensor_id=msg.id,
+            sensor_type=msg.type,
+            signal_quality=(getattr(msg, "signal_quality", 0) or None),
+            raw_orientation=msg.orientation,
+            timestamp=time.monotonic(),
+        )
+        # Copy-on-write so user-thread reads always see a consistent snapshot.
+        self._distances = {**self._distances, msg.id: reading}
+        # The downward sensor is the height-above-ground source for altitude.
+        if orientation == SensorOrientation.DOWN:
+            self._range_val = reading.distance
 
     def _on_param_value(self, msg) -> None:
         name = msg.param_id
@@ -397,6 +415,10 @@ class PymavlinkTransport(MavlinkTransport):
         return self._range_val
 
     @property
+    def distance_sensors(self) -> Dict[int, DistanceReading]:
+        return self._distances
+
+    @property
     def attitude(self) -> Optional[Attitude]:
         return self._attitude
 
@@ -530,7 +552,7 @@ class PymavlinkTransport(MavlinkTransport):
             )
 
     def send_global_target(self, target: GlobalTarget) -> None:
-        yaw_ned = _enu_yaw_to_ned(target.yaw if target.yaw is not None else math.pi / 2.0)
+        yaw_ned = _enu_yaw_to_ned(target.yaw)
 
         master = self._connection.master
         with self._connection.send_lock:

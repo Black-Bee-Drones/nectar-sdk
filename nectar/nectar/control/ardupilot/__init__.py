@@ -3,10 +3,12 @@
 from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
 from nectar.control.ardupilot.types import (
     Attitude,
+    DistanceReading,
     GeoPoint,
     GlobalTarget,
     LocalPose,
     LocalTarget,
+    SensorOrientation,
     TargetFrame,
     Vec3,
     VehicleState,
@@ -14,10 +16,12 @@ from nectar.control.ardupilot.types import (
 
 __all__ = [
     "Attitude",
+    "DistanceReading",
     "GeoPoint",
     "GlobalTarget",
     "LocalPose",
     "LocalTarget",
+    "SensorOrientation",
     "SetpointNavConfig",
     "TargetFrame",
     "Vec3",

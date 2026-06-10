@@ -69,12 +69,14 @@ def _launch_setup(context: LaunchContext) -> list:
         "simulation",
     )
     src_worlds_dir = os.path.join(src_sim_dir, "worlds")
+    src_models_dir = os.path.join(src_sim_dir, "models")
 
     existing_resource = os.environ.get("GZ_SIM_RESOURCE_PATH", "")
     gz_resource_path = os.pathsep.join(
         p
         for p in [
             src_worlds_dir,
+            src_models_dir,
             src_sim_dir,
             models_dir,
             worlds_dir,
