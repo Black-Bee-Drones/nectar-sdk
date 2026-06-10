@@ -9,7 +9,7 @@
         full-install \
         lint lint-fix format check \
         sim-install sim-install-gazebo sim-start sim-start-gazebo \
-        sim-start-indoor sim-mavros sim-gazebo sim-outdoor sim-indoor sim-stop
+        sim-start-indoor sim-mavros sim-gazebo sim-outdoor sim-outdoor-direct sim-indoor sim-stop
 
 SETUP := ./scripts/setup.sh
 
@@ -75,6 +75,7 @@ sim-start-indoor:   ; @$(SETUP) sim-start-indoor
 sim-mavros:         ; @$(SETUP) sim-mavros
 sim-gazebo:         ; @$(SETUP) sim-gazebo
 sim-outdoor:        ; @$(SETUP) sim-outdoor
+sim-outdoor-direct: ; @$(SETUP) sim-outdoor-direct
 sim-indoor:         ; @$(SETUP) sim-indoor
 sim-stop:           ; @$(SETUP) sim-stop
 

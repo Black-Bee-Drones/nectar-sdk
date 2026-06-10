@@ -55,6 +55,11 @@ cmd_sim_outdoor() {
     ros2 launch nectar sitl_gazebo.launch.py world:=outdoor "$@"
 }
 
+cmd_sim_outdoor_direct() {
+    _source_ros_env
+    ros2 launch nectar sitl_gazebo.launch.py world:=outdoor mavros:=false "$@"
+}
+
 cmd_sim_indoor() {
     _source_ros_env
     ros2 launch nectar sitl_gazebo.launch.py world:=indoor "$@"

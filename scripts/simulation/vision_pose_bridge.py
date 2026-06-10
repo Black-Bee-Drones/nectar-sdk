@@ -29,9 +29,16 @@ class VisionPoseBridge(Node):
 
         self.declare_parameter("model_name", "iris")
         self.declare_parameter("gz_pose_topic", "/world/indoor_room/dynamic_pose/info")
+        # Index of the model-root pose in dynamic_pose/info (first entry), used
+        # when the ros_gz Pose_V->TFMessage bridge strips child_frame_id.
+        self.declare_parameter("model_index", 0)
         self._model_name = (
             self.get_parameter("model_name").get_parameter_value().string_value
         )
+        self._model_index = (
+            self.get_parameter("model_index").get_parameter_value().integer_value
+        )
+        self._warned_fallback = False
         gz_topic = (
             self.get_parameter("gz_pose_topic").get_parameter_value().string_value
         )
@@ -57,13 +64,9 @@ class VisionPoseBridge(Node):
         )
 
     def _pose_callback(self, msg: TFMessage) -> None:
-        # dynamic_pose/info contains transforms for ALL models.
-        # Find the one matching our target model.
-        for tf in msg.transforms:
-            if tf.child_frame_id == self._model_name:
-                break
-        else:
-            return  # target model not in this message
+        tf = self._select_transform(msg)
+        if tf is None:
+            return
 
         out = PoseWithCovarianceStamped()
         out.header.stamp = self.get_clock().now().to_msg()
@@ -82,6 +85,30 @@ class VisionPoseBridge(Node):
         out.pose.covariance[35] = 0.01  # yaw
 
         self._pub.publish(out)
+
+    def _select_transform(self, msg: TFMessage):
+        """Pick the model-root transform from a dynamic_pose/info batch.
+
+        Prefers a transform whose ``child_frame_id`` matches the model name. The
+        ros_gz ``Pose_V`` -> ``TFMessage`` bridge can leave all frame ids empty;
+        in that case it falls back to the model-root index (the first entry in
+        dynamic_pose/info), which is the model's world pose.
+        """
+        for tf in msg.transforms:
+            if tf.child_frame_id == self._model_name:
+                return tf
+
+        if msg.transforms and not any(tf.child_frame_id for tf in msg.transforms):
+            if not self._warned_fallback:
+                self.get_logger().warn(
+                    "child_frame_id empty (ros_gz bridge stripped names); "
+                    f"using index {self._model_index} for model '{self._model_name}'"
+                )
+                self._warned_fallback = True
+            if 0 <= self._model_index < len(msg.transforms):
+                return msg.transforms[self._model_index]
+
+        return None
 
 
 def main() -> None:

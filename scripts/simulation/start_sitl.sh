@@ -4,6 +4,8 @@
 #
 # Launches ArduCopter SITL with sensible defaults for MAVROS connection.
 # MAVROS connects on tcp://127.0.0.1:5760 (SERIAL0, default TCP server).
+# A second MAVLink endpoint is exposed on tcp://127.0.0.1:5762 (SERIAL1) for a
+# direct pymavlink client (MavlinkDrone) running alongside MAVROS.
 #
 # Usage:
 #   ./scripts/simulation/start_sitl.sh [options]
@@ -114,7 +116,8 @@ echo "  Model:    ${MODEL}"
 echo "  Indoor:   ${USE_INDOOR}"
 echo "  Location: ${LOCATION:-default}"
 echo "  Speedup:  ${SPEEDUP}x"
-echo "  MAVROS:   tcp://127.0.0.1:5760"
+echo "  MAVROS:   tcp://127.0.0.1:5760  (SERIAL0)"
+echo "  MAVLink:  tcp://127.0.0.1:5762  (SERIAL1, direct pymavlink)"
 echo ""
 
 if [ "${USE_GAZEBO}" = true ]; then
@@ -158,6 +161,9 @@ else
     # Wipe eeprom in Gazebo mode so --defaults (rangefinder, indoor, etc.) take effect
     [ "${USE_GAZEBO}" = true ] && CMD="${CMD} -w"
     CMD="${CMD} --sim-address=127.0.0.1 -I0"
+    # SERIAL1 as a second MAVLink TCP server (5762) so a direct pymavlink client
+    # (MavlinkDrone) can attach alongside MAVROS on SERIAL0 (5760).
+    CMD="${CMD} --serial1=tcp:5762"
 
     if [ -n "${LOCATION}" ]; then
         # Look up lat/lon from ArduPilot's locations.txt
