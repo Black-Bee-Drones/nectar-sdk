@@ -428,7 +428,7 @@ class ControlTab(QWidget):
         lbl = QLabel("Drone:")
         lbl.setProperty("secondary", True)
         self._drone_combo = QComboBox()
-        self._drone_combo.addItems(["Mavros", "Bebop", "Crazyflie"])
+        self._drone_combo.addItems(["Mavros", "Mavlink", "Bebop", "Crazyflie"])
         self._drone_combo.setFixedWidth(100)
         self._drone_combo.currentTextChanged.connect(self._on_drone_type_changed)
         type_layout.addWidget(lbl)
@@ -1042,8 +1042,21 @@ class ControlTab(QWidget):
         self._status_checker.status_checked.connect(self._on_driver_status_checked)
         self._checker_thread.start()
 
+    def _is_ardupilot(self) -> bool:
+        """True for ArduPilot drone types that share the flight/telemetry API."""
+        return self._drone_type in ("mavros", "mavlink")
+
+    def _is_direct(self) -> bool:
+        """True for drone types whose link opens inside the instance (no driver)."""
+        return self._drone_type == "mavlink"
+
     def _update_ui_state(self) -> None:
-        can_control = self._driver_connected and self._instance_initialized
+        direct = self._is_direct()
+        link_ready = direct or self._driver_connected
+        can_control = link_ready and self._instance_initialized
+
+        self._driver_btn.setVisible(not direct)
+        self._status_driver.setVisible(not direct)
 
         self._driver_btn.setText(
             "Disconnect Driver" if self._driver_connected else "Connect Driver"
@@ -1053,10 +1066,10 @@ class ControlTab(QWidget):
         self._driver_btn.style().unpolish(self._driver_btn)
         self._driver_btn.style().polish(self._driver_btn)
 
-        self._instance_btn.setEnabled(self._driver_connected)
+        self._instance_btn.setEnabled(link_ready)
         self._instance_btn.setText("Cleanup" if self._instance_initialized else "Initialize")
 
-        self._drone_combo.setEnabled(not self._driver_connected)
+        self._drone_combo.setEnabled(not self._instance_initialized)
         self._config_panel.setEnabled(not self._instance_initialized)
 
         self._status_driver.set_status("active" if self._driver_connected else "inactive")
@@ -1070,16 +1083,16 @@ class ControlTab(QWidget):
 
         controls_active = can_control and self._controls_enabled
         self._set_velocity_control_enabled(controls_active)
-        self._set_mavros_controls_enabled(controls_active and self._drone_type == "mavros")
+        self._set_mavros_controls_enabled(controls_active and self._is_ardupilot())
         self._set_bebop_controls_enabled(controls_active and self._drone_type == "bebop")
         self._set_crazyflie_controls_enabled(controls_active and self._drone_type == "crazyflie")
         self._set_position_control_enabled(
-            controls_active and self._drone_type in ("mavros", "crazyflie")
+            controls_active and (self._is_ardupilot() or self._drone_type == "crazyflie")
         )
 
     def _update_status_indicators(self) -> None:
-        self._status_fcu.setVisible(self._drone_type == "mavros")
-        self._status_armed.setVisible(self._drone_type in ("mavros", "crazyflie"))
+        self._status_fcu.setVisible(self._is_ardupilot())
+        self._status_armed.setVisible(self._is_ardupilot() or self._drone_type == "crazyflie")
 
     def _set_mavros_controls_enabled(self, enabled: bool) -> None:
         self._arm_btn.setEnabled(enabled)
@@ -1153,20 +1166,26 @@ class ControlTab(QWidget):
     def _on_drone_type_changed(self, drone_type: str) -> None:
         self._drone_type = drone_type.lower()
 
-        self._mavros_actions.setVisible(self._drone_type == "mavros")
+        # Driver state is per-type; re-evaluate it for the new selection so a
+        # driver from a different type does not lock the UI.
+        self._driver_connected = False
+
+        self._mavros_actions.setVisible(self._is_ardupilot())
         self._bebop_actions.setVisible(self._drone_type == "bebop")
         self._crazyflie_actions.setVisible(self._drone_type == "crazyflie")
         self._config_panel.set_drone_type(self._drone_type)
 
-        self._update_capability_panels()
-        self._update_status_indicators()
-
         if self._status_checker:
             self._status_checker.set_drone_type(self._drone_type)
 
+        self._update_capability_panels()
+        self._update_status_indicators()
+        self._update_ui_state()
+        self._trigger_driver_check()
+
     def _update_capability_panels(self) -> None:
-        has_position_control = self._drone_type in ("mavros", "crazyflie")
-        has_telemetry = self._drone_type in ("mavros", "crazyflie")
+        has_position_control = self._is_ardupilot() or self._drone_type == "crazyflie"
+        has_telemetry = self._is_ardupilot() or self._drone_type == "crazyflie"
         is_crazyflie = self._drone_type == "crazyflie"
 
         self._position_panel.setVisible(has_position_control)
@@ -1180,6 +1199,8 @@ class ControlTab(QWidget):
 
     @Slot()
     def _trigger_driver_check(self) -> None:
+        if self._is_direct():
+            return
         if self._status_checker:
             self._status_checker.check()
 
@@ -1404,10 +1425,12 @@ class ControlTab(QWidget):
 
     def _set_flight_buttons_enabled(self, enabled: bool) -> None:
         controls_should_be_active = (
-            self._driver_connected and self._instance_initialized and self._controls_enabled
+            (self._is_direct() or self._driver_connected)
+            and self._instance_initialized
+            and self._controls_enabled
         )
         actual_enabled = enabled and controls_should_be_active
-        if self._drone_type == "mavros":
+        if self._is_ardupilot():
             self._arm_btn.setEnabled(actual_enabled)
             self._disarm_btn.setEnabled(actual_enabled)
             self._takeoff_btn.setEnabled(actual_enabled)
@@ -1571,7 +1594,7 @@ class ControlTab(QWidget):
         reference = reference_map.get(ref_name, MoveReference.BODY)
         method_name = self._pos_strategy_combo.currentText()
         default_method = (
-            NavigationMethod.PID_EKF if self._drone_type == "mavros" else NavigationMethod.POSITION
+            NavigationMethod.PID_EKF if self._is_ardupilot() else NavigationMethod.POSITION
         )
         method = method_map.get(method_name, default_method)
         alt_name = self._pos_alt_source_combo.currentText()
@@ -1652,10 +1675,10 @@ class ControlTab(QWidget):
             if self._node:
                 self._node.get_logger().warn(f"Position control failed: {message}")
         self._set_position_control_enabled(
-            self._driver_connected
+            (self._is_direct() or self._driver_connected)
             and self._instance_initialized
             and self._controls_enabled
-            and self._drone_type in ("mavros", "crazyflie")
+            and (self._is_ardupilot() or self._drone_type == "crazyflie")
         )
 
     @Slot()
@@ -1710,18 +1733,17 @@ class ControlTab(QWidget):
             return
 
         try:
-            if self._drone_type == "mavros":
-                self._update_mavros_telemetry()
+            if self._is_ardupilot():
+                self._update_ardupilot_telemetry()
             elif self._drone_type == "crazyflie":
                 self._update_crazyflie_telemetry()
         except Exception:
             pass
 
-    def _update_mavros_telemetry(self) -> None:
+    def _update_ardupilot_telemetry(self) -> None:
         import numpy as np
 
         from nectar.control.types import AltitudeSource
-        from nectar.utils.position_utils import PositionUtils
 
         d = self._drone
 
@@ -1734,13 +1756,13 @@ class ControlTab(QWidget):
             self._status_armed.set_status("active" if armed else "inactive")
 
         # Local EKF pose (always available in both indoor/outdoor)
-        local = d.local_pos
+        local = d.local_pose
         if local:
-            p = local.pose.position
+            p = local.position
             self._telem_local_x.setText(f"X: {p.x:.2f}")
             self._telem_local_y.setText(f"Y: {p.y:.2f}")
             self._telem_local_z.setText(f"Z: {p.z:.2f}")
-            yaw_deg = np.degrees(PositionUtils.get_yaw_from_pose(local))
+            yaw_deg = np.degrees(local.yaw)
             self._telem_yaw.setText(f"Yaw: {yaw_deg:.1f}°")
 
         # GPS (outdoor only, safe — gps property raises for indoor)

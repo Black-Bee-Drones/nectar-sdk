@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -43,13 +44,16 @@ class DroneConfigPanel(QWidget):
         layout.setSpacing(6)
 
         self._mavros_panel = self._create_mavros_panel()
+        self._mavlink_panel = self._create_mavlink_panel()
         self._bebop_panel = self._create_bebop_panel()
         self._crazyflie_panel = self._create_crazyflie_panel()
 
         layout.addWidget(self._mavros_panel)
+        layout.addWidget(self._mavlink_panel)
         layout.addWidget(self._bebop_panel)
         layout.addWidget(self._crazyflie_panel)
 
+        self._mavlink_panel.setVisible(False)
         self._bebop_panel.setVisible(False)
         self._crazyflie_panel.setVisible(False)
 
@@ -181,6 +185,176 @@ class DroneConfigPanel(QWidget):
         layout.addLayout(apply_row)
 
         return panel
+
+    def _create_mavlink_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {COLORS.surface_elevated};
+                border: 1px solid {COLORS.border};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """
+        )
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        header = QLabel("MAVLINK")
+        header.setStyleSheet(
+            f"""
+            color: {COLORS.accent};
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        """
+        )
+        layout.addWidget(header)
+
+        # Pose source
+        self._mavlink_pose_source = QComboBox()
+        self._mavlink_pose_source.addItems(["GPS (Outdoor)", "Vision (Indoor)"])
+        self._mavlink_pose_source.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "Pose:", self._mavlink_pose_source, "Position estimation source"
+            )
+        )
+
+        # Vision pose topic (only used when Pose = Vision). The companion bridge
+        # forwards this topic to the FCU as VISION_POSITION_ESTIMATE. Real VSLAM
+        # publishes /vslam/pose; the Gazebo indoor sim uses /mavros/vision_pose/pose_cov.
+        self._mavlink_vision_topic = QComboBox()
+        self._mavlink_vision_topic.setEditable(True)
+        self._mavlink_vision_topic.addItems(["/vslam/pose", "/mavros/vision_pose/pose_cov"])
+        self._mavlink_vision_topic.currentTextChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "Vision:",
+                self._mavlink_vision_topic,
+                "VSLAM pose topic relayed to the FCU (used when Pose = Vision)",
+            )
+        )
+
+        # Connection endpoint (editable + auto-detected) with rescan button
+        self._mavlink_connection = QComboBox()
+        self._mavlink_connection.setEditable(True)
+        self._mavlink_connection.currentTextChanged.connect(self._on_config_changed)
+
+        conn_row = QHBoxLayout()
+        conn_row.setContentsMargins(0, 0, 0, 0)
+        conn_row.setSpacing(8)
+        conn_lbl = QLabel("Connection:")
+        conn_lbl.setProperty("secondary", True)
+        conn_lbl.setFixedWidth(72)
+        conn_tip = "pymavlink endpoint: tcp:host:port, udp:host:port, or serial device"
+        conn_lbl.setToolTip(conn_tip)
+        self._mavlink_connection.setToolTip(conn_tip)
+
+        refresh_btn = QPushButton("\u21bb")
+        refresh_btn.setFixedWidth(28)
+        refresh_btn.setToolTip("Rescan available serial ports")
+        refresh_btn.clicked.connect(self._refresh_mavlink_ports)
+
+        conn_row.addWidget(conn_lbl)
+        conn_row.addWidget(self._mavlink_connection, 1)
+        conn_row.addWidget(refresh_btn)
+        layout.addLayout(conn_row)
+        self._refresh_mavlink_ports()
+
+        # Baud (serial only)
+        self._mavlink_baud = QComboBox()
+        self._mavlink_baud.addItems(["921600", "115200", "57600", "1500000"])
+        self._mavlink_baud.setCurrentIndex(0)
+        self._mavlink_baud.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "Baud:", self._mavlink_baud, "Serial baud rate (ignored for tcp/udp)"
+            )
+        )
+
+        # Rangefinder checkbox
+        lidar_row = QHBoxLayout()
+        lidar_row.setContentsMargins(0, 0, 0, 0)
+        lidar_row.setSpacing(8)
+        self._mavlink_use_lidar = QCheckBox("Expect rangefinder")
+        self._mavlink_use_lidar.setChecked(False)
+        self._mavlink_use_lidar.setToolTip(
+            "Wait for DISTANCE_SENSOR data on startup. Off = skip (default for SITL)."
+        )
+        self._mavlink_use_lidar.stateChanged.connect(self._on_config_changed)
+        lidar_row.addWidget(self._mavlink_use_lidar)
+        layout.addLayout(lidar_row)
+
+        # PID config file
+        self._mavlink_pid_file = QComboBox()
+        self._mavlink_pid_file.addItem("(default)", "")
+        for f in self._list_config_files("position_"):
+            self._mavlink_pid_file.addItem(f, f)
+        self._mavlink_pid_file.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "PID:",
+                self._mavlink_pid_file,
+                "PID parameters YAML (default = auto by mode)",
+            )
+        )
+
+        # Setpoint config file
+        self._mavlink_setpoint_file = QComboBox()
+        self._mavlink_setpoint_file.addItem("(default)", "")
+        for f in self._list_config_files("setpoint_"):
+            self._mavlink_setpoint_file.addItem(f, f)
+        self._mavlink_setpoint_file.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "Setpoint:",
+                self._mavlink_setpoint_file,
+                "Setpoint nav YAML (default = auto by mode)",
+            )
+        )
+
+        # Apply setpoint params to FCU
+        apply_row = QHBoxLayout()
+        apply_row.setContentsMargins(0, 0, 0, 0)
+        apply_row.setSpacing(8)
+        self._mavlink_apply_setpoint = QCheckBox("Apply setpoint params to FCU")
+        self._mavlink_apply_setpoint.setChecked(False)
+        self._mavlink_apply_setpoint.setToolTip(
+            "Push WPNAV/GUID_OPTIONS from YAML to Pixhawk on arm. "
+            "Off = use existing FCU values (default)."
+        )
+        self._mavlink_apply_setpoint.stateChanged.connect(self._on_config_changed)
+        apply_row.addWidget(self._mavlink_apply_setpoint)
+        layout.addLayout(apply_row)
+
+        return panel
+
+    @staticmethod
+    def _detect_mavlink_endpoints() -> list:
+        """Return SITL presets plus any detected serial ports."""
+        presets = ["tcp:127.0.0.1:5762", "tcp:127.0.0.1:5760", "udp:127.0.0.1:14550"]
+        try:
+            from serial.tools import list_ports
+
+            ports = [p.device for p in list_ports.comports()]
+        except Exception:
+            import glob
+
+            ports = sorted(glob.glob("/dev/ttyACM*") + glob.glob("/dev/ttyUSB*"))
+        return presets + ports
+
+    def _refresh_mavlink_ports(self) -> None:
+        """Repopulate the connection list, preserving the current entry."""
+        current = self._mavlink_connection.currentText().strip()
+        self._mavlink_connection.blockSignals(True)
+        self._mavlink_connection.clear()
+        self._mavlink_connection.addItems(self._detect_mavlink_endpoints())
+        self._mavlink_connection.setCurrentText(current or "tcp:127.0.0.1:5762")
+        self._mavlink_connection.blockSignals(False)
+        self._on_config_changed()
 
     def _create_bebop_panel(self) -> QFrame:
         panel = QFrame()
@@ -378,6 +552,7 @@ class DroneConfigPanel(QWidget):
         """
         self._drone_type = drone_type.lower()
         self._mavros_panel.setVisible(self._drone_type == "mavros")
+        self._mavlink_panel.setVisible(self._drone_type == "mavlink")
         self._bebop_panel.setVisible(self._drone_type == "bebop")
         self._crazyflie_panel.setVisible(self._drone_type == "crazyflie")
 
@@ -392,6 +567,8 @@ class DroneConfigPanel(QWidget):
         """
         if self._drone_type == "mavros":
             return self._get_mavros_config()
+        if self._drone_type == "mavlink":
+            return self._get_mavlink_config()
         if self._drone_type == "crazyflie":
             return self._get_crazyflie_config()
         return self._get_bebop_config()
@@ -418,6 +595,36 @@ class DroneConfigPanel(QWidget):
                 self._mavros_setpoint_file.currentData()
             ),
             "apply_setpoint_params": self._mavros_apply_setpoint.isChecked(),
+        }
+
+    def _get_mavlink_config(self) -> Dict[str, Any]:
+        from nectar.control import PoseSource
+
+        pose_source_map = {
+            0: PoseSource.GPS,
+            1: PoseSource.VISION,
+        }
+
+        def _int_or(text: str, default: int) -> int:
+            try:
+                return int(text.strip())
+            except (ValueError, AttributeError):
+                return default
+
+        return {
+            "pose_source": pose_source_map.get(
+                self._mavlink_pose_source.currentIndex(), PoseSource.GPS
+            ),
+            "use_lidar": self._mavlink_use_lidar.isChecked(),
+            "vision_pose_topic": self._mavlink_vision_topic.currentText().strip() or "/vslam/pose",
+            "connection_string": self._mavlink_connection.currentText().strip()
+            or "tcp:127.0.0.1:5762",
+            "baud": _int_or(self._mavlink_baud.currentText(), 921600),
+            "pid_config_file": self._resolve_config_path(self._mavlink_pid_file.currentData()),
+            "setpoint_config_file": self._resolve_config_path(
+                self._mavlink_setpoint_file.currentData()
+            ),
+            "apply_setpoint_params": self._mavlink_apply_setpoint.isChecked(),
         }
 
     def _get_bebop_config(self) -> Dict[str, Any]:
@@ -455,6 +662,8 @@ class DroneConfigPanel(QWidget):
         """
         if self._drone_type == "mavros":
             self._set_mavros_config(config)
+        elif self._drone_type == "mavlink":
+            self._set_mavlink_config(config)
         elif self._drone_type == "crazyflie":
             self._set_crazyflie_config(config)
         else:
@@ -497,6 +706,46 @@ class DroneConfigPanel(QWidget):
 
         if "apply_setpoint_params" in config:
             self._mavros_apply_setpoint.setChecked(config["apply_setpoint_params"])
+
+    def _set_mavlink_config(self, config: Dict[str, Any]) -> None:
+        from nectar.control import PoseSource
+
+        if "pose_source" in config:
+            idx = 0 if config["pose_source"] == PoseSource.GPS else 1
+            self._mavlink_pose_source.setCurrentIndex(idx)
+
+        if "use_lidar" in config:
+            self._mavlink_use_lidar.setChecked(config["use_lidar"])
+
+        if "vision_pose_topic" in config:
+            self._mavlink_vision_topic.setCurrentText(config["vision_pose_topic"])
+
+        if "connection_string" in config:
+            self._mavlink_connection.setCurrentText(config["connection_string"])
+
+        if "baud" in config:
+            idx = self._mavlink_baud.findText(str(config["baud"]))
+            if idx >= 0:
+                self._mavlink_baud.setCurrentIndex(idx)
+
+        if "pid_config_file" in config and config["pid_config_file"]:
+            import os
+
+            name = os.path.basename(config["pid_config_file"])
+            idx = self._mavlink_pid_file.findData(name)
+            if idx >= 0:
+                self._mavlink_pid_file.setCurrentIndex(idx)
+
+        if "setpoint_config_file" in config and config["setpoint_config_file"]:
+            import os
+
+            name = os.path.basename(config["setpoint_config_file"])
+            idx = self._mavlink_setpoint_file.findData(name)
+            if idx >= 0:
+                self._mavlink_setpoint_file.setCurrentIndex(idx)
+
+        if "apply_setpoint_params" in config:
+            self._mavlink_apply_setpoint.setChecked(config["apply_setpoint_params"])
 
     def _set_bebop_config(self, config: Dict[str, Any]) -> None:
         if "ip" in config:
@@ -548,6 +797,20 @@ class DroneConfigPanel(QWidget):
                 setpoint_config_file=config_dict["setpoint_config_file"],
                 apply_setpoint_params=config_dict["apply_setpoint_params"],
                 connection_string=config_dict["connection_string"],
+            )
+        elif self._drone_type == "mavlink":
+            from nectar.control import MavlinkConfig
+
+            return MavlinkConfig(
+                start_driver=False,
+                pose_source=config_dict["pose_source"],
+                expect_lidar=config_dict["use_lidar"],
+                vision_pose_topic=config_dict["vision_pose_topic"],
+                connection_string=config_dict["connection_string"],
+                baud=config_dict["baud"],
+                pid_config_file=config_dict["pid_config_file"],
+                setpoint_config_file=config_dict["setpoint_config_file"],
+                apply_setpoint_params=config_dict["apply_setpoint_params"],
             )
         elif self._drone_type == "crazyflie":
             from nectar.control import CrazyflieConfig
