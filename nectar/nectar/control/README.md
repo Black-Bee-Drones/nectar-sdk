@@ -5,7 +5,9 @@ Protocol-based drone control framework for ROS2 with factory pattern instantiati
 ## Documentation Index
 
 - **README.md**: This file - Architecture overview and quick start
-- **mavros/README.md**: MAVROS-specific implementation details
+- **ardupilot/README.md**: Shared transport-agnostic ArduPilot vehicle core
+- **mavros/README.md**: MAVROS transport (`MavrosDrone`)
+- **mavlink/README.md**: Direct pymavlink transport (`MavlinkDrone`)
 - **bebop/README.md**: Parrot Bebop 2 implementation details
 - **obstacles/README.md**: Obstacle detection system documentation
 - **pid/README.md**: PID controller implementation and tuning
@@ -81,51 +83,47 @@ classDiagram
         #_get_driver_command()* str
     }
 
-    class MavrosDrone {
-        -_mavros_state State
-        -_gps Optional~NavSatFix~
-        -_heading Optional~Float64~
-        -_rel_alt Optional~Float64~
-        -_vision_pos Optional~PoseWithCovarianceStamped~
-        -_rng_alt Optional~Range~
-        -_imu Optional~Imu~
+    class ArduPilotDrone {
+        <<abstract>>
+        -_transport MavlinkTransport
+        -_navigator ArduPilotNavigator
+        -_sequencer FlightSequencer
         -_pid_config Optional~PositionPIDConfig~
+        -_setpoint_config Optional~SetpointNavConfig~
         -_takeoff_position Optional
-        -_initial_altitude float
-        -_initial_heading float
         -_pose_source PoseSource
-        -_navigator MavrosNavigator
         +is_indoor bool
-        +mavros_state State
-        +is_armed Optional~bool~
-        +flight_mode Optional~str~
-        +is_fcu_connected Optional~bool~
-        +gps NavSatFix
-        +heading float
-        +rel_alt float
-        +vision_pos Optional~PoseWithCovarianceStamped~
+        +state VehicleState
+        +gps Optional~GeoPoint~
+        +heading Optional~float~
+        +rel_alt Optional~float~
+        +local_pose Optional~LocalPose~
+        +vision_pose Optional~LocalPose~
         +lidar_available bool
-        +pid_config Optional~PositionPIDConfig~
-        +position Union~PoseWithCovarianceStamped,NavSatFix~
-        +position_as_target Optional~Union~PositionTarget,GeoPoseStamped~~
-        +from_config(config, node)$ MavrosDrone
+        +position position_as_target
         +get_altitude(source) Optional~float~
-        +set_mode(mode) bool
-        +set_param(param_id, value) bool
-        +do_servo(aux_out, pwm_value) bool
-        +set_home() bool
-        +set_takeoff_position(pose, heading)
-        +set_pid_config(config)
-        -_setup_subscribers()
-        -_setup_publishers()
-        -_setup_services()
-        -_load_pid_config()
-        -_startup_sensors()
-        -_compute_target()
-        -_compute_setpoint_target()
-        -_compute_target_rel_alt()
-        -_validate_position_sensors()
+        +set_mode(mode) set_param(id, value) set_speed(speed, type) do_servo()
+        +set_home() set_takeoff_position() set_pid_config() set_setpoint_config()
     }
+
+    class MavrosDrone {
+        +from_config(config, node)$ MavrosDrone
+    }
+
+    class MavlinkDrone {
+        +connection MavlinkConnection
+        +from_config(config, node)$ MavlinkDrone
+    }
+
+    class MavlinkTransport {
+        <<abstract>>
+        +state local_pose vision_pose gps heading rel_alt rangefinder
+        +arm() set_mode() command_takeoff() command_land() set_param()
+        +send_velocity_target() send_local_target() send_global_target()
+    }
+
+    class MavrosTransport
+    class PymavlinkTransport
 
     class BebopDrone {
         +from_config(config, node)$ BebopDrone
@@ -143,21 +141,28 @@ classDiagram
 
     class MavrosConfig {
         <<dataclass>>
-        +name str
-        +start_driver bool
         +pose_source PoseSource
         +expect_lidar bool
         +sensor_timeout float
         +connection_string str
-        +pid_config_file Optional~str~
-        +state_topic str
-        +gps_topic str
-        +vision_topic str
-        +heading_topic str
-        +rel_alt_topic str
-        +lidar_topic str
-        +imu_topic str
+        +pid_config_file setpoint_config_file Optional~str~
+        +apply_setpoint_params bool
+        +state_topic gps_topic vision_topic str
+        +heading_topic rel_alt_topic lidar_topic str
         +local_position_topic str
+    }
+
+    class MavlinkConfig {
+        <<dataclass>>
+        +pose_source PoseSource
+        +expect_lidar bool
+        +connection_string str
+        +baud source_system source_component int
+        +rx_rate_hz heartbeat_hz vision_rate_hz float
+        +stream_rates Optional~Dict~
+        +vision_pose_topic str
+        +pid_config_file setpoint_config_file Optional~str~
+        +apply_setpoint_params bool
     }
 
     class BebopConfig {
@@ -170,29 +175,31 @@ classDiagram
 
     class ObstacleManager {
         -_handlers dict~str,ObstacleHandler~
-        +handlers dict~str,ObstacleHandler~
-        +add(name, handler)
-        +remove(name) Optional~ObstacleHandler~
-        +get(name) Optional~ObstacleHandler~
-        +enable(name)
-        +disable(name)
-        +enable_all()
-        +disable_all()
+        +add(name, handler) remove(name) get(name)
+        +enable(name) disable(name) enable_all() disable_all()
         +should_continue_navigation(drone) bool
         +get_axis_control() tuple~bool,bool,bool~
-        +reset_all()
-        +cleanup()
+        +reset_all() cleanup()
     }
 
     DroneFactory --> BaseDrone : creates
     Drone <|.. BaseDrone : implements
-    BaseDrone <|-- MavrosDrone
+    BaseDrone <|-- ArduPilotDrone
     BaseDrone <|-- BebopDrone
+    ArduPilotDrone <|-- MavrosDrone
+    ArduPilotDrone <|-- MavlinkDrone
+    ArduPilotDrone o-- MavlinkTransport
+    MavlinkTransport <|.. MavrosTransport
+    MavlinkTransport <|.. PymavlinkTransport
+    MavrosDrone ..> MavrosTransport : builds
+    MavlinkDrone ..> PymavlinkTransport : builds
     BaseDrone *-- ObstacleManager
     BaseDrone o-- DroneConfig
     MavrosDrone o-- MavrosConfig
+    MavlinkDrone o-- MavlinkConfig
     BebopDrone o-- BebopConfig
     DroneConfig <|-- MavrosConfig
+    DroneConfig <|-- MavlinkConfig
     DroneConfig <|-- BebopConfig
 ```
 
@@ -205,6 +212,19 @@ Three usage patterns share the same primitives:
 - **Standalone script**: `nectar.init()` lazily creates the shared executor and starts the spin thread. `DroneFactory.create("mavros", config)` registers the drone's node with it. Call `nectar.shutdown()` on exit.
 - **Yasmin mission**: call `nectar.use_executor(YasminNode.get_instance()._executor)` once at startup. SDK subsystems created afterwards register with the Yasmin executor instead of spawning a second spin thread.
 - **GUI**: `ROSExecutor.start()` registers its `MultiThreadedExecutor` with `nectar.runtime`. Drones/handlers created from inside tabs share that executor automatically.
+
+## ArduPilot Transport Architecture
+
+`MavrosDrone` and `MavlinkDrone` are the **same ArduPilot vehicle reached over two transports**. All flight/navigation logic lives once in the transport-agnostic [`ArduPilotDrone`](ardupilot/README.md) core, which reads telemetry and issues commands/setpoints through a pluggable `MavlinkTransport` interface:
+
+- `MavrosTransport` — subscriptions → telemetry, service clients → commands, publishers → setpoints (requires a running `mavros_node`).
+- `PymavlinkTransport` — owns the FCU link directly; a ROS timer drains the RX stream, commands/setpoints go out via `mav.*_send`. Indoor it auto-starts a `VisionPoseBridge` to feed the EKF (replacing `vision_to_mavros`). See [mavlink/README.md](mavlink/README.md).
+
+The core operates on plain, ROS-free types (`ardupilot/types.py`); each transport converts its wire types (`mavros_msgs`/`geometry_msgs` or raw MAVLink) to/from these. ENU/FLU and radians throughout; transports handle NED/FRD conversion.
+
+### Capabilities
+
+Each drone declares a `frozenset[Capability]` (see `capabilities.py`); query with `drone.supports(Capability.GPS_NAV)`. `ArduPilotDrone` derives its set from `pose_source` (outdoor → `GPS_NAV`/`GLOBAL_SETPOINT`, indoor → `VISION_POSE`). Unsupported operations raise `CapabilityNotSupportedError`.
 
 ## Core Components
 
@@ -221,7 +241,9 @@ DroneFactory.register(drone_type: str, factory_func: Callable)
 
 **Supported Types**:
 - `mavros`: ArduPilot/PX4 via MAVROS
+- `mavlink`: ArduPilot via direct pymavlink (no MAVROS)
 - `bebop`: Parrot Bebop 2
+- `crazyflie`: Bitcraze Crazyflie
 
 **Example**:
 ```python
@@ -325,10 +347,12 @@ drone.move_to(
     reference: MoveReference = MoveReference.BODY,
     timeout: Optional[float] = 60.0,
     precision: float = 0.2,
-    method: NavigationMethod = NavigationMethod.POSITION,
+    method: NavigationMethod = NavigationMethod.PID_EKF,
     altitude_source: AltitudeSource = AltitudeSource.AUTO,
 ) -> bool
 ```
+
+See [`ardupilot/README.md`](ardupilot/README.md) for the full capability matrix, per-axis/reference behavior, and altitude-source semantics.
 
 **Navigation Methods**:
 - `POSITION`: Local position setpoint via `setpoint_raw/local` — works indoor and outdoor
@@ -601,8 +625,11 @@ drone.land()
 
 ## Implementation Modules
 
-- **mavros/**: MAVROS-specific implementation (MavrosDrone, GPS utilities, PID navigation)
+- **ardupilot/**: Shared transport-agnostic ArduPilot core (ArduPilotDrone, navigator, target computer, GPS utils, sequencer, transport ABC, plain types)
+- **mavros/**: MAVROS transport (MavrosTransport, MavrosDrone)
+- **mavlink/**: Direct pymavlink transport (PymavlinkTransport, MavlinkDrone, connection, streams, vision bridge)
 - **bebop/**: Parrot Bebop 2 implementation (BebopDrone, velocity control, acrobatic maneuvers)
+- **crazyflie/**: Bitcraze Crazyflie implementation
 - **obstacles/**: Obstacle detection system (detectors, strategies, handlers)
 - **pid/**: PID controller implementation and configuration
 

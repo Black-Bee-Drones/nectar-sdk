@@ -52,7 +52,7 @@ ROS 2 software development kit for autonomous aerial systems. Provides unified i
 
 ### [Drone Control](nectar/nectar/control/README.md)
 
-Protocol-based drone interface with factory instantiation. `DroneFactory` creates drone implementations by key — currently [MAVROS](https://github.com/mavlink/mavros) ([ArduPilot](https://ardupilot.org/)/[PX4](https://docs.px4.io/)) and Parrot Bebop 2, extensible to any platform. All drones implement the same `Drone` protocol: takeoff, land, move_to, move_to_gps, move_velocity, rtl, obstacle management.
+Protocol-based drone interface with factory instantiation. `DroneFactory` creates drone implementations by key — ArduPilot reachable over two transports ([MAVROS](https://github.com/mavlink/mavros) or direct [pymavlink](https://mavlink.io/en/mavgen_python/)), plus Parrot Bebop 2 and Bitcraze Crazyflie, extensible to any platform. The two ArduPilot transports share one vehicle core, so flight behavior is identical regardless of the link. All drones implement the same `Drone` protocol: takeoff, land, move_to, move_to_gps, move_velocity, rtl, obstacle management.
 
 - Position navigation via PID control or FCU setpoints, in body, world, or takeoff reference frames
 - GPS waypoint missions with [EGM96](https://en.wikipedia.org/wiki/EGM96) geoid correction for AMSL altitude
@@ -62,13 +62,14 @@ Protocol-based drone interface with factory instantiation. `DroneFactory` create
 
 ```python
 import nectar
-from nectar.control import DroneFactory, MavrosConfig, BebopConfig, PoseSource
+from nectar.control import DroneFactory, MavrosConfig, MavlinkConfig, BebopConfig, PoseSource
 
 nectar.init()
 
-# Same interface, different platforms
+# Same interface, different platforms / transports
 drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS))
-# drone  = DroneFactory.create("bebop", BebopConfig())
+# drone = DroneFactory.create("mavlink", MavlinkConfig())  # direct pymavlink, no MAVROS
+# drone = DroneFactory.create("bebop", BebopConfig())
 
 drone.takeoff(altitude=2.0)
 drone.move_to(x=5.0, y=0.0, z=0.0, precision=0.3)
@@ -77,7 +78,7 @@ drone.land()
 nectar.shutdown()
 ```
 
-[Control overview](nectar/nectar/control/README.md) · [MAVROS details](nectar/nectar/control/mavros/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md)
+[Control overview](nectar/nectar/control/README.md) · [ArduPilot core](nectar/nectar/control/ardupilot/README.md) · [MAVROS transport](nectar/nectar/control/mavros/README.md) · [MAVLink transport](nectar/nectar/control/mavlink/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md)
 
 ### [Computer Vision](nectar/nectar/vision/README.md)
 
@@ -285,13 +286,26 @@ classDiagram
             +delay(seconds)
             +cleanup()
         }
-        class MavrosDrone {
-            -_navigator MavrosNavigator
+        class ArduPilotDrone {
+            <<abstract>>
+            -_transport MavlinkTransport
+            -_navigator ArduPilotNavigator
+            -_sequencer FlightSequencer
             -_pose_source PoseSource
             +set_mode(mode) bool
             +get_altitude(source) Optional~float~
             +set_pid_config(config)
         }
+        class MavrosDrone
+        class MavlinkDrone
+        class MavlinkTransport {
+            <<abstract>>
+            +state local_pose gps heading rel_alt rangefinder
+            +arm() set_mode() command_takeoff() set_param()
+            +send_velocity_target() send_local_target() send_global_target()
+        }
+        class MavrosTransport
+        class PymavlinkTransport
         class BebopDrone {
             +flip(direction)
             +camera_control(tilt, pan)
@@ -312,7 +326,7 @@ classDiagram
             +ip str
             +namespace str
         }
-        class MavrosNavigator {
+        class ArduPilotNavigator {
             +navigate_pid(target, precision, altitude_source) bool
             +navigate_setpoint(target, precision) bool
         }
@@ -324,8 +338,9 @@ classDiagram
         class GPSUtils {
             <<static>>
             +geoid_height(lat, lon)$ float
-            +create_gps_setpoint(lat, lon, alt, heading)$ GeoPoseStamped
+            +create_global_target(lat, lon, alt, heading)$ GlobalTarget
             +check_reached(cur, tgt, precision)$ tuple
+            +local_offset(cur, tgt)$ tuple
         }
         class ObstacleManager {
             +should_continue_navigation(drone) bool
@@ -565,16 +580,21 @@ classDiagram
 
     %% Control
     Drone <|.. BaseDrone : implements
-    BaseDrone <|-- MavrosDrone
+    BaseDrone <|-- ArduPilotDrone
     BaseDrone <|-- BebopDrone
+    ArduPilotDrone <|-- MavrosDrone
+    ArduPilotDrone <|-- MavlinkDrone
+    ArduPilotDrone o-- MavlinkTransport
+    MavlinkTransport <|.. MavrosTransport
+    MavlinkTransport <|.. PymavlinkTransport
     DroneFactory ..> BaseDrone : creates
     DroneConfig <|-- MavrosConfig
     DroneConfig <|-- BebopConfig
     BaseDrone o-- DroneConfig
-    MavrosDrone *-- MavrosNavigator
-    MavrosNavigator ..> PIDController : creates
-    MavrosNavigator ..> GPSUtils : uses
-    MavrosNavigator ..> PositionUtils : uses
+    ArduPilotDrone *-- ArduPilotNavigator
+    ArduPilotNavigator ..> PIDController : creates
+    ArduPilotNavigator ..> GPSUtils : uses
+    ArduPilotNavigator ..> PositionUtils : uses
     BaseDrone o-- ObstacleManager
     ObstacleManager o-- ObstacleHandler
     ObstacleHandler *-- ObstacleDetector
@@ -655,11 +675,12 @@ detector = Detector("model.bin", framework="custom")
 |----------|----------|
 | [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, RealSense, Docker, troubleshooting |
 | [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, movement API, obstacle system |
-| [MAVROS Implementation](nectar/nectar/control/mavros/README.md) | MAVLink, flight modes, coordinate frames, altitude types, PID vs setpoint, GPS utilities, ROS 2 topics/services |
+| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | Shared flight logic: concepts, navigation, frames, takeoff/land, RTL, setpoint/PID, GPS/EGM96, parameters |
+| [MAVROS Transport](nectar/nectar/control/mavros/README.md) | MAVROS plumbing: telemetry mapping, topics/services, service-ACK behavior, indoor vision relay |
+| [MAVLink Transport](nectar/nectar/control/mavlink/README.md) | Direct pymavlink: connection, RX/TX, stream rates, STATUSTEXT, parameter echo, vision bridge |
 | [Bebop Implementation](nectar/nectar/control/bebop/README.md) | Bebop 2 control, velocity, acrobatics |
 | [Obstacle Detection](nectar/nectar/control/obstacles/README.md) | Detector protocol, avoidance strategies, handler configuration |
 | [PID Controller](nectar/nectar/control/pid/README.md) | Tuning guide, YAML config, runtime updates, default indoor/outdoor configs |
-| [MAVLink Connection](nectar/nectar/control/mavlink/README.md) | Direct pymavlink connection wrapper; planned `MavlinkDrone` scope |
 | [Sensors Module](nectar/nectar/sensors/README.md) | TF-Luna driver, rangefinder filters, MAVLink `DISTANCE_SENSOR` bridge, ROS 2 node |
 | [Vision Module](nectar/nectar/vision/README.md) | Camera drivers, ArUco, color, line, distance, MediaPipe, nodes, calibration |
 | [AI Module](nectar/nectar/ai/README.md) | Detector API, training, evaluation, device management |

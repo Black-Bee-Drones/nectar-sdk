@@ -204,12 +204,12 @@ config = PositionPIDConfig.from_yaml("position_config.yaml")
 
 ## Usage in Drone Control
 
-### MavrosDrone Integration
+### ArduPilotDrone Integration
 
 PID controllers created per-axis from configuration:
 
 ```python
-# In MavrosNavigator.navigate_pid()
+# In ArduPilotNavigator.navigate_pid()
 pid_x = self._create_pid("x")      # Creates from self._pid_config.x
 pid_y = self._create_pid("y")
 pid_z = self._create_pid("z")
