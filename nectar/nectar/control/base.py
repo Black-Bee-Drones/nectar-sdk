@@ -13,6 +13,7 @@ from rclpy.qos import QoSProfile
 from rclpy.subscription import Subscription
 
 from nectar import runtime as nectar_runtime
+from nectar.control.capabilities import Capability
 from nectar.control.config import DroneConfig
 from nectar.control.exceptions import (
     CapabilityNotSupportedError,
@@ -148,6 +149,19 @@ class BaseDrone(ABC):
     def obstacle_manager(self) -> ObstacleManager:
         """Obstacle detection manager for this drone instance."""
         return self._obstacle_manager
+
+    @property
+    def capabilities(self) -> "frozenset[Capability]":
+        """Set of features this drone supports.
+
+        Override in subclasses to declare the supported :class:`Capability`
+        set. The base implementation declares none.
+        """
+        return frozenset()
+
+    def supports(self, capability: Capability) -> bool:
+        """Return whether this drone declares ``capability``."""
+        return capability in self.capabilities
 
     def add_obstacle_detector(
         self,

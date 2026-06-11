@@ -89,6 +89,7 @@ show_help() {
     echo "  ./setup.sh sim-mavros         Launch MAVROS (connects to running SITL)"
     echo "  ./setup.sh sim-gazebo         Launch Gazebo + MAVROS"
     echo "  ./setup.sh sim-outdoor        Launch Gazebo outdoor world + MAVROS"
+    echo "  ./setup.sh sim-outdoor-direct Launch Gazebo outdoor world only (no MAVROS, direct MAVLink)"
     echo "  ./setup.sh sim-indoor         Launch Gazebo indoor world + MAVROS + vision bridge"
     echo "  ./setup.sh sim-stop           Stop all simulation processes"
     echo ""
@@ -459,6 +460,7 @@ main() {
         sim-mavros)         cmd_sim_mavros "$@" ;;
         sim-gazebo)         cmd_sim_gazebo "$@" ;;
         sim-outdoor)        cmd_sim_outdoor "$@" ;;
+        sim-outdoor-direct) cmd_sim_outdoor_direct "$@" ;;
         sim-indoor)         cmd_sim_indoor "$@" ;;
         sim-stop)           cmd_sim_stop ;;
 

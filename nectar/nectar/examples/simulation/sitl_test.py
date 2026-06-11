@@ -8,7 +8,8 @@ Prerequisites:
     Terminal 2: make sim-outdoor        (or make sim-indoor for indoor)
 
 Usage:
-    python3 sitl_test.py                  # all outdoor tests
+    python3 sitl_test.py                  # all outdoor tests (MAVROS)
+    python3 sitl_test.py --mavlink        # all outdoor tests (direct pymavlink, tcp 5762)
     python3 sitl_test.py --indoor         # all indoor-compatible tests
     python3 sitl_test.py pid_fwd          # single test
     python3 sitl_test.py --indoor --group vel   # velocity group indoor
@@ -23,32 +24,34 @@ import time
 
 import nectar
 from nectar.control import (
+    MAVLINK_SITL_GAZEBO_CONFIG,
+    MAVLINK_SITL_VISION_CONFIG,
     SITL_GPS_CONFIG,
     SITL_VISION_CONFIG,
     DroneFactory,
     MoveReference,
     NavigationMethod,
     RTLMethod,
+    SetpointNavConfig,
 )
-from nectar.control.mavros.setpoint_config import SetpointNavConfig
-from nectar.utils.position_utils import PositionUtils
 
 log = logging.getLogger("sitl_test")
 
 # Helpers
 
 
-def pos_xyz(local_pos) -> tuple:
-    if local_pos is None:
+def pos_xyz(pose) -> tuple:
+    """Return (x, y, z) from a plain LocalPose (ENU)."""
+    if pose is None:
         return (0.0, 0.0, 0.0)
-    p = local_pos.pose.position
+    p = pose.position
     return (p.x, p.y, p.z)
 
 
-def pos_str(local_pos) -> str:
-    if local_pos is None:
+def pos_str(pose) -> str:
+    if pose is None:
         return "None"
-    p = local_pos.pose.position
+    p = pose.position
     return f"x={p.x:.3f}, y={p.y:.3f}, z={p.z:.3f}"
 
 
@@ -56,11 +59,11 @@ def dist_2d(a: tuple, b: tuple) -> float:
     return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
 
 
-def get_yaw_deg(local_pos) -> float:
-    """Get ENU yaw from local pose, returned in degrees."""
-    if local_pos is None:
+def get_yaw_deg(pose) -> float:
+    """Get ENU yaw from a plain LocalPose, returned in degrees."""
+    if pose is None:
         return 0.0
-    return math.degrees(PositionUtils.get_yaw_from_pose(local_pos))
+    return math.degrees(pose.yaw)
 
 
 # Test runner
@@ -71,15 +74,23 @@ class SITLTest:
 
     ALTITUDE = 3.0
 
-    def __init__(self, fresh: bool = False, indoor: bool = False):
+    def __init__(self, fresh: bool = False, indoor: bool = False, mavlink: bool = False):
         self.indoor = indoor
-        config = SITL_VISION_CONFIG if indoor else SITL_GPS_CONFIG
-        self.drone = DroneFactory.create("mavros", config)
+        if mavlink:
+            drone_type = "mavlink"
+            config = MAVLINK_SITL_VISION_CONFIG if indoor else MAVLINK_SITL_GAZEBO_CONFIG
+        else:
+            drone_type = "mavros"
+            config = SITL_VISION_CONFIG if indoor else SITL_GPS_CONFIG
+        self.drone = DroneFactory.create(drone_type, config)
         self.results: dict[str, bool] = {}
         self.fresh = fresh
         mode = "indoor (vision)" if indoor else "outdoor (GPS)"
         log.info(
-            "SITLTest initialized -- %s (reset=%s)", mode, "land/takeoff" if fresh else "LOITER"
+            "SITLTest initialized -- %s via %s (reset=%s)",
+            mode,
+            drone_type,
+            "land/takeoff" if fresh else "LOITER",
         )
 
     # State management
@@ -100,10 +111,10 @@ class SITLTest:
             d.delay(3.0)
             if not d.set_param("PSC_JERK_XY", 50.0):
                 d.set_param("PSC_JERK_NE", 50.0)
-            log.info("Airborne at %s", pos_str(d.local_pos))
+            log.info("Airborne at %s", pos_str(d.local_pose))
         else:
             d.set_takeoff_position()
-            log.info("Already armed at %s", pos_str(d.local_pos))
+            log.info("Already armed at %s", pos_str(d.local_pose))
 
     def reset_hover(self):
         d = self.drone
@@ -117,9 +128,9 @@ class SITLTest:
 
     def measure_drift(self, duration: float = 2.0) -> float:
         """Return 2D drift over `duration` seconds."""
-        p0 = pos_xyz(self.drone.local_pos)
+        p0 = pos_xyz(self.drone.local_pose)
         self.drone.delay(duration)
-        p1 = pos_xyz(self.drone.local_pos)
+        p1 = pos_xyz(self.drone.local_pose)
         return dist_2d(p0, p1)
 
     # L0: Sensors
@@ -131,18 +142,16 @@ class SITLTest:
 
         if self.indoor:
             checks = {
-                "state": d.mavros_state is not None and d.is_fcu_connected,
-                "vision_pos": d.vision_pos is not None,
-                "local_pos": d.local_pos is not None,
-                "imu": d._imu is not None,
+                "state": d.is_fcu_connected,
+                "vision_pose": d.vision_pose is not None,
+                "local_pose": d.local_pose is not None,
             }
         else:
             checks = {
-                "state": d.mavros_state is not None and d.is_fcu_connected,
+                "state": d.is_fcu_connected,
                 "gps": d.gps is not None and d.gps.latitude != 0.0,
                 "heading": d.heading is not None and d.heading != 0.0,
-                "local_pos": d.local_pos is not None,
-                "imu": d._imu is not None,
+                "local_pose": d.local_pose is not None,
             }
 
         for name, ok in checks.items():
@@ -198,11 +207,11 @@ class SITLTest:
     def test_vel_world(self) -> bool:
         """Velocity east 0.5 m/s for 5s, WORLD (ENU) frame."""
         d = self.drone
-        p_before = pos_xyz(d.local_pos)
+        p_before = pos_xyz(d.local_pose)
 
         # WORLD: vx=east, vy=north in ENU
         d.move_velocity(vx=0.5, vy=0.0, vz=0.0, duration=5.0, reference=MoveReference.WORLD)
-        p_after = pos_xyz(d.local_pos)
+        p_after = pos_xyz(d.local_pose)
 
         # local_pos is ENU: x=east, y=north
         dx_east = p_after[0] - p_before[0]
@@ -223,10 +232,10 @@ class SITLTest:
     def test_vel_world_north(self) -> bool:
         """WORLD frame: vy=+0.5 should move North (+Y in ENU local)."""
         d = self.drone
-        p0 = pos_xyz(d.local_pos)
+        p0 = pos_xyz(d.local_pose)
 
         d.move_velocity(vx=0.0, vy=0.5, vz=0.0, duration=5.0, reference=MoveReference.WORLD)
-        p1 = pos_xyz(d.local_pos)
+        p1 = pos_xyz(d.local_pose)
 
         dy_north = p1[1] - p0[1]
         dx_east = p1[0] - p0[0]
@@ -258,13 +267,13 @@ class SITLTest:
             timeout=20.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=2.0)
-        yaw_after_rot = get_yaw_deg(d.local_pos)
+        yaw_after_rot = get_yaw_deg(d.local_pose)
 
-        p0 = pos_xyz(d.local_pos)
+        p0 = pos_xyz(d.local_pose)
 
         # WORLD vx=+0.5 should go East regardless of current heading
         d.move_velocity(vx=0.5, vy=0.0, vz=0.0, duration=5.0, reference=MoveReference.WORLD)
-        p1 = pos_xyz(d.local_pos)
+        p1 = pos_xyz(d.local_pose)
 
         dx_east = p1[0] - p0[0]
         dy_north = p1[1] - p0[1]
@@ -288,7 +297,7 @@ class SITLTest:
         d.delay(1.0)
 
         hdg = d.heading  # NED: 0=North, CW
-        local_yaw = get_yaw_deg(d.local_pos)  # ENU: 0=East, CCW
+        local_yaw = get_yaw_deg(d.local_pose)  # ENU: 0=East, CCW
         converted = (90.0 - hdg + 180) % 360 - 180  # NED→ENU, normalized
         local_norm = (local_yaw + 180) % 360 - 180
 
@@ -306,10 +315,10 @@ class SITLTest:
         """Move at 0.5 m/s then zero-velocity stop. Drift < 0.8m in SITL."""
         d = self.drone
         d.move_velocity(vx=0.5, vy=0.0, vz=0.0, duration=2.0, reference=MoveReference.BODY)
-        p0 = pos_xyz(d.local_pos)
+        p0 = pos_xyz(d.local_pose)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
         d.delay(3.0)
-        p1 = pos_xyz(d.local_pos)
+        p1 = pos_xyz(d.local_pose)
         drift = dist_2d(p0, p1)
 
         passed = drift < 0.8
@@ -319,10 +328,10 @@ class SITLTest:
     def test_vel_yaw(self) -> bool:
         """Yaw rotation via velocity command: 30°/s for 3s ≈ 90° turn."""
         d = self.drone
-        yaw_before = get_yaw_deg(d.local_pos)
+        yaw_before = get_yaw_deg(d.local_pose)
         d.move_velocity(vx=0.0, vy=0.0, vz=0.0, vyaw=0.5, duration=3.5)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
-        yaw_after = get_yaw_deg(d.local_pos)
+        yaw_after = get_yaw_deg(d.local_pose)
 
         # Yaw difference (shortest path)
         delta = (yaw_after - yaw_before + 180) % 360 - 180
@@ -332,11 +341,12 @@ class SITLTest:
 
     def _test_velocity(self, name: str, vx: float, vy: float, ref: MoveReference) -> bool:
         d = self.drone
-        p_before = pos_xyz(d.local_pos)
-        yaw_before = PositionUtils.get_yaw_from_pose(d.local_pos)
+        local = d.local_pose
+        p_before = pos_xyz(local)
+        yaw_before = local.yaw if local else 0.0
 
         d.move_velocity(vx=vx, vy=vy, vz=0.0, duration=5.0, reference=ref)
-        p_after = pos_xyz(d.local_pos)
+        p_after = pos_xyz(d.local_pose)
         total = dist_2d(p_before, p_after)
 
         dx = p_after[0] - p_before[0]
@@ -397,7 +407,7 @@ class SITLTest:
         d = self.drone
 
         # +90° should rotate CCW (positive delta in ENU)
-        yaw0 = get_yaw_deg(d.local_pos)
+        yaw0 = get_yaw_deg(d.local_pose)
         r1 = d.move_to(
             x=0.0,
             y=0.0,
@@ -408,7 +418,7 @@ class SITLTest:
             timeout=20.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
-        yaw1 = get_yaw_deg(d.local_pos)
+        yaw1 = get_yaw_deg(d.local_pose)
         delta_ccw = (yaw1 - yaw0 + 180) % 360 - 180
 
         # -90° should rotate CW (negative delta in ENU)
@@ -422,7 +432,7 @@ class SITLTest:
             timeout=20.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
-        yaw2 = get_yaw_deg(d.local_pos)
+        yaw2 = get_yaw_deg(d.local_pose)
         delta_cw = (yaw2 - yaw1 + 180) % 360 - 180
 
         ccw_ok = r1 and delta_ccw > 60
@@ -439,7 +449,7 @@ class SITLTest:
     def test_yaw_takeoff_ref(self) -> bool:
         """TAKEOFF ref yaw=0 returns to takeoff heading after rotation."""
         d = self.drone
-        takeoff_yaw = get_yaw_deg(d.local_pos)
+        takeoff_yaw = get_yaw_deg(d.local_pose)
 
         # Rotate +60° from current
         d.move_to(
@@ -452,7 +462,7 @@ class SITLTest:
             timeout=20.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
-        after_rot = get_yaw_deg(d.local_pos)
+        after_rot = get_yaw_deg(d.local_pose)
 
         # TAKEOFF ref yaw=0 → should return to takeoff heading
         d.move_to(
@@ -466,7 +476,7 @@ class SITLTest:
             timeout=20.0,
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
-        final_yaw = get_yaw_deg(d.local_pos)
+        final_yaw = get_yaw_deg(d.local_pose)
 
         error = abs(((final_yaw - takeoff_yaw) + 180) % 360 - 180)
         passed = error < 15.0
@@ -528,7 +538,7 @@ class SITLTest:
         d.set_setpoint_config(wpnav_cfg)
         log.info("  Applied WPNav config: guid_options=65, speed=3, radius=0.5")
 
-        p_before = pos_xyz(d.local_pos)
+        p_before = pos_xyz(d.local_pose)
         t0 = time.time()
         try:
             result = d.move_to(
@@ -542,7 +552,7 @@ class SITLTest:
             log.error(f"  SETPOINT_WPNAV exception: {e}")
             result = False
         elapsed = time.time() - t0
-        p_after = pos_xyz(d.local_pos)
+        p_after = pos_xyz(d.local_pose)
         moved = dist_2d(p_before, p_after)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
@@ -577,7 +587,7 @@ class SITLTest:
         result = d.rtl(precision=0.2, method=RTLMethod.NAVIGATE, land=False)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
-        p_after = pos_xyz(d.local_pos)
+        p_after = pos_xyz(d.local_pose)
         takeoff = d._takeoff_local
         if takeoff:
             tp = (takeoff.position.x, takeoff.position.y)
@@ -609,7 +619,7 @@ class SITLTest:
             d.set_mode("GUIDED")
             d.delay(2.0)
 
-        p_after = pos_xyz(d.local_pos)
+        p_after = pos_xyz(d.local_pose)
         takeoff = d._takeoff_local
         if takeoff:
             tp = (takeoff.position.x, takeoff.position.y)
@@ -695,7 +705,7 @@ class SITLTest:
         )
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
-        p = pos_xyz(d.local_pos)
+        p = pos_xyz(d.local_pose)
         takeoff = d._takeoff_local
         if takeoff:
             tp = (takeoff.position.x, takeoff.position.y, takeoff.position.z)
@@ -758,7 +768,7 @@ class SITLTest:
         """Fly a square pattern and check closing error."""
         d = self.drone
         log = logging.getLogger("sitl_test")
-        p_start = pos_xyz(d.local_pos)
+        p_start = pos_xyz(d.local_pose)
 
         if reference == MoveReference.TAKEOFF:
             legs = [
@@ -792,14 +802,14 @@ class SITLTest:
                 log.error(f"  [{name}] Leg {i} exception: {e}")
                 result = False
             elapsed = time.time() - t0
-            p = pos_xyz(d.local_pos)
+            p = pos_xyz(d.local_pose)
             status = "OK" if result else "FAIL"
             log.info(f"  [{name}] Leg {i}: {status} ({elapsed:.1f}s) pos=({p[0]:.2f}, {p[1]:.2f})")
             d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
             if result:
                 legs_ok += 1
 
-        p_end = pos_xyz(d.local_pos)
+        p_end = pos_xyz(d.local_pose)
         closing = dist_2d(p_start, p_end)
         passed = legs_ok == 4 and closing < 1.0
 
@@ -822,7 +832,7 @@ class SITLTest:
     ) -> bool:
         """Generic move_to test from current hover position."""
         d = self.drone
-        p_before = pos_xyz(d.local_pos)
+        p_before = pos_xyz(d.local_pose)
 
         t0 = time.time()
         try:
@@ -842,7 +852,7 @@ class SITLTest:
             return False
         elapsed = time.time() - t0
 
-        p_after = pos_xyz(d.local_pos)
+        p_after = pos_xyz(d.local_pose)
         moved = dist_2d(p_before, p_after)
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
@@ -862,7 +872,7 @@ class SITLTest:
     ) -> bool:
         """Test yaw rotation via move_to with yaw parameter, no XY movement."""
         d = self.drone
-        yaw_before = get_yaw_deg(d.local_pos)
+        yaw_before = get_yaw_deg(d.local_pose)
 
         t0 = time.time()
         try:
@@ -881,7 +891,7 @@ class SITLTest:
             return False
         elapsed = time.time() - t0
 
-        yaw_after = get_yaw_deg(d.local_pos)
+        yaw_after = get_yaw_deg(d.local_pose)
         delta = (yaw_after - yaw_before + 180) % 360 - 180
         d.move_velocity(0.0, 0.0, 0.0, 0.0, duration=1.0)
 
@@ -1000,8 +1010,10 @@ GROUPS = {
     "all": list(TESTS.keys()),
 }
 
-# Tests that don't require airborne state
-PRE_FLIGHT_TESTS = {"sensors", "set_speed", "heading_enu"}
+# Tests that don't require airborne state. set_speed is intentionally excluded:
+# ArduCopter only accepts MAV_CMD_DO_CHANGE_SPEED in a nav-capable mode (GUIDED),
+# so it must run airborne to exercise a real acceptance path.
+PRE_FLIGHT_TESTS = {"sensors", "heading_enu"}
 
 # Tests that require GPS (skipped with --indoor)
 GPS_ONLY_TESTS = {
@@ -1025,12 +1037,14 @@ def main():
         for name, tests in GROUPS.items():
             print(f"  {name:20s} {', '.join(tests)}")
         print("\nFlags:")
-        print("  --indoor             Use SITL_VISION_CONFIG (skip GPS-only tests)")
+        print("  --mavlink            Use direct pymavlink (MavlinkDrone) on tcp 5762")
+        print("  --indoor             Use vision config (skip GPS-only tests)")
         print("  --fresh              Land between tests for full reset")
         return
 
     fresh = "--fresh" in sys.argv
     indoor = "--indoor" in sys.argv
+    mavlink = "--mavlink" in sys.argv
 
     # Parse test names
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -1062,7 +1076,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     nectar.init()
-    node = SITLTest(fresh=fresh, indoor=indoor)
+    node = SITLTest(fresh=fresh, indoor=indoor, mavlink=mavlink)
 
     try:
         mode = "indoor (vision)" if indoor else "outdoor (GPS)"

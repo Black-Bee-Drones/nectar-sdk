@@ -135,13 +135,16 @@ class RangefinderPublisher:
     def _send(self, distance_m: float) -> None:
         distance_cm = max(0, min(0xFFFF, int(round(distance_m * 100))))
         time_boot_ms = int(time.monotonic() * 1000) & 0xFFFFFFFF
-        self._connection.master.mav.distance_sensor_send(
-            time_boot_ms,
-            self._min_cm,
-            self._max_cm,
-            distance_cm,
-            self._sensor_type,
-            self._sensor_id,
-            self._orientation,
-            self._covariance,
-        )
+        # Serialize with any other senders sharing this endpoint (e.g. a
+        # PymavlinkTransport's setpoints/heartbeat) via the connection lock.
+        with self._connection.send_lock:
+            self._connection.master.mav.distance_sensor_send(
+                time_boot_ms,
+                self._min_cm,
+                self._max_cm,
+                distance_cm,
+                self._sensor_type,
+                self._sensor_id,
+                self._orientation,
+                self._covariance,
+            )

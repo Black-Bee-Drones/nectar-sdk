@@ -21,10 +21,9 @@ def run(drone, source: str, duration: float) -> None:
 def _log_data(drone, source: str) -> None:
     altitude = drone.get_altitude()
     lidar = drone.get_altitude(AltitudeSource.LIDAR)
-    local = drone.local_pos
+    local = drone.local_pose
     local_str = (
-        f"x={local.pose.position.x:.2f}, y={local.pose.position.y:.2f}, "
-        f"z={local.pose.position.z:.2f}"
+        f"x={local.position.x:.2f}, y={local.position.y:.2f}, z={local.position.z:.2f}"
         if local
         else "N/A"
     )
@@ -41,9 +40,9 @@ def _log_data(drone, source: str) -> None:
             local_str,
         )
     else:
-        vision = drone.vision_pos
+        vision = drone.vision_pose
         if vision:
-            p = vision.pose.position
+            p = vision.position
             log.info(
                 "Vision: x=%.2f, y=%.2f, z=%.2f | altitude=%s | lidar=%s | local=[%s]",
                 p.x,

@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING
 
 _LAZY_ATTRS = {
     "MavlinkConnection": "nectar.control.mavlink.connection",
+    "PymavlinkTransport": "nectar.control.mavlink.transport",
+    "MavlinkDrone": "nectar.control.mavlink.drone",
+    "VisionPoseBridge": "nectar.control.mavlink.vision_bridge",
 }
 
 
@@ -23,6 +26,14 @@ def __dir__():
 
 if TYPE_CHECKING:
     from nectar.control.mavlink.connection import MavlinkConnection
+    from nectar.control.mavlink.drone import MavlinkDrone
+    from nectar.control.mavlink.transport import PymavlinkTransport
+    from nectar.control.mavlink.vision_bridge import VisionPoseBridge
 
 
-__all__ = ["MavlinkConnection"]
+__all__ = [
+    "MavlinkConnection",
+    "PymavlinkTransport",
+    "MavlinkDrone",
+    "VisionPoseBridge",
+]

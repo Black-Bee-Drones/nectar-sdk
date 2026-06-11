@@ -25,6 +25,7 @@ Usage:
     ros2 launch nectar sitl_gazebo.launch.py world:=outdoor
     ros2 launch nectar sitl_gazebo.launch.py world:=indoor
     ros2 launch nectar sitl_gazebo.launch.py world:=iris_runway.sdf
+    ros2 launch nectar sitl_gazebo.launch.py mavros:=false   # Gazebo only (direct MAVLink)
 """
 
 import os
@@ -51,6 +52,7 @@ def _launch_setup(context: LaunchContext) -> list:
     ardupilot_gazebo_dir = os.path.expanduser("~/ardupilot_gazebo")
     world_raw = LaunchConfiguration("world").perform(context)
     fcu_url = LaunchConfiguration("fcu_url").perform(context)
+    use_mavros = LaunchConfiguration("mavros").perform(context).lower() in ("true", "1", "yes")
 
     # Resolve world shorthand
     world_file = _WORLD_ALIASES.get(world_raw, world_raw)
@@ -67,12 +69,14 @@ def _launch_setup(context: LaunchContext) -> list:
         "simulation",
     )
     src_worlds_dir = os.path.join(src_sim_dir, "worlds")
+    src_models_dir = os.path.join(src_sim_dir, "models")
 
     existing_resource = os.environ.get("GZ_SIM_RESOURCE_PATH", "")
     gz_resource_path = os.pathsep.join(
         p
         for p in [
             src_worlds_dir,
+            src_models_dir,
             src_sim_dir,
             models_dir,
             worlds_dir,
@@ -150,7 +154,12 @@ def _launch_setup(context: LaunchContext) -> list:
         ],
     )
 
-    actions = [gz_sim, ros_gz_bridge, mavros_launch, set_stream_rate]
+    actions = [gz_sim, ros_gz_bridge]
+
+    # MAVROS is optional: skip it (mavros:=false) to drive the SITL directly via
+    # MavlinkDrone (pymavlink) without an unused MAVROS bridge running.
+    if use_mavros:
+        actions.extend([mavros_launch, set_stream_rate])
 
     # ── Indoor-only: vision pose bridge ─────────────────────────────────
     if is_indoor:
@@ -201,6 +210,14 @@ def generate_launch_description():
                 "fcu_url",
                 default_value="tcp://127.0.0.1:5760",
                 description="MAVLink connection URL to ArduPilot SITL",
+            ),
+            DeclareLaunchArgument(
+                "mavros",
+                default_value="true",
+                description=(
+                    "Start MAVROS (true) or only Gazebo physics (false) for "
+                    "direct MAVLink control via MavlinkDrone"
+                ),
             ),
             OpaqueFunction(function=_launch_setup),
         ]

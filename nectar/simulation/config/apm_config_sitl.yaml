@@ -158,10 +158,16 @@
         field_of_view: 0.0        # XXX TODO
         send_tf: false
         sensor_position: {x:  0.0, y:  0.0, z:  -0.1}
-      rangefinder_sub:
-        subscriber: true
+      rangefinder/front:
         id: 1
-        orientation: PITCH_270  # only that orientation are supported by APM 3.4+
+        frame_id: "lidar_front"
+        field_of_view: 0.0
+        send_tf: false
+      rangefinder/back:
+        id: 2
+        frame_id: "lidar_back"
+        field_of_view: 0.0
+        send_tf: false
 
 # image_pub
 /**/image:

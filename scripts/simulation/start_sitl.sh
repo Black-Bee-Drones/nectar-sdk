@@ -4,6 +4,8 @@
 #
 # Launches ArduCopter SITL with sensible defaults for MAVROS connection.
 # MAVROS connects on tcp://127.0.0.1:5760 (SERIAL0, default TCP server).
+# A second MAVLink endpoint is exposed on tcp://127.0.0.1:5762 (SERIAL1) for a
+# direct pymavlink client (MavlinkDrone) running alongside MAVROS.
 #
 # Usage:
 #   ./scripts/simulation/start_sitl.sh [options]
@@ -16,6 +18,7 @@
 #   --gazebo            Use Gazebo for physics (--model json). Start Gazebo
 #                       separately with: ros2 launch nectar sitl_gazebo.launch.py
 #   --indoor            Load indoor.parm (no GPS, EKF3 ExternalNav). Implies --gazebo.
+#   --params <file>     Extra .parm file appended last to --defaults (overrides)
 #   --map               Launch with MAVProxy + map (requires display)
 #   --extra <args>      Extra arguments passed to the binary or sim_vehicle.py
 #
@@ -37,6 +40,7 @@ USE_MAP=false
 USE_GAZEBO=false
 USE_INDOOR=false
 EXTRA_ARGS=""
+EXTRA_PARM=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -46,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --speedup)  SPEEDUP="$2"; shift 2 ;;
         --gazebo)   USE_GAZEBO=true; shift ;;
         --indoor)   USE_INDOOR=true; USE_GAZEBO=true; shift ;;
+        --params)   EXTRA_PARM="$2"; shift 2 ;;
         --map)      USE_MAP=true; shift ;;
         --extra)    EXTRA_ARGS="$2"; shift 2 ;;
         -h|--help)
@@ -104,6 +109,19 @@ if [ "${USE_INDOOR}" = true ]; then
     fi
 fi
 
+# Resolve optional --params file to an absolute path (SITL runs from ARDUPILOT_DIR).
+# Accept a path relative to the current directory or to the project root.
+if [ -n "${EXTRA_PARM}" ]; then
+    if [ -f "${EXTRA_PARM}" ]; then
+        EXTRA_PARM="$(cd "$(dirname "${EXTRA_PARM}")" && pwd)/$(basename "${EXTRA_PARM}")"
+    elif [ -f "${PROJECT_DIR}/${EXTRA_PARM}" ]; then
+        EXTRA_PARM="${PROJECT_DIR}/${EXTRA_PARM}"
+    else
+        echo "[ERROR] Param file not found: ${EXTRA_PARM}"
+        exit 1
+    fi
+fi
+
 # ── Launch ──────────────────────────────────────────────────────────────────
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  Nectar SDK — ArduPilot SITL                    ║"
@@ -114,7 +132,8 @@ echo "  Model:    ${MODEL}"
 echo "  Indoor:   ${USE_INDOOR}"
 echo "  Location: ${LOCATION:-default}"
 echo "  Speedup:  ${SPEEDUP}x"
-echo "  MAVROS:   tcp://127.0.0.1:5760"
+echo "  MAVROS:   tcp://127.0.0.1:5760  (SERIAL0)"
+echo "  MAVLink:  tcp://127.0.0.1:5762  (SERIAL1, direct pymavlink)"
 echo ""
 
 if [ "${USE_GAZEBO}" = true ]; then
@@ -152,12 +171,16 @@ else
     ALL_DEFAULTS="${DEFAULTS}"
     [ -n "${GAZEBO_PARM}" ] && ALL_DEFAULTS="${ALL_DEFAULTS},${GAZEBO_PARM}"
     [ -n "${INDOOR_PARM}" ] && ALL_DEFAULTS="${ALL_DEFAULTS},${INDOOR_PARM}"
+    [ -n "${EXTRA_PARM}" ] && ALL_DEFAULTS="${ALL_DEFAULTS},${EXTRA_PARM}"
 
     CMD="${BINARY} --model ${MODEL} --speedup ${SPEEDUP}"
     CMD="${CMD} --defaults ${ALL_DEFAULTS}"
     # Wipe eeprom in Gazebo mode so --defaults (rangefinder, indoor, etc.) take effect
     [ "${USE_GAZEBO}" = true ] && CMD="${CMD} -w"
     CMD="${CMD} --sim-address=127.0.0.1 -I0"
+    # SERIAL1 as a second MAVLink TCP server (5762) so a direct pymavlink client
+    # (MavlinkDrone) can attach alongside MAVROS on SERIAL0 (5760).
+    CMD="${CMD} --serial1=tcp:5762"
 
     if [ -n "${LOCATION}" ]; then
         # Look up lat/lon from ArduPilot's locations.txt

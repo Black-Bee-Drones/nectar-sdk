@@ -1,10 +1,10 @@
 # Simulation Module
 
-ArduPilot SITL + Gazebo Harmonic simulation for MAVROS drone development and testing.
+ArduPilot SITL + Gazebo Harmonic simulation for Nectar drone development and testing, over either transport (MAVROS or direct MAVLink).
 
 ## How It Works
 
-ArduPilot [SITL](https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html) runs the full ArduCopter firmware on the host machine. [Gazebo Harmonic](https://gazebosim.org/docs/harmonic) provides physics and sensor simulation. The [ArduPilotPlugin](https://github.com/ArduPilot/ardupilot_gazebo) bridges Gazebo physics to SITL via JSON over UDP (port 9002). [MAVROS](https://github.com/mavlink/mavros) connects to SITL on TCP port 5760, exposing all MAVLink data as ROS 2 topics/services. The [ros_gz_bridge](https://github.com/ros-gz/ros_gz) converts Gazebo sensor data to ROS 2 messages.
+ArduPilot [SITL](https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html) runs the full ArduCopter firmware on the host machine. [Gazebo Harmonic](https://gazebosim.org/docs/harmonic) provides physics and sensor simulation. The [ArduPilotPlugin](https://github.com/ArduPilot/ardupilot_gazebo) bridges Gazebo physics to SITL via JSON over UDP (port 9002). SITL exposes two MAVLink endpoints: TCP `5760` (SERIAL0, for [MAVROS](https://github.com/mavlink/mavros)) and TCP `5762` (SERIAL1, for a direct pymavlink client / `MavlinkDrone`) — so both transports can run against the same simulator. The [ros_gz_bridge](https://github.com/ros-gz/ros_gz) converts Gazebo sensor data to ROS 2 messages.
 
 ```mermaid
 flowchart LR
@@ -26,11 +26,12 @@ flowchart LR
     subgraph ros2 [ROS 2]
         MAVROS["MAVROS"]
         VisionBridge["vision_pose_bridge (indoor)"]
-        SDK["Nectar SDK / MavrosDrone"]
+        SDK["Nectar SDK / MavrosDrone | MavlinkDrone"]
     end
 
     ArduPlugin -->|"JSON UDP:9002"| ArduCopter
-    ArduCopter -->|"TCP:5760"| MAVROS
+    ArduCopter -->|"TCP:5760 (MAVROS)"| MAVROS
+    ArduCopter -->|"TCP:5762 (direct MAVLink)"| SDK
     Physics --> SensorBridge
     SensorBridge --> SDK
     PoseBridge --> VisionBridge
@@ -98,6 +99,18 @@ make sim-start-gazebo
 make sim-outdoor
 ```
 
+#### Direct MAVLink (no MAVROS)
+
+```bash
+# Terminal 1: same SITL
+make sim-start-gazebo
+
+# Terminal 2: Gazebo + ros_gz_bridge only (mavros:=false), drive SITL on 5762
+make sim-outdoor-direct
+```
+
+`sim-outdoor-direct` runs `sitl_gazebo.launch.py world:=outdoor mavros:=false`. Connect a `MavlinkDrone` with `MAVLINK_SITL_GAZEBO_CONFIG` (tcp `5762`) — it attaches to SERIAL1 alongside or instead of MAVROS on SERIAL0.
+
 ### Indoor simulation
 
 ```bash
@@ -148,25 +161,57 @@ ros2 topic echo /front_camera/image --once
 ros2 topic echo /front_camera/depth_image --once
 ```
 
+### Multi-orientation rangefinders
+
+`rangefinder_test.sdf` places an iris with front and back single-ray lidars
+between two walls. The `iris_with_rangefinders` model forwards the front/back
+lidars to ArduPilot as `rng_2/rng_3`, and `rangefinder_test.parm` exposes them
+as `RNGFND2/3` (orientations forward/back). The downward rangefinder
+(`RNGFND1`, orientation down) stays on the analog SITL sonar from `gazebo.parm`:
+on the ground the airframe is only ~0.2 m tall, so a downward GPU lidar reads
+below its minimum range, while the sonar reports vehicle height above terrain
+reliably. ArduPilot emits one `DISTANCE_SENSOR` per instance, accessible through
+`drone.distance_sensors` and `drone.get_distance(orientation)`.
+
+```bash
+# Terminal 1: SITL with the three rangefinders
+./scripts/simulation/start_sitl.sh --gazebo \
+    --params nectar/simulation/params/rangefinder_test.parm
+
+# Terminal 2: Gazebo (and MAVROS) with the test world
+ros2 launch nectar sitl_gazebo.launch.py world:=rangefinder_test.sdf
+
+# Terminal 3: read the readings
+python3 nectar/nectar/examples/simulation/read_distance_sensors.py            # direct MAVLink
+python3 nectar/nectar/examples/simulation/read_distance_sensors.py --mavros   # MAVROS
+```
+
+The MAVROS path relies on the `distance_sensor` plugin entries in
+`config/apm_config_sitl.yaml` (`rangefinder/rangefinder`, `rangefinder/front`,
+`rangefinder/back`) mapped to orientations in the example via `DistanceSensorTopic`.
+
 ## Configuration Presets
 
 Defined in `nectar/control/config.py`:
 
-| Preset | PoseSource | Lidar | Use case |
-|---|---|---|---|
-| `SITL_CONFIG` | GPS | No | Headless SITL, no sensors |
-| `SITL_GPS_CONFIG` | GPS | No | Headless SITL with GPS |
-| `SITL_GAZEBO_CONFIG` | GPS | Yes | Gazebo outdoor |
-| `SITL_VISION_CONFIG` | VISION | Yes | Gazebo indoor |
+| Preset | Transport | Port | PoseSource | Lidar | Use case |
+|---|---|---|---|---|---|
+| `SITL_CONFIG` | mavros | 5760 | GPS | No | Headless SITL, no sensors |
+| `SITL_GPS_CONFIG` | mavros | 5760 | GPS | No | Headless SITL with GPS |
+| `SITL_GAZEBO_CONFIG` | mavros | 5760 | GPS | Yes | Gazebo outdoor |
+| `SITL_VISION_CONFIG` | mavros | 5760 | VISION | Yes | Gazebo indoor |
+| `MAVLINK_SITL_CONFIG` | mavlink | 5760 | GPS | No | Headless SITL, direct pymavlink |
+| `MAVLINK_SITL_GAZEBO_CONFIG` | mavlink | 5762 | GPS | No | Gazebo outdoor, direct (SERIAL1, alongside MAVROS) |
+| `MAVLINK_SITL_VISION_CONFIG` | mavlink | 5762 | VISION | No | Gazebo indoor, direct (reuses the MAVROS vision relay topic) |
 
 ```python
-from nectar.control import DroneFactory, SITL_GAZEBO_CONFIG, SITL_VISION_CONFIG
+from nectar.control import DroneFactory, SITL_GAZEBO_CONFIG, MAVLINK_SITL_GAZEBO_CONFIG
 
-# Outdoor
+# Outdoor over MAVROS (port 5760)
 drone = DroneFactory.create("mavros", SITL_GAZEBO_CONFIG, node)
 
-# Indoor
-drone = DroneFactory.create("mavros", SITL_VISION_CONFIG, node)
+# Outdoor over direct MAVLink (port 5762, with `make sim-outdoor-direct`)
+drone = DroneFactory.create("mavlink", MAVLINK_SITL_GAZEBO_CONFIG, node)
 ```
 
 ## Test Suite
@@ -237,14 +282,18 @@ GPS-only tests (skipped with `--indoor`): `heading_enu`, `setpoint_global`, `set
 flowchart LR
     GzPose["Gazebo PosePublisher<br/>/world/indoor_room/dynamic_pose/info<br/>gz.msgs.Pose_V"]
     Bridge["ros_gz_bridge<br/>gz.msgs.Pose_V → tf2_msgs/TFMessage"]
-    VPB["vision_pose_bridge.py<br/>Extracts iris model pose"]
+    VPB["vision_pose_bridge.py<br/>Selects iris model pose"]
     MAVROS["MAVROS<br/>→ VISION_POSITION_ESTIMATE"]
     EKF["ArduPilot EKF3<br/>ExternalNav fusion"]
 
     GzPose --> Bridge --> VPB --> MAVROS --> EKF
 ```
 
-The `vision_pose_bridge.py` node replaces the real RealSense D435i + Isaac ROS VSLAM pipeline. It extracts the `iris` model pose from Gazebo ground-truth and publishes `PoseWithCovarianceStamped` on `/mavros/vision_pose/pose_cov`.
+The `vision_pose_bridge.py` node replaces the real RealSense D435i + Isaac ROS VSLAM pipeline. It selects the `iris` model pose from the Gazebo ground-truth `TFMessage` and publishes `PoseWithCovarianceStamped` on `/mavros/vision_pose/pose_cov`.
+
+**Frame-name fallback**: it first matches the transform whose `child_frame_id` equals the model name. On ROS 2 Jazzy the `ros_gz_bridge` `Pose_V → TFMessage` conversion strips the frame ids, leaving `child_frame_id` empty. When all names are empty the bridge falls back to the transform at `model_index` (default `0`, the iris model root) and logs a one-time warning, so the indoor pipeline publishes reliably on Jazzy.
+
+> The direct MAVLink transport does not need this relay on real hardware — its built-in `VisionPoseBridge` subscribes straight to the VSLAM topic. In sim, `MAVLINK_SITL_VISION_CONFIG` simply reuses `/mavros/vision_pose/pose_cov` produced here to avoid a second pose source. See [mavlink/README.md](../nectar/control/mavlink/README.md).
 
 ## File Structure
 
@@ -253,10 +302,14 @@ simulation/
 ├── README.md                 # This file
 ├── params/
 │   ├── gazebo.parm           # Rangefinder params (all Gazebo sessions)
-│   └── indoor.parm           # No-GPS + EKF3 ExternalNav params
+│   ├── indoor.parm           # No-GPS + EKF3 ExternalNav params
+│   └── rangefinder_test.parm # RNGFND2/3 front/back for the test world (down stays analog)
+├── models/
+│   └── iris_with_rangefinders/  # iris + ArduPilotPlugin + down/front/back lidar
 └── worlds/
     ├── outdoor_field.sdf     # Open field + obstacles + GPS
-    └── indoor_room.sdf       # 20x20x12m room + obstacles + no GPS
+    ├── indoor_room.sdf       # 20x20x12m room + obstacles + no GPS
+    └── rangefinder_test.sdf  # iris between two walls for distance-sensor checks
 
 scripts/simulation/
 ├── install_sitl.sh           # Clone and build ArduPilot SITL
@@ -266,10 +319,11 @@ scripts/simulation/
 
 nectar/launch/
 ├── sitl.launch.py            # MAVROS-only launch (headless SITL)
-└── sitl_gazebo.launch.py     # Gazebo + MAVROS + ros_gz_bridge launch
+└── sitl_gazebo.launch.py     # Gazebo + ros_gz_bridge (+ MAVROS unless mavros:=false)
 
 nectar/nectar/examples/simulation/
-└── sitl_test.py              # Navigation test suite (--indoor flag)
+├── sitl_test.py                # Navigation test suite (--indoor flag)
+└── read_distance_sensors.py    # Print distance_sensors map (MAVLink / MAVROS)
 ```
 
 ## References

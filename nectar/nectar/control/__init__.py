@@ -3,15 +3,22 @@
 from importlib import import_module
 from typing import TYPE_CHECKING
 
+from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
+from nectar.control.ardupilot.types import DistanceReading, SensorOrientation
 from nectar.control.base import BaseDrone
 from nectar.control.config import (
+    MAVLINK_SITL_CONFIG,
+    MAVLINK_SITL_GAZEBO_CONFIG,
+    MAVLINK_SITL_VISION_CONFIG,
     SITL_CONFIG,
     SITL_GAZEBO_CONFIG,
     SITL_GPS_CONFIG,
     SITL_VISION_CONFIG,
     BebopConfig,
     CrazyflieConfig,
+    DistanceSensorTopic,
     DroneConfig,
+    MavlinkConfig,
     MavrosConfig,
 )
 from nectar.control.driver_monitor import (
@@ -28,7 +35,6 @@ from nectar.control.exceptions import (
     TakeoffPositionNotSetError,
 )
 from nectar.control.factory import DroneFactory
-from nectar.control.mavros import SetpointNavConfig
 from nectar.control.obstacles import (
     BaseObstacleDetector,
     ObstacleDirection,
@@ -54,11 +60,12 @@ from nectar.control.types import (
 _LAZY_ATTRS = {
     # Concrete drones (heavy: MAVROS / olympe / cflib)
     "MavrosDrone": "nectar.control.mavros.drone",
-    "MavrosNavigator": "nectar.control.mavros.navigator",
+    "ArduPilotNavigator": "nectar.control.ardupilot.navigator",
+    "MavlinkDrone": "nectar.control.mavlink.drone",
     "BebopDrone": "nectar.control.bebop.drone",
     "CrazyflieDrone": "nectar.control.crazyflie.drone",
     # GPS helpers (pull geopy + pygeodesy; only used for GPS missions)
-    "GPSUtils": "nectar.control.mavros.gps_utils",
+    "GPSUtils": "nectar.control.ardupilot.gps_utils",
     # Camera-based obstacle detectors (pyrealsense2 / sklearn)
     "DepthObstacleDetector": "nectar.control.obstacles.depth_camera",
     # Direct MAVLink connection (pymavlink)
@@ -80,12 +87,13 @@ def __dir__():
 
 
 if TYPE_CHECKING:
+    from nectar.control.ardupilot.gps_utils import GPSUtils
+    from nectar.control.ardupilot.navigator import ArduPilotNavigator
     from nectar.control.bebop.drone import BebopDrone
     from nectar.control.crazyflie.drone import CrazyflieDrone
     from nectar.control.mavlink.connection import MavlinkConnection
+    from nectar.control.mavlink.drone import MavlinkDrone
     from nectar.control.mavros.drone import MavrosDrone
-    from nectar.control.mavros.gps_utils import GPSUtils
-    from nectar.control.mavros.navigator import MavrosNavigator
     from nectar.control.obstacles.depth_camera import DepthObstacleDetector
 
 
@@ -97,12 +105,19 @@ __all__ = [
     "AltitudeSource",
     "DroneConfig",
     "MavrosConfig",
+    "MavlinkConfig",
+    "DistanceSensorTopic",
     "BebopConfig",
     "CrazyflieConfig",
+    "SensorOrientation",
+    "DistanceReading",
     "SITL_CONFIG",
     "SITL_GPS_CONFIG",
     "SITL_GAZEBO_CONFIG",
     "SITL_VISION_CONFIG",
+    "MAVLINK_SITL_CONFIG",
+    "MAVLINK_SITL_GAZEBO_CONFIG",
+    "MAVLINK_SITL_VISION_CONFIG",
     "DroneFactory",
     "DriverMonitor",
     "DriverStatus",
@@ -119,7 +134,8 @@ __all__ = [
     "SetpointNavConfig",
     "BaseDrone",
     "MavrosDrone",
-    "MavrosNavigator",
+    "ArduPilotNavigator",
+    "MavlinkDrone",
     "BebopDrone",
     "CrazyflieDrone",
     "GPSUtils",
