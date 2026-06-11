@@ -94,6 +94,21 @@ CRAZYFLIE_PACKAGES=(
     "ros-${ROS_DISTRO}-crazyflie-interfaces"
 )
 
+# Bebop driver (jeremyfix ros2_bebop_driver + ros2_parrot_arsdk, built from source).
+# apt deps required to build/run the driver.
+BEBOP_APT_PACKAGES=(
+    "ros-${ROS_DISTRO}-camera-info-manager"
+    libavdevice-dev
+    libavahi-client-dev
+    python-is-python3
+)
+
+# arsdk must be built before the driver that links against it.
+BEBOP_REPOS=(
+    "ros2_parrot_arsdk=https://github.com/jeremyfix/ros2_parrot_arsdk.git"
+    "ros2_bebop_driver=https://github.com/jeremyfix/ros2_bebop_driver.git"
+)
+
 # Qt6/PySide6 system dependencies
 GUI_SYSTEM_PACKAGES=(
     libxcb-cursor0 libxcb-shape0 libxcb-icccm4 libxcb-image0

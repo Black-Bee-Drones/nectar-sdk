@@ -1,6 +1,7 @@
 # Thin wrapper around scripts/setup.sh.
 
 .PHONY: help setup system update ros2 geographiclib ros2-env rosdep-init \
+        drone-mavros drone-crazyflie drone-bebop drone-all \
         python python-control python-vision python-ai python-interface python-sensors \
         install-all install-full pytorch \
         clone ros2-deps build build-pkg clean verify test \
@@ -28,6 +29,12 @@ ros2:               ; @$(SETUP) ros2
 geographiclib:      ; @$(SETUP) geographiclib
 ros2-env:           ; @$(SETUP) ros2-env
 rosdep-init:        ; @$(SETUP) rosdep-init
+
+# Drone drivers
+drone-mavros:       ; @$(SETUP) drone mavros
+drone-crazyflie:    ; @$(SETUP) drone crazyflie
+drone-bebop:        ; @$(SETUP) drone bebop
+drone-all:          ; @$(SETUP) drone all
 
 # Python
 python:             ; @$(SETUP) python

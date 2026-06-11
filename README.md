@@ -219,6 +219,17 @@ make python-sensors    # pyserial + pymavlink (TF-Luna driver, MAVLink bridge)
 make pytorch           # PyTorch (auto-detects CUDA)
 ```
 
+### Install by Drone Driver
+
+Each drone type needs its own driver. Install only the ones you use:
+
+```bash
+make drone-mavros      # MAVROS (ArduPilot/PX4) + GeographicLib datasets
+make drone-crazyflie   # Crazyswarm2 (apt when available, else source) + rowan
+make drone-bebop       # Parrot Bebop 2: ros2_parrot_arsdk + ros2_bebop_driver (source build)
+make drone-all         # all of the above
+```
+
 ### Interactive Menu
 
 Run the setup script with no arguments for a guided menu where you can pick individual steps:
@@ -734,8 +745,9 @@ Working examples in `nectar/nectar/examples/`:
 | [basic.py](nectar/nectar/examples/control/basic.py) | Takeoff, velocity, land |
 | [sensors.py](nectar/nectar/examples/control/sensors.py) | Monitor GPS/vision data |
 | [pid_simulation.py](nectar/nectar/examples/control/pid_simulation.py) | PID controller simulation |
-| [mavros_navigation.py](nectar/nectar/examples/control/mavros_navigation.py) | Navigation test (BODY, TAKEOFF, GPS references) |
-| [mavros_obstacles.py](nectar/nectar/examples/control/mavros_obstacles.py) | Obstacle avoidance |
+| [navigation.py](nectar/nectar/examples/control/navigation.py) | Navigation test (BODY, TAKEOFF, GPS references) |
+| [interactive_navigation.py](nectar/nectar/examples/control/interactive_navigation.py) | Interactive navigation REPL |
+| [obstacles.py](nectar/nectar/examples/control/obstacles.py) | Obstacle avoidance |
 | [camera_example.py](nectar/nectar/examples/vision/camera_example.py) | Camera capture |
 | [depth_example.py](nectar/nectar/examples/vision/depth_example.py) | Depth visualization |
 | [detector_example.py](nectar/nectar/examples/ai/detector_example.py) | Object detection |

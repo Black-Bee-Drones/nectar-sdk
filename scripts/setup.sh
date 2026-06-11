@@ -22,6 +22,7 @@ source "$SCRIPT_DIR/lib/system.sh"
 source "$SCRIPT_DIR/lib/ros2.sh"
 source "$SCRIPT_DIR/lib/python.sh"
 source "$SCRIPT_DIR/lib/workspace.sh"
+source "$SCRIPT_DIR/lib/drones.sh"
 source "$SCRIPT_DIR/lib/git.sh"
 source "$SCRIPT_DIR/lib/realsense.sh"
 source "$SCRIPT_DIR/lib/simulation.sh"
@@ -47,6 +48,12 @@ show_help() {
     echo "  ./setup.sh geographiclib      Install GeographicLib datasets"
     echo "  ./setup.sh ros2-env           Configure ROS2 in ~/.bashrc"
     echo "  ./setup.sh rosdep-init        Initialize rosdep"
+    echo ""
+    echo -e "${BLUE}Drone drivers:${NC}"
+    echo "  ./setup.sh drone mavros       Install MAVROS (ArduPilot/PX4) + GeographicLib"
+    echo "  ./setup.sh drone crazyflie    Install Crazyswarm2 (Crazyflie 2.x)"
+    echo "  ./setup.sh drone bebop        Build Bebop driver (ros2_bebop_driver + ARSDK)"
+    echo "  ./setup.sh drone all          Install all drone drivers"
     echo ""
     echo -e "${BLUE}Python Dependencies:${NC}"
     echo "  ./setup.sh python             Install core dependencies"
@@ -433,6 +440,9 @@ main() {
         geographiclib)      cmd_geographiclib ;;
         ros2-env)           cmd_ros2_env ;;
         rosdep-init)        cmd_rosdep_init ;;
+
+        # Drone drivers
+        drone)              cmd_drone "$@" ;;
 
         # Python
         python)             cmd_python "$@" ;;
