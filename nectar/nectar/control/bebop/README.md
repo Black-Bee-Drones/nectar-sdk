@@ -2,6 +2,10 @@
 
 Parrot Bebop 2 drone control via ROS2 driver for velocity-based flight operations.
 
+## Capabilities
+
+`BebopDrone.capabilities` declares `VELOCITY_BODY` (body-frame `move_velocity` via `cmd_vel`) and `NATIVE_RTL` (`navigate_home`). It does not support position control (`move_to` raises `CapabilityNotSupportedError`), parameters, GPS, vision pose, or companion navigation. Query with `drone.supports(Capability.VELOCITY_BODY)`.
+
 ## Architecture
 
 ```mermaid
@@ -231,10 +235,17 @@ BebopDrone requires the [ros2_bebop_driver](https://github.com/jeremyfix/ros2_be
 
 ### Installation
 
+**Automated (Nectar)**:
+```bash
+make drone-bebop            # or: ./scripts/setup.sh drone bebop
+```
+Installs the apt dependencies, clones `ros2_parrot_arsdk` and `ros2_bebop_driver` into the workspace if missing, and builds them in order. The manual steps below are equivalent.
+
 **Dependencies**:
 ```bash
-sudo apt install ros-${ROS_DISTRO}-camera-info-manager libavdevice-dev libavahi-client-dev
+sudo apt install ros-${ROS_DISTRO}-camera-info-manager libavdevice-dev libavahi-client-dev python-is-python3
 ```
+`python-is-python3` is required because the ARSDK Alchemy build invokes `python`, which does not exist by default on Ubuntu 24.04 (only `python3`).
 
 **Build ros2_parrot_arsdk** (ARSDK 3.14.0 wrapper):
 ```bash
@@ -252,6 +263,8 @@ cd ~/ros2_ws
 colcon build --packages-select ros2_bebop_driver --symlink-install
 source install/setup.bash
 ```
+
+On Ubuntu 24.04 (FFmpeg 5/6), `avcodec_find_decoder()` returns `const AVCodec*`, so the driver fails to compile until `AVCodec *p_codec_` is changed to `const AVCodec *p_codec_` in `include/ros2_bebop_driver/video_decoder.hpp`. `make drone-bebop` applies this patch automatically.
 
 ### Manual Driver Launch
 

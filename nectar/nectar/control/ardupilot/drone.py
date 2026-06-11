@@ -101,6 +101,7 @@ class ArduPilotDrone(BaseDrone):
         caps = {
             Capability.PID_NAV,
             Capability.LOCAL_SETPOINT,
+            Capability.VELOCITY_BODY,
             Capability.VELOCITY_WORLD,
             Capability.VELOCITY_TAKEOFF,
             Capability.SERVO,

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Interactive MAVROS navigation REPL.
+Interactive ArduPilot (MAVROS/MAVLink) navigation REPL.
 
 Type waypoints in the terminal and the drone executes them immediately.
 Supports move_to (local) and move_to_gps commands with configurable
 method, precision, and reference frame — changeable at runtime.
 
 Usage:
-    python3 interactive_nav.py --mode outdoor
-    python3 interactive_nav.py --mode outdoor --strategy pid-ekf --altitude 3.0
-    python3 interactive_nav.py --mode indoor --no-takeoff
+    python3 interactive_navigation.py --mode outdoor
+    python3 interactive_navigation.py --drone mavlink --mode outdoor
+    python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0
+    python3 interactive_navigation.py --mode indoor --no-takeoff
 """
 
 import argparse
@@ -19,13 +20,14 @@ import shlex
 import nectar
 from nectar.control import (
     DroneFactory,
+    MavlinkConfig,
     MavrosConfig,
     MoveReference,
     NavigationMethod,
     PoseSource,
 )
 
-log = logging.getLogger("interactive_nav")
+log = logging.getLogger("interactive_navigation")
 
 STRATEGY_MAP = {
     "pid": NavigationMethod.PID,
@@ -67,8 +69,11 @@ Examples:
 class InteractiveNav:
     def __init__(self, args: argparse.Namespace):
         pose_source = PoseSource.VISION if args.mode == "indoor" else PoseSource.GPS
-        config = MavrosConfig(pose_source=pose_source, start_driver=False)
-        self.drone = DroneFactory.create("mavros", config)
+        if args.drone == "mavlink":
+            config = MavlinkConfig(pose_source=pose_source, start_driver=False)
+        else:
+            config = MavrosConfig(pose_source=pose_source, start_driver=False)
+        self.drone = DroneFactory.create(args.drone, config)
         self.method = STRATEGY_MAP.get(args.strategy, NavigationMethod.PID)
         self.reference = MoveReference.BODY
         self.precision = args.precision
@@ -274,7 +279,7 @@ class InteractiveNav:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Interactive MAVROS navigation REPL",
+        description="Interactive ArduPilot navigation REPL (MAVROS/MAVLink)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Once running, type waypoints directly:\n"
@@ -285,6 +290,7 @@ def parse_args() -> argparse.Namespace:
             "  help         → full command list\n"
         ),
     )
+    parser.add_argument("--drone", choices=["mavros", "mavlink"], default="mavros")
     parser.add_argument("--mode", choices=["indoor", "outdoor"], default="outdoor")
     parser.add_argument("--no-takeoff", action="store_true", help="Hand-held testing")
     parser.add_argument(

@@ -13,7 +13,7 @@ from nectar.control import (
     strategies,
 )
 
-log = logging.getLogger("mavros_obstacles")
+log = logging.getLogger("obstacles")
 
 
 def setup_obstacle_detection(drone) -> None:

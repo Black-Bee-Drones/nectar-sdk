@@ -9,6 +9,7 @@ Three modes via --mode:
 
 Usage:
     python basic.py --drone mavros
+    python basic.py --drone mavlink
     python basic.py --drone crazyflie --mode hover --height 0.5
     python basic.py --drone crazyflie --mode position --height 0.5 --side 0.6
     python basic.py --drone bebop --mode velocity
@@ -20,8 +21,10 @@ import logging
 import nectar
 from nectar.control import (
     BebopConfig,
+    Capability,
     CrazyflieConfig,
     DroneFactory,
+    MavlinkConfig,
     MavrosConfig,
     PoseSource,
 )
@@ -32,6 +35,8 @@ log = logging.getLogger("basic_example")
 def build_config(args: argparse.Namespace):
     if args.drone == "mavros":
         return MavrosConfig(pose_source=PoseSource.GPS, start_driver=False)
+    if args.drone == "mavlink":
+        return MavlinkConfig(pose_source=PoseSource.GPS, start_driver=False)
     if args.drone == "crazyflie":
         return CrazyflieConfig(
             start_driver=False,
@@ -79,6 +84,11 @@ def run_velocity(drone, args: argparse.Namespace) -> None:
 
 
 def run_position(drone, args: argparse.Namespace) -> None:
+    if not drone.supports(Capability.LOCAL_SETPOINT):
+        log.error(
+            "position mode needs onboard position control; %s does not support it", args.drone
+        )
+        return
     if not drone.takeoff(altitude=args.height):
         log.error("Takeoff failed")
         return
@@ -104,7 +114,9 @@ _RUNNERS = {"hover": run_hover, "velocity": run_velocity, "position": run_positi
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     parser = argparse.ArgumentParser(description="Basic drone flight example")
-    parser.add_argument("--drone", choices=["mavros", "bebop", "crazyflie"], default="mavros")
+    parser.add_argument(
+        "--drone", choices=["mavros", "mavlink", "bebop", "crazyflie"], default="mavros"
+    )
     parser.add_argument("--mode", choices=list(_RUNNERS), default="velocity")
     parser.add_argument("--height", type=float, default=1.5)
     parser.add_argument("--side", type=float, default=1.0)

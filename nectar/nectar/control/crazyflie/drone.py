@@ -11,6 +11,7 @@ from std_srvs.srv import Empty
 from tf2_msgs.msg import TFMessage
 
 from nectar.control.base import BaseDrone
+from nectar.control.capabilities import Capability
 from nectar.control.config import CrazyflieConfig, DroneConfig
 from nectar.control.exceptions import (
     CapabilityNotSupportedError,
@@ -120,6 +121,24 @@ class CrazyflieDrone(BaseDrone):
         return cls(config, executor)
 
     # Properties
+
+    @property
+    def capabilities(self) -> "frozenset[Capability]":
+        """Movement and control features supported by the Crazyflie.
+
+        Onboard local position control (``move_to`` POSITION via ``goTo``),
+        body/world/takeoff velocity streaming, and firmware parameter access.
+        No GPS, companion PID, vision pose, rangefinder, servo, or native RTL.
+        """
+        return frozenset(
+            {
+                Capability.VELOCITY_BODY,
+                Capability.VELOCITY_WORLD,
+                Capability.VELOCITY_TAKEOFF,
+                Capability.LOCAL_SETPOINT,
+                Capability.PARAMS,
+            }
+        )
 
     @property
     def is_armed(self) -> Optional[bool]:
