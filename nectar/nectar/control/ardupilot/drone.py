@@ -1379,13 +1379,22 @@ class ArduPilotDrone(BaseDrone):
         Returns
         -------
         bool
-            True if the mode was set, False on failure or timeout.
+            True only once the FCU reports the requested mode. False if the
+            transport rejects the request or the mode is not confirmed within
+            the timeout.
 
         See Also
         --------
         https://ardupilot.org/copter/docs/flight-modes.html
         """
-        return self._transport.set_mode(mode)
+        if not self._transport.set_mode(mode):
+            return False
+        if self._wait_until(lambda: (self.flight_mode or "").upper() == mode.upper(), 3.0):
+            return True
+        self._node.get_logger().error(
+            f"{ERR} Mode '{mode}' not confirmed (still '{self.flight_mode}')"
+        )
+        return False
 
     def set_param(self, param_id: str, param_value: Union[int, float]) -> bool:
         """

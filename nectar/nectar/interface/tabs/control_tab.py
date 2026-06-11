@@ -1220,9 +1220,6 @@ class ControlTab(QWidget):
         if not self._driver_connected:
             return
 
-        # Debounce: a single failed `ros2 node list` is most likely a transient
-        # discovery/timeout, not a real driver loss. Only act after repeated
-        # consecutive misses.
         self._driver_missed_checks += 1
         if self._driver_missed_checks < self._DRIVER_DOWN_STRIKES:
             return
