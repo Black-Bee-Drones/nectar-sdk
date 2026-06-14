@@ -231,8 +231,8 @@ while True:
 
 **Automatic** (based on pose source):
 ```python
-# Indoor mode loads: config/mavros/position_indoor.yaml
-# Outdoor mode loads: config/mavros/position_outdoor.yaml
+# Indoor mode loads: ardupilot/config/position_indoor.yaml
+# Outdoor mode loads: ardupilot/config/position_outdoor.yaml
 config = MavrosConfig(pose_source=PoseSource.VISION)
 drone = DroneFactory.create("mavros", config, node)
 ```
@@ -386,7 +386,7 @@ while True:
 ```python
 from nectar.control.pid import PositionPIDConfig
 
-config = PositionPIDConfig.from_yaml("config/mavros/position_outdoor.yaml")
+config = PositionPIDConfig.from_yaml("ardupilot/config/position_outdoor.yaml")
 
 pid_x = PIDController(
     kp=config.x.kp,

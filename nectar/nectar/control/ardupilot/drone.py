@@ -378,8 +378,8 @@ class ArduPilotDrone(BaseDrone):
         return predicate()
 
     def _config_dir(self) -> Path:
-        """Directory holding bundled PID/setpoint YAML presets."""
-        return Path(__file__).parent.parent / "config" / "mavros"
+        """Directory holding bundled PID/setpoint YAML presets"""
+        return Path(__file__).parent / "config"
 
     def _load_pid_config(self) -> None:
         """Load PID configuration from file or use defaults for the current mode."""

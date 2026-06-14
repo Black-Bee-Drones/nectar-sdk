@@ -521,7 +521,7 @@ See `obstacles/README.md` for complete documentation.
 
 Configurable position control with separate gains for X, Y, Z, yaw axes.
 
-**Configuration** (`config/mavros/position_indoor.yaml`):
+**Configuration** (`ardupilot/config/position_indoor.yaml`):
 ```yaml
 x:
   kp: 0.5
