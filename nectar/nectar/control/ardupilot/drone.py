@@ -313,8 +313,10 @@ class ArduPilotDrone(BaseDrone):
         return self._transport.start_driver()
 
     def connect(self) -> bool:
-        """Check link status to the FCU."""
-        self._connected = self._transport.connected
+        """Wait for the FCU link to come up (up to ``sensor_timeout``)."""
+        self._connected = self._wait_until(
+            lambda: self._transport.connected, self._config.sensor_timeout
+        )
         return self._connected
 
     def disconnect(self) -> None:

@@ -36,7 +36,10 @@ def build_config(args: argparse.Namespace):
     if args.drone == "mavros":
         return MavrosConfig(pose_source=PoseSource.GPS, start_driver=False)
     if args.drone == "mavlink":
-        return MavlinkConfig(pose_source=PoseSource.GPS, start_driver=False)
+        kwargs = {"pose_source": PoseSource.GPS, "start_driver": False}
+        if args.connection:
+            kwargs["connection_string"] = args.connection
+        return MavlinkConfig(**kwargs)
     if args.drone == "crazyflie":
         return CrazyflieConfig(
             start_driver=False,
@@ -116,6 +119,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Basic drone flight example")
     parser.add_argument(
         "--drone", choices=["mavros", "mavlink", "bebop", "crazyflie"], default="mavros"
+    )
+    parser.add_argument(
+        "--connection",
+        default=None,
+        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
     )
     parser.add_argument("--mode", choices=list(_RUNNERS), default="velocity")
     parser.add_argument("--height", type=float, default=1.5)

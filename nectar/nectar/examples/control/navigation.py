@@ -57,7 +57,10 @@ class NavigationTest:
 
         pose_source = PoseSource.VISION if args.mode == "indoor" else PoseSource.GPS
         if args.drone == "mavlink":
-            config = MavlinkConfig(pose_source=pose_source, start_driver=False)
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if args.connection:
+                kwargs["connection_string"] = args.connection
+            config = MavlinkConfig(**kwargs)
         else:
             config = MavrosConfig(pose_source=pose_source, start_driver=False)
         self.drone = DroneFactory.create(args.drone, config)
@@ -732,6 +735,11 @@ def parse_args() -> argparse.Namespace:
         choices=["indoor", "outdoor"],
         default="outdoor",
         help="Pose source: indoor (vision) or outdoor (GPS). Default: outdoor",
+    )
+    parser.add_argument(
+        "--connection",
+        default=None,
+        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
     )
     parser.add_argument(
         "--no-takeoff",

@@ -70,7 +70,10 @@ class InteractiveNav:
     def __init__(self, args: argparse.Namespace):
         pose_source = PoseSource.VISION if args.mode == "indoor" else PoseSource.GPS
         if args.drone == "mavlink":
-            config = MavlinkConfig(pose_source=pose_source, start_driver=False)
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if getattr(args, "connection", None):
+                kwargs["connection_string"] = args.connection
+            config = MavlinkConfig(**kwargs)
         else:
             config = MavrosConfig(pose_source=pose_source, start_driver=False)
         self.drone = DroneFactory.create(args.drone, config)
@@ -292,6 +295,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--drone", choices=["mavros", "mavlink"], default="mavros")
     parser.add_argument("--mode", choices=["indoor", "outdoor"], default="outdoor")
+    parser.add_argument(
+        "--connection",
+        default=None,
+        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
+    )
     parser.add_argument("--no-takeoff", action="store_true", help="Hand-held testing")
     parser.add_argument(
         "--altitude", type=float, default=2.0, help="Takeoff altitude. Default: 2.0"
