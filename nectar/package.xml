@@ -17,6 +17,9 @@
   <depend>sensor_msgs</depend>
   <depend>nectar_interfaces</depend>
   <exec_depend>ros2launch</exec_depend>
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>mavros_extras</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

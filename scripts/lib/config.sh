@@ -8,7 +8,11 @@ INTERFACES_PKG_NAME="nectar_interfaces"
 DOCKER_IMAGE_PREFIX="nectar-sdk"
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
-ROS_DOMAIN_ID="14"
+ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-14}"
+
+# Isaac ROS (Jetson VSLAM container, docker/isaac_vslam/).
+# release-3.2 = Humble / JetPack 6.x, built via isaac_ros_common/run_dev.sh.
+ISAAC_ROS_VERSION="${ISAAC_ROS_VERSION:-release-3.2}"
 
 # PyTorch
 TORCH_VARIANT="${TORCH_VARIANT:-auto}"

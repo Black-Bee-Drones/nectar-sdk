@@ -1,0 +1,81 @@
+/**:
+  ros__parameters:
+    plugin_denylist:
+      # GPS and outdoor navigation
+      - global_position
+      - gps_input
+      - gps_rtk
+      - gps_status
+      - fake_gps
+
+      # Optical flow and camera features
+      - optical_flow
+      - px4flow
+      - cam_imu_sync
+      - camera
+      - image_pub
+
+      # Gimbal and mount control
+      - gimbal_control
+      - mount_control
+
+      # Landing target and precision landing
+      - landing_target
+
+      # ESC telemetry and motor diagnostics
+      - esc_status
+      - esc_telemetry
+
+      # Mission planning and waypoint navigation
+      - waypoint
+      - rallypoint
+      - geofence
+
+      # Communication and telemetry
+      - adsb
+      - cellular_status
+      - open_drone_id
+      - tunnel
+      - tdr_radio
+
+      # Logging and debugging features
+      - log_transfer
+      - mag_calibration_status
+      - play_tune
+      - debug_value
+
+      # Environmental sensors
+      - wind_estimation
+      - terrain
+      - obstacle_distance
+      - vibration
+
+      # Manual control (causes conflicts)
+      - rc_io
+      - manual_control
+
+      # Companion computer status
+      - companion_process_status
+      - onboard_computer_status
+
+      # Trajectory and advanced setpoints
+      - setpoint_trajectory
+      - trajectory
+
+      # Speed estimation (not needed with VSLAM)
+      - wheel_odometry
+
+      # Hardware interface layer
+      - hil
+
+      # File transfer
+      - ftp
+
+      # Altitude sensor (using rangefinder instead)
+      - altitude
+
+      # VFR HUD (not needed for autonomous flight)
+      - vfr_hud
+
+      # Motion capture pose
+      - mocap_pose_estimate

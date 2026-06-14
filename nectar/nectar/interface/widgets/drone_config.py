@@ -223,12 +223,12 @@ class DroneConfigPanel(QWidget):
             )
         )
 
-        # Vision pose topic (only used when Pose = Vision). The companion bridge
-        # forwards this topic to the FCU as VISION_POSITION_ESTIMATE. Real VSLAM
-        # publishes /vslam/pose; the Gazebo indoor sim uses /mavros/vision_pose/pose_cov.
+        # Vision pose topic (only used when Pose = Vision)
         self._mavlink_vision_topic = QComboBox()
         self._mavlink_vision_topic.setEditable(True)
-        self._mavlink_vision_topic.addItems(["/vslam/pose", "/mavros/vision_pose/pose_cov"])
+        self._mavlink_vision_topic.addItems(
+            ["/visual_slam/tracking/vo_pose_covariance", "/mavros/vision_pose/pose_cov"]
+        )
         self._mavlink_vision_topic.currentTextChanged.connect(self._on_config_changed)
         layout.addLayout(
             self._create_config_row(
@@ -513,20 +513,20 @@ class DroneConfigPanel(QWidget):
         return panel
 
     @staticmethod
-    def _mavros_config_dir() -> str:
+    def _ardupilot_config_dir() -> str:
         import os
 
-        # widgets/ -> interface/ -> nectar/ -> control/config/mavros
+        # widgets/ -> interface/ -> nectar/ -> control/ardupilot/config
         nectar_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        return os.path.join(nectar_dir, "control", "config", "mavros")
+        return os.path.join(nectar_dir, "control", "ardupilot", "config")
 
     @classmethod
     def _list_config_files(cls, prefix: str) -> list:
-        """List YAML filenames matching prefix in the mavros config dir."""
+        """List YAML filenames matching prefix in the ArduPilot config dir."""
         import glob
         import os
 
-        files = sorted(glob.glob(os.path.join(cls._mavros_config_dir(), f"{prefix}*.yaml")))
+        files = sorted(glob.glob(os.path.join(cls._ardupilot_config_dir(), f"{prefix}*.yaml")))
         return [os.path.basename(f) for f in files]
 
     @classmethod
@@ -536,7 +536,7 @@ class DroneConfigPanel(QWidget):
 
         if not filename:
             return None
-        return os.path.join(cls._mavros_config_dir(), filename)
+        return os.path.join(cls._ardupilot_config_dir(), filename)
 
     def _on_config_changed(self) -> None:
         self.config_changed.emit()
@@ -616,7 +616,8 @@ class DroneConfigPanel(QWidget):
                 self._mavlink_pose_source.currentIndex(), PoseSource.GPS
             ),
             "use_lidar": self._mavlink_use_lidar.isChecked(),
-            "vision_pose_topic": self._mavlink_vision_topic.currentText().strip() or "/vslam/pose",
+            "vision_pose_topic": self._mavlink_vision_topic.currentText().strip()
+            or "/visual_slam/tracking/vo_pose_covariance",
             "connection_string": self._mavlink_connection.currentText().strip()
             or "tcp:127.0.0.1:5762",
             "baud": _int_or(self._mavlink_baud.currentText(), 921600),
