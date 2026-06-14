@@ -8,10 +8,10 @@
   Clear space x=-10..+4 (14m) for navigation tests.
 
   NO GPS / NO NavSat — use with ArduPilot SITL + indoor.parm (EKF3
-  ExternalNav) and vision_pose_bridge.py to feed ground-truth pose.
+  ExternalNav) and gz_vision_source.py to feed ground-truth pose.
 
   Uses PosePublishing plugin to export model poses on a Gazebo topic,
-  which ros_gz_bridge forwards to ROS 2 for the vision pose bridge.
+  which ros_gz_bridge forwards to ROS 2 for the vision pose source.
 
   Usage:
     gz sim -v4 -r indoor_room.sdf

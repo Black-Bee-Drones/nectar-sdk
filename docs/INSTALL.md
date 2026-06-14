@@ -150,8 +150,8 @@ See [`docker/README.md`](../docker/README.md) for more options.
 ### Running the simulation
 
 ```bash
-make sim-start-gazebo      # Start SITL in Gazebo mode (terminal 1)
-make sim-gazebo            # Launch Gazebo + MAVROS (terminal 2)
+make sim-start-outdoor     # Start SITL in Gazebo mode (outdoor, terminal 1)
+make sim-outdoor           # Launch Gazebo outdoor world + MAVROS (terminal 2)
 ```
 
 ## System Setup (individual steps)

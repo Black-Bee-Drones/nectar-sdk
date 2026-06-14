@@ -161,11 +161,12 @@ def _launch_setup(context: LaunchContext) -> list:
     if use_mavros:
         actions.extend([mavros_launch, set_stream_rate])
 
-    # ── Indoor-only: vision pose bridge ─────────────────────────────────
+    # ── Indoor-only: vision pose pipeline ───
     if is_indoor:
         # World name from SDF filename (e.g. "indoor_room.sdf" -> "indoor_room")
         world_name = os.path.splitext(world_file)[0]
         gz_pose_topic = f"/world/{world_name}/dynamic_pose/info"
+        vslam_topic = "/visual_slam/tracking/vo_pose_covariance"
 
         # Bridge Gazebo ground-truth pose topic to ROS 2
         gz_pose_bridge = Node(
@@ -178,19 +179,33 @@ def _launch_setup(context: LaunchContext) -> list:
             output="screen",
         )
 
-        # Republish as PoseWithCovarianceStamped for MAVROS
-        vision_pose_bridge = Node(
+        # Gazebo ground-truth -> canonical VSLAM topic
+        gz_vision_source = Node(
             package="nectar",
-            executable="vision_pose_bridge.py",
-            name="vision_pose_bridge",
+            executable="gz_vision_source.py",
+            name="gz_vision_source",
             parameters=[
                 {"model_name": "iris"},
                 {"gz_pose_topic": gz_pose_topic},
+                {"output_topic": vslam_topic},
             ],
             output="screen",
         )
 
-        actions.extend([gz_pose_bridge, vision_pose_bridge])
+        actions.extend([gz_pose_bridge, gz_vision_source])
+
+        if use_mavros:
+            vision_pose_node = Node(
+                package="nectar",
+                executable="vision_pose_node.py",
+                name="vision_pose_node",
+                parameters=[
+                    {"backend": "mavros"},
+                    {"input_topic": vslam_topic},
+                ],
+                output="screen",
+            )
+            actions.append(vision_pose_node)
 
     return actions
 
