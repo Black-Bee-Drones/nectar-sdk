@@ -87,6 +87,11 @@ install(DIRECTORY nectar/control/localization/config/
   FILES_MATCHING PATTERN "*.yaml"
 )
 
+install(DIRECTORY nectar/control/localization/rviz/
+  DESTINATION share/${PROJECT_NAME}/control/localization/rviz
+  FILES_MATCHING PATTERN "*.rviz"
+)
+
 install(DIRECTORY nectar/control/mavros/config/
   DESTINATION share/${PROJECT_NAME}/control/mavros/config
   FILES_MATCHING PATTERN "*.yaml"

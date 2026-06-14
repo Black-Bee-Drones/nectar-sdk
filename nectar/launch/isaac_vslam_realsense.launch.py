@@ -33,12 +33,19 @@ def generate_launch_description():
     enable_color = LaunchConfiguration("enable_color")
     emitter_enabled = LaunchConfiguration("emitter_enabled")
     depth_profile = LaunchConfiguration("depth_profile")
+    enable_visualization = LaunchConfiguration("enable_visualization")
 
     args = [
         DeclareLaunchArgument("enable_depth", default_value="false"),
         DeclareLaunchArgument("enable_color", default_value="false"),
         DeclareLaunchArgument("emitter_enabled", default_value="0"),
         DeclareLaunchArgument("depth_profile", default_value="640x360x90"),
+        DeclareLaunchArgument(
+            "enable_visualization",
+            default_value="false",
+            description="Publish /visual_slam/vis/* topics (landmarks, loop closure, "
+            "pose graph) for the full RViz profile",
+        ),
     ]
 
     realsense_node = Node(
@@ -62,7 +69,14 @@ def generate_launch_description():
         name="visual_slam_node",
         package="isaac_ros_visual_slam",
         plugin="nvidia::isaac_ros::visual_slam::VisualSlamNode",
-        parameters=[params],
+        parameters=[
+            params,
+            {
+                "enable_slam_visualization": ParameterValue(enable_visualization, value_type=bool),
+                "enable_landmarks_view": ParameterValue(enable_visualization, value_type=bool),
+                "enable_observations_view": ParameterValue(enable_visualization, value_type=bool),
+            },
+        ],
         remappings=[
             ("visual_slam/image_0", "camera/infra1/image_rect_raw"),
             ("visual_slam/camera_info_0", "camera/infra1/camera_info"),

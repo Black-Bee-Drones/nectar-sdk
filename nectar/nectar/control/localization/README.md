@@ -78,6 +78,35 @@ EKF3 external-nav sources, e.g. `EK3_SRC1_POSXY=6` (ExternalNav),
 - `mavlink`: `nectar.control.mavlink.VisionPoseBridge` converts ENU->NED and
   sends `VISION_POSITION_ESTIMATE` over a dedicated pymavlink link.
 
+## Visualization
+
+Pre-flight check from the laptop (same `ROS_DOMAIN_ID` as the Jetson): move the
+drone by hand and confirm the pose tracks, is low-noise, and that the path snaps
+back on return (loop closure). NVIDIA recommends running RViz on a remote PC, not
+the Jetson, to avoid loading the VSLAM node
+([RealSense tutorial](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)).
+
+Two profiles (`rviz/vslam_light.rviz`, `rviz/vslam_full.rviz`):
+
+| Profile | Shows | Producer cost |
+|---------|-------|---------------|
+| `light` (default) | TF + odometry + SLAM path | none (tracking topics are always published) |
+| `full` | light + landmarks / loop-closure clouds + pose graph | requires `enable_visualization:=true` |
+
+```bash
+# Laptop (nectar built)
+ros2 launch nectar vslam_rviz.launch.py profile:=light    # or profile:=full
+# Laptop (repo only, no build)
+rviz2 -d src/nectar-sdk/nectar/nectar/control/localization/rviz/vslam_light.rviz
+```
+
+The `full` profile needs the producer to publish the `/visual_slam/vis/*` topics,
+which are off by default to keep the Jetson light:
+
+```bash
+nectar-vslam enable_visualization:=true
+```
+
 ## References
 
 - [Isaac ROS Visual SLAM (isaac_ros_visual_slam)](https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_visual_slam/isaac_ros_visual_slam/index.html)
