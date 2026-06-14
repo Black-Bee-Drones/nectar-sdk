@@ -225,7 +225,13 @@ The core operates on plain, ROS-free types (`ardupilot/types.py`); each transpor
 
 ### Capabilities
 
-Each drone declares a `frozenset[Capability]` (see `capabilities.py`); query with `drone.supports(Capability.GPS_NAV)`. `ArduPilotDrone` derives its set from `pose_source` (outdoor → `GPS_NAV`/`GLOBAL_SETPOINT`, indoor → `VISION_POSE`). Unsupported operations raise `CapabilityNotSupportedError`.
+Each drone declares a `frozenset[Capability]` (see `capabilities.py`); query with `drone.supports(Capability.GPS_NAV)`. New drones declare what they support by overriding the `capabilities` property. Unsupported operations raise `CapabilityNotSupportedError`.
+
+Declared sets per drone:
+
+- `ArduPilotDrone` (MAVROS/MAVLink): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `SERVO`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`.
+- `CrazyflieDrone`: `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `PARAMS`.
+- `BebopDrone`: `VELOCITY_BODY`, `NATIVE_RTL`.
 
 ## Core Components
 
@@ -515,7 +521,7 @@ See `obstacles/README.md` for complete documentation.
 
 Configurable position control with separate gains for X, Y, Z, yaw axes.
 
-**Configuration** (`config/mavros/position_indoor.yaml`):
+**Configuration** (`ardupilot/config/position_indoor.yaml`):
 ```yaml
 x:
   kp: 0.5

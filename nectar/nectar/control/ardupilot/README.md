@@ -540,7 +540,7 @@ east, north = GPSUtils.local_offset(                           # equirectangular
 
 ## PID Configuration
 
-`ArduPilotDrone` loads a `PositionPIDConfig` (per-axis `x/y/z/yaw` `PIDConfig`) at construction. If `pid_config_file` is set it is loaded from there; otherwise the bundled `position_indoor.yaml` / `position_outdoor.yaml` (in [`control/config/mavros/`](../config/mavros)) is selected by `is_indoor`. Update at runtime from a file path, dict, or object:
+`ArduPilotDrone` loads a `PositionPIDConfig` (per-axis `x/y/z/yaw` `PIDConfig`) at construction. If `pid_config_file` is set it is loaded from there; otherwise the bundled `position_indoor.yaml` / `position_outdoor.yaml` (in [`control/ardupilot/config/`](config)) is selected by `is_indoor`. Update at runtime from a file path, dict, or object:
 
 ```python
 drone.set_pid_config("/path/to/config.yaml")

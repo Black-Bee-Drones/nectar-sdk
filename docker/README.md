@@ -192,6 +192,98 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 > **Note:** If `realsense-viewer` fails with OpenGL errors, set
 > `LIBGL_ALWAYS_SOFTWARE=1` inside the container for software rendering.
 
+## Isaac ROS Visual SLAM (Jetson)
+
+The localization pipeline's **producer** (RealSense + Isaac ROS Visual SLAM) runs
+in the Isaac ROS dev container. It is separate from the main SDK image because
+Isaac ROS is only supported inside its own dev environment (which carries the
+NVIDIA Isaac apt repository and the correct CUDA/TensorRT/VPI versions). The SDK
+image or host runs the **consumer** side (MAVROS + vision-pose bridge), sharing
+`ROS_DOMAIN_ID`.
+
+[`docker/isaac_vslam`](isaac_vslam) is a self-contained wrapper around NVIDIA's
+official [`isaac_ros_common/run_dev.sh`](https://nvidia-isaac-ros.github.io/v/release-3.2/concepts/docker_devenv/index.html).
+A single command clones `isaac_ros_common` (`release-3.2`), registers the Nectar
+image layer ([`Dockerfile.nectar`](isaac_vslam/Dockerfile.nectar), which bakes
+Visual SLAM + RealSense + utils), pulls the matching prebuilt NVCR base, and drops
+you into the container with the workspace mounted. No manual base build is needed,
+and `run_dev.sh` supplies all device/GPU/X11/Jetson config (`--privileged`,
+`--runtime nvidia`, tegra mounts, `-e ROS_DOMAIN_ID`).
+
+```bash
+# Producer (Isaac container) - clone + build (if needed) + enter
+make isaac-run        # or: ./docker/isaac_vslam/run_docker.sh
+
+# inside the container, start the producer with the baked helper:
+nectar-vslam          # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
+```
+
+Consumer side (SDK image or host), same `ROS_DOMAIN_ID`:
+
+```bash
+ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
+```
+
+Requirements on the Jetson: Docker (non-root), `git-lfs`, and the NVIDIA Container
+Toolkit. For RealSense USB permissions on the host, install the udev rules in
+[`docker/realsense`](realsense).
+
+### Hardware requirements (cuVSLAM)
+
+Isaac ROS Visual SLAM (cuVSLAM) has a hard GPU floor, per the official
+[compute setup](https://nvidia-isaac-ros.github.io/v/release-3.2/getting_started/hardware_setup/compute/index.html)
+and [Visual SLAM](https://nvidia-isaac-ros.github.io/v/release-3.2/repositories_and_packages/isaac_ros_visual_slam/index.html)
+pages (release-3.2):
+
+- Jetson: Orin family on JetPack 6.1 / 6.2.
+- x86_64: discrete NVIDIA GPU, **Ampere architecture or newer**, **>= 8 GB VRAM**
+  (12 GB+ recommended), driver **560+**, CUDA 12.6+, Ubuntu 22.04+.
+
+Pre-Ampere GPUs are **not** compatible with the cuVSLAM library (the maintainers
+confirm this for older architectures in
+[isaac_ros_visual_slam#117](https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_visual_slam/issues/117)).
+A GTX 16-series (Turing) or earlier card cannot run the Visual SLAM node. The
+container image still **builds and launches** on such hardware (useful to validate
+the SDK's Docker wiring), but the cuVSLAM node itself will not run -- test the
+localization pipeline via the indoor Gazebo sim instead (see
+[simulation/README.md](../nectar/simulation/README.md)), which exercises the same
+bridges and topics with no cuVSLAM/Jetson required.
+
+### Version and ROS distro
+
+Isaac ROS ties each release line to one ROS 2 distro and one JetPack, per the
+[release notes](https://nvidia-isaac-ros.github.io/releases/index.html):
+
+| Isaac ROS | ROS 2 | Ubuntu | JetPack | CUDA | Build method |
+|---|---|---|---|---|---|
+| **3.2** (SDK default) | Humble | 22.04 | 6.1 / 6.2 | 12.6 | `isaac_ros_common/run_dev.sh` (this wrapper) |
+| 4.x (latest, 4.4) | Jazzy | 24.04 | 7.x | 13.0 | Isaac ROS APT repo + `isaac-ros` CLI |
+
+The SDK pins **`ISAAC_ROS_VERSION=release-3.2`** ([scripts/lib/config.sh](../scripts/lib/config.sh))
+because the target Jetson runs JetPack 6.2 (Humble). Isaac ROS 4.x is **not** a
+config bump: it requires a JetPack 7 re-flash (Ubuntu 24.04 / Jazzy) and uses a
+different toolchain.
+
+#### Migrating to Isaac ROS 4.x (future, requires JetPack 7)
+
+4.x replaces `run_dev.sh` with the [`isaac-ros` CLI](https://github.com/NVIDIA-ISAAC-ROS/isaac-ros-cli)
+over an APT repository ([getting started](https://nvidia-isaac-ros.github.io/getting_started/)):
+
+```bash
+# 1. Add the Isaac ROS APT repo (noble = Ubuntu 24.04; use noble-jetpack on Jetson)
+#    deb https://isaac.download.nvidia.com/isaac-ros/release-4 noble main
+sudo apt-get install isaac-ros-cli
+sudo isaac-ros init docker        # modes: docker | venv | baremetal
+isaac-ros activate
+sudo apt-get install ros-jazzy-isaac-ros-visual-slam ros-jazzy-isaac-ros-examples ros-jazzy-isaac-ros-realsense
+```
+
+When the team moves to JetPack 7, the producer side (`docker/isaac_vslam`) would
+switch to this CLI-based flow with `ros-jazzy-*` packages; the SDK's consumer side
+(`vision_pose_node`, launches, configs) is distro-agnostic and unaffected. Note:
+the release notes flag RealSense stability issues on JetPack 7 (nvbugs/5561995),
+mitigated via the RealSense setup tutorial.
+
 ## Gazebo
 
 Gazebo simulation support is opt-in. Installs Gazebo, the `ros_gz` bridge, and the

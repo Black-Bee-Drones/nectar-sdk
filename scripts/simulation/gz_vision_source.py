@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
-"""
-Vision Pose Bridge — Gazebo ground-truth pose to MAVROS vision pose.
-
-Subscribes to the Gazebo PosePublisher output (bridged to ROS 2 by
-ros_gz_bridge) and republishes as PoseWithCovarianceStamped on
-/mavros/vision_pose/pose_cov.
-
-This replaces the real RealSense + Isaac ROS VSLAM pipeline in indoor
-simulation.  ArduPilot SITL receives the pose as VISION_POSITION_ESTIMATE
-when EKF3 is configured with EK3_SRC1_POSXY=6 (ExternalNav).
+"""Gazebo ground-truth pose -> canonical VSLAM pose topic (SITL VSLAM emulator).
 
 Usage (launched automatically by sitl_gazebo.launch.py world:=indoor):
-    ros2 run nectar vision_pose_bridge
+    ros2 run nectar gz_vision_source.py
 """
 
 import rclpy
@@ -21,14 +12,17 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from tf2_msgs.msg import TFMessage
 
 
-class VisionPoseBridge(Node):
-    """Bridge Gazebo ground-truth model pose to /mavros/vision_pose/pose_cov."""
+class GzVisionSource(Node):
+    """Emulate a VSLAM pose source from Gazebo ground-truth model pose."""
 
     def __init__(self) -> None:
-        super().__init__("vision_pose_bridge")
+        super().__init__("gz_vision_source")
 
         self.declare_parameter("model_name", "iris")
         self.declare_parameter("gz_pose_topic", "/world/indoor_room/dynamic_pose/info")
+        self.declare_parameter(
+            "output_topic", "/visual_slam/tracking/vo_pose_covariance"
+        )
         # Index of the model-root pose in dynamic_pose/info (first entry), used
         # when the ros_gz Pose_V->TFMessage bridge strips child_frame_id.
         self.declare_parameter("model_index", 0)
@@ -42,6 +36,9 @@ class VisionPoseBridge(Node):
         gz_topic = (
             self.get_parameter("gz_pose_topic").get_parameter_value().string_value
         )
+        out_topic = (
+            self.get_parameter("output_topic").get_parameter_value().string_value
+        )
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
 
@@ -54,13 +51,12 @@ class VisionPoseBridge(Node):
 
         self._pub = self.create_publisher(
             PoseWithCovarianceStamped,
-            "/mavros/vision_pose/pose_cov",
-            10,
+            out_topic,
+            qos,
         )
 
         self.get_logger().info(
-            f"VisionPoseBridge: {gz_topic} (model={self._model_name})"
-            " -> /mavros/vision_pose/pose_cov"
+            f"GzVisionSource: {gz_topic} (model={self._model_name}) -> {out_topic}"
         )
 
     def _pose_callback(self, msg: TFMessage) -> None:
@@ -113,7 +109,7 @@ class VisionPoseBridge(Node):
 
 def main() -> None:
     rclpy.init()
-    node = VisionPoseBridge()
+    node = GzVisionSource()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

@@ -6,6 +6,7 @@ from rclpy.executors import Executor
 from std_msgs.msg import Bool, Empty, UInt8
 
 from nectar.control.base import BaseDrone
+from nectar.control.capabilities import Capability
 from nectar.control.config import BebopConfig, DroneConfig
 from nectar.control.exceptions import CapabilityNotSupportedError
 from nectar.control.factory import DroneFactory
@@ -50,6 +51,15 @@ class BebopDrone(BaseDrone):
         if not isinstance(config, BebopConfig):
             config = BebopConfig()
         return cls(config, executor)
+
+    @property
+    def capabilities(self) -> "frozenset[Capability]":
+        """Movement and control features supported by the Bebop.
+
+        Body-frame velocity (``cmd_vel``) and autopilot-native return-to-home.
+        No position control, parameters, GPS, or companion navigation.
+        """
+        return frozenset({Capability.VELOCITY_BODY, Capability.NATIVE_RTL})
 
     def _setup_publishers(self) -> None:
         config: BebopConfig = self._config

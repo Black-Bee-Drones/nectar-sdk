@@ -166,7 +166,7 @@ class PymavlinkTransport(MavlinkTransport):
             self._vision_bridge = VisionPoseBridge(
                 self._node,
                 self._connection,
-                getattr(config, "vision_pose_topic", "/vslam/pose"),
+                getattr(config, "vision_pose_topic", "/visual_slam/tracking/vo_pose_covariance"),
                 on_pose=self.update_vision_pose,
             )
             self._vision_bridge.start()

@@ -22,6 +22,7 @@ source "$SCRIPT_DIR/lib/system.sh"
 source "$SCRIPT_DIR/lib/ros2.sh"
 source "$SCRIPT_DIR/lib/python.sh"
 source "$SCRIPT_DIR/lib/workspace.sh"
+source "$SCRIPT_DIR/lib/drones.sh"
 source "$SCRIPT_DIR/lib/git.sh"
 source "$SCRIPT_DIR/lib/realsense.sh"
 source "$SCRIPT_DIR/lib/simulation.sh"
@@ -47,6 +48,12 @@ show_help() {
     echo "  ./setup.sh geographiclib      Install GeographicLib datasets"
     echo "  ./setup.sh ros2-env           Configure ROS2 in ~/.bashrc"
     echo "  ./setup.sh rosdep-init        Initialize rosdep"
+    echo ""
+    echo -e "${BLUE}Drone drivers:${NC}"
+    echo "  ./setup.sh drone mavros       Install MAVROS (ArduPilot/PX4) + GeographicLib"
+    echo "  ./setup.sh drone crazyflie    Install Crazyswarm2 (Crazyflie 2.x)"
+    echo "  ./setup.sh drone bebop        Build Bebop driver (ros2_bebop_driver + ARSDK)"
+    echo "  ./setup.sh drone all          Install all drone drivers"
     echo ""
     echo -e "${BLUE}Python Dependencies:${NC}"
     echo "  ./setup.sh python             Install core dependencies"
@@ -84,13 +91,14 @@ show_help() {
     echo "  ./setup.sh sim-install        Install ArduPilot SITL"
     echo "  ./setup.sh sim-install-gazebo Install Gazebo Harmonic + ArduPilot plugin"
     echo "  ./setup.sh sim-start          Start SITL (headless)"
-    echo "  ./setup.sh sim-start-gazebo   Start SITL in Gazebo mode"
+    echo "  ./setup.sh sim-start-outdoor  Start SITL in Gazebo mode (outdoor, GPS)"
     echo "  ./setup.sh sim-start-indoor   Start SITL in Gazebo mode (no GPS, indoor)"
     echo "  ./setup.sh sim-mavros         Launch MAVROS (connects to running SITL)"
     echo "  ./setup.sh sim-gazebo         Launch Gazebo + MAVROS"
     echo "  ./setup.sh sim-outdoor        Launch Gazebo outdoor world + MAVROS"
     echo "  ./setup.sh sim-outdoor-direct Launch Gazebo outdoor world only (no MAVROS, direct MAVLink)"
     echo "  ./setup.sh sim-indoor         Launch Gazebo indoor world + MAVROS + vision bridge"
+    echo "  ./setup.sh sim-indoor-direct  Launch Gazebo indoor world + vision source (no MAVROS, direct MAVLink)"
     echo "  ./setup.sh sim-stop           Stop all simulation processes"
     echo ""
     echo -e "${BLUE}Docker env vars:${NC}"
@@ -434,6 +442,9 @@ main() {
         ros2-env)           cmd_ros2_env ;;
         rosdep-init)        cmd_rosdep_init ;;
 
+        # Drone drivers
+        drone)              cmd_drone "$@" ;;
+
         # Python
         python)             cmd_python "$@" ;;
         pytorch)            cmd_pytorch "$@" ;;
@@ -455,13 +466,14 @@ main() {
         sim-install)        cmd_sim_install "$@" ;;
         sim-install-gazebo) cmd_sim_install_gazebo "$@" ;;
         sim-start)          cmd_sim_start "$@" ;;
-        sim-start-gazebo)   cmd_sim_start_gazebo "$@" ;;
+        sim-start-outdoor)  cmd_sim_start_outdoor "$@" ;;
         sim-start-indoor)   cmd_sim_start_indoor "$@" ;;
         sim-mavros)         cmd_sim_mavros "$@" ;;
         sim-gazebo)         cmd_sim_gazebo "$@" ;;
         sim-outdoor)        cmd_sim_outdoor "$@" ;;
         sim-outdoor-direct) cmd_sim_outdoor_direct "$@" ;;
         sim-indoor)         cmd_sim_indoor "$@" ;;
+        sim-indoor-direct)  cmd_sim_indoor_direct "$@" ;;
         sim-stop)           cmd_sim_stop ;;
 
         # Docker

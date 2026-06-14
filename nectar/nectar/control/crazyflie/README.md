@@ -2,6 +2,10 @@
 
 [Bitcraze Crazyflie 2.x](https://www.bitcraze.io/products/crazyflie-2-1/) drone control via [Crazyswarm2](https://imrclab.github.io/crazyswarm2/) for ROS 2.
 
+## Capabilities
+
+`CrazyflieDrone.capabilities` declares `LOCAL_SETPOINT` (`move_to` POSITION via the onboard `goTo` planner), `VELOCITY_BODY`/`VELOCITY_WORLD`/`VELOCITY_TAKEOFF` (streaming `move_velocity`), and `PARAMS` (firmware parameter access). It does not support GPS navigation, companion-side PID, vision pose, rangefinder telemetry, servo control, or native RTL. Query with `drone.supports(Capability.LOCAL_SETPOINT)`.
+
 ## Key Concepts
 
 ### Crazyswarm2
@@ -280,6 +284,12 @@ Firmware parameters are exposed as ROS 2 parameters on `/crazyflie_server` under
 - `cf231.params.commander.enHighLevel` (1=enable high-level commander)
 
 ## Installation
+
+**Automated (Nectar)**:
+```bash
+make drone-crazyflie        # or: ./scripts/setup.sh drone crazyflie
+```
+Installs the apt packages below (when available for your ROS distro) plus `rowan`, and configures the Crazyradio USB permissions (step 2). Afterwards only `crazyflies.yaml` (step 3) needs editing for your radio URI. Log out and back in once for the `plugdev` group change to apply.
 
 ### 1. Install Crazyswarm2
 

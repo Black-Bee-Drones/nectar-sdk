@@ -1,0 +1,21 @@
+# Nectar image layer for the Isaac ROS dev container (release-3.2 / Humble).
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-isaac-ros-visual-slam \
+        ros-humble-isaac-ros-examples \
+        ros-humble-isaac-ros-realsense \
+        ros-humble-realsense2-camera \
+        nano tmux less \
+    && rm -rf /var/lib/apt/lists/*
+
+# `nectar-vslam`
+RUN printf '%s\n' '#!/bin/bash' \
+    'source /opt/ros/humble/setup.bash' \
+    'exec ros2 launch /workspaces/isaac_ros-dev/src/nectar-sdk/nectar/launch/isaac_vslam_realsense.launch.py "$@"' \
+    > /usr/local/bin/nectar-vslam \
+    && chmod +x /usr/local/bin/nectar-vslam

@@ -48,7 +48,8 @@ install(PROGRAMS
   nectar/examples/sensors/rangefinder_example.py
   nectar/control/pid/pid_node.py
   nectar/sensors/nodes/rangefinder_node.py
-  ../scripts/simulation/vision_pose_bridge.py
+  nectar/control/localization/nodes/vision_pose_node.py
+  ../scripts/simulation/gz_vision_source.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -61,8 +62,8 @@ install(FILES package.xml
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(DIRECTORY nectar/control/config/
-  DESTINATION share/${PROJECT_NAME}/control/config
+install(DIRECTORY nectar/control/ardupilot/config/
+  DESTINATION share/${PROJECT_NAME}/control/ardupilot/config
   FILES_MATCHING PATTERN "*.yaml"
 )
 
@@ -78,6 +79,16 @@ install(DIRECTORY nectar/ai/detection/configs/
 
 install(DIRECTORY nectar/ai/segmentation/configs/
   DESTINATION share/${PROJECT_NAME}/ai/segmentation/configs
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
+install(DIRECTORY nectar/control/localization/config/
+  DESTINATION share/${PROJECT_NAME}/control/localization/config
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
+install(DIRECTORY nectar/control/mavros/config/
+  DESTINATION share/${PROJECT_NAME}/control/mavros/config
   FILES_MATCHING PATTERN "*.yaml"
 )
 

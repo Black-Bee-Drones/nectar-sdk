@@ -84,8 +84,8 @@ The single-RX-reader rule is what lets a `RangefinderPublisher` and a `VisionPos
 
 | Scenario | Topic | Why |
 | --- | --- | --- |
-| Real hardware | the VSLAM output, e.g. `/visual_slam/tracking/vo_pose_covariance` or `/vslam/pose` (default) | The bridge *is* the relay; subscribe directly to the estimator, no MAVROS involved. |
-| Gazebo sim (indoor) | `/mavros/vision_pose/pose_cov` | The indoor sim launch already forwards Gazebo ground-truth pose there; reuse it instead of standing up a second source. The `MAVLINK_SITL_VISION_CONFIG` preset sets this. |
+| Real hardware | the VSLAM output, `/visual_slam/tracking/vo_pose_covariance` (default) | The bridge *is* the relay; subscribe directly to the estimator, no MAVROS involved. |
+| Gazebo sim (indoor) | `/visual_slam/tracking/vo_pose_covariance` | `gz_vision_source` publishes Gazebo ground-truth pose on the same canonical topic, so the sim path matches real hardware. The `MAVLINK_SITL_VISION_CONFIG` preset sets this. |
 
 The forwarding rate equals the subscription rate — the bridge does not resample. `MavlinkConfig.vision_rate_hz` exists but is **not currently wired** into the bridge; do not rely on it to throttle or pad the feed.
 
@@ -114,7 +114,7 @@ drone = DroneFactory.create("mavlink", config)
 config = MavlinkConfig(
     pose_source=PoseSource.VISION,
     connection_string="/dev/ttyUSB0",
-    vision_pose_topic="/vslam/pose",
+    vision_pose_topic="/visual_slam/tracking/vo_pose_covariance",
 )
 drone = DroneFactory.create("mavlink", config)
 ```

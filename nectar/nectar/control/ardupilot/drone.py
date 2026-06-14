@@ -101,6 +101,7 @@ class ArduPilotDrone(BaseDrone):
         caps = {
             Capability.PID_NAV,
             Capability.LOCAL_SETPOINT,
+            Capability.VELOCITY_BODY,
             Capability.VELOCITY_WORLD,
             Capability.VELOCITY_TAKEOFF,
             Capability.SERVO,
@@ -312,8 +313,10 @@ class ArduPilotDrone(BaseDrone):
         return self._transport.start_driver()
 
     def connect(self) -> bool:
-        """Check link status to the FCU."""
-        self._connected = self._transport.connected
+        """Wait for the FCU link to come up (up to ``sensor_timeout``)."""
+        self._connected = self._wait_until(
+            lambda: self._transport.connected, self._config.sensor_timeout
+        )
         return self._connected
 
     def disconnect(self) -> None:
@@ -377,8 +380,8 @@ class ArduPilotDrone(BaseDrone):
         return predicate()
 
     def _config_dir(self) -> Path:
-        """Directory holding bundled PID/setpoint YAML presets."""
-        return Path(__file__).parent.parent / "config" / "mavros"
+        """Directory holding bundled PID/setpoint YAML presets"""
+        return Path(__file__).parent / "config"
 
     def _load_pid_config(self) -> None:
         """Load PID configuration from file or use defaults for the current mode."""

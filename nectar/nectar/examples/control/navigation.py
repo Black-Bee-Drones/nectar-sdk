@@ -10,6 +10,7 @@ from typing import Optional
 import nectar
 from nectar.control import (
     DroneFactory,
+    MavlinkConfig,
     MavrosConfig,
     MoveReference,
     NavigationMethod,
@@ -17,7 +18,7 @@ from nectar.control import (
 )
 from nectar.utils.gps_calculate import GPSCalculate
 
-log = logging.getLogger("mavros_nav_test")
+log = logging.getLogger("navigation_test")
 
 AVAILABLE_TESTS = [
     "body",
@@ -49,14 +50,20 @@ def _csv_num(v: Optional[float]) -> str:
 
 
 class NavigationTest:
-    """MAVROS navigation test driver."""
+    """ArduPilot (MAVROS/MAVLink) navigation test driver."""
 
     def __init__(self, args: argparse.Namespace):
         self.args = args
 
         pose_source = PoseSource.VISION if args.mode == "indoor" else PoseSource.GPS
-        config = MavrosConfig(pose_source=pose_source, start_driver=False)
-        self.drone = DroneFactory.create("mavros", config)
+        if args.drone == "mavlink":
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if args.connection:
+                kwargs["connection_string"] = args.connection
+            config = MavlinkConfig(**kwargs)
+        else:
+            config = MavrosConfig(pose_source=pose_source, start_driver=False)
+        self.drone = DroneFactory.create(args.drone, config)
 
         self.dist = args.distance
         self.prec = args.precision
@@ -620,7 +627,7 @@ class NavigationTest:
 
         log.info(
             f"\n{'═' * 50}\n"
-            f"  MAVROS Navigation Test\n"
+            f"  ArduPilot Navigation Test ({self.args.drone})\n"
             f"  Mode: {self.args.mode} | Tests: {', '.join(tests_to_run)}\n"
             f"{'═' * 50}"
         )
@@ -661,7 +668,9 @@ class NavigationTest:
         self.teardown()
 
     def _log_battery(self) -> None:
-        """One-shot snapshot of /mavros/battery (no-op if unavailable)."""
+        """One-shot snapshot of /mavros/battery (MAVROS only; no-op otherwise)."""
+        if self.args.drone != "mavros":
+            return
         if self._battery_sub is None:
             try:
                 from rclpy.qos import qos_profile_sensor_data
@@ -694,31 +703,43 @@ class NavigationTest:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="MAVROS Navigation Test",
+        description="ArduPilot Navigation Test (MAVROS/MAVLink)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 mavros_navigation.py --mode outdoor\n"
-            "  python3 mavros_navigation.py --mode indoor --no-takeoff --test body\n"
-            "  python3 mavros_navigation.py --strategy pid-ekf --test body\n"
-            "  python3 mavros_navigation.py --strategy position --test takeoff-ref\n"
-            "  python3 mavros_navigation.py --mode outdoor --test gps --strategy position-global\n"
-            "  python3 mavros_navigation.py --no-takeoff --test body --distance 1.0\n"
-            "  python3 mavros_navigation.py --test figure8 --distance 3.0\n"
-            "  python3 mavros_navigation.py --test rectangle --strategy pid-ekf --distance 4.0\n"
-            "  python3 mavros_navigation.py --test cube-xyz --strategy pid-ekf --distance 1.5\n"
-            "  python3 mavros_navigation.py --test cube --strategy pid-ekf --distance 1.5 --timeout 60\n"
-            "  python3 mavros_navigation.py --test cube-xyz cube --csv runs/cube.csv\n"
-            "  python3 mavros_navigation.py --test gps-rectangle --strategy position-global --distance 5.0\n"
-            "  python3 mavros_navigation.py --test body --loop 5 --csv runs/battery_loop.csv\n"
-            "  python3 mavros_navigation.py --test cube-xyz --loop --csv runs/endurance.csv  # forever\n"
+            "  python3 navigation.py --mode outdoor\n"
+            "  python3 navigation.py --drone mavlink --test body\n"
+            "  python3 navigation.py --mode indoor --no-takeoff --test body\n"
+            "  python3 navigation.py --strategy pid-ekf --test body\n"
+            "  python3 navigation.py --strategy position --test takeoff-ref\n"
+            "  python3 navigation.py --mode outdoor --test gps --strategy position-global\n"
+            "  python3 navigation.py --no-takeoff --test body --distance 1.0\n"
+            "  python3 navigation.py --test figure8 --distance 3.0\n"
+            "  python3 navigation.py --test rectangle --strategy pid-ekf --distance 4.0\n"
+            "  python3 navigation.py --test cube-xyz --strategy pid-ekf --distance 1.5\n"
+            "  python3 navigation.py --test cube --strategy pid-ekf --distance 1.5 --timeout 60\n"
+            "  python3 navigation.py --test cube-xyz cube --csv runs/cube.csv\n"
+            "  python3 navigation.py --test gps-rectangle --strategy position-global --distance 5.0\n"
+            "  python3 navigation.py --test body --loop 5 --csv runs/battery_loop.csv\n"
+            "  python3 navigation.py --test cube-xyz --loop --csv runs/endurance.csv  # forever\n"
         ),
+    )
+    parser.add_argument(
+        "--drone",
+        choices=["mavros", "mavlink"],
+        default="mavros",
+        help="ArduPilot transport: mavros (ROS) or mavlink (direct pymavlink). Default: mavros",
     )
     parser.add_argument(
         "--mode",
         choices=["indoor", "outdoor"],
         default="outdoor",
         help="Pose source: indoor (vision) or outdoor (GPS). Default: outdoor",
+    )
+    parser.add_argument(
+        "--connection",
+        default=None,
+        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
     )
     parser.add_argument(
         "--no-takeoff",

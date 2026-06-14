@@ -8,7 +8,11 @@ INTERFACES_PKG_NAME="nectar_interfaces"
 DOCKER_IMAGE_PREFIX="nectar-sdk"
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
-ROS_DOMAIN_ID="14"
+ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-14}"
+
+# Isaac ROS (Jetson VSLAM container, docker/isaac_vslam/).
+# release-3.2 = Humble / JetPack 6.x, built via isaac_ros_common/run_dev.sh.
+ISAAC_ROS_VERSION="${ISAAC_ROS_VERSION:-release-3.2}"
 
 # PyTorch
 TORCH_VARIANT="${TORCH_VARIANT:-auto}"
@@ -92,6 +96,21 @@ ROS2_PACKAGES=(
 CRAZYFLIE_PACKAGES=(
     "ros-${ROS_DISTRO}-crazyflie"
     "ros-${ROS_DISTRO}-crazyflie-interfaces"
+)
+
+# Bebop driver (jeremyfix ros2_bebop_driver + ros2_parrot_arsdk, built from source).
+# apt deps required to build/run the driver.
+BEBOP_APT_PACKAGES=(
+    "ros-${ROS_DISTRO}-camera-info-manager"
+    libavdevice-dev
+    libavahi-client-dev
+    python-is-python3
+)
+
+# arsdk must be built before the driver that links against it.
+BEBOP_REPOS=(
+    "ros2_parrot_arsdk=https://github.com/jeremyfix/ros2_parrot_arsdk.git"
+    "ros2_bebop_driver=https://github.com/jeremyfix/ros2_bebop_driver.git"
 )
 
 # Qt6/PySide6 system dependencies

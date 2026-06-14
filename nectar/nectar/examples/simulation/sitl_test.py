@@ -4,7 +4,7 @@ Atomic SITL tests — each test starts from a guaranteed clean hover.
 
 
 Prerequisites:
-    Terminal 1: make sim-start-gazebo   (or make sim-start for headless)
+    Terminal 1: make sim-start-outdoor  (or make sim-start-indoor / sim-start)
     Terminal 2: make sim-outdoor        (or make sim-indoor for indoor)
 
 Usage:

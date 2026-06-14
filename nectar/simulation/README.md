@@ -25,7 +25,8 @@ flowchart LR
 
     subgraph ros2 [ROS 2]
         MAVROS["MAVROS"]
-        VisionBridge["vision_pose_bridge (indoor)"]
+        VisionSource["gz_vision_source (indoor)"]
+        VisionNode["vision_pose_node (mavros)"]
         SDK["Nectar SDK / MavrosDrone | MavlinkDrone"]
     end
 
@@ -34,8 +35,10 @@ flowchart LR
     ArduCopter -->|"TCP:5762 (direct MAVLink)"| SDK
     Physics --> SensorBridge
     SensorBridge --> SDK
-    PoseBridge --> VisionBridge
-    VisionBridge -->|"/mavros/vision_pose/pose_cov"| MAVROS
+    PoseBridge --> VisionSource
+    VisionSource -->|"/visual_slam/tracking/vo_pose_covariance"| VisionNode
+    VisionSource -->|"/visual_slam/tracking/vo_pose_covariance"| SDK
+    VisionNode -->|"/mavros/vision_pose/pose_cov"| MAVROS
     MAVROS --> SDK
 ```
 
@@ -52,7 +55,7 @@ flowchart LR
 
 - World: `indoor_room.sdf` -- 20x20x12m enclosed room, drone at x=-5, obstacle zone at x=5..9, gate
 - No GPS. EKF3 uses ExternalNav (vision) for position
-- `vision_pose_bridge.py` feeds Gazebo ground-truth pose to `/mavros/vision_pose/pose_cov`
+- `gz_vision_source.py` publishes Gazebo ground-truth pose on the canonical VSLAM topic `/visual_slam/tracking/vo_pose_covariance`; `vision_pose_node` (mavros) relays it to `/mavros/vision_pose/pose_cov`, or `MavlinkDrone` consumes it directly (mavlink) -- the same bridges as real hardware
 - ArduPilot params: `copter.parm` + `gazebo.parm` + `indoor.parm` (GPS disabled, EKF3 ExternalNav)
 - Config preset: `SITL_VISION_CONFIG` (PoseSource.VISION)
 
@@ -89,37 +92,28 @@ source ~/.bashrc
 
 ## Usage
 
-### Outdoor simulation
+Two terminals: **Terminal 1** runs the SITL physics, **Terminal 2** runs the
+Gazebo world + ROS stack. Use the matched pair for your scenario. The SITL
+parameters must match the world (indoor = no GPS), so always pair the same row.
 
-```bash
-# Terminal 1: Start SITL (loads copter.parm + gazebo.parm, wipes EEPROM)
-make sim-start-gazebo
+| Scenario | Terminal 1 (physics) | Terminal 2 (world + ROS) | Drone in your mission |
+|---|---|---|---|
+| Outdoor, MAVROS | `make sim-start-outdoor` | `make sim-outdoor` | `MavrosDrone` / `SITL_GAZEBO_CONFIG` |
+| Outdoor, direct MAVLink | `make sim-start-outdoor` | `make sim-outdoor-direct` | `MavlinkDrone` / `MAVLINK_SITL_GAZEBO_CONFIG` |
+| Indoor, MAVROS | `make sim-start-indoor` | `make sim-indoor` | `MavrosDrone` / `SITL_VISION_CONFIG` |
+| Indoor, direct MAVLink | `make sim-start-indoor` | `make sim-indoor-direct` | `MavlinkDrone` / `MAVLINK_SITL_VISION_CONFIG` |
 
-# Terminal 2: Launch Gazebo + MAVROS + ros_gz_bridge
-make sim-outdoor
-```
+- **MAVROS** targets start MAVROS on SERIAL0 (tcp `5760`). **direct MAVLink**
+  targets pass `mavros:=false` (no MAVROS); connect a `MavlinkDrone` on SERIAL1
+  (tcp `5762`), which `start_sitl.sh` always exposes.
+- **Indoor** targets add the vision pipeline: `gz_vision_source` publishes the
+  canonical VSLAM topic; with MAVROS, `vision_pose_node` relays it to
+  `/mavros/vision_pose/pose_cov`; with direct MAVLink, `MavlinkDrone`'s
+  `VisionPoseBridge` consumes it. Same bridges as real hardware.
 
-#### Direct MAVLink (no MAVROS)
-
-```bash
-# Terminal 1: same SITL
-make sim-start-gazebo
-
-# Terminal 2: Gazebo + ros_gz_bridge only (mavros:=false), drive SITL on 5762
-make sim-outdoor-direct
-```
-
-`sim-outdoor-direct` runs `sitl_gazebo.launch.py world:=outdoor mavros:=false`. Connect a `MavlinkDrone` with `MAVLINK_SITL_GAZEBO_CONFIG` (tcp `5762`) — it attaches to SERIAL1 alongside or instead of MAVROS on SERIAL0.
-
-### Indoor simulation
-
-```bash
-# Terminal 1: Start SITL (loads copter.parm + gazebo.parm + indoor.parm, wipes EEPROM)
-make sim-start-indoor
-
-# Terminal 2: Launch Gazebo + MAVROS + ros_gz_bridge + vision_pose_bridge
-make sim-indoor
-```
+> Always run `make sim-stop` before relaunching Terminal 2. `ros2 launch` on
+> Ctrl+C can leave a stray Python node alive (e.g. a duplicate
+> `/gz_vision_source`); `sim-stop` clears them.
 
 ### Headless (no Gazebo)
 
@@ -137,7 +131,7 @@ make sim-mavros
 make sim-stop
 ```
 
-Kills arducopter, Gazebo, MAVROS, ros_gz_bridge, and vision_pose_bridge processes.
+Kills arducopter, Gazebo, MAVROS, ros_gz_bridge, gz_vision_source, and vision_pose_node processes.
 
 ### Verify sensors
 
@@ -282,18 +276,17 @@ GPS-only tests (skipped with `--indoor`): `heading_enu`, `setpoint_global`, `set
 flowchart LR
     GzPose["Gazebo PosePublisher<br/>/world/indoor_room/dynamic_pose/info<br/>gz.msgs.Pose_V"]
     Bridge["ros_gz_bridge<br/>gz.msgs.Pose_V → tf2_msgs/TFMessage"]
-    VPB["vision_pose_bridge.py<br/>Selects iris model pose"]
-    MAVROS["MAVROS<br/>→ VISION_POSITION_ESTIMATE"]
-    EKF["ArduPilot EKF3<br/>ExternalNav fusion"]
+    VPB["gz_vision_source.py<br/>Selects iris model pose"]
+    Topic["/visual_slam/tracking/vo_pose_covariance<br/>(canonical VSLAM topic)"]
+    VPN["vision_pose_node (mavros)<br/>or MavlinkDrone VisionPoseBridge"]
+    FCU["ArduPilot EKF3<br/>ExternalNav fusion"]
 
-    GzPose --> Bridge --> VPB --> MAVROS --> EKF
+    GzPose --> Bridge --> VPB --> Topic --> VPN --> FCU
 ```
 
-The `vision_pose_bridge.py` node replaces the real RealSense D435i + Isaac ROS VSLAM pipeline. It selects the `iris` model pose from the Gazebo ground-truth `TFMessage` and publishes `PoseWithCovarianceStamped` on `/mavros/vision_pose/pose_cov`.
+The `gz_vision_source.py` node replaces the real RealSense D435i + Isaac ROS VSLAM pipeline. It selects the `iris` model pose from the Gazebo ground-truth `TFMessage` and publishes `PoseWithCovarianceStamped` on the same canonical topic Isaac ROS Visual SLAM uses, `/visual_slam/tracking/vo_pose_covariance`. The downstream delivery is then identical to real hardware: `vision_pose_node` (backend `mavros`) relays it to `/mavros/vision_pose/pose_cov`, or `MavlinkDrone`'s `VisionPoseBridge` (backend `mavlink`) forwards it as `VISION_POSITION_ESTIMATE`.
 
-**Frame-name fallback**: it first matches the transform whose `child_frame_id` equals the model name. On ROS 2 Jazzy the `ros_gz_bridge` `Pose_V → TFMessage` conversion strips the frame ids, leaving `child_frame_id` empty. When all names are empty the bridge falls back to the transform at `model_index` (default `0`, the iris model root) and logs a one-time warning, so the indoor pipeline publishes reliably on Jazzy.
-
-> The direct MAVLink transport does not need this relay on real hardware — its built-in `VisionPoseBridge` subscribes straight to the VSLAM topic. In sim, `MAVLINK_SITL_VISION_CONFIG` simply reuses `/mavros/vision_pose/pose_cov` produced here to avoid a second pose source. See [mavlink/README.md](../nectar/control/mavlink/README.md).
+**Frame-name fallback**: it first matches the transform whose `child_frame_id` equals the model name. On ROS 2 Jazzy the `ros_gz_bridge` `Pose_V → TFMessage` conversion strips the frame ids, leaving `child_frame_id` empty. When all names are empty the node falls back to the transform at `model_index` (default `0`, the iris model root) and logs a one-time warning, so the indoor pipeline publishes reliably on Jazzy.
 
 ## File Structure
 
@@ -315,7 +308,7 @@ scripts/simulation/
 ├── install_sitl.sh           # Clone and build ArduPilot SITL
 ├── install_gazebo.sh         # Install Gazebo + ArduPilotPlugin + ros_gz from source
 ├── start_sitl.sh             # Start arducopter binary (--gazebo, --indoor flags)
-└── vision_pose_bridge.py     # Gazebo ground-truth → MAVROS vision pose
+└── gz_vision_source.py       # Gazebo ground-truth → canonical VSLAM pose topic
 
 nectar/launch/
 ├── sitl.launch.py            # MAVROS-only launch (headless SITL)

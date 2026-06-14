@@ -25,6 +25,9 @@ class Capability(Enum):
     PID_NAV = auto()
     """Companion-side velocity PID navigation."""
 
+    VELOCITY_BODY = auto()
+    """Velocity commands in the body frame."""
+
     VELOCITY_WORLD = auto()
     """Velocity commands in the world/local frame."""
 

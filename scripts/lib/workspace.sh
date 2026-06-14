@@ -103,6 +103,10 @@ cmd_verify() {
     _check  "pkg: cv_bridge"                      'ros2 pkg list 2>/dev/null | grep -q cv_bridge'
     _check  "pkg: mavros"                         'ros2 pkg list 2>/dev/null | grep -q mavros'
 
+    # --- Optional drone drivers ---
+    _check_opt  "pkg: crazyflie_interfaces"       'ros2 pkg list 2>/dev/null | grep -q crazyflie_interfaces'
+    _check_opt  "pkg: bebop_driver"               'ros2 pkg list 2>/dev/null | grep -q bebop_driver'
+
     # --- Core Python imports ---
     _check  "import numpy       ($(_ver numpy))"       'python3 -c "import numpy"'
     _check  "import cv2         ($(_ver cv2))"          'python3 -c "import cv2"'

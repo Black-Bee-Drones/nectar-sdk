@@ -1,15 +1,18 @@
 # Thin wrapper around scripts/setup.sh.
 
 .PHONY: help setup system update ros2 geographiclib ros2-env rosdep-init \
+        drone-mavros drone-crazyflie drone-bebop drone-all \
         python python-control python-vision python-ai python-interface python-sensors \
         install-all install-full pytorch \
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
         docker-build docker-build-full docker-build-t265 docker-run docker-exec \
+        isaac-run \
         full-install \
         lint lint-fix format check \
-        sim-install sim-install-gazebo sim-start sim-start-gazebo \
-        sim-start-indoor sim-mavros sim-gazebo sim-outdoor sim-outdoor-direct sim-indoor sim-stop
+        sim-install sim-install-gazebo sim-start sim-start-outdoor \
+        sim-start-indoor sim-mavros sim-gazebo sim-outdoor sim-outdoor-direct \
+        sim-indoor sim-indoor-direct sim-stop
 
 SETUP := ./scripts/setup.sh
 
@@ -28,6 +31,12 @@ ros2:               ; @$(SETUP) ros2
 geographiclib:      ; @$(SETUP) geographiclib
 ros2-env:           ; @$(SETUP) ros2-env
 rosdep-init:        ; @$(SETUP) rosdep-init
+
+# Drone drivers
+drone-mavros:       ; @$(SETUP) drone mavros
+drone-crazyflie:    ; @$(SETUP) drone crazyflie
+drone-bebop:        ; @$(SETUP) drone bebop
+drone-all:          ; @$(SETUP) drone all
 
 # Python
 python:             ; @$(SETUP) python
@@ -60,6 +69,9 @@ docker-build-t265:  ; @$(SETUP) docker-build-t265
 docker-run:         ; @$(SETUP) docker-run
 docker-exec:        ; @$(SETUP) docker-exec
 
+# Isaac ROS Visual SLAM (Jetson) - self-contained producer container
+isaac-run:          ; @./docker/isaac_vslam/run_docker.sh
+
 # Code quality
 check:              ; @pre-commit run --all-files
 lint:               ; @cd nectar && ruff check .
@@ -70,13 +82,14 @@ format:             ; @cd nectar && ruff format .
 sim-install:        ; @$(SETUP) sim-install
 sim-install-gazebo: ; @$(SETUP) sim-install-gazebo
 sim-start:          ; @$(SETUP) sim-start
-sim-start-gazebo:   ; @$(SETUP) sim-start-gazebo
+sim-start-outdoor:  ; @$(SETUP) sim-start-outdoor
 sim-start-indoor:   ; @$(SETUP) sim-start-indoor
 sim-mavros:         ; @$(SETUP) sim-mavros
 sim-gazebo:         ; @$(SETUP) sim-gazebo
 sim-outdoor:        ; @$(SETUP) sim-outdoor
 sim-outdoor-direct: ; @$(SETUP) sim-outdoor-direct
 sim-indoor:         ; @$(SETUP) sim-indoor
+sim-indoor-direct:  ; @$(SETUP) sim-indoor-direct
 sim-stop:           ; @$(SETUP) sim-stop
 
 # Full setup from zero
