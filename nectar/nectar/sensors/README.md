@@ -334,7 +334,7 @@ Standalone (no ROS): see [`examples/sensors/rangefinder_example.py`](../examples
 - **Auto-estimated height is too small** (drone still climbs slightly when crossing the obstacle): the lock window expired before the beam reached the deepest point. Increase `estimate_lock_s` (e.g. 0.4 s), or lock the height with `obstacle_height_m`.
 - **Auto-estimated height is too large** (drone dips when entering the masked region): noisy entry sample. Increase `avg_window` so the pre-baseline is more stable, or lock the height with `obstacle_height_m`.
 - **Stuck masked**: lower `timeout_s` (default 5.0 s) or set it to a value just larger than the longest obstacle traversal expected for the mission.
-- **TF-Luna returns `None` constantly**: check baud (default 115200), wiring, and that no other process is holding the serial port. Increase `min_strength` if you suspect the sensor is reading through low-confidence reflections.
+- **TF-Luna returns `None` constantly**: check baud (default 115200), wiring, and that no other process is holding the serial port. Raise the `min_strength` constructor argument of `TFLuna(...)` (not a ROS parameter) if you suspect the sensor is reading through low-confidence reflections.
 
 ## References
 

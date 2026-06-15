@@ -1,5 +1,7 @@
 # Localization (control/localization)
 
+## Role
+
 External-navigation integration for GPS-denied (indoor) flight. Feeds a Visual
 SLAM pose to the FCU so EKF3 can estimate position without GPS.
 

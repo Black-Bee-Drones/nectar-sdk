@@ -65,7 +65,7 @@ flowchart LR
 |---|---|---|---|
 | RealSense D435i (front) | `rgbd_camera` | `/front_camera/image`, `/front_camera/depth_image`, `/front_camera/points` | 640x480, RGB + depth + point cloud |
 | Arducam (down) | `camera` | `/down_camera` | 640x480 RGB, downward-facing |
-| TFLuna lidar (down) | SITL simulated sonar | `/mavros/rangefinder_pub` | `RNGFND1_TYPE=1`, ground distance from physics |
+| TFLuna lidar (down) | SITL simulated sonar | `/mavros/rangefinder/rangefinder` | `RNGFND1_TYPE=1`, ground distance from physics |
 | TFLuna lidar (down) | `gpu_lidar` | `/lidar/range` | Direct LaserScan via Gazebo, 1-sample rangefinder |
 
 The rangefinder has two data paths: SITL sonar (via MAVLink `DISTANCE_SENSOR` to MAVROS) and Gazebo `gpu_lidar` (via `ros_gz_bridge`). Same as real hardware where the lidar feeds both ArduPilot and ROS directly.
@@ -115,6 +115,14 @@ parameters must match the world (indoor = no GPS), so always pair the same row.
 > Ctrl+C can leave a stray Python node alive (e.g. a duplicate
 > `/gz_vision_source`); `sim-stop` clears them.
 
+The `sim-outdoor` / `sim-indoor` targets above are thin wrappers over the generic
+`make sim-gazebo` (raw `sitl_gazebo.launch.py`). Use `sim-gazebo` directly to pass
+arbitrary launch args, e.g. a custom world or `mavros:=false`:
+
+```bash
+make sim-gazebo world:=rangefinder_test.sdf mavros:=false
+```
+
 ### Headless (no Gazebo)
 
 ```bash
@@ -146,7 +154,7 @@ ros2 topic echo /mavros/global_position/global --once --qos-reliability best_eff
 ros2 topic echo /mavros/vision_pose/pose_cov --once
 
 # Rangefinder
-ros2 topic echo /mavros/rangefinder_pub --once
+ros2 topic echo /mavros/rangefinder/rangefinder --once
 
 # Front camera
 ros2 topic echo /front_camera/image --once
@@ -175,14 +183,17 @@ reliably. ArduPilot emits one `DISTANCE_SENSOR` per instance, accessible through
 # Terminal 2: Gazebo (and MAVROS) with the test world
 ros2 launch nectar sitl_gazebo.launch.py world:=rangefinder_test.sdf
 
-# Terminal 3: read the readings
-python3 nectar/nectar/examples/simulation/read_distance_sensors.py            # direct MAVLink
-python3 nectar/nectar/examples/simulation/read_distance_sensors.py --mavros   # MAVROS
+# Terminal 3: inspect the readings (MAVROS topics)
+ros2 topic echo /mavros/rangefinder/rangefinder --once
+ros2 topic echo /mavros/distance_sensor/rangefinder_front --once
 ```
 
+In code, both transports expose every reported unit via `drone.distance_sensors`
+and `drone.get_distance(orientation)` (the downward unit also updates
+`drone.rangefinder`); see the [ArduPilot core README](../nectar/control/ardupilot/README.md#distance-sensors).
 The MAVROS path relies on the `distance_sensor` plugin entries in
 `config/apm_config_sitl.yaml` (`rangefinder/rangefinder`, `rangefinder/front`,
-`rangefinder/back`) mapped to orientations in the example via `DistanceSensorTopic`.
+`rangefinder/back`) mapped to orientations.
 
 ## Configuration Presets
 
@@ -196,16 +207,16 @@ Defined in `nectar/control/config.py`:
 | `SITL_VISION_CONFIG` | mavros | 5760 | VISION | Yes | Gazebo indoor |
 | `MAVLINK_SITL_CONFIG` | mavlink | 5760 | GPS | No | Headless SITL, direct pymavlink |
 | `MAVLINK_SITL_GAZEBO_CONFIG` | mavlink | 5762 | GPS | No | Gazebo outdoor, direct (SERIAL1, alongside MAVROS) |
-| `MAVLINK_SITL_VISION_CONFIG` | mavlink | 5762 | VISION | No | Gazebo indoor, direct (reuses the MAVROS vision relay topic) |
+| `MAVLINK_SITL_VISION_CONFIG` | mavlink | 5762 | VISION | No | Gazebo indoor, direct (vision feed from `/visual_slam/tracking/vo_pose_covariance`) |
 
 ```python
 from nectar.control import DroneFactory, SITL_GAZEBO_CONFIG, MAVLINK_SITL_GAZEBO_CONFIG
 
 # Outdoor over MAVROS (port 5760)
-drone = DroneFactory.create("mavros", SITL_GAZEBO_CONFIG, node)
+drone = DroneFactory.create("mavros", SITL_GAZEBO_CONFIG)
 
 # Outdoor over direct MAVLink (port 5762, with `make sim-outdoor-direct`)
-drone = DroneFactory.create("mavlink", MAVLINK_SITL_GAZEBO_CONFIG, node)
+drone = DroneFactory.create("mavlink", MAVLINK_SITL_GAZEBO_CONFIG)
 ```
 
 ## Test Suite
@@ -215,35 +226,44 @@ drone = DroneFactory.create("mavlink", MAVLINK_SITL_GAZEBO_CONFIG, node)
 ### Usage
 
 ```bash
-# All outdoor tests (31 tests)
+# All outdoor tests over MAVROS (37 tests, tcp 5760)
 python3 nectar/nectar/examples/simulation/sitl_test.py
 
-# All indoor-compatible tests (skips GPS-only tests)
+# Same suite over direct pymavlink (MavlinkDrone, tcp 5762)
+python3 nectar/nectar/examples/simulation/sitl_test.py --mavlink
+
+# Indoor-compatible subset (vision config, skips the 5 GPS-only tests -> 32 tests)
 python3 nectar/nectar/examples/simulation/sitl_test.py --indoor
 
-# Specific tests
+# Land between tests for a full reset
+python3 nectar/nectar/examples/simulation/sitl_test.py --fresh pid_fwd
+
+# Specific tests / a group / list everything
 python3 nectar/nectar/examples/simulation/sitl_test.py pid_fwd setpoint_fwd
-
-# Test group
 python3 nectar/nectar/examples/simulation/sitl_test.py --group vel
-
-# List all tests and groups
 python3 nectar/nectar/examples/simulation/sitl_test.py --list
 ```
 
-### Test categories
+Flags: `--mavlink` (direct pymavlink on tcp 5762), `--indoor` (vision config, skip GPS-only tests), `--fresh` (land between tests).
+
+### Test groups
 
 | Group | Tests | Description |
 |---|---|---|
-| `vel` | vel_fwd, vel_lat, vel_up, vel_yaw, vel_takeoff, vel_world, brake | Velocity commands in BODY/WORLD/TAKEOFF frames |
+| `vel` | vel_fwd, vel_lat, vel_up, vel_yaw, vel_takeoff, vel_world, vel_world_north, vel_world_rotated, brake | Velocity in BODY/WORLD/TAKEOFF frames |
 | `pid` | pid_fwd, pid_lat, pid_alt, pid_yaw | PID navigation with raw GPS |
 | `pid_local` | pid_local_fwd, pid_local_lat, pid_local_yaw | PID navigation with EKF local position |
 | `setpoint` | setpoint_fwd, setpoint_lat, setpoint_yaw | Local position setpoint publishing |
 | `setpoint_global` | setpoint_global, setpoint_global_yaw | GPS global setpoint (outdoor only) |
+| `wpnav` | setpoint_wpnav | AC_WPNav waypoint setpoint |
 | `rtl` | rtl_pid, rtl_ardupilot | Return to launch |
+| `yaw` | vel_yaw, pid_yaw, pid_local_yaw, setpoint_yaw, setpoint_global_yaw, yaw_direction, yaw_takeoff_ref | Yaw handling across methods |
+| `world` | vel_world, vel_world_north, vel_world_rotated | WORLD-frame velocity |
+| `nav` | pid_fwd, pid_lat, pid_local_fwd, pid_local_lat | Core PID navigation |
+| `compound` | sequential, takeoff_ref | Multi-step sequences |
 | `square` | sq_pid, sq_pid_takeoff, sq_pid_local, sq_setpoint, sq_setpoint_global, sq_wpnav | 3m square patterns |
 
-GPS-only tests (skipped with `--indoor`): `heading_enu`, `setpoint_global`, `setpoint_global_yaw`, `sq_setpoint_global`, `rtl_ardupilot`.
+Pre-flight tests (`sensors`, `heading_enu`) run without takeoff. GPS-only tests (skipped with `--indoor`): `heading_enu`, `setpoint_global`, `setpoint_global_yaw`, `sq_setpoint_global`, `rtl_ardupilot`.
 
 ## ArduPilot Parameters
 
@@ -315,8 +335,7 @@ nectar/launch/
 └── sitl_gazebo.launch.py     # Gazebo + ros_gz_bridge (+ MAVROS unless mavros:=false)
 
 nectar/nectar/examples/simulation/
-├── sitl_test.py                # Navigation test suite (--indoor flag)
-└── read_distance_sensors.py    # Print distance_sensors map (MAVLink / MAVROS)
+└── sitl_test.py                # Navigation test suite (--mavlink / --indoor / --fresh)
 ```
 
 ## References

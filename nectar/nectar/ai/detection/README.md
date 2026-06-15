@@ -515,7 +515,7 @@ model.load_model()
 from nectar.ai.detection import Detection
 
 det = Detection(
-    bbox=np.array([100, 100, 200, 200]),  # xyxy
+    xyxy=np.array([100, 100, 200, 200]),  # [x1, y1, x2, y2]
     confidence=0.95,
     class_id=0,
     class_name="person",
@@ -558,7 +558,7 @@ config = TrainingConfig(
     learning_rate=0.001,
     output_dir="outputs/",
     tensorboard=True,
-    start_tensorboard=True,  # Auto-start TensorBoard server
+    tensorboard=True,  # enable TensorBoard logging
     push_to_hub=True,
     hub_model_id="user/model-name",
 )
@@ -586,7 +586,7 @@ sequenceDiagram
     participant TB as TensorBoardManager
 
     User->>Detector: train(TrainingConfig)
-    Detector->>TB: start_server() if start_tensorboard
+    Detector->>TB: start_server() if tensorboard
     Detector->>Model: train(config)
     Model->>Framework: train(**args)
 
@@ -905,51 +905,51 @@ detector = Detector("model.pt", framework="custom")
 
 ## CLI
 
-The detection module provides a unified CLI via `nectar-od`:
+The detection module is driven through the unified `nectar-ai` CLI under the `detect` task (`detect`, `detection`, and `od` are aliases):
 
 ```bash
 # Training
-nectar-od train --config configs/yolo_example.yaml
+nectar-ai detect train --config configs/yolo_example.yaml
 
 # Prediction
-nectar-od predict --model yolov8n.pt --input image.jpg --output results/
+nectar-ai detect predict --model yolov8n.pt --input image.jpg --output results/
 
 # Evaluation
-nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
+nectar-ai detect eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
 
 # Dataset management
-nectar-od dataset download --source visdrone --output datasets/visdrone
-nectar-od dataset convert --input datasets/coco --output datasets/yolo --format yolo
-nectar-od dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
-nectar-od dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
-nectar-od dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train --num-workers 8
-nectar-od dataset analyze --input datasets/my_dataset
-nectar-od dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
-nectar-od dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --title "My Dataset" --model-repo user/my-model
-nectar-od dataset upload --target huggingface --raw --repo user/my-dataset --dataset datasets/my_dataset
-nectar-od dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset --splits train valid test
-nectar-od dataset upload --target roboflow --images-only --api-key KEY --project my-project --dataset images/
-nectar-od dataset upload-images --api-key KEY --project my-project --directory images/
-nectar-od dataset download --source huggingface --repo user/my-dataset --format yolo --output data/local
+nectar-ai detect dataset download --source visdrone --output datasets/visdrone
+nectar-ai detect dataset convert --input datasets/coco --output datasets/yolo --format yolo
+nectar-ai detect dataset stratify --input datasets/unsplit --output datasets/split --train-ratio 0.8
+nectar-ai detect dataset subset --input datasets/full --output datasets/subset --max-train-samples 1000
+nectar-ai detect dataset augment --input datasets/my_dataset --output datasets/my_dataset_augmented --preset aerial --num-augmented 2 --splits train --num-workers 8
+nectar-ai detect dataset analyze --input datasets/my_dataset
+nectar-ai detect dataset merge --dataset1 datasets/d1 --dataset2 datasets/d2 --output datasets/merged --train-config '{"d1": 1000, "d2": 5000}' --output-format coco
+nectar-ai detect dataset upload --target huggingface --repo user/my-dataset --dataset datasets/my_dataset --title "My Dataset" --model-repo user/my-model
+nectar-ai detect dataset upload --target huggingface --raw --repo user/my-dataset --dataset datasets/my_dataset
+nectar-ai detect dataset upload --target roboflow --api-key KEY --project my-project --dataset datasets/my_dataset --splits train valid test
+nectar-ai detect dataset upload --target roboflow --images-only --api-key KEY --project my-project --dataset images/
+nectar-ai detect dataset upload-images --api-key KEY --project my-project --directory images/
+nectar-ai detect dataset download --source huggingface --repo user/my-dataset --format yolo --output data/local
 ```
 
 ### Training
 
 ```bash
 # Using config file (recommended)
-nectar-od train --config configs/yolo_example.yaml
+nectar-ai detect train --config configs/yolo_example.yaml
 
 # Using CLI arguments
-nectar-od train --model yolov8n.pt --dataset /path/to/dataset --epochs 100 --batch-size 16
+nectar-ai detect train --model yolov8n.pt --dataset /path/to/dataset --epochs 100 --batch-size 16
 ```
 
 ### Evaluation
 
 ```bash
-nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
+nectar-ai detect eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
 
 # With post-processing
-nectar-od eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset \
+nectar-ai detect eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset \
     --merge-strategy nms --merge-iou-threshold 0.5 \
     --use-per-class-filter --per-class-thresholds evaluation/pr_analysis_results.csv
 ```
@@ -1050,7 +1050,7 @@ builder.apply("datasets/input", "datasets/output", num_augmented=3)
 
 ```bash
 # Basic augmentation (2 copies per image)
-nectar-od dataset augment \
+nectar-ai detect dataset augment \
   --input datasets/visdrone \
   --output datasets/visdrone-augmented \
   --preset aerial \
@@ -1059,7 +1059,7 @@ nectar-od dataset augment \
   --num-workers 8
 
 # Limit augmentation to 1000 original images
-nectar-od dataset augment \
+nectar-ai detect dataset augment \
   --input datasets/visdrone \
   --output datasets/visdrone-augmented \
   --preset aerial \
@@ -1067,7 +1067,7 @@ nectar-od dataset augment \
   --max-original-samples 1000
 
 # Add 25% extra data via augmentation ratio
-nectar-od dataset augment \
+nectar-ai detect dataset augment \
   --input datasets/visdrone \
   --output datasets/visdrone-augmented \
   --preset aerial \
@@ -1075,7 +1075,7 @@ nectar-od dataset augment \
   --augmentation-ratio 0.25
 
 # Prioritize rare classes when limiting samples
-nectar-od dataset augment \
+nectar-ai detect dataset augment \
   --input datasets/visdrone \
   --output datasets/visdrone-augmented \
   --preset aerial \
@@ -1201,21 +1201,21 @@ uploader.upload_directory(directory_path="images/", project_name="my-project")
 
 ```bash
 # HuggingFace native upload (Parquet + viewer)
-nectar-od dataset upload --target huggingface \
+nectar-ai detect dataset upload --target huggingface \
     --repo user/my-dataset --dataset datasets/my_dataset \
     --public --title "My Dataset" --model-repo user/my-model
 
 # HuggingFace raw-files fallback
-nectar-od dataset upload --target huggingface --raw \
+nectar-ai detect dataset upload --target huggingface --raw \
     --repo user/my-dataset --dataset datasets/my_dataset
 
 # Roboflow dataset (images + annotations, default)
-nectar-od dataset upload --target roboflow --api-key KEY \
+nectar-ai detect dataset upload --target roboflow --api-key KEY \
     --project my-project --dataset datasets/my_dataset \
     --splits train valid test
 
 # Roboflow images-only (legacy)
-nectar-od dataset upload --target roboflow --images-only \
+nectar-ai detect dataset upload --target roboflow --images-only \
     --api-key KEY --project my-project --dataset images/
 ```
 
@@ -1239,11 +1239,11 @@ handler.download(
 CLI:
 
 ```bash
-nectar-od dataset download --source huggingface \
+nectar-ai detect dataset download --source huggingface \
     --repo blackbeedrones/imav-2025-gate-dataset \
     --format yolo --output data/imav-gate
 
-nectar-od dataset download --source roboflow \
+nectar-ai detect dataset download --source roboflow \
     --workspace WS --project P --version 1 --format coco \
     --api-key KEY --output data/roboflow
 ```
@@ -1282,7 +1282,7 @@ train:
   output_dir: outputs/detr
   device: cuda
   tensorboard: true
-  start_tensorboard: true
+  tensorboard: true
   push_to_hub: true
   hub_model_id: user/model-name
   mixed_precision: fp16
@@ -1302,7 +1302,7 @@ eval:
 Usage:
 
 ```bash
-nectar-od train --config configs/detr_example.yaml
+nectar-ai detect train --config configs/detr_example.yaml
 ```
 
 ## Module Structure

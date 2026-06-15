@@ -30,18 +30,15 @@ ROS 2 software development kit for autonomous aerial systems. Provides unified i
   - [Computer Vision](#computer-vision)
   - [AI / Detection](#ai--detection)
   - [Sensors](#sensors)
+  - [Localization](#localization)
   - [Interface](#interface)
   - [Nectar Interfaces](#nectar-interfaces)
 - [Installation](#installation)
-  - [From Scratch](#from-scratch)
-  - [Existing ROS 2 Workspace](#existing-ros-2-workspace)
-  - [Install by Module](#install-by-module)
-  - [Docker](#docker)
 - [Architecture](#architecture)
-  - [Design Patterns](#design-patterns)
 - [Documentation](#documentation)
 - [ROS 2 Nodes](#ros-2-nodes)
 - [Examples](#examples)
+- [Simulation](#simulation)
 - [Directory Structure](#directory-structure)
 - [Contributing](#contributing)
 - [Black Bee Drones](#black-bee-drones)
@@ -78,7 +75,7 @@ drone.land()
 nectar.shutdown()
 ```
 
-[Control overview](nectar/nectar/control/README.md) · [ArduPilot core](nectar/nectar/control/ardupilot/README.md) · [MAVROS transport](nectar/nectar/control/mavros/README.md) · [MAVLink transport](nectar/nectar/control/mavlink/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md)
+[Control overview](nectar/nectar/control/README.md) · [ArduPilot core](nectar/nectar/control/ardupilot/README.md) · [MAVROS](nectar/nectar/control/mavros/README.md) · [MAVLink](nectar/nectar/control/mavlink/README.md) · [Localization](nectar/nectar/control/localization/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md) · [Crazyflie](nectar/nectar/control/crazyflie/README.md)
 
 ### [Computer Vision](nectar/nectar/vision/README.md)
 
@@ -124,7 +121,7 @@ Object detection across three frameworks through `Detector`, a single factory-ba
 - Training with per-framework config dataclasses, [TensorBoard](https://www.tensorflow.org/tensorboard) logging, [HuggingFace Hub](https://huggingface.co/docs/hub/) push
 - Slicing inference for high-resolution images with four post-processing strategies (NMS, Soft-NMS, WBF, NMM)
 - Model evaluation with mAP, precision, recall via [supervision](https://github.com/roboflow/supervision)
-- CLI tools for predict, train, and evaluate workflows
+- CLI tools (`nectar-ai`) for predict, train, and evaluate workflows
 
 ```python
 from nectar.ai.detection import Detector
@@ -137,12 +134,12 @@ detector.load()
 result = detector.detect(image, conf=0.5)
 
 for det in result:
-    print(f"{det.class_name}: {det.confidence:.2f} at {det.bbox}")
+    print(f"{det.class_name}: {det.confidence:.2f} at {det.xyxy}")
 
 annotated = detector.draw_detections(image, result)
 ```
 
-[AI overview](nectar/nectar/ai/README.md) · [Detection details](nectar/nectar/ai/detection/README.md) — class diagram, core types, framework configs, slicing, CLI, extension guide
+[AI overview](nectar/nectar/ai/README.md) · [Detection details](nectar/nectar/ai/detection/README.md) · [Segmentation](nectar/nectar/ai/segmentation/README.md)
 
 ### [Sensors](nectar/nectar/sensors/README.md)
 
@@ -171,9 +168,29 @@ publisher.start()
 
 [Sensors overview](nectar/nectar/sensors/README.md) · [MAVLink connection](nectar/nectar/control/mavlink/README.md)
 
+### [Localization](nectar/nectar/control/localization/README.md)
+
+External-navigation integration for GPS-denied (indoor) flight. A producer (Intel RealSense + [Isaac ROS Visual SLAM](https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_visual_slam/isaac_ros_visual_slam/index.html)) runs in a dedicated Jetson container; a consumer bridge forwards the VSLAM pose to the FCU so EKF3 can estimate position without GPS. Producer and consumer share a `ROS_DOMAIN_ID` over host networking.
+
+- Producer launch (`isaac_vslam_realsense.launch.py`): RealSense stereo IR + IMU and Isaac ROS Visual SLAM
+- Consumer launch (`vision_pose.launch.py`): `backend:=mavros` republishes onto `/mavros/vision_pose/pose_cov`, or `backend:=mavlink` sends `VISION_POSITION_ESTIMATE` directly (no MAVROS)
+- RViz check (`vslam_rviz.launch.py`): `profile:=light|full` for pre-flight pose/drift/loop-closure inspection
+- Self-contained Isaac container ([`docker/isaac_vslam`](docker/isaac_vslam)) wrapping NVIDIA's `isaac_ros_common`
+
+```bash
+# Producer (Isaac container) - enter and launch
+make isaac-run
+nectar-vslam
+
+# Consumer (SDK container or host), same ROS_DOMAIN_ID
+ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
+```
+
+[Localization overview](nectar/nectar/control/localization/README.md) — topology, components, backends, FCU setup, visualization
+
 ### [Interface](nectar/nectar/interface/README.md)
 
-[Qt6 / PySide6](https://doc.qt.io/qtforpython-6/) desktop application for testing and operating the SDK without writing code. Three tabs: **Control** (drone connection, arm/takeoff/land, keyboard velocity control, position navigation), **Vision** (camera streaming with 20+ real-time filters including ArUco detection and MediaPipe tracking), and **ROS** (topic browser/subscriber/publisher, service caller, parameter viewer, image subscriber).
+[Qt6 / PySide6](https://doc.qt.io/qtforpython-6/) desktop application for testing and operating the SDK without writing code. Three tabs: **Control** (drone connection for MAVROS/MAVLink/Bebop/Crazyflie, arm/takeoff/land, keyboard velocity control, position navigation), **Vision** (camera streaming with 20+ real-time filters including ArUco detection and MediaPipe tracking), and **ROS** (topic browser/subscriber/publisher, service caller, parameter viewer, image subscriber).
 
 [Interface overview](nectar/nectar/interface/README.md) — architecture, tabs, widgets, threading model, camera integration, theming
 
@@ -191,465 +208,134 @@ Custom ROS 2 messages connecting vision output to control decisions:
 
 ## Installation
 
-### From Scratch
-
-A standalone bootstrap script handles everything: ROS 2, system packages, MAVROS, GeographicLib, git/SSH, cloning, Python dependencies, workspace build, and verification.
-
 ```bash
+# From scratch (ROS 2, system deps, MAVROS, GeographicLib, clone, build)
 bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
+
+# Existing ROS 2 workspace
+cd ~/ros2_ws/src && git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+cd nectar-sdk && make setup
 ```
 
-### Existing ROS 2 Workspace
+Install only what you need (modules, drone drivers, Docker, simulation, RealSense). Run `./scripts/setup.sh` with no arguments for a guided menu. See the **[Installation Guide](docs/INSTALL.md)** for the full reference; all versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
 
 ```bash
-cd ~/ros2_ws/src
-git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
-cd nectar-sdk
-make setup
+make python-control python-vision python-ai python-interface python-sensors  # by module
+make drone-mavros drone-crazyflie drone-bebop                                # by drone driver
+make docker-build docker-run                                                 # Docker (see docker/README.md)
 ```
-
-### Install by Module
-
-```bash
-make python-control    # GPS, PID, MAVROS navigation
-make python-vision     # Camera drivers, ArUco, color, line detection
-make python-ai         # YOLO, DETR, RF-DETR (requires PyTorch)
-make python-interface  # Qt6 / PySide6 GUI
-make python-sensors    # pyserial + pymavlink (TF-Luna driver, MAVLink bridge)
-make pytorch           # PyTorch (auto-detects CUDA)
-```
-
-### Install by Drone Driver
-
-Each drone type needs its own driver. Install only the ones you use:
-
-```bash
-make drone-mavros      # MAVROS (ArduPilot/PX4) + GeographicLib datasets
-make drone-crazyflie   # Crazyswarm2 (apt when available, else source) + rowan
-make drone-bebop       # Parrot Bebop 2: ros2_parrot_arsdk + ros2_bebop_driver (source build)
-make drone-all         # all of the above
-```
-
-### Interactive Menu
-
-Run the setup script with no arguments for a guided menu where you can pick individual steps:
-
-```bash
-./scripts/setup.sh
-```
-
-### Docker
-
-**Linux:**
-```bash
-make docker-build       # SDK image (no AI)
-make docker-build-full  # Full image (+ PyTorch + AI)
-make docker-run         # Run with X11 + cameras + USB
-```
-
-**Windows:**
-```powershell
-.\docker\run_docker_win.ps1 build humble              # Build SDK image
-.\docker\run_docker_win.ps1 build jazzy full-cpu      # Build full image
-.\docker\run_docker_win.ps1 run humble                # Run container
-```
-
-| Tag | Contents | PyTorch |
-|-----|----------|---------|
-| `:humble` | control + vision + interface + realsense + oakd | None |
-| `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
-| `:humble-full-cpu` | All above + AI | CPU |
-| `:humble-full-cu124` | All above + AI | CUDA 12.4 |
-
-See [`docker/README.md`](docker/README.md) for GPU, RealSense, and advanced options.
-
-All versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh). See [`docs/INSTALL.md`](docs/INSTALL.md) for the full guide.
 
 ## Architecture
 
-*High-level architecture diagram showing main components and relationships. For detailed class diagrams, see module-specific READMEs: [Control](nectar/nectar/control/README.md), [Vision](nectar/nectar/vision/README.md), [AI](nectar/nectar/ai/README.md), [Interface](nectar/nectar/interface/README.md).*
+End-to-end view: mission code, state machines, and the GUI drive the SDK modules, which reach flight controllers, cameras, and detection models through ROS 2. Each module README holds its own detailed class diagram.
 
 ```mermaid
-classDiagram
-    namespace Control {
-        class DroneFactory {
-            <<singleton>>
-            +create(type, config, node)$ BaseDrone
-            +register(type, factory_func)$
-            +available_types()$ List~str~
-        }
-        class Drone {
-            <<protocol>>
-            +connect() bool
-            +arm() bool
-            +takeoff(altitude) bool
-            +land() bool
-            +move_to(x, y, z, yaw, reference, strategy) bool
-            +move_to_gps(lat, lon, alt, heading, strategy) bool
-            +move_velocity(vx, vy, vz, vyaw, reference)
-            +rtl(altitude, strategy, land) bool
-            +emergency_stop()
-        }
-        class BaseDrone {
-            <<abstract>>
-            +add_obstacle_detector(name, detector, strategy)
-            +start_driver_process() bool
-            +delay(seconds)
-            +cleanup()
-        }
-        class ArduPilotDrone {
-            <<abstract>>
-            -_transport MavlinkTransport
-            -_navigator ArduPilotNavigator
-            -_sequencer FlightSequencer
-            -_pose_source PoseSource
-            +set_mode(mode) bool
-            +get_altitude(source) Optional~float~
-            +set_pid_config(config)
-        }
-        class MavrosDrone
-        class MavlinkDrone
-        class MavlinkTransport {
-            <<abstract>>
-            +state local_pose gps heading rel_alt rangefinder
-            +arm() set_mode() command_takeoff() set_param()
-            +send_velocity_target() send_local_target() send_global_target()
-        }
-        class MavrosTransport
-        class PymavlinkTransport
-        class BebopDrone {
-            +flip(direction)
-            +camera_control(tilt, pan)
-        }
-        class DroneConfig {
-            <<dataclass>>
-            +name str
-            +start_driver bool
-        }
-        class MavrosConfig {
-            <<dataclass>>
-            +pose_source PoseSource
-            +expect_lidar bool
-            +connection_string str
-        }
-        class BebopConfig {
-            <<dataclass>>
-            +ip str
-            +namespace str
-        }
-        class ArduPilotNavigator {
-            +navigate_pid(target, precision, altitude_source) bool
-            +navigate_setpoint(target, precision) bool
-        }
-        class PIDController {
-            +update(current_value) float
-            +reset()
-            +tune(kp, ki, kd)
-        }
-        class GPSUtils {
-            <<static>>
-            +geoid_height(lat, lon)$ float
-            +create_global_target(lat, lon, alt, heading)$ GlobalTarget
-            +check_reached(cur, tgt, precision)$ tuple
-            +local_offset(cur, tgt)$ tuple
-        }
-        class ObstacleManager {
-            +should_continue_navigation(drone) bool
-            +get_axis_control() tuple~bool,bool,bool~
-            +add(name, handler)
-            +enable(name)
-        }
-        class ObstacleHandler {
-            -_detector ObstacleDetector
-            -_strategy AvoidanceStrategy
-            +should_continue(drone) bool
-            +get_axis_modifiers() tuple~bool,bool,bool~
-        }
-        class ObstacleDetector {
-            <<protocol>>
-            +is_enabled bool
-            +update() ObstacleInfo
-            +enable()
-            +disable()
-        }
-        class AvoidanceStrategy {
-            <<abstract>>
-            +execute(drone, info) bool
-            +reset()
-        }
-        class PauseStrategy
-        class DisableAxisStrategy {
-            +disable_x bool
-            +disable_y bool
-            +disable_z bool
-        }
-        class SequenceStrategy {
-            -_sequence_func Callable
-        }
-    }
+flowchart TB
+    subgraph APP["Mission / Application"]
+        direction LR
+        Mission["User mission code<br/>/ examples"]
+        FSM["State machines<br/>(Yasmin)"]
+        GUI["Qt6 GUI<br/>(NectarApp)"]
+    end
 
-    namespace Vision {
-        class CameraFactory {
-            <<singleton>>
-            +from_source(source, config, node)$ AbstractCam
-            +register(key, builder)$
-        }
-        class AbstractCam {
-            <<abstract>>
-            +name str
-            +is_running bool
-            +start()
-            +get_frame() Optional~ndarray~
-            +close()
-        }
-        class DepthCam {
-            <<abstract>>
-            +get_depth_frame() Optional~ndarray~
-            +get_distance(u, v) Optional~float~
-        }
-        class OpenCVCam
-        class RealsenseCam
-        class OakdCam
-        class ROSCam
-        class ROSDepthCam {
-            -_color_cam ROSCam
-        }
-        class ImageHandler {
-            +node Node
-            +camera AbstractCam
-            +run()
-            +take_photo() ndarray
-            +cleanup()
-        }
-        class Aruco {
-            +detect(img, draw) tuple
-            +pose_estimate(img, draw) tuple
-        }
-        class ColorDetector {
-            +filterColor(img)
-            +initTrackbars()
-            +saveColorValues()
-        }
-        class LineDetector {
-            -color_detector ColorDetector
-            -estimation_method ILineEstimationMethod
-            +detect_line(img, region) tuple
-        }
-        class ILineEstimationMethod {
-            <<abstract>>
-            +estimate(img) tuple
-        }
-        class DistanceEstimator {
-            -_model EstimationModel
-            +estimate(value) float
-            +compare_methods(value) Dict
-        }
-        class EstimationModel {
-            <<abstract>>
-            +estimate(value) float
-            +fit(x, y) Dict
-        }
-        class HandTracker {
-            +detect(frame, draw) ndarray
-            +get_hands() List~HandResult~
-            +raised_fingers(hand_idx) List~int~
-        }
-        class FaceMeshTracker {
-            +detect(frame, draw) ndarray
-            +get_faces() List~FaceResult~
-            +get_eye_aspect_ratio(eye) float
-        }
-    }
+    subgraph SDK["Nectar SDK"]
+        direction TB
 
-    namespace AI {
-        class Detector {
-            +model_source str
-            +framework Framework
-            +is_loaded bool
-            +load() bool
-            +detect(image, conf) DetectionResult
-            +detect_batch(images) List~DetectionResult~
-            +train(config) TrainingResult
-            +evaluate(config) EvaluationMetrics
-            +draw_detections(image, result) ndarray
-            +register(framework, builder)$
-            +enable_slicing(config)
-        }
-        class Framework {
-            <<enum>>
-            ULTRALYTICS
-            TRANSFORMERS
-            RFDETR
-        }
-        class BaseDetectionModel {
-            <<abstract>>
-            +model_name str
-            +is_loaded bool
-            +load_model(path)
-            +detect(image, conf) DetectionResult
-            +train(config) TrainingResult
-            +save(path) str
-            +evaluate(config) EvaluationMetrics
-        }
-        class UltralyticsModel
-        class TransformersModel
-        class RFDETRModel
-        class Detection {
-            <<dataclass>>
-            +xyxy ndarray
-            +confidence float
-            +class_id int
-            +class_name str
-        }
-        class DetectionResult {
-            <<dataclass>>
-            +detections List~Detection~
-            +inference_time float
-            +filter_by_confidence(threshold) DetectionResult
-            +filter_by_class_id(class_ids) DetectionResult
-            +to_supervision() sv.Detections
-        }
-        class TrainingConfig {
-            <<dataclass>>
-            +dataset_path str
-            +epochs int
-            +batch_size int
-            +push_to_hub bool
-        }
-        class EvaluationConfig {
-            <<dataclass>>
-            +model_path str
-            +dataset_path str
-            +conf_threshold float
-        }
-        class SlicingInference {
-            -config SlicingConfig
-            +run_sliced_inference(image, callback) sv.Detections
-        }
-        class BaseMergingStrategy {
-            <<abstract>>
-            +merge_boxes(detections) Tuple
-        }
-        class NMSStrategy
-        class SoftNMSStrategy
-        class WBFStrategy
-        class NMMStrategy
-        class ObjectDetectionEvaluator {
-            +evaluate() EvaluationMetrics
-        }
-    }
+        subgraph CTRL["control"]
+            direction TB
+            DroneFactory(["DroneFactory"])
+            DroneProto{{"Drone protocol"}}
+            subgraph CORE["ardupilot - shared vehicle core"]
+                direction TB
+                ArduPilotDrone["ArduPilotDrone"]
+                Navigator["ArduPilotNavigator"]
+                Sequencer["FlightSequencer"]
+                PID["PIDController"]
+                MavrosT["MavrosTransport"]
+                PymavlinkT["PymavlinkTransport"]
+            end
+            Bebop["BebopDrone"]
+            Crazyflie["CrazyflieDrone"]
+            ObstacleMgr["ObstacleManager<br/>detector + strategy"]
+            VisionBridge["localization<br/>vision-pose bridge"]
+        end
 
-    namespace Interface {
-        class NectarApp {
-            -_ros_executor ROSExecutor
-            -_control_tab ControlTab
-            -_vision_tab VisionTab
-            -_ros_tab ROSTab
-            +main()$
-        }
-        class ROSExecutor {
-            +node Node
-            +start(node_name) bool
-            +shutdown()
-        }
-        class ControlTab {
-            +set_node(node)
-            +cleanup()
-        }
-        class VisionTab {
-            +set_node(node)
-            +cleanup()
-        }
-        class ROSTab {
-            +set_node(node)
-            +cleanup()
-        }
-    }
+        subgraph VIS["vision"]
+            direction TB
+            CameraFactory(["CameraFactory"])
+            ImageHandler["ImageHandler"]
+            VisAlgos["ArUco · Color · Line<br/>Distance · MediaPipe"]
+        end
 
-    namespace Utils {
-        class GPSCalculate {
-            <<static>>
-            +haversine(lat1, lon1, lat2, lon2)$ float
-            +bearing(lat1, lon1, lat2, lon2)$ float
-            +calculate_gps_offset(x, y, z, lat, lon, alt, heading)$ tuple
-            +interp_geo(start, end, frac)$ tuple
-        }
-        class PositionUtils {
-            <<static>>
-            +get_body_distance(target, current, heading)$ tuple
-            +get_yaw_from_pose(pose)$ float
-            +transform_takeoff_to_body_velocities(vx, vy, vz, current_yaw, takeoff_yaw)$ tuple
-        }
-        class ProcessUtils {
-            <<static>>
-            +start_process(command, name) bool
-            +kill_process(name) bool
-            +is_node_running(node_pattern) bool
-            +wait_for_node(node_pattern, timeout) bool
-        }
-    }
+        subgraph AIM["ai"]
+            direction TB
+            DetSeg(["Detector / Segmentor"])
+            Slicing["SlicingInference"]
+            Evalr["Evaluation<br/>mAP / IoU"]
+        end
 
-    %% Control
-    Drone <|.. BaseDrone : implements
-    BaseDrone <|-- ArduPilotDrone
-    BaseDrone <|-- BebopDrone
-    ArduPilotDrone <|-- MavrosDrone
-    ArduPilotDrone <|-- MavlinkDrone
-    ArduPilotDrone o-- MavlinkTransport
-    MavlinkTransport <|.. MavrosTransport
-    MavlinkTransport <|.. PymavlinkTransport
-    DroneFactory ..> BaseDrone : creates
-    DroneConfig <|-- MavrosConfig
-    DroneConfig <|-- BebopConfig
-    BaseDrone o-- DroneConfig
-    ArduPilotDrone *-- ArduPilotNavigator
-    ArduPilotNavigator ..> PIDController : creates
-    ArduPilotNavigator ..> GPSUtils : uses
-    ArduPilotNavigator ..> PositionUtils : uses
-    BaseDrone o-- ObstacleManager
-    ObstacleManager o-- ObstacleHandler
-    ObstacleHandler *-- ObstacleDetector
-    ObstacleHandler *-- AvoidanceStrategy
-    AvoidanceStrategy <|-- PauseStrategy
-    AvoidanceStrategy <|-- DisableAxisStrategy
-    AvoidanceStrategy <|-- SequenceStrategy
+        subgraph SENS["sensors"]
+            Rangefinder["RangefinderPublisher<br/>TF-Luna + filters"]
+        end
 
-    %% Vision
-    AbstractCam <|-- DepthCam
-    AbstractCam <|-- OpenCVCam
-    AbstractCam <|-- ROSCam
-    DepthCam <|-- RealsenseCam
-    DepthCam <|-- OakdCam
-    DepthCam <|-- ROSDepthCam
-    ROSDepthCam *-- ROSCam
-    CameraFactory ..> AbstractCam : creates
-    ImageHandler o-- AbstractCam
-    ImageHandler ..> CameraFactory : uses
-    LineDetector o-- ILineEstimationMethod
-    LineDetector o-- ColorDetector
-    DistanceEstimator o-- EstimationModel
+        subgraph UTIL["utils"]
+            direction LR
+            GPSU["GPSCalculate"]
+            PosU["PositionUtils"]
+            ProcU["ProcessUtils"]
+        end
+    end
 
-    %% AI
-    Detector --> Framework
-    Detector ..> BaseDetectionModel : creates
-    BaseDetectionModel <|-- UltralyticsModel
-    BaseDetectionModel <|-- TransformersModel
-    BaseDetectionModel <|-- RFDETRModel
-    BaseDetectionModel ..> DetectionResult : returns
-    DetectionResult o-- Detection
-    BaseDetectionModel ..> SlicingInference : uses
-    SlicingInference ..> BaseMergingStrategy : uses
-    BaseMergingStrategy <|-- NMSStrategy
-    BaseMergingStrategy <|-- SoftNMSStrategy
-    BaseMergingStrategy <|-- WBFStrategy
-    BaseMergingStrategy <|-- NMMStrategy
-    BaseDetectionModel ..> ObjectDetectionEvaluator : uses
+    subgraph ROS["ROS 2 middleware"]
+        direction LR
+        Topics["Topics · Services<br/>Actions · TF2"]
+        Msgs["nectar_interfaces<br/>ArucoTransforms · LineInfo · PhotoInfo"]
+    end
 
-    %% Interface
-    NectarApp *-- ROSExecutor
-    NectarApp *-- ControlTab
-    NectarApp *-- VisionTab
-    NectarApp *-- ROSTab
+    subgraph EXT["External systems"]
+        direction LR
+        FCU["Flight controller<br/>ArduPilot · PX4 · Bebop"]
+        Cameras["Cameras<br/>USB · RealSense · OAK-D"]
+        VSLAM["Isaac ROS Visual SLAM<br/>GPS-denied pose"]
+        Models["Models<br/>YOLO · DETR · RF-DETR"]
+    end
+
+    Mission --> DroneFactory & CameraFactory & DetSeg
+    FSM --> DroneFactory
+    GUI --> DroneFactory & CameraFactory
+
+    DroneFactory --> DroneProto
+    DroneProto -. implements .-> ArduPilotDrone
+    DroneProto -.-> Bebop
+    DroneProto -.-> Crazyflie
+    ArduPilotDrone --> Navigator & Sequencer & ObstacleMgr & MavrosT & PymavlinkT
+    Navigator --> PID & GPSU & PosU
+
+    CameraFactory --> ImageHandler --> VisAlgos
+    ObstacleMgr -. depth .-> ImageHandler
+    DetSeg --> Slicing & Evalr & Models
+
+    MavrosT <--> Topics
+    PymavlinkT <--> FCU
+    VSLAM --> VisionBridge --> FCU
+    Rangefinder --> FCU
+    Topics <--> FCU
+    ImageHandler <--> Topics
+    ImageHandler --> Cameras
+    VisAlgos --> Msgs
+    ProcU -. spawns drivers .-> FCU
+
+    classDef entry fill:#dbeafe,stroke:#2563eb,color:#0b2447,font-weight:bold;
+    classDef ext fill:#f5ead2,stroke:#b08900,color:#3a2f00;
+    classDef ros fill:#d8f3e3,stroke:#16a34a,color:#0b3d1f;
+    class DroneFactory,CameraFactory,DetSeg entry;
+    class FCU,Cameras,VSLAM,Models ext;
+    class Topics,Msgs ros;
+    style APP fill:#f6f5ff,stroke:#8b80c9
+    style SDK fill:#f8fafc,stroke:#94a3b8
+    style ROS fill:#f1fbf5,stroke:#86c9a4
+    style EXT fill:#fdfaf0,stroke:#cdb46a
+    style CORE fill:#eef4ff,stroke:#7aa0d6
 ```
 
 ### Design Patterns
@@ -667,15 +353,12 @@ The codebase uses the same patterns across all modules, making it predictable to
 Every factory supports runtime registration, so adding a new drone type, camera driver, or detection framework follows the same pattern:
 
 ```python
-# New drone
-DroneFactory.register("custom", lambda cfg, node: MyDrone(cfg, node))
-drone = DroneFactory.create("custom", config, node)
+DroneFactory.register("custom", lambda cfg, executor: MyDrone(cfg, executor))
+drone = DroneFactory.create("custom", config)
 
-# New camera
 CameraFactory.register("thermal", ThermalCamera)
 camera = CameraFactory.from_source("thermal")
 
-# New detection framework
 Detector.register("custom", lambda name, **kw: CustomModel(name, **kw))
 detector = Detector("model.bin", framework="custom")
 ```
@@ -684,27 +367,31 @@ detector = Detector("model.bin", framework="custom")
 
 | Document | Contents |
 |----------|----------|
-| [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, RealSense, Docker, troubleshooting |
-| [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, movement API, obstacle system |
-| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | Shared flight logic: concepts, navigation, frames, takeoff/land, RTL, setpoint/PID, GPS/EGM96, parameters |
-| [MAVROS Transport](nectar/nectar/control/mavros/README.md) | MAVROS plumbing: telemetry mapping, topics/services, service-ACK behavior, indoor vision relay |
-| [MAVLink Transport](nectar/nectar/control/mavlink/README.md) | Direct pymavlink: connection, RX/TX, stream rates, STATUSTEXT, parameter echo, vision bridge |
-| [Bebop Implementation](nectar/nectar/control/bebop/README.md) | Bebop 2 control, velocity, acrobatics |
-| [Obstacle Detection](nectar/nectar/control/obstacles/README.md) | Detector protocol, avoidance strategies, handler configuration |
+| [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, Docker, drone drivers, troubleshooting |
+| [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, capabilities, submodule index |
+| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | Shared flight logic: navigation, frames, takeoff/land, RTL, setpoint/PID, GPS/EGM96, parameters |
+| [MAVROS Transport](nectar/nectar/control/mavros/README.md) | MAVROS plumbing: telemetry mapping, topics/services, service-ACK behavior, indoor vision |
+| [MAVLink Transport](nectar/nectar/control/mavlink/README.md) | Direct pymavlink: connection, RX/TX, stream rates, vision bridge |
+| [Localization](nectar/nectar/control/localization/README.md) | Indoor VSLAM: Isaac producer, vision-pose bridge (MAVROS/MAVLink), Isaac container, RViz |
+| [Obstacle Detection](nectar/nectar/control/obstacles/README.md) | Depth detector, avoidance strategies, handler/manager configuration |
 | [PID Controller](nectar/nectar/control/pid/README.md) | Tuning guide, YAML config, runtime updates, default indoor/outdoor configs |
+| [Bebop Implementation](nectar/nectar/control/bebop/README.md) | Bebop 2 control, velocity, acrobatics |
+| [Crazyflie Implementation](nectar/nectar/control/crazyflie/README.md) | Crazyswarm2 control, position/velocity, parameters |
 | [Sensors Module](nectar/nectar/sensors/README.md) | TF-Luna driver, rangefinder filters, MAVLink `DISTANCE_SENSOR` bridge, ROS 2 node |
 | [Vision Module](nectar/nectar/vision/README.md) | Camera drivers, ArUco, color, line, distance, MediaPipe, nodes, calibration |
-| [AI Module](nectar/nectar/ai/README.md) | Detector API, training, evaluation, device management |
+| [AI Module](nectar/nectar/ai/README.md) | Detector/Segmentor API, training, evaluation, `nectar-ai` CLI |
 | [Detection Module](nectar/nectar/ai/detection/README.md) | Class diagram, core types, framework configs, slicing, CLI, extension guide |
+| [Segmentation Module](nectar/nectar/ai/segmentation/README.md) | Segmentor API, training, evaluation |
 | [Interface Module](nectar/nectar/interface/README.md) | GUI tabs, widgets, threading model, camera integration, theming |
 | [Nectar Interfaces](nectar_interfaces/README.md) | ROS 2 message definitions, Python/C++ usage |
-| [Docker Guide](docker/README.md) | Build variants, GPU, RealSense, dependency strategy |
-| [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, PR process |
+| [Simulation](nectar/simulation/README.md) | ArduPilot SITL + Gazebo, indoor/outdoor, vision pipeline, test suite |
+| [Docker Guide](docker/README.md) | Build variants, GPU, RealSense, Isaac VSLAM container, dependency strategy |
+| [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, documentation conventions, PR process |
 | [Releasing](docs/RELEASING.md) | Version bump, CI workflows, Docker Hub push |
 
 ## ROS 2 Nodes
 
-Pre-built nodes for common tasks:
+Pre-built nodes installed by the package (run with `ros2 run nectar <node>`):
 
 ```bash
 # GUI
@@ -718,43 +405,51 @@ ros2 run nectar aruco_node.py --ros-args \
 ros2 run nectar line_detection_node.py --ros-args \
     -p line_colors:="blue,red" -p method:=HoughLinesP
 
-# Color calibration
+# Color / camera calibration
 ros2 run nectar color_calibration_node.py --ros-args -p image_source:=webcam
-
-# Camera calibration
 ros2 run nectar calibration.py --ros-args -p chessboard_size:="9,7"
 
-# Webcam publisher
-ros2 run nectar webcam_publisher_node.py --ros-args -p width:=1280 -p height:=720
-
-# Object detection
-ros2 run nectar detector_example.py --ros-args -p model_source:=yolov8n.pt
+# Camera publisher
+ros2 run nectar camera_publisher_node.py --ros-args -p camera_source:=webcam
 
 # Rangefinder bridge (TF-Luna over UART -> MAVLink DISTANCE_SENSOR)
 ros2 run nectar rangefinder_node.py --ros-args \
-    -p serial_port:=/dev/ttyUSB0 -p mavlink_url:=udp:127.0.0.1:14551 \
-    -p filter:=obstacle_mask
+    -p serial_port:=/dev/ttyUSB0 -p mavlink_url:=udp:127.0.0.1:14551 -p filter:=obstacle_mask
+
+# Vision-pose bridge (VSLAM pose -> FCU, MAVROS or direct MAVLink)
+ros2 run nectar vision_pose_node.py --ros-args -p backend:=mavros
+```
+
+Localization and simulation are launch-based (see their READMEs):
+
+```bash
+ros2 launch nectar isaac_vslam_realsense.launch.py   # RealSense + Isaac VSLAM (Isaac container)
+ros2 launch nectar vision_pose.launch.py backend:=mavros   # FCU vision-pose feed
+ros2 launch nectar vslam_rviz.launch.py profile:=light     # VSLAM RViz check
 ```
 
 ## Examples
 
-Working examples in `nectar/nectar/examples/`:
+Working examples in `nectar/nectar/examples/` (see each area's README for full arguments):
 
 | Example | Description |
 |---------|-------------|
-| [basic.py](nectar/nectar/examples/control/basic.py) | Takeoff, velocity, land |
-| [sensors.py](nectar/nectar/examples/control/sensors.py) | Monitor GPS/vision data |
-| [pid_simulation.py](nectar/nectar/examples/control/pid_simulation.py) | PID controller simulation |
-| [navigation.py](nectar/nectar/examples/control/navigation.py) | Navigation test (BODY, TAKEOFF, GPS references) |
+| [basic.py](nectar/nectar/examples/control/basic.py) | Takeoff, velocity/hover/position, land — any drone (`--drone`) |
+| [navigation.py](nectar/nectar/examples/control/navigation.py) | ArduPilot navigation test suite (MAVROS/MAVLink, indoor/outdoor) |
 | [interactive_navigation.py](nectar/nectar/examples/control/interactive_navigation.py) | Interactive navigation REPL |
 | [obstacles.py](nectar/nectar/examples/control/obstacles.py) | Obstacle avoidance |
-| [camera_example.py](nectar/nectar/examples/vision/camera_example.py) | Camera capture |
-| [depth_example.py](nectar/nectar/examples/vision/depth_example.py) | Depth visualization |
-| [detector_example.py](nectar/nectar/examples/ai/detector_example.py) | Object detection |
-| [batch_detector.py](nectar/nectar/examples/ai/batch_detector.py) | Batch image/video processing |
+| [sensors.py](nectar/nectar/examples/control/sensors.py) | Monitor GPS/vision telemetry |
+| [pid_simulation.py](nectar/nectar/examples/control/pid_simulation.py) | PID controller simulation |
+| [camera_example.py](nectar/nectar/examples/vision/camera_example.py) · [depth_example.py](nectar/nectar/examples/vision/depth_example.py) | Camera capture / depth |
+| [detector_example.py](nectar/nectar/examples/ai/detector_example.py) · [batch_detector.py](nectar/nectar/examples/ai/batch_detector.py) | Object detection |
 | [rangefinder_example.py](nectar/nectar/examples/sensors/rangefinder_example.py) | TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` bench test |
+| [sitl_test.py](nectar/nectar/examples/simulation/sitl_test.py) | Automated SITL flight tests |
 
-See: [control examples](nectar/nectar/examples/control/README.md) · [vision examples](nectar/nectar/examples/vision/README.md) · [AI examples](nectar/nectar/examples/ai/README.md) · [sensors examples](nectar/nectar/examples/sensors/README.md)
+See: [control](nectar/nectar/examples/control/README.md) · [vision](nectar/nectar/examples/vision/README.md) · [AI](nectar/nectar/examples/ai/README.md) · [sensors](nectar/nectar/examples/sensors/README.md)
+
+## Simulation
+
+ArduPilot SITL with Gazebo, indoor and outdoor, over MAVROS or direct MAVLink. Two terminals: one runs the physics (`make sim-start-outdoor` / `sim-start-indoor`), the other the Gazebo world + ROS stack (`make sim-outdoor` / `sim-indoor` / `*-direct`). See the **[Simulation guide](nectar/simulation/README.md)** for the full target matrix and the test suite.
 
 ## Directory Structure
 
@@ -763,38 +458,25 @@ nectar-sdk/
 ├── scripts/                    # Setup and installation
 │   ├── bootstrap.sh            # Standalone curl installer
 │   ├── setup.sh                # CLI + interactive menu
-│   └── lib/                    # Modular shell functions
-│       ├── config.sh           # Versions, packages (single source of truth)
-│       ├── common.sh           # Logging
-│       ├── system.sh           # apt packages
-│       ├── ros2.sh             # ROS 2 install + env
-│       ├── python.sh           # pip from pyproject.toml
-│       ├── realsense.sh        # Intel RealSense from source
-│       ├── workspace.sh        # Build, clean, verify
-│       └── git.sh              # Git/SSH setup
+│   ├── lib/                    # Modular shell functions (config.sh, ros2.sh, python.sh, drones.sh, simulation.sh, ...)
+│   └── simulation/             # SITL/Gazebo install + start, gz_vision_source.py
 ├── docker/
 │   ├── Dockerfile              # x86_64: sdk + sdk-full stages
-│   └── Dockerfile.jetson       # ARM64: Jetson Orin Nano
-├── docs/
-│   ├── INSTALL.md              # Full installation guide
-│   ├── CONTRIBUTING.md         # Development setup, code style, PR process
-│   ├── RELEASING.md            # Version bump, CI, Docker Hub push
-│   └── SECURITY.md
-├── nectar_interfaces/          # ROS 2 custom messages
-│   ├── CMakeLists.txt
-│   ├── package.xml
-│   └── msg/
-├── nectar/                     # Main ROS 2 package
-│   ├── CMakeLists.txt
-│   ├── package.xml
-│   ├── pyproject.toml
+│   ├── Dockerfile.jetson       # ARM64: Jetson Orin Nano
+│   └── isaac_vslam/            # Isaac ROS Visual SLAM container (run_dev.sh wrapper)
+├── docs/                       # INSTALL, CONTRIBUTING, RELEASING, SECURITY, CODE_OF_CONDUCT
+├── nectar_interfaces/          # ROS 2 custom messages (msg/)
+├── nectar/                     # Main ROS 2 package (CMakeLists.txt, package.xml, pyproject.toml)
+│   ├── launch/                 # sitl, sitl_gazebo, isaac_vslam_realsense, vision_pose, vslam_rviz
+│   ├── simulation/             # Gazebo worlds, models, params, config
 │   └── nectar/                 # Python package
-│       ├── control/            # Drone control (mavros, mavlink, bebop, crazyflie)
+│       ├── control/            # Drone control: ardupilot, mavros, mavlink, bebop, crazyflie,
+│       │                       #   localization, obstacles, pid, ardupilot/config, mavros/config
 │       ├── vision/             # Computer vision
-│       ├── ai/                 # AI / detection
+│       ├── ai/                 # AI: detection, segmentation
 │       ├── sensors/            # Sensor drivers, filters, MAVLink bridges
 │       ├── interface/          # Qt6 GUI
-│       ├── examples/
+│       ├── examples/           # control, vision, ai, sensors, simulation
 │       └── utils/
 ├── Makefile
 └── README.md
@@ -802,7 +484,7 @@ nectar-sdk/
 
 ## Contributing
 
-We welcome contributions. Please see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for development setup, code style (PEP 8, NumPy docstrings, type hints), and the PR process.
+We welcome contributions. Please see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for development setup, code style (PEP 8, NumPy docstrings, type hints), documentation conventions, and the PR process.
 
 1. Check [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) for existing discussions
 2. Follow [Conventional Commits](https://www.conventionalcommits.org) for commit messages
@@ -822,7 +504,7 @@ Nectar SDK started in 2023 as a way to stop rewriting the same camera, PID, and 
 
 ## Acknowledgments
 
-Nectar SDK exists because of the open source projects it builds on. We are grateful to the [ROS 2](https://docs.ros.org/) community and Open Robotics for the middleware that connects everything. [MAVROS](https://github.com/mavlink/mavros) and the [MAVLink](https://mavlink.io/) protocol for bridging ROS 2 with [ArduPilot](https://ardupilot.org/) and [PX4](https://docs.px4.io/) flight controllers. [OpenCV](https://opencv.org/) for the computer vision foundation. [Ultralytics](https://docs.ultralytics.com/), [HuggingFace](https://huggingface.co/), and [Roboflow](https://roboflow.com/) for making object detection accessible through YOLO, Transformers, RF-DETR, and supervision. [PyTorch](https://pytorch.org/) for the deep learning backend. [Intel RealSense](https://github.com/IntelRealSense/librealsense) and [Luxonis](https://docs.luxonis.com/) for depth camera SDKs. [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions) for hand and face tracking. [Qt for Python](https://doc.qt.io/qtforpython-6/) for the GUI framework.
+Nectar SDK exists because of the open source projects it builds on. We are grateful to the [ROS 2](https://docs.ros.org/) community and Open Robotics for the middleware that connects everything. [MAVROS](https://github.com/mavlink/mavros) and the [MAVLink](https://mavlink.io/) protocol for bridging ROS 2 with [ArduPilot](https://ardupilot.org/) and [PX4](https://docs.px4.io/) flight controllers. [NVIDIA Isaac ROS](https://nvidia-isaac-ros.github.io/) for GPU-accelerated Visual SLAM. [OpenCV](https://opencv.org/) for the computer vision foundation. [Ultralytics](https://docs.ultralytics.com/), [HuggingFace](https://huggingface.co/), and [Roboflow](https://roboflow.com/) for making object detection accessible through YOLO, Transformers, RF-DETR, and supervision. [PyTorch](https://pytorch.org/) for the deep learning backend. [Intel RealSense](https://github.com/IntelRealSense/librealsense) and [Luxonis](https://docs.luxonis.com/) for depth camera SDKs. [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions) for hand and face tracking. [Qt for Python](https://doc.qt.io/qtforpython-6/) for the GUI framework.
 
 ## License
 

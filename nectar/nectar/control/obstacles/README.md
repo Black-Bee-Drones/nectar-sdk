@@ -243,10 +243,10 @@ class ObstacleDetector(Protocol):
 
 ### Detection Zones
 
-**Detection Zones**:
-- `LEFT`: All clusters `x_max < image_center`
-- `RIGHT`: All clusters `x_min > image_center`
-- `FRONT`: Clusters span across center
+**Direction returned** (from cluster position vs image center, as implemented in [`depth_camera.py`](depth_camera.py)):
+- All clusters left of center (`x_max < center`) → `ObstacleDirection.RIGHT`
+- All clusters right of center (`x_min > center`) → `ObstacleDirection.LEFT`
+- Clusters on both sides → `ObstacleDirection.FRONT`
 
 **Distance Thresholds**:
 - Min: 0.1m (too close to camera)
@@ -262,17 +262,18 @@ RealSense D435i depth camera-based detection using DBSCAN clustering.
 from nectar.control.obstacles import DepthObstacleDetector
 
 detector = DepthObstacleDetector(
-    node=node,
-    max_distance_mm=1500,        # Maximum detection range
-    depth_threshold_mm=1300,     # Cluster distance threshold
-    min_cluster_size=50,         # Minimum points for valid cluster
-    dbscan_eps=20.0,             # DBSCAN clustering epsilon
-    dbscan_min_samples=20,       # DBSCAN minimum samples
-    avoidance_min_m=0.5,         # Minimum avoidance distance
-    avoidance_max_m=1.3,         # Maximum avoidance distance
-    camera_config=None           # Optional RealSenseConfig
+    min_distance_mm=100,         # ignore returns closer than this
+    max_distance_mm=1500,        # maximum detection range
+    cluster_eps=20,              # DBSCAN epsilon
+    cluster_min_samples=20,      # DBSCAN minimum samples
+    min_cluster_pixels=50,       # minimum valid pixels to attempt clustering
+    depth_threshold_mm=1300,     # max cluster mean depth to count as obstacle
+    color_topic="/camera/color/image_raw",
+    depth_topic="/camera/depth/image_rect_raw",
 )
 ```
+
+The detector owns its own RealSense `ImageHandler` (and ROS node) internally — no `node` argument is passed.
 
 **Algorithm**:
 1. Acquire depth frame from RealSense camera
@@ -283,9 +284,9 @@ detector = DepthObstacleDetector(
 6. Determine obstacle direction (LEFT, RIGHT, FRONT) based on cluster position
 7. Calculate closest obstacle distance
 
-**Direction Logic**:
-- All clusters left of center → `ObstacleDirection.LEFT`
-- All clusters right of center → `ObstacleDirection.RIGHT`
+**Direction Logic** (matches [`depth_camera.py`](depth_camera.py)):
+- All clusters left of center → `ObstacleDirection.RIGHT`
+- All clusters right of center → `ObstacleDirection.LEFT`
 - Clusters on both sides → `ObstacleDirection.FRONT`
 
 #### Depth Camera Processing Flow
@@ -313,8 +314,8 @@ flowchart TD
 
     AnalyzePosition[Analyze Cluster Position<br/>vs Image Center] --> Direction{Determine Direction}
 
-    Direction -->|All clusters<br/>x_max < center| DirLeft[LEFT]
-    Direction -->|All clusters<br/>x_min > center| DirRight[RIGHT]
+    Direction -->|All clusters<br/>x_max < center| DirLeft[RIGHT]
+    Direction -->|All clusters<br/>x_min > center| DirRight[LEFT]
     Direction -->|Clusters both sides| DirFront[FRONT]
 
     DirLeft --> CalcDist[Calculate Distance<br/>avg depth of clusters]
@@ -343,8 +344,8 @@ class CustomDetector(BaseObstacleDetector):
         # Custom detection logic
         return ObstacleInfo(detected=True, direction=ObstacleDirection.FRONT)
 
-    def _reset_detector_state(self) -> None:
-        # Reset internal state
+    def _on_reset(self) -> None:
+        # Reset internal state (optional hook)
         pass
 ```
 
@@ -492,7 +493,7 @@ Combines detector + strategy with timing.
 from nectar.control.obstacles import ObstacleHandler, ObstacleHandlerConfig
 
 handler = ObstacleHandler(
-    detector=DepthObstacleDetector(node),
+    detector=DepthObstacleDetector(),
     strategy=strategies.PauseStrategy(),
     node=node,
     config=ObstacleHandlerConfig(
@@ -533,10 +534,10 @@ disable_x, disable_y, disable_z = manager.get_axis_control()
 ```python
 # In ArduPilotNavigator.navigate_pid()
 while True:
-    if not self._obstacle_manager.should_continue_navigation(self):
+    if not drone.obstacle_manager.should_continue_navigation(drone):
         continue  # Pause or sequence executing
 
-    disable_x, disable_y, disable_z = self._obstacle_manager.get_axis_control()
+    disable_x, disable_y, disable_z = drone.obstacle_manager.get_axis_control()
 
     control_x = x is not None and not disable_x
     control_y = y is not None and not disable_y
@@ -560,7 +561,7 @@ drone.add_obstacle_detector(
 
 **Example**:
 ```python
-detector = DepthObstacleDetector(node)
+detector = DepthObstacleDetector()
 strategy = strategies.PauseStrategy()
 config = ObstacleHandlerConfig(update_rate=0.15)  # 6.7 Hz
 
@@ -584,7 +585,7 @@ drone.remove_obstacle_detector("depth")
 ```python
 from nectar.control import DepthObstacleDetector, strategies
 
-detector = DepthObstacleDetector(node)
+detector = DepthObstacleDetector()
 drone.add_obstacle_detector("depth", detector, strategies.PauseStrategy())
 drone.enable_obstacle_detector("depth")
 
@@ -598,7 +599,7 @@ drone.land()
 ```python
 from functools import partial
 
-detector = DepthObstacleDetector(node)
+detector = DepthObstacleDetector()
 
 strategy = strategies.SequenceStrategy(
     partial(
@@ -648,7 +649,7 @@ drone.move_to(x=10.0, y=0.0, z=0.0)
 ### Multiple Detectors
 
 ```python
-depth_detector = DepthObstacleDetector(node)
+depth_detector = DepthObstacleDetector()
 ultrasonic_detector = UltrasonicDetector(node)  # Custom
 
 drone.add_obstacle_detector(

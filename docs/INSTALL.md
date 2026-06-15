@@ -13,7 +13,7 @@ The bootstrap prompts for workspace path (default `~/ros2_ws`) and branch (main 
 For CI/Docker (non-interactive):
 
 ```bash
-NON_INTERACTIVE=true ROS2_WORKSPACE=~/ros2_ws bash bootstrap.sh
+NON_INTERACTIVE=true ROS2_WORKSPACE=~/ros2_ws bash scripts/bootstrap.sh
 ```
 
 ### Interactive menu
@@ -41,7 +41,7 @@ This is equivalent to:
 ./scripts/setup.sh setup
 ```
 
-Which runs: `system` → `geographiclib` → `python all` → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`.
+Which runs: `system` → `geographiclib` → `git-lfs` → `python all` → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`.
 
 ## Install by Module
 
@@ -52,6 +52,7 @@ make python-control    # GPS, PID, MAVROS navigation
 make python-vision     # Camera drivers, ArUco, color, line detection
 make python-ai         # YOLO, DETR, RF-DETR (requires PyTorch)
 make python-interface  # Qt6 / PySide6 GUI
+make python-sensors    # pyserial + pymavlink (TF-Luna driver, MAVLink bridge)
 ```
 
 Or via the setup script directly:
@@ -62,8 +63,20 @@ Or via the setup script directly:
 ./scripts/setup.sh python vision       # + ArUco, color, line detection
 ./scripts/setup.sh python ai           # + YOLO, Transformers, RF-DETR
 ./scripts/setup.sh python interface    # + PySide6 GUI
+./scripts/setup.sh python sensors      # + pyserial / pymavlink
 ./scripts/setup.sh python all          # All modules
 ./scripts/setup.sh python full         # All + camera hardware drivers
+```
+
+## Install by Drone Driver
+
+Each drone type needs its own driver; install only the ones you use (defined in `scripts/lib/drones.sh`):
+
+```bash
+make drone-mavros      # MAVROS (ArduPilot/PX4) + GeographicLib datasets
+make drone-crazyflie   # Crazyswarm2 (apt when available, else source) + rowan
+make drone-bebop       # Parrot Bebop 2: ros2_parrot_arsdk + ros2_bebop_driver (source build)
+make drone-all         # all of the above
 ```
 
 ## PyTorch (required for AI module)
@@ -86,34 +99,18 @@ make realsense
 
 Interactive menu with custom steps, CUDA auto-detection, and verification.
 
-### Version compatibility
-
-Versions are auto-selected per ROS distro (defined in `scripts/lib/config.sh`):
-
-| ROS 2 Distro | realsense-ros | librealsense | Cameras |
-|---|---|---|---|
-| Humble | 4.55.1 | v2.55.1 | D435, D435i, D455 |
-| Jazzy | [4.56.4](https://github.com/realsenseai/realsense-ros/releases/tag/4.56.4) | [v2.56.5](https://github.com/realsenseai/librealsense/releases/tag/v2.56.5) | D435, D435i, D455 |
-| Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | [v2.57.6](https://github.com/realsenseai/librealsense/releases/tag/v2.57.6) | D435, D435i, D455 |
-
-Override for specific cameras:
+Per-distro `realsense-ros` / `librealsense` versions are auto-selected from `scripts/lib/config.sh`; the table and Docker RealSense options live in [`docker/README.md`](../docker/README.md#realsense). Override for a specific camera (e.g. the discontinued T265):
 
 ```bash
-# T265 tracking camera (last supported: Humble/Foxy only)
+# T265 tracking camera (last supported: Humble only)
 LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 make realsense
 ```
 
-### CUDA build
+On NVIDIA GPUs librealsense builds with CUDA automatically (detected via `nvcc`); disable with `REALSENSE_CUDA=false make realsense`.
 
-On systems with NVIDIA GPU, librealsense is built with CUDA automatically (detected via `nvcc`). Disable with:
+### Indoor navigation (D435i + Isaac ROS Visual SLAM)
 
-```bash
-REALSENSE_CUDA=false make realsense
-```
-
-### D435i + Isaac ROS Visual SLAM
-
-For indoor navigation with D435i on Jetson Orin, the SDK includes [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros) which bridges NVIDIA Isaac ROS Visual SLAM with MAVROS. See the [VSLAM setup guide](https://www.andrewbernas.com/docs/tutorials/robots/vslam/setup) for the full workflow.
+Indoor (GPS-denied) navigation is built into the SDK's [localization module](../nectar/nectar/control/localization/README.md): RealSense + Isaac ROS Visual SLAM (Jetson) feeding the FCU via MAVROS or direct MAVLink. The Isaac container is managed by [`docker/isaac_vslam`](../docker/isaac_vslam) (`make isaac-run`); see [`docker/README.md`](../docker/README.md#isaac-ros-visual-slam-jetson) for the producer container and the localization README for the full pipeline.
 
 ## Simulation (Gazebo + ArduPilot SITL)
 
@@ -126,17 +123,12 @@ make sim-install           # Clone ArduPilot, build ArduCopter SITL binary
 ### Gazebo
 
 Installs Gazebo, the `ros_gz` bridge, and the ArduPilot Gazebo plugin. The script
-auto-selects the correct Gazebo version and install method per ROS distro:
+auto-selects the correct Gazebo version and install method per ROS distro (per-distro
+table in [`docker/README.md`](../docker/README.md#gazebo)):
 
 ```bash
 make sim-install-gazebo    # Native install (auto-detects distro)
 ```
-
-| ROS 2 Distro | Gazebo | ros_gz | Notes |
-|---|---|---|---|
-| Humble | Harmonic | built from source | apt binary links against Fortress |
-| Jazzy | Harmonic | binary | native support |
-| Kilted | Ionic | binary | native support |
 
 ### Docker with Gazebo
 
@@ -149,10 +141,21 @@ See [`docker/README.md`](../docker/README.md) for more options.
 
 ### Running the simulation
 
+Two terminals: physics (terminal 1) + Gazebo world & ROS stack (terminal 2). Pair the matching row:
+
 ```bash
-make sim-start-outdoor     # Start SITL in Gazebo mode (outdoor, terminal 1)
-make sim-outdoor           # Launch Gazebo outdoor world + MAVROS (terminal 2)
+# Outdoor (GPS)
+make sim-start-outdoor   ;  make sim-outdoor          # MAVROS
+make sim-start-outdoor   ;  make sim-outdoor-direct   # direct MAVLink
+# Indoor (no GPS, vision)
+make sim-start-indoor    ;  make sim-indoor           # MAVROS
+make sim-start-indoor    ;  make sim-indoor-direct    # direct MAVLink
+# Headless (no Gazebo)
+make sim-start           ;  make sim-mavros
+make sim-stop                                          # stop everything
 ```
+
+See the [Simulation guide](../nectar/simulation/README.md) for the full matrix, the vision pipeline, and the automated test suite.
 
 ## System Setup (individual steps)
 

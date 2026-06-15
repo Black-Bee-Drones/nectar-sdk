@@ -32,8 +32,8 @@ ros2 run nectar gui
 Drone control interface with keyboard-based velocity control and position navigation.
 
 **Connection Flow**:
-1. **Connect Driver**: Starts ROS2 driver (MAVROS/Bebop) in background
-2. **Initialize Instance**: Creates drone object with configuration
+1. **Connect Driver**: Starts the ROS 2 driver (MAVROS / Bebop / Crazyflie) in the background; the direct-MAVLink transport opens the FCU link itself (no driver process)
+2. **Initialize Instance**: Creates the drone object with the configuration selected in the panel
 3. **Ready**: Flight controls enabled
 
 **Status Indicators**:
@@ -53,8 +53,12 @@ Drone control interface with keyboard-based velocity control and position naviga
 - Configurable precision and timeout
 
 **Supported Drones**:
-- **Mavros**: Full control (arm, takeoff, land, velocity, position, telemetry)
+- **MAVROS**: Full control (arm, takeoff, land, velocity, position, telemetry) over the MAVROS bridge
+- **MAVLink**: Same ArduPilot control over a direct pymavlink link (no MAVROS); set the connection string and, for indoor flight, the vision-pose topic preset (`/visual_slam/tracking/vo_pose_covariance`)
 - **Bebop**: Basic control (takeoff, land, velocity, flips)
+- **Crazyflie**: Takeoff, land, velocity, and onboard position (`goTo`)
+
+For the ArduPilot transports, the panel offers the indoor/outdoor PID + setpoint config combinations from [`control/ardupilot/config`](../control/ardupilot/config) (including the `*_sim_*` SITL presets).
 
 ### Vision Tab
 

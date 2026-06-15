@@ -8,7 +8,11 @@ Working examples for vision module camera drivers and image processing.
 |---------|--------|-------------|
 | **Camera Capture** | `camera_example.py` | Multi-camera support with configuration options |
 | **Depth Visualization** | `depth_example.py` | RGB-D camera depth measurement and colormap display |
+| **T265 Tracking** | `t265_example.py` | RealSense T265 pose/odometry (direct SDK or ROS) |
+| **Optical Flow** | `optical_flow_example.py` | Sparse/dense optical-flow visualization |
 | **Photo Collection** | `collect_photos.py` | Save frames at intervals for dataset creation |
+
+All scripts use `argparse` flags (not `--ros-args -p`). Run with `python3 <script>.py [flags]` or `ros2 run nectar <script>.py -- [flags]`.
 
 ## Camera Example
 
@@ -18,31 +22,29 @@ Camera capture using `ImageHandler` with configurable backends.
 
 ```bash
 # Webcam (default)
-ros2 run nectar camera_example
+python3 camera_example.py
 
 # Specific camera type
-ros2 run nectar camera_example --ros-args -p camera_type:=webcam
-ros2 run nectar camera_example --ros-args -p camera_type:=realsense
-ros2 run nectar camera_example --ros-args -p camera_type:=oakd
-ros2 run nectar camera_example --ros-args -p camera_type:=c920
-ros2 run nectar camera_example --ros-args -p camera_type:=imx219
+python3 camera_example.py --camera-type webcam
+python3 camera_example.py --camera-type realsense
+python3 camera_example.py --camera-type oakd
+python3 camera_example.py --camera-type c920
+python3 camera_example.py --camera-type imx219
 
-# RealSense via ROS topics
-ros2 run nectar camera_example --ros-args -p camera_type:=realsense_ros
-
-# ROS topic subscription
-ros2 run nectar camera_example --ros-args -p camera_type:=ros
+# RealSense via ROS topics, or a plain ROS image topic
+python3 camera_example.py --camera-type realsense_ros
+python3 camera_example.py --camera-type ros
 
 # Disable display window
-ros2 run nectar camera_example --ros-args -p show_result:=false
+python3 camera_example.py --camera-type webcam --no-show
 ```
 
-### Parameters
+### Arguments
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `camera_type` | string | webcam | Camera source (see below) |
-| `show_result` | bool | true | Display OpenCV window |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--camera-type` | `webcam` | Camera source: `webcam`, `imx219`, `realsense`, `realsense_ros`, `oakd`, `c920`, `ros` |
+| `--no-show` | off | Disable the OpenCV display window |
 
 ### Supported Camera Types
 
@@ -66,13 +68,13 @@ Demonstrates depth camera usage with interactive distance measurement.
 
 ```bash
 # RealSense with pyrealsense2 (direct SDK)
-ros2 run nectar depth_example --camera realsense
+python3 depth_example.py --camera realsense
 
 # RealSense via ROS topics
-ros2 run nectar depth_example --camera realsense_ros
+python3 depth_example.py --camera realsense_ros
 
 # OAK-D
-ros2 run nectar depth_example --camera oakd
+python3 depth_example.py --camera oakd
 ```
 
 ### Features
@@ -91,6 +93,45 @@ ros2 run nectar depth_example --camera oakd
 
 ---
 
+## T265 Tracking
+
+RealSense T265 tracking camera pose/odometry, either through the direct SDK or via ROS topics.
+
+```bash
+python3 t265_example.py --mode direct     # pyrealsense2 (default)
+python3 t265_example.py --mode ros        # subscribe to ROS odometry/pose topics
+python3 t265_example.py --no-depth        # skip the fisheye depth path
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--mode` | `direct` | `direct` (pyrealsense2) or `ros` (ROS topics) |
+| `--no-depth` | off | Disable the depth/fisheye path |
+
+---
+
+## Optical Flow
+
+Sparse (Lucas-Kanade) or dense (Farneback) optical flow. With `--focal`/`--altitude` it also decodes angular rate (rad/s) and horizontal velocity (m/s), like the ArduPilot OPTICAL_FLOW pipeline.
+
+```bash
+python3 optical_flow_example.py                                   # webcam, Farneback
+python3 optical_flow_example.py --source realsense --method lucas_kanade
+python3 optical_flow_example.py --source /camera/image_raw       # any ROS image topic
+python3 optical_flow_example.py --focal 500 --altitude 1.5       # decode rad/s + m/s
+python3 optical_flow_example.py --no-show                        # headless
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--source` | `webcam` | Camera key (`webcam`, `realsense`, `oakd`, `c920`, `imx219`), a ROS topic (`/...`), or an image/video file path |
+| `--method` | `farneback` | `farneback` (dense) or `lucas_kanade` (sparse) |
+| `--focal` | `0` | Camera focal length in px (0 skips rad/s and m/s decode) |
+| `--altitude` | `0` | Camera height in m (0 skips m/s decode) |
+| `--no-show` | off | Disable the preview window |
+
+---
+
 ## Photo Collection
 
 Captures frames at a configurable interval and saves them to an organized directory structure. Useful for building training datasets — fly the drone via RC or the Nectar interface while this node records frames.
@@ -99,44 +140,35 @@ Captures frames at a configurable interval and saves them to an organized direct
 
 ```bash
 # Default (webcam, 1 photo/sec, timestamped run folder)
-ros2 run nectar collect_photos.py
+python3 collect_photos.py
 
 # Custom output directory and interval (2 photos/sec)
-ros2 run nectar collect_photos.py --ros-args \
-    -p output_dir:=hook_photos \
-    -p capture_interval:=0.5
+python3 collect_photos.py --output-dir hook_photos --capture-interval 0.5
 
 # Named run for a specific flight session
-ros2 run nectar collect_photos.py --ros-args \
-    -p output_dir:=hook_photos \
-    -p run_name:=flight_01_low_alt
+python3 collect_photos.py --output-dir hook_photos --run-name flight_01_low_alt
 
 # RealSense camera with preview window
-ros2 run nectar collect_photos.py --ros-args \
-    -p camera_type:=realsense \
-    -p show_preview:=true
+python3 collect_photos.py --camera-type realsense --show
 
 # High-res webcam, PNG format, max 500 photos
-ros2 run nectar collect_photos.py --ros-args \
-    -p width:=1920 -p height:=1080 \
-    -p image_format:=png \
-    -p max_photos:=500
+python3 collect_photos.py --width 1920 --height 1080 --image-format png --max-photos 500
 ```
 
-### Parameters
+### Arguments
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `camera_type` | string | webcam | Camera source (same as camera_example) |
-| `output_dir` | string | collected_photos | Base output directory under `~/` |
-| `run_name` | string | *(timestamp)* | Sub-folder name for this run |
-| `capture_interval` | float | 1.0 | Seconds between captures |
-| `image_format` | string | jpg | Output format: `jpg` or `png` |
-| `jpeg_quality` | int | 90 | JPEG quality 0-100 |
-| `show_preview` | bool | false | Show live OpenCV preview window |
-| `max_photos` | int | 0 | Stop after N photos (0 = unlimited) |
-
-Camera-specific parameters (`width`, `height`, `fps`, `device_index`, etc.) are inherited from the camera publisher node — see [Vision README](../../vision/README.md#webcam-publisher-node).
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--camera-type` | `webcam` | Camera source (same set as `camera_example.py`) |
+| `--output-dir` | `collected_photos` | Base output directory under `~/` |
+| `--run-name` | *(timestamp)* | Sub-folder name for this run |
+| `--capture-interval` | `1.0` | Seconds between captures |
+| `--image-format` | `jpg` | Output format: `jpg` or `png` |
+| `--jpeg-quality` | `90` | JPEG quality 0-100 |
+| `--show` | off | Show live OpenCV preview window |
+| `--max-photos` | `0` | Stop after N photos (0 = unlimited) |
+| `--width` / `--height` / `--fps` | `1280` / `720` / `30` | Capture settings |
+| `--publish` / `--publish-topic` / `--publish-scale` | off / `collect_photos/compressed` / `0.5` | Re-publish captured frames as a compressed image topic |
 
 ### Output Structure
 

@@ -65,10 +65,11 @@ classDiagram
         +can_fly bool
         +battery_voltage Optional~float~
         +rssi Optional~int~
+        +capabilities frozenset~Capability~
         +pose Optional~PoseStamped~
         +position List~float~
         +height float
-        +from_config(config, node)$ CrazyflieDrone
+        +from_config(config, executor)$ CrazyflieDrone
         +connect() bool
         +arm() bool
         +disarm() bool
@@ -130,7 +131,7 @@ config = CrazyflieConfig(
     max_height=3.0,                     # Flow Deck v2 ToF limit
 )
 
-drone = DroneFactory.create("crazyflie", config, node)
+drone = DroneFactory.create("crazyflie", config)
 ```
 
 ### Properties
@@ -373,14 +374,11 @@ ros2 topic echo /cf231/status
 ### Basic Flight
 
 ```python
-import rclpy
-from rclpy.node import Node
+import nectar
 from nectar.control import DroneFactory, CrazyflieConfig
 
-rclpy.init()
-node = Node("cf_example")
-
-drone = DroneFactory.create("crazyflie", CrazyflieConfig(), node)
+nectar.init()
+drone = DroneFactory.create("crazyflie", CrazyflieConfig())
 drone.connect()
 
 drone.takeoff(altitude=0.5)
@@ -415,17 +413,14 @@ ros2 launch crazyflie launch.py backend:=sim
 python3 basic.py --drone crazyflie --backend sim
 ```
 
-## Differences from MAVROS and Bebop
+## What's distinct about Crazyflie
 
-| Aspect | MAVROS | Bebop | Crazyflie |
-|--------|--------|-------|-----------|
-| **Navigation** | `NavigationMethod`: PID, PID_EKF, POSITION, POSITION_GLOBAL | Velocity only | `NavigationMethod.POSITION` only (onboard goTo) |
-| **Position control** | PID, PID_EKF, POSITION, POSITION_GLOBAL | Not supported | POSITION only (onboard goTo) |
-| **GPS** | Yes | No | No |
-| **Altitude source** | Lidar, vision, GPS, EKF | Fixed hover | ToF rangefinder + EKF |
-| **Trajectory support** | Upload via MAVLink missions | No | Piecewise polynomial upload + execute |
-| **Streaming setpoints** | PositionTarget at ~50Hz | Twist at ~30Hz | FullState or Position at ~50Hz |
-| **Simulation** | ArduPilot SITL + Gazebo | No | Crazyswarm2 SIL (firmware bindings) |
+For the declared capability sets across all drones, see the capability matrix in [`control/README.md`](../README.md#capabilities). Crazyflie-specific traits:
+
+- Position control is **onboard only** (`NavigationMethod.POSITION` via the firmware `goTo` planner) — no companion-side PID, GPS, or vision-pose path.
+- Altitude/position estimate comes from the Flow Deck ToF rangefinder fused by the onboard EKF.
+- Supports piecewise-polynomial trajectory upload + execution and FullState/Position streaming at ~50 Hz.
+- Simulation uses Crazyswarm2 SIL (firmware bindings), not ArduPilot SITL/Gazebo.
 
 ## References
 

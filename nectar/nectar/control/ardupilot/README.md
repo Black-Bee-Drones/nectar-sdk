@@ -107,6 +107,13 @@ classDiagram
 
 [MAVLink](https://ardupilot.org/dev/docs/mavlink-basics.html) is the binary protocol between the flight controller (FCU), ground stations, and companion computers. The SDK sends velocity/position commands and reads sensor data over it — through MAVROS in one transport, through pymavlink directly in the other. The drone must be in [GUIDED mode](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html) for offboard control.
 
+### Connection and Readiness
+
+`connect()` does not return as soon as the transport starts — it waits (up to a timeout) for a live FCU heartbeat, setting `_connected` only once the link is up. After connecting:
+
+- `is_fcu_connected` — FCU heartbeat present (raw link state).
+- `is_ready` — connected **and** the driver/transport is running; this is the gate the higher-level calls check before arming or commanding.
+
 ### Flight Modes
 
 ArduPilot [flight modes](https://ardupilot.org/copter/docs/flight-modes.html) determine how the FCU interprets inputs. Modes used by this SDK:
@@ -540,7 +547,7 @@ east, north = GPSUtils.local_offset(                           # equirectangular
 
 ## PID Configuration
 
-`ArduPilotDrone` loads a `PositionPIDConfig` (per-axis `x/y/z/yaw` `PIDConfig`) at construction. If `pid_config_file` is set it is loaded from there; otherwise the bundled `position_indoor.yaml` / `position_outdoor.yaml` (in [`control/ardupilot/config/`](config)) is selected by `is_indoor`. Update at runtime from a file path, dict, or object:
+`ArduPilotDrone` loads a `PositionPIDConfig` (per-axis `x/y/z/yaw` `PIDConfig`) at construction. If `pid_config_file` is set it is loaded from there; otherwise the bundled `position_indoor.yaml` / `position_outdoor.yaml` (in [`control/ardupilot/config/`](config)) is selected by `is_indoor`. SITL presets ship as `position_sim_indoor.yaml` / `position_sim_outdoor.yaml` (and `setpoint_sim_*.yaml`) — point `pid_config_file` / `setpoint_config_file` at them when flying the simulator. Update at runtime from a file path, dict, or object:
 
 ```python
 drone.set_pid_config("/path/to/config.yaml")

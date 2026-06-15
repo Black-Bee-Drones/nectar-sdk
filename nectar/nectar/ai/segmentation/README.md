@@ -371,7 +371,7 @@ All frameworks log to TensorBoard when `tensorboard: true` in config:
 - **RF-DETR**: `TensorBoardLogger` added by `build_trainer` (PTL)
 - **Transformers**: `report_to: ["tensorboard"]` in `TrainingArguments`
 
-View logs: `tensorboard --logdir nectar/ai/outputs/`
+View logs: `tensorboard --logdir nectar/nectar/ai/outputs/`
 
 ## E2E Testing
 
@@ -387,7 +387,7 @@ pip install -e ".[ai]"
 ### Run all segmentation tests (Ultralytics + RF-DETR)
 
 ```bash
-bash nectar/ai/segmentation/scripts/e2e_cli_test.sh
+bash nectar/nectar/ai/segmentation/scripts/e2e_cli_test.sh
 ```
 
 This script: downloads crack-seg dataset -> analyzes -> trains YOLO26n-seg (3 epochs) -> trains RF-DETR Seg Nano (10 epochs) -> evaluates + predicts each -> verifies TensorBoard + HF upload -> prints summary.
@@ -398,19 +398,19 @@ This script: downloads crack-seg dataset -> analyzes -> trains YOLO26n-seg (3 ep
 # 1. Download dataset (once)
 nectar-ai segment dataset download \
   --source ultralytics --dataset crack-seg \
-  --output nectar/ai/data/crack-seg --format yolo
+  --output nectar/nectar/ai/data/crack-seg --format yolo
 
 # 2. Train YOLO26n-seg (500 train samples, 3 epochs, 320px)
-nectar-ai segment train --config nectar/ai/segmentation/configs/crackseg_yolo26n_seg.yaml
+nectar-ai segment train --config nectar/nectar/ai/segmentation/configs/crackseg_yolo26n_seg.yaml
 
 # 3. Train RF-DETR Seg Nano (full dataset, 10 epochs, 312px)
-nectar-ai segment train --config nectar/ai/segmentation/configs/crackseg_rfdetr_seg_nano.yaml
+nectar-ai segment train --config nectar/nectar/ai/segmentation/configs/crackseg_rfdetr_seg_nano.yaml
 ```
 
 ### Run all detection tests (Ultralytics + RF-DETR + Transformers)
 
 ```bash
-bash nectar/ai/detection/scripts/e2e_cli_test.sh
+bash nectar/nectar/ai/detection/scripts/e2e_cli_test.sh
 ```
 
 This script: downloads gate dataset from Roboflow -> trains YOLO26n (3 epochs) -> trains RF-DETR Nano (5 epochs) -> trains DETR (2 epochs) -> evaluates + predicts each -> verifies TensorBoard + HF upload -> prints summary.
@@ -422,25 +422,25 @@ This script: downloads gate dataset from Roboflow -> trains YOLO26n (3 epochs) -
 nectar-ai detect dataset download \
   --source roboflow --api-key $ROBOFLOW_API_KEY \
   --workspace black-bee-drones --project imav-25-gate-sfbbq --version 1 \
-  --output nectar/ai/data/imav-gate --format yolo
+  --output nectar/nectar/ai/data/imav-gate --format yolo
 
 # 2. Train YOLO26n (100 train samples, 3 epochs, 320px)
-nectar-ai detect train --config nectar/ai/detection/configs/gate_yolo26n.yaml
+nectar-ai detect train --config nectar/nectar/ai/detection/configs/gate_yolo26n.yaml
 
 # 3. Train RF-DETR Nano (100 train samples, 5 epochs, 312px)
-nectar-ai detect train --config nectar/ai/detection/configs/gate_rfdetr_nano.yaml
+nectar-ai detect train --config nectar/nectar/ai/detection/configs/gate_rfdetr_nano.yaml
 
 # 4. Train DETR (100 train samples, 2 epochs, 320px)
-nectar-ai detect train --config nectar/ai/detection/configs/gate_detr.yaml
+nectar-ai detect train --config nectar/nectar/ai/detection/configs/gate_detr.yaml
 ```
 
 ### What to verify after each run
 
-1. **Training outputs** exist in `nectar/ai/outputs/<run-name>/`
-2. **TensorBoard events**: `find nectar/ai/outputs/<run-name> -name "events.out.tfevents.*"`
+1. **Training outputs** exist in `nectar/nectar/ai/outputs/<run-name>/`
+2. **TensorBoard events**: `find nectar/nectar/ai/outputs/<run-name> -name "events.out.tfevents.*"`
 3. **HuggingFace repo** updated at `https://huggingface.co/blackbeedrones/<hub_model_id>`
-4. **Evaluation metrics** in `nectar/ai/outputs/<run-name>/evaluation/metrics_summary.json`
-5. **Predictions** in `nectar/ai/outputs/<run-name>/predictions/`
+4. **Evaluation metrics** in `nectar/nectar/ai/outputs/<run-name>/evaluation/metrics_summary.json`
+5. **Predictions** in `nectar/nectar/ai/outputs/<run-name>/predictions/`
 
 ## Framework Status
 
