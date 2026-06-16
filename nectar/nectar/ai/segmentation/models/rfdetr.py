@@ -94,6 +94,9 @@ class RFDETRSegModel(BaseSegmentationModel):
         else:
             self.base_model_name = model_name
 
+        self.base_model_name = self.base_model_name.replace("rf-detr", "rfdetr").replace(
+            "rf_detr", "rfdetr"
+        )
         self.model_class = RFDETR_SEG_MODELS.get(self.base_model_name)
         if self.model_class is None:
             raise ValueError(

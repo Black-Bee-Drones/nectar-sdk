@@ -129,7 +129,9 @@ class DetectionConfigPanel(QWidget):
             "yolo26x.pt",
         ],
         "rfdetr": [
-            "rfdetr-base",
+            "rfdetr-nano",
+            "rfdetr-small",
+            "rfdetr-medium",
             "rfdetr-large",
         ],
         "transformers": [

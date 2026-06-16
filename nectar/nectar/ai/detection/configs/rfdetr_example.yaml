@@ -7,12 +7,12 @@ data:
 
 train:
   framework: rfdetr
-  model: rfdetr-base
+  model: rfdetr-medium
   epochs: 50
   batch_size: 4
   learning_rate: 1e-4
   lr_encoder: 1e-5
-  output_dir: outputs/rfdetr-base
+  output_dir: outputs/rfdetr-medium
   device: cuda
   seed: 42
   tensorboard: true

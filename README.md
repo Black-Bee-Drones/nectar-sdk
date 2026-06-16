@@ -128,7 +128,7 @@ from nectar.ai.detection import Detector
 
 detector = Detector("yolov8n.pt")                         # Ultralytics YOLO
 detector = Detector("facebook/detr-resnet-50")             # HuggingFace DETR
-detector = Detector("rf-detr-nano.pth")                    # RF-DETR
+detector = Detector("rfdetr-nano")                         # RF-DETR
 
 detector.load()
 result = detector.detect(image, conf=0.5)

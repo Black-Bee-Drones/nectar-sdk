@@ -461,8 +461,8 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 
 ### RF-DETR Seg Nano -- Full pipeline
 
-- Installed from upstream `develop` branch (`rfdetr[train,loggers] @ git+https://github.com/roboflow/rf-detr.git@develop`)
-- Training uses the [Custom Training API](https://rfdetr.roboflow.com/develop/learn/train/customization/) (`RFDETRModelModule`, `RFDETRDataModule`, `build_trainer`) for callback injection
+- Pinned to `rfdetr[train]==1.7.1` (PyPI)
+- Training uses the [Custom Training API](https://rfdetr.roboflow.com/latest/learn/train/customization/) (`RFDETRModelModule`, `RFDETRDataModule`, `build_trainer`) for callback injection
 - Per-epoch HF upload via PTL `HuggingFaceUploadPTLCallback`
 - Class names auto-synced from checkpoint on `load_model()`
 - Invalid class IDs filtered in `_predict_single()`

@@ -503,7 +503,7 @@ model.load_model()
 model = TransformersModel("facebook/detr-resnet-50")
 model.load_model()
 
-model = RFDETRModel("rfdetr-base", resolution=560)
+model = RFDETRModel("rfdetr-medium")
 model.load_model()
 ```
 

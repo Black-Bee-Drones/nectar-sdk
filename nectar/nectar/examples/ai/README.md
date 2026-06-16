@@ -16,7 +16,7 @@ Reference implementations for deep learning-based object detection.
 |-----------|--------|---------|
 | **Ultralytics** | YOLOv8, YOLOv10, YOLO11 | `yolov8n.pt`, `yolov11n.pt` |
 | **Transformers** | DETR, Conditional DETR | `facebook/detr-resnet-50` |
-| **RF-DETR** | RF-DETR variants | `rfdetr-base` |
+| **RF-DETR** | RF-DETR Nano/Small/Medium/Large | `rfdetr-medium` |
 
 ---
 
