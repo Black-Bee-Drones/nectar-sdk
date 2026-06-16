@@ -27,7 +27,7 @@ class CameraPublisherNode(Node):
     --------------------------
     camera_source : str
         Camera source identifier (default: 'webcam'). Accepted values:
-        'webcam', 'opencv', 'c920', 'imx219', 'realsense', 'oakd',
+        'webcam', 'opencv', 'c920', 'imx219', 'realsense', 't265', 'oakd',
         'ros', 'ros_depth', 'file'.
     use_compression : bool
         Publish compressed JPEG images (default: True).
