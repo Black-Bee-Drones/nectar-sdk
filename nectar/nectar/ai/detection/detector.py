@@ -128,8 +128,9 @@ class Detector:
     def _detect_framework(cls, source: str) -> Framework:
         """Auto-detect framework from model source."""
         source_lower = source.lower()
+        normalized = source_lower.replace("-", "").replace("_", "")
 
-        if "rfdetr" in source_lower:
+        if "rfdetr" in normalized:
             return Framework.RFDETR
         if any(x in source_lower for x in ["detr", "facebook/", "microsoft/"]):
             return Framework.TRANSFORMERS

@@ -158,8 +158,9 @@ def detect_framework(model_name: str, task: str = "detection") -> str:
         Task type ('detection' or 'segmentation') to adjust heuristics.
     """
     model_lower = model_name.lower()
+    normalized = model_lower.replace("-", "").replace("_", "")
 
-    if "rfdetr" in model_lower:
+    if "rfdetr" in normalized:
         return "rfdetr"
 
     if task == "segmentation":

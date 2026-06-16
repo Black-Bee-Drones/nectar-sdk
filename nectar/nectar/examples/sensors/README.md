@@ -1,8 +1,25 @@
 # Sensors Module Examples
 
-| File | Description | Args |
-|------|-------------|------|
-| `rangefinder_example.py` | Bench-test the TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` pipeline (no ROS) | `--port --mavlink --filter --obstacle-height --estimate-lock-s --rate --duration` |
+| File | Description |
+|------|-------------|
+| `rangefinder_example.py` | Bench-test the TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` pipeline (no ROS) |
+
+### Arguments
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `/dev/ttyUSB0` | TF-Luna serial port |
+| `--baud` | `115200` | TF-Luna baud |
+| `--mavlink` | `udp:127.0.0.1:14551` | MAVLink connection string (UDP/TCP/serial) |
+| `--mavlink-baud` | `921600` | Serial baud for MAVLink endpoints (ignored for UDP/TCP) |
+| `--filter` | `none` | `none` or `obstacle_mask` |
+| `--obstacle-height` | `0.0` | Obstacle height (m); `<= 0` auto-estimates |
+| `--max-change` | `0.30` | Obstacle-mask step-change threshold (m) |
+| `--avg-window` | `10` | Obstacle-mask averaging window (samples) |
+| `--estimate-lock-s` | `0.2` | Time to lock the auto-estimated height (s) |
+| `--timeout-s` | `5.0` | Sensor read timeout (s) |
+| `--rate` | `50.0` | Publish rate (Hz) |
+| `--duration` | `0.0` | Run time (s); `0` = until Ctrl-C |
 
 ## Bench test
 

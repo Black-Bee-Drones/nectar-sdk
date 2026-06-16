@@ -1077,7 +1077,7 @@ tracker.close()                           # Release resources
 **Example**:
 ```python
 from nectar.vision import FaceMeshTracker, FaceMeshTrackerConfig
-from nectar.vision.algorithms.pose.face_tracker import FaceLandmarkRegion
+from nectar.vision.algorithms.mediapipe.face_tracker import FaceLandmarkRegion
 
 config = FaceMeshTrackerConfig(num_faces=1)
 
@@ -1143,8 +1143,8 @@ classDiagram
         +process_image(img)
     }
 
-    class WebcamPublisherNode {
-        -camera OpenCVCam
+    class CameraPublisherNode {
+        -camera AbstractCam
         -image_handler ImageHandler
         -publisher Publisher
         +cleanup()
@@ -1156,7 +1156,7 @@ classDiagram
     LineDetectionNode o-- ImageHandler
     ColorCalibrationNode o-- ColorDetector
     ColorCalibrationNode o-- ImageHandler
-    WebcamPublisherNode o-- ImageHandler
+    CameraPublisherNode o-- ImageHandler
 ```
 
 ### ArUco Detection Node
@@ -1227,11 +1227,14 @@ Interactive HSV/LAB calibration in a single window: left-click a colored region 
 
 Saved colors are written to the shared `vision/algorithms/color/color_calibration.json` and load directly via `ColorDetector(mode="preset", color=<name>)` and `LineDetectionNode`. Requires an OpenCV GUI (mouse + trackbars).
 
-### Webcam Publisher Node
+### Camera Publisher Node
+
+`camera_publisher_node.py` publishes any `CameraFactory` source as a ROS 2 image topic. Select the driver with `camera_source` (`webcam`, `realsense`, `oakd`, `c920`, `imx219`, `ros`, ...) and set the source-specific parameters.
 
 ```bash
-ros2 run nectar webcam_publisher --ros-args \
-    -p camera_index:=0 \
+ros2 run nectar camera_publisher_node.py --ros-args \
+    -p camera_source:=webcam \
+    -p device_index:=0 \
     -p width:=1280 \
     -p height:=720 \
     -p fps:=30 \
@@ -1240,14 +1243,14 @@ ros2 run nectar webcam_publisher --ros-args \
     -p threaded:=true
 ```
 
-**Parameters**:
+**Common parameters** (see the node for the full per-source set):
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `camera_index` | int | 0 | Webcam device index |
-| `width` | int | 640 | Frame width |
-| `height` | int | 480 | Frame height |
+| `camera_source` | string | webcam | Camera driver key passed to `CameraFactory` |
+| `device_index` | int | 0 | USB/webcam device index |
+| `width` / `height` | int | 640 / 480 | Frame size |
 | `fps` | int | 30 | Target FPS |
-| `use_compression` | bool | true | JPEG compression |
+| `use_compression` | bool | true | Publish JPEG-compressed images |
 | `jpeg_quality` | int | 80 | JPEG quality (0-100) |
 | `buffer_size` | int | 2 | Camera buffer size |
 | `threaded` | bool | true | Background capture thread |
@@ -1393,6 +1396,8 @@ See `examples/vision/` for complete working examples:
 | `camera_example.py` | Basic camera capture and configuration |
 | `depth_example.py` | Depth camera visualization and distance (RealSense D4xx, OAK-D) |
 | `t265_example.py` | T265 fisheye + stereo depth + pose overlay + click-to-measure |
+| `optical_flow_example.py` | Sparse/dense optical-flow visualization |
+| `collect_photos.py` | Save frames at intervals for dataset creation |
 
 ## Module Structure
 
@@ -1425,7 +1430,7 @@ vision/
 │
 ├── algorithms/              # Vision algorithms
 │   ├── __init__.py
-│   ├── markers/             # ArUco, AprilTag
+│   ├── markers/             # ArUco
 │   │   └── aruco.py
 │   ├── color/               # Color detection
 │   │   ├── color_detector.py
@@ -1447,7 +1452,7 @@ vision/
 │   ├── aruco_node.py
 │   ├── color_calibration_node.py
 │   ├── line_detection_node.py
-│   └── webcam_publisher_node.py
+│   └── camera_publisher_node.py
 │
 └── utils/                   # Utilities
     └── image_calculus.py
@@ -1477,8 +1482,8 @@ vision/
 
 | Package/Message | Documentation | Used In |
 |-----------------|---------------|---------|
-| `sensor_msgs/Image` | [sensor_msgs/Image](https://docs.ros.org/en/humble/p/sensor_msgs/msg/Image.html) | `ROSCam`, `WebcamPublisherNode` |
-| `sensor_msgs/CompressedImage` | [sensor_msgs/CompressedImage](https://docs.ros.org/en/humble/p/sensor_msgs/msg/CompressedImage.html) | `WebcamPublisherNode` |
+| `sensor_msgs/Image` | [sensor_msgs/Image](https://docs.ros.org/en/humble/p/sensor_msgs/msg/Image.html) | `ROSCam`, `CameraPublisherNode` |
+| `sensor_msgs/CompressedImage` | [sensor_msgs/CompressedImage](https://docs.ros.org/en/humble/p/sensor_msgs/msg/CompressedImage.html) | `CameraPublisherNode` |
 | `cv_bridge` | [cv_bridge](https://github.com/ros-perception/vision_opencv/tree/humble) | `ROSCam` |
 | `nectar_interfaces/ArucoTransforms` | [nectar_interfaces](../../../nectar_interfaces/README.md) | `ArucoNode` |
 | `nectar_interfaces/LineInfo` | [nectar_interfaces](../../../nectar_interfaces/README.md) | `LineDetectionNode` |

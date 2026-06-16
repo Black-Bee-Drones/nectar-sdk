@@ -24,7 +24,7 @@ classDiagram
         +node Node
         +is_ready bool
         +obstacle_manager ObstacleManager
-        +from_config(config, node)$ BebopDrone
+        +from_config(config, executor)$ BebopDrone
         +connect() bool
         +disconnect()
         +arm() bool
@@ -35,7 +35,7 @@ classDiagram
         +move_to() CapabilityNotSupportedError
         +move_to_gps() CapabilityNotSupportedError
         +emergency_stop()
-        +rtl(altitude, precision, strategy, land) bool
+        +rtl(altitude, precision, method, land) bool
         +flip(direction)
         +camera_control(tilt, pan)
         +snapshot()
@@ -78,7 +78,7 @@ config = BebopConfig(
     namespace="bebop"        # ROS2 topic namespace
 )
 
-drone = DroneFactory.create("bebop", config, node)
+drone = DroneFactory.create("bebop", config)
 ```
 
 ### Properties
@@ -279,17 +279,14 @@ ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:=192.168.42.1
 ### Basic Flight
 
 ```python
-import rclpy
-from rclpy.node import Node
+import nectar
 from nectar.control import DroneFactory, BebopConfig
 
-rclpy.init()
-node = Node('bebop_control')
-
+nectar.init()
 config = BebopConfig(ip="192.168.42.1")
-drone = DroneFactory.create("bebop", config, node)
+drone = DroneFactory.create("bebop", config)
 
-# Connect and takeoff
+# connect() only verifies the bebop_driver process is running (no FCU handshake)
 drone.connect()
 drone.takeoff(altitude=1.5)  # Altitude ignored
 
@@ -349,8 +346,10 @@ drone.move_velocity(vyaw=0.5, duration=2.0)
 drone.move_velocity(vx=0.4, duration=5.0)
 
 # Return home and land
-drone.rtl(land=True)  # Uses autoflight navigate_home
+drone.rtl(land=True)  # Triggers autoflight navigate_home
 ```
+
+> `connect()` for Bebop only checks that the `bebop_driver` process is running — there is no flight-controller handshake. `rtl()` publishes the autoflight `navigate_home` command; with `land=True` it simply waits a fixed delay for the maneuver to complete (it does **not** call `land()`).
 
 ## Error Handling
 
@@ -370,7 +369,7 @@ except CapabilityNotSupportedError as e:
 
 try:
     config = BebopConfig(start_driver=True)
-    drone = DroneFactory.create("bebop", config, node)
+    drone = DroneFactory.create("bebop", config)
 except DriverNotFoundError:
     node.get_logger().error("ros2_bebop_driver not found. Is it installed?")
 ```

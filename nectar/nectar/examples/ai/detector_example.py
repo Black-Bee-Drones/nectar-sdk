@@ -5,7 +5,7 @@ Examples::
 
     python detector_example.py --model yolov8n.pt --confidence 0.5
     python detector_example.py --model facebook/detr-resnet-50 --framework transformers
-    python detector_example.py --model rfdetr-base --framework rfdetr --publish
+    python detector_example.py --model rfdetr-medium --framework rfdetr --publish
 """
 
 import argparse

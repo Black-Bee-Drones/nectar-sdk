@@ -4,7 +4,7 @@
 set -e
 
 # Default configuration
-MODEL="rfdetr-base"
+MODEL="rfdetr-medium"
 DATASET=""
 OUTPUT_DIR="outputs/rfdetr"
 EPOCHS=50

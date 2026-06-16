@@ -229,9 +229,9 @@ class RFDETRTrainingConfig(TrainingConfig):
     Parameters
     ----------
     model : str
-        Model path or size (e.g., 'rfdetr-base').
+        Model path or size (e.g., 'rfdetr-medium').
     rfdetr_size : str, optional
-        Model size ('nano', 'small', 'base', 'medium', 'large').
+        Model size ('nano', 'small', 'medium', 'large').
     resolution : int, optional
         Input resolution. Defaults to 560.
     use_ema : bool, optional
@@ -257,7 +257,7 @@ class RFDETRTrainingConfig(TrainingConfig):
     """
 
     # Required
-    model: str = "rfdetr-base"
+    model: str = "rfdetr-medium"
     framework: str = field(default="rfdetr", init=False)
 
     # RF-DETR specific

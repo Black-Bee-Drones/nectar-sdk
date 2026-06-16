@@ -103,7 +103,7 @@ class TrainingConfig:
     cos_lr: bool = False
 
     # RF-DETR specific
-    rfdetr_size: Optional[str] = None  # "nano", "small", "base", "medium", "large"
+    rfdetr_size: Optional[str] = None  # "nano", "small", "medium", "large"
     lr_encoder: Optional[float] = None
     use_ema: bool = True
     gradient_checkpointing: bool = False

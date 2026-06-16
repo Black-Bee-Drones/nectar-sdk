@@ -233,8 +233,9 @@ while True:
 ```python
 # Indoor mode loads: ardupilot/config/position_indoor.yaml
 # Outdoor mode loads: ardupilot/config/position_outdoor.yaml
+# SITL presets use the position_sim_indoor.yaml / position_sim_outdoor.yaml variants.
 config = MavrosConfig(pose_source=PoseSource.VISION)
-drone = DroneFactory.create("mavros", config, node)
+drone = DroneFactory.create("mavros", config)
 ```
 
 **Explicit**:

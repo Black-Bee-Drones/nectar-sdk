@@ -1,16 +1,21 @@
 # Drone Control Module
 
-Protocol-based drone control framework for ROS2 with factory pattern instantiation, configurable navigation methods, and event-based obstacle detection.
+## Role
+
+Protocol-based drone control for ROS 2. `DroneFactory` builds a drone by key behind the common `Drone` protocol; each platform implements the same interface (takeoff, land, move_to, move_to_gps, move_velocity, rtl, obstacle management).
 
 ## Documentation Index
 
-- **README.md**: This file - Architecture overview and quick start
-- **ardupilot/README.md**: Shared transport-agnostic ArduPilot vehicle core
-- **mavros/README.md**: MAVROS transport (`MavrosDrone`)
-- **mavlink/README.md**: Direct pymavlink transport (`MavlinkDrone`)
-- **bebop/README.md**: Parrot Bebop 2 implementation details
-- **obstacles/README.md**: Obstacle detection system documentation
-- **pid/README.md**: PID controller implementation and tuning
+| README | Scope |
+|--------|-------|
+| [ardupilot/](ardupilot/README.md) | Shared ArduPilot vehicle core: navigation, frames, takeoff/land, RTL, PID/setpoint, GPS/EGM96, parameters |
+| [mavros/](mavros/README.md) | MAVROS transport (`MavrosDrone`) |
+| [mavlink/](mavlink/README.md) | Direct pymavlink transport (`MavlinkDrone`) |
+| [localization/](localization/README.md) | Indoor VSLAM external-nav: Isaac producer + vision-pose bridge |
+| [obstacles/](obstacles/README.md) | Obstacle detection + avoidance strategies |
+| [pid/](pid/README.md) | PID controller and tuning |
+| [bebop/](bebop/README.md) | Parrot Bebop 2 (`BebopDrone`) |
+| [crazyflie/](crazyflie/README.md) | Bitcraze Crazyflie (`CrazyflieDrone`) |
 
 ## Architecture
 
@@ -19,7 +24,7 @@ classDiagram
     class DroneFactory {
         <<singleton>>
         -_builders Dict~str,BuilderFunc~
-        +create(type, config, node) Drone
+        +create(type, config, executor) Drone
         +register(type, factory_func)
         +available_types() list~str~
         +is_registered(type) bool
@@ -108,12 +113,16 @@ classDiagram
     }
 
     class MavrosDrone {
-        +from_config(config, node)$ MavrosDrone
+        +from_config(config, executor)$ MavrosDrone
     }
 
     class MavlinkDrone {
         +connection MavlinkConnection
-        +from_config(config, node)$ MavlinkDrone
+        +from_config(config, executor)$ MavlinkDrone
+    }
+
+    class CrazyflieDrone {
+        +from_config(config, executor)$ CrazyflieDrone
     }
 
     class MavlinkTransport {
@@ -127,7 +136,7 @@ classDiagram
     class PymavlinkTransport
 
     class BebopDrone {
-        +from_config(config, node)$ BebopDrone
+        +from_config(config, executor)$ BebopDrone
         +flip(direction)
         +camera_control(tilt, pan)
         +snapshot()
@@ -187,6 +196,7 @@ classDiagram
     Drone <|.. BaseDrone : implements
     BaseDrone <|-- ArduPilotDrone
     BaseDrone <|-- BebopDrone
+    BaseDrone <|-- CrazyflieDrone
     ArduPilotDrone <|-- MavrosDrone
     ArduPilotDrone <|-- MavlinkDrone
     ArduPilotDrone o-- MavlinkTransport
@@ -254,10 +264,12 @@ DroneFactory.register(drone_type: str, factory_func: Callable)
 
 **Example**:
 ```python
+import nectar
 from nectar.control import DroneFactory, MavrosConfig, PoseSource
 
+nectar.init()
 config = MavrosConfig(pose_source=PoseSource.VISION)
-drone = DroneFactory.create("mavros", config, node)
+drone = DroneFactory.create("mavros", config)   # optional: executor=<your Executor>
 ```
 
 ### Drone Protocol
@@ -277,8 +289,8 @@ Duck-typed interface defining drone contract. All drones must implement:
 - `rtl()`: Return-to-launch
 
 **State**:
-- `state`: Current drone state (armed, flying, mode)
-- `is_ready`: Connection and driver status
+- `is_ready`: connection and driver status (all drones)
+- ArduPilot drones additionally expose `is_armed`, `flight_mode`, `is_fcu_connected` (see [ardupilot/README.md](ardupilot/README.md)); other platforms expose their own readiness fields
 
 ### BaseDrone
 
@@ -319,232 +331,24 @@ BebopConfig(
 )
 ```
 
-## Movement API
+## Movement, Navigation, RTL
 
-### Reference Frames
-
-```python
-class MoveReference(Enum):
-    BODY = auto()      # Relative to current orientation
-    WORLD = auto()     # NED frame (vision) or GPS frame (outdoor)
-    TAKEOFF = auto()   # Relative to takeoff position (position control)
-```
-
-### Velocity Control
-
-```python
-drone.move_velocity(
-    vx: float = 0.0,           # Forward velocity (m/s)
-    vy: float = 0.0,           # Lateral velocity (m/s)
-    vz: float = 0.0,           # Vertical velocity (m/s)
-    vyaw: float = 0.0,         # Angular velocity (rad/s)
-    duration: Optional[float] = None,  # Execution time (seconds)
-    reference: MoveReference = MoveReference.BODY  # BODY or WORLD
-)
-```
-
-### Position Navigation
-
-```python
-drone.move_to(
-    x: Optional[float] = None,
-    y: Optional[float] = None,
-    z: Optional[float] = None,
-    yaw: Optional[float] = None,           # degrees
-    reference: MoveReference = MoveReference.BODY,
-    timeout: Optional[float] = 60.0,
-    precision: float = 0.2,
-    method: NavigationMethod = NavigationMethod.PID_EKF,
-    altitude_source: AltitudeSource = AltitudeSource.AUTO,
-) -> bool
-```
-
-See [`ardupilot/README.md`](ardupilot/README.md) for the full capability matrix, per-axis/reference behavior, and altitude-source semantics.
-
-**Navigation Methods**:
-- `POSITION`: Local position setpoint via `setpoint_raw/local` — works indoor and outdoor
-- `POSITION_GLOBAL`: GPS global setpoint via `setpoint_position/global` — outdoor only, long range
-- `PID`: Velocity control with raw sensors — vision pose (indoor) or GPS (outdoor)
-- `PID_EKF`: Velocity control with EKF local position — unified indoor/outdoor frame
-
-**Altitude Sources** (`PID` and `PID_EKF`):
-- `AUTO`: Position-based altitude (vision Z indoor, GPS altitude outdoor)
-- `LIDAR`: Ground-relative altitude via rangefinder (terrain following)
-- `REL_ALT`: GPS-based relative altitude above home
-
-### GPS Navigation
-
-```python
-drone.move_to_gps(
-    latitude: float,
-    longitude: float,
-    altitude: Optional[float] = None,
-    heading: Optional[float] = None,   # degrees
-    timeout: Optional[float] = 60.0,
-    precision: float = 0.5,            # meters
-    method: NavigationMethod = NavigationMethod.PID
-) -> bool
-```
-
-**Features**:
-- EGM96 geoid height correction
-- Body-frame error calculation using GPS and compass
-- Haversine distance computation
-
-### Return-to-Launch
-
-```python
-drone.rtl(
-    altitude: Optional[float] = None,  # Transit altitude (meters)
-    precision: float = 0.2,
-    method: RTLMethod = RTLMethod.NAVIGATE,  # NAVIGATE or NATIVE
-    land: bool = True
-) -> bool
-```
-
-**RTL Methods**:
-- `NAVIGATE`: Navigate to takeoff position using the drone's configured navigation path (e.g. PID / setpoints on MAVROS)
-- `NATIVE`: Trigger the flight stack's native RTL mode (e.g. ArduPilot RTL)
+`MoveReference` selects the frame: `BODY` (relative to current heading), `WORLD` (ENU world frame), `TAKEOFF` (relative to the takeoff pose). The public movement API — `move_velocity`, `move_to`, `move_to_gps`, `rtl` — plus the navigation methods (`POSITION`, `POSITION_GLOBAL`, `PID`, `PID_EKF`), altitude sources, GPS/EGM96 handling, and RTL modes are defined once in the shared core: see **[ardupilot/README.md](ardupilot/README.md)**. Bebop and Crazyflie support a subset (see their READMEs and the capability matrix above).
 
 ## Obstacle Detection
 
-Event-based system using strategy pattern.
-
-```mermaid
-classDiagram
-    class ObstacleDetector {
-        <<protocol>>
-        +is_enabled bool
-        +enable()
-        +disable()
-        +update() ObstacleInfo
-        +reset()
-    }
-
-    class AvoidanceStrategy {
-        <<abstract>>
-        +execute(drone, info) bool
-        +reset()
-    }
-
-    class ObstacleHandler {
-        -_detector ObstacleDetector
-        -_strategy AvoidanceStrategy
-        -_node Node
-        -_config ObstacleHandlerConfig
-        -_last_info ObstacleInfo
-        -_lock Lock
-        -_timer Timer
-        +detector ObstacleDetector
-        +strategy AvoidanceStrategy
-        +is_enabled bool
-        +last_info ObstacleInfo
-        +enable()
-        +disable()
-        +update() ObstacleInfo
-        +should_continue(drone) bool
-        +get_axis_modifiers() tuple~bool,bool,bool~
-        +reset()
-        +cleanup()
-    }
-
-    class ObstacleManager {
-        -_handlers dict~str,ObstacleHandler~
-        +handlers dict~str,ObstacleHandler~
-        +add(name, handler)
-        +remove(name) Optional~ObstacleHandler~
-        +get(name) Optional~ObstacleHandler~
-        +enable(name)
-        +disable(name)
-        +enable_all()
-        +disable_all()
-        +should_continue_navigation(drone) bool
-        +get_axis_control() tuple~bool,bool,bool~
-        +reset_all()
-        +cleanup()
-    }
-
-    class PauseStrategy {
-        +execute(drone, info) bool
-    }
-
-    class DisableAxisStrategy {
-        +disable_x bool
-        +disable_y bool
-        +disable_z bool
-        +execute(drone, info) bool
-    }
-
-    class SequenceStrategy {
-        -_sequence_func Callable
-        +execute(drone, info) bool
-    }
-
-    ObstacleHandler *-- ObstacleDetector
-    ObstacleHandler *-- AvoidanceStrategy
-    ObstacleManager o-- ObstacleHandler
-    AvoidanceStrategy <|-- PauseStrategy
-    AvoidanceStrategy <|-- DisableAxisStrategy
-    AvoidanceStrategy <|-- SequenceStrategy
-```
-
-### Integration
+Detector + strategy + handler/manager, integrated into navigation via `drone.add_obstacle_detector(...)`. Full design, detectors, and strategies are documented in **[obstacles/README.md](obstacles/README.md)**.
 
 ```python
-from nectar.control import strategies
+from nectar.control import DepthObstacleDetector, strategies
 
-# Simple pause behavior
-drone.add_obstacle_detector(
-    "depth",
-    DepthObstacleDetector(node),
-    strategy=strategies.PauseStrategy()
-)
-
-# Custom evasion sequence
-from functools import partial
-
-strategy = strategies.SequenceStrategy(
-    partial(strategies.lateral_pass_return_sequence, lateral_distance=1.0)
-)
-drone.add_obstacle_detector("depth", detector, strategy)
-
-# Disable Z axis for terrain following
-strategy = strategies.DisableAxisStrategy(disable_z=True)
-drone.add_obstacle_detector("lidar", detector, strategy)
-
+drone.add_obstacle_detector("depth", DepthObstacleDetector(), strategies.PauseStrategy())
 drone.enable_all_obstacle_detectors()
 ```
 
-See `obstacles/README.md` for complete documentation.
-
 ## PID Control
 
-Configurable position control with separate gains for X, Y, Z, yaw axes.
-
-**Configuration** (`ardupilot/config/position_indoor.yaml`):
-```yaml
-x:
-  kp: 0.5
-  ki: 0.0
-  kd: 0.0
-  output_min: -0.42
-  output_max: 0.42
-```
-
-**Runtime Updates**:
-```python
-from nectar.control.pid import PositionPIDConfig, PIDConfig
-
-config = PositionPIDConfig(
-    x=PIDConfig(kp=0.8, output_min=-1.0, output_max=1.0),
-    y=PIDConfig(kp=0.8, output_min=-1.0, output_max=1.0),
-    z=PIDConfig(kp=0.5, output_min=-0.8, output_max=0.8),
-    yaw=PIDConfig(kp=0.5, ki=0.1, output_min=-0.3, output_max=0.3)
-)
-drone.set_pid_config(config)
-```
-
-See `pid/README.md` for implementation details.
+Per-axis position PID (x/y/z/yaw), loaded from `ardupilot/config/*.yaml` by `is_indoor` and overridable at runtime via `drone.set_pid_config(...)`. Tuning, config schema, and the loading lifecycle live in **[pid/README.md](pid/README.md)** and **[ardupilot/README.md](ardupilot/README.md)**.
 
 ## Exception Hierarchy
 
@@ -561,26 +365,24 @@ DroneError
 ### Basic Flight
 
 ```python
-import rclpy
-from rclpy.node import Node
+import nectar
 from nectar.control import DroneFactory, MavrosConfig, PoseSource
 
-rclpy.init()
-node = Node('drone_control')
-
+nectar.init()
 config = MavrosConfig(pose_source=PoseSource.VISION)
-drone = DroneFactory.create("mavros", config, node)
+drone = DroneFactory.create("mavros", config)
 
 drone.takeoff(altitude=1.5)
 drone.move_to(x=2.0, y=1.0, z=0.0, precision=0.2)
 drone.rtl(land=True)
+nectar.shutdown()
 ```
 
 ### GPS Waypoint Mission
 
 ```python
 config = MavrosConfig(pose_source=PoseSource.GPS)
-drone = DroneFactory.create("mavros", config, node)
+drone = DroneFactory.create("mavros", config)
 
 waypoints = [
     (-27.1234, -48.4567, 15.0),
@@ -621,7 +423,7 @@ drone.move_velocity(vx=0.5, vy=0.0, vz=0.0, reference=MoveReference.WORLD)
 ```python
 from nectar.control import DepthObstacleDetector, strategies
 
-detector = DepthObstacleDetector(node)
+detector = DepthObstacleDetector()
 drone.add_obstacle_detector("depth", detector, strategies.PauseStrategy())
 drone.enable_obstacle_detector("depth")
 
@@ -637,6 +439,7 @@ drone.land()
 - **mavlink/**: Direct pymavlink transport (PymavlinkTransport, MavlinkDrone, connection, streams, vision bridge)
 - **bebop/**: Parrot Bebop 2 implementation (BebopDrone, velocity control, acrobatic maneuvers)
 - **crazyflie/**: Bitcraze Crazyflie implementation
+- **localization/**: Indoor VSLAM external-nav (MavrosVisionRelay, vision_pose_node, Isaac launches, RViz)
 - **obstacles/**: Obstacle detection system (detectors, strategies, handlers)
 - **pid/**: PID controller implementation and configuration
 

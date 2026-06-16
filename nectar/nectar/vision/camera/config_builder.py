@@ -14,6 +14,7 @@ from nectar.vision.camera.config import (
     RealSenseConfig,
     ROSConfig,
     ROSDepthConfig,
+    T265Config,
 )
 
 
@@ -113,6 +114,27 @@ def _build_realsense_config(params: Union[Node, Dict[str, Any]]) -> RealSenseCon
     )
 
 
+def _build_t265_config(params: Union[Node, Dict[str, Any]]) -> T265Config:
+    """Build T265Config from parameters."""
+    return T265Config(
+        enable_pose=_get_param(params, "enable_pose", True),
+        enable_depth=_get_param(params, "enable_depth", True),
+        stereo_fov_deg=_get_param(params, "stereo_fov_deg", 90.0),
+        stereo_height_px=_get_param(params, "stereo_height_px", 300),
+        num_disparities=_get_param(params, "num_disparities", 96),
+        block_size=_get_param(params, "block_size", 16),
+        uniqueness_ratio=_get_param(params, "uniqueness_ratio", 10),
+        speckle_window_size=_get_param(params, "speckle_window_size", 100),
+        speckle_range=_get_param(params, "speckle_range", 32),
+        smoothness_window=_get_param(params, "smoothness_window", 5),
+        max_depth_m=_get_param(params, "max_depth_m", 3.0),
+        use_ros_topics=_get_param(params, "use_ros_topics", False),
+        fisheye1_topic=_get_param(params, "fisheye1_topic", "/camera/fisheye1/image_raw"),
+        fisheye2_topic=_get_param(params, "fisheye2_topic", "/camera/fisheye2/image_raw"),
+        pose_topic=_get_param(params, "pose_topic", "/camera/pose/sample"),
+    )
+
+
 def _build_oakd_config(params: Union[Node, Dict[str, Any]]) -> OakDConfig:
     """Build OakDConfig from parameters."""
     return OakDConfig(
@@ -167,6 +189,7 @@ ConfigBuilder.register("opencv", _build_opencv_config)
 ConfigBuilder.register("c920", _build_c920_config)
 ConfigBuilder.register("imx219", _build_imx219_config)
 ConfigBuilder.register("realsense", _build_realsense_config)
+ConfigBuilder.register("t265", _build_t265_config)
 ConfigBuilder.register("oakd", _build_oakd_config)
 ConfigBuilder.register("ros", _build_ros_config)
 ConfigBuilder.register("ros_depth", _build_ros_depth_config)

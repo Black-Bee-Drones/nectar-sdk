@@ -86,8 +86,9 @@ class Segmentor:
     def _detect_framework(cls, source: str) -> Framework:
         """Auto-detect framework from model source."""
         source_lower = source.lower()
+        normalized = source_lower.replace("-", "").replace("_", "")
 
-        if "rfdetr" in source_lower and "seg" in source_lower:
+        if "rfdetr" in normalized and "seg" in source_lower:
             return Framework.RFDETR
         if any(x in source_lower for x in ["-seg", "_seg"]):
             if any(x in source_lower for x in ["yolo", "ultralytics"]):
@@ -96,7 +97,7 @@ class Segmentor:
             x in source_lower for x in ["mask2former", "maskformer", "segformer", "segmentation"]
         ):
             return Framework.TRANSFORMERS
-        if "rfdetr" in source_lower:
+        if "rfdetr" in normalized:
             return Framework.RFDETR
         if any(x in source_lower for x in ["facebook/", "microsoft/", "nvidia/"]):
             return Framework.TRANSFORMERS

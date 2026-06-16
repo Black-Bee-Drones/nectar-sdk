@@ -153,6 +153,14 @@ Then open a Pull Request via GitHub using our [PR template](../.github/PULL_REQU
 - Add docstrings to public classes and methods
 - Include usage examples for new APIs
 
+**README conventions** (gold standard: [`control/mavros/README.md`](../nectar/nectar/control/mavros/README.md)):
+
+- **Structure**: Role/intro → one Mermaid diagram → tables (topics/services/params/args) → References. Keep prose tight and technical.
+- **Single source of truth**: document shared logic once and link to it; do not restate the same thing in two READMEs. ArduPilot flight logic lives in [`ardupilot/README.md`](../nectar/nectar/control/ardupilot/README.md); indoor VSLAM in [`localization/README.md`](../nectar/nectar/control/localization/README.md); install in [`docs/INSTALL.md`](INSTALL.md); Docker in [`docker/README.md`](../docker/README.md); simulation in [`simulation/README.md`](../nectar/simulation/README.md). The root README and parent module READMEs link, they don't duplicate.
+- **One diagram per README**: put the detailed class diagram in the module README; keep the root README's diagram high-level.
+- **Stay grounded**: every command, flag, topic, and class name must match the code. Prefer real argparse flags / parameter names over invented ones.
+- **When you add a module**: sync the root README (Features, Documentation table, directory tree) and the parent module's index, and add it to the Module Structure list below.
+
 **Docstring Example**:
 ```python
 def move_to(
@@ -198,13 +206,14 @@ def move_to(
 
 When adding new components:
 
-1. **Control Module**: Extend `BaseDrone` or implement `Drone` protocol
+1. **Control Module**: extend `BaseDrone` or implement the `Drone` protocol; register in `DroneFactory`. Transport-agnostic ArduPilot logic belongs in `control/ardupilot/`; indoor external-nav (VSLAM, vision-pose bridge) in `control/localization/`.
 2. **Vision Module**:
-   - Cameras: Add to `camera/drivers/`, register in `CameraFactory`
-   - Algorithms: Add to `algorithms/<category>/`
-3. **AI Module**: Extend `BaseDetectionModel`, register in `Detector`
-4. **Export**: Add public symbols to `__init__.py`
-5. **Document**: Update module README.md
+   - Cameras: add to `vision/camera/drivers/`, register in `CameraFactory`
+   - Algorithms: add to `vision/algorithms/<category>/`
+3. **AI Module**: extend `BaseDetectionModel` (or the segmentation equivalent), register in `Detector`/`Segmentor`
+4. **ROS entry points**: nodes go in the relevant `nodes/` directory and `launch/` files in `nectar/launch/`; install both in `nectar/CMakeLists.txt`
+5. **Export**: add public symbols to `__init__.py` (heavy deps via `_LAZY_ATTRS`)
+6. **Document**: update the module README.md and sync the root README index/tree
 
 ### Import-time Contract
 
@@ -215,13 +224,13 @@ Two patterns are used to enforce this, both standard ([PEP 562](https://peps.pyt
 1. **Lazy package surface in `__init__.py`**: heavy re-exports go through a `_LAZY_ATTRS` dict and `__getattr__`. Lightweight types (dataclasses, enums, exceptions) stay eager. See `nectar/ai/detection/__init__.py` and `nectar/vision/__init__.py` for the canonical pattern.
 2. **Local imports in functions**: when a module needs `matplotlib` / `pandas` only inside a plotting helper, the import lives inside the function body, not at the top of the file. See `nectar/vision/algorithms/distance/calibrator.py::ModelCalibrator.plot`.
 
-The contract is enforced by `nectar/test/test_lazy_imports.py`, which spawns a fresh interpreter and asserts that the forbidden modules are not in `sys.modules` after the public import. Run it locally with:
+Verify the contract by spawning a fresh interpreter and asserting the forbidden modules are absent from `sys.modules` after a public import:
 
 ```bash
-python -m pytest nectar/test/test_lazy_imports.py
+python -c "import sys, nectar.control; assert 'torch' not in sys.modules and 'mediapipe' not in sys.modules"
 ```
 
-If you add a new heavy dependency or re-export, either add it to `_LAZY_ATTRS` or extend the forbidden list and the test together.
+If you add a new heavy dependency or re-export, route it through `_LAZY_ATTRS` (or a function-local import) so the public import path stays light.
 
 ## Review Process 👀
 

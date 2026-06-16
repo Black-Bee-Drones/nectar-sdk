@@ -78,7 +78,7 @@ The single-RX-reader rule is what lets a `RangefinderPublisher` and a `VisionPos
 
 ### `VisionPoseBridge`
 
-[`vision_bridge.py`](vision_bridge.py) — indoor external-navigation feed. With MAVROS gone, the FCU's EKF3 still needs an external position source. `MavlinkDrone` starts this automatically when `pose_source=VISION`: it subscribes to `MavlinkConfig.vision_pose_topic` and forwards **each received sample** to the FCU as [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) (ArduPilot [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html) wants ≥ 4 Hz), replacing what [`vision_to_mavros`](../../../../vision_to_mavros) does through MAVROS. It also exposes the same pose as `vision_pose` so companion-side PID navigation works.
+[`vision_bridge.py`](vision_bridge.py) — indoor external-navigation feed. With MAVROS gone, the FCU's EKF3 still needs an external position source. When `pose_source=VISION`, `PymavlinkTransport.start()` constructs and starts this bridge automatically: it subscribes to `MavlinkConfig.vision_pose_topic` and forwards **each received sample** to the FCU as [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) (ArduPilot [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html) wants ≥ 4 Hz). It also exposes the same pose as `vision_pose` so companion-side PID navigation works. This is the MAVLink-side equivalent of the MAVROS `MavrosVisionRelay`; the end-to-end indoor pipeline (Isaac VSLAM producer, both backends, FCU setup) is documented in [control/localization/README.md](../localization/README.md).
 
 **Which topic to point at** (`vision_pose_topic`):
 
@@ -119,7 +119,7 @@ config = MavlinkConfig(
 drone = DroneFactory.create("mavlink", config)
 ```
 
-Ready-made presets ([`config.py`](../config.py)): `MAVLINK_SITL_CONFIG` (SITL on tcp `5760`), `MAVLINK_SITL_GAZEBO_CONFIG` (SITL+Gazebo on the secondary port tcp `5762`, so a direct link can run alongside MAVROS on `5760`), and `MAVLINK_SITL_VISION_CONFIG` (indoor, `vision_pose_topic=/mavros/vision_pose/pose_cov`).
+Ready-made presets ([`config.py`](../config.py)): `MAVLINK_SITL_CONFIG` (SITL on tcp `5760`), `MAVLINK_SITL_GAZEBO_CONFIG` (SITL+Gazebo on the secondary port tcp `5762`, so a direct link can run alongside MAVROS on `5760`), and `MAVLINK_SITL_VISION_CONFIG` (indoor, `vision_pose_topic=/visual_slam/tracking/vo_pose_covariance`).
 
 ### Connection string format
 

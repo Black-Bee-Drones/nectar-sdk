@@ -1,14 +1,16 @@
 # Control Module Examples
 
-| File | Description | Args |
+| File | Description | Key args |
 |------|-------------|------|
-| `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone mavros\|mavlink\|bebop\|crazyflie --mode velocity\|hover\|position` |
+| `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone {mavros,mavlink,bebop,crazyflie}` · `--mode {velocity,hover,position}` · `--connection` (mavlink) · `--height --side --velocity --precision --hover-time --cf-name --backend` |
 | `sensors.py` | Monitor GPS/vision/local data | `--source gps\|vision` |
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |
-| `navigation.py` | Navigation test (BODY, TAKEOFF, GPS) | `--drone --mode --strategy --test --distance` |
-| `interactive_navigation.py` | Interactive REPL — type waypoints live | `--drone --mode --strategy --altitude` |
+| `navigation.py` | ArduPilot navigation test suite | `--drone {mavros,mavlink}` · `--mode {indoor,outdoor}` · `--connection` · `--strategy --test --distance` (see below) |
+| `interactive_navigation.py` | Interactive REPL — type waypoints live | `--drone {mavros,mavlink}` · `--mode {indoor,outdoor}` · `--connection --strategy --altitude --no-takeoff` |
 | `servo_test.py` | Interactive REPL — pre-flight servo / PWM tester via `MAV_CMD_DO_SET_SERVO` | `--channel --hold --release` |
-| `obstacles.py` | Obstacle avoidance | - |
+| `obstacles.py` | Depth-camera obstacle-aware navigation (RealSense) | run directly: `python3 obstacles.py` |
+
+> `--mode` differs per script: `basic.py` selects the **flight pattern** (`velocity`/`hover`/`position`); `navigation.py` / `interactive_navigation.py` select the **pose source** (`indoor` = vision, `outdoor` = GPS). `--connection` overrides the MAVLink endpoint and applies only to `--drone mavlink`.
 
 ## Basic Flight
 
@@ -54,14 +56,17 @@ python3 pid_simulation.py --plot
 
 ## Navigation
 
-Works with both ArduPilot transports via `--drone mavros|mavlink` (default `mavros`).
+ArduPilot only — `--drone mavros|mavlink` (default `mavros`). `--mode indoor` uses the vision pose source, `--mode outdoor` (default) uses GPS.
 
 ```bash
 # Full outdoor flight (default: PID strategy)
 python3 navigation.py --mode outdoor
 
-# Direct pymavlink transport
-python3 navigation.py --drone mavlink --test body
+# Indoor (vision pose) over MAVROS
+python3 navigation.py --mode indoor --test body
+
+# Direct pymavlink against SITL on the secondary port (5762)
+python3 navigation.py --drone mavlink --connection tcp:127.0.0.1:5762 --test body
 
 # Use EKF local position instead of raw GPS
 python3 navigation.py --strategy pid-ekf
@@ -75,18 +80,25 @@ python3 navigation.py --mode outdoor --test gps --strategy position-global
 # Hand-held test (no takeoff, verify navigation logic)
 python3 navigation.py --no-takeoff --test body
 
-# Custom distance, specific tests
-python3 navigation.py --test body takeoff-ref --distance 3.0
-
-# Figure-8 pattern (8 waypoints, tests sequential precision)
-python3 navigation.py --test figure8 --distance 3.0
-
-# Rectangle with midpoints (8 waypoints, denser precision sampling)
-python3 navigation.py --test rectangle --strategy pid-ekf --distance 4.0
-
-# GPS rectangle (4 GPS waypoints, outdoor only)
-python3 navigation.py --test gps-rectangle --strategy position-global --distance 5.0
+# Custom distance, specific tests, log per-leg results, repeat 3x
+python3 navigation.py --test body takeoff-ref --distance 3.0 --csv runs.csv --loop 3
 ```
+
+### Tests (`--test`, one or more; default `all`)
+
+`body`, `takeoff-ref`, `altitude`, `velocity`, `gps`, `figure8`, `rectangle`, `cube-xyz`, `cube`, `gps-rectangle`. GPS tests (`gps`, `gps-rectangle`) require `--mode outdoor`.
+
+### Other arguments
+
+| Arg | Default | Purpose |
+|-----|---------|---------|
+| `--altitude` | `2.0` | Takeoff altitude (m), ignored with `--no-takeoff` |
+| `--no-takeoff` | off | Set GUIDED + takeoff position without arming (hand-held testing) |
+| `--distance` | `2.0` | Navigation distance per waypoint (m) |
+| `--precision` | `0.2` | Arrival precision radius (m) |
+| `--timeout` | `30.0` | Timeout per waypoint (s) |
+| `--csv FILE` | none | Append per-leg results to a CSV (created if missing) |
+| `--loop [N]` | none | Repeat selected tests N times; `--loop` with no value runs until Ctrl+C |
 
 ## Interactive Navigation
 
@@ -128,6 +140,14 @@ nav> land
 | `pid-ekf` | PID velocity control using EKF local position |
 | `position` | Local position setpoint via `setpoint_raw/local` |
 | `position-global` | GPS global setpoint (outdoor only, long range) |
+
+## Obstacle Avoidance
+
+```bash
+python3 obstacles.py
+```
+
+Attaches a `DepthObstacleDetector` (RealSense D435i) with a pause strategy and runs an obstacle-aware `move_to`. Requires a connected depth camera; see [`control/obstacles/README.md`](../../control/obstacles/README.md) for detectors and strategies.
 
 ## Servo / PWM Test
 

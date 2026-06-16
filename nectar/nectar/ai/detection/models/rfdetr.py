@@ -20,14 +20,13 @@ except ImportError:
     sv = None
 
 try:
-    from rfdetr import RFDETRBase, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
+    from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
     from rfdetr.assets.coco_classes import COCO_CLASS_NAMES
 
     RFDETR_AVAILABLE = True
     RFDETR_MODELS = {
         "rfdetr-nano": RFDETRNano,
         "rfdetr-small": RFDETRSmall,
-        "rfdetr-base": RFDETRBase,
         "rfdetr-medium": RFDETRMedium,
         "rfdetr-large": RFDETRLarge,
     }
@@ -56,9 +55,9 @@ class RFDETRModel(BaseDetectionModel):
     Parameters
     ----------
     model_name : str
-        Model name ('rfdetr-base') or checkpoint path.
+        Model name ('rfdetr-medium') or checkpoint path.
     rfdetr_size : str, optional
-        Explicit model size (nano, small, base, medium, large).
+        Explicit model size (nano, small, medium, large).
     resolution : int, optional
         Image resolution. Defaults to model's default.
     from_scratch : bool, optional
@@ -66,14 +65,14 @@ class RFDETRModel(BaseDetectionModel):
 
     Examples
     --------
-    >>> model = RFDETRModel("rfdetr-base", resolution=560)
+    >>> model = RFDETRModel("rfdetr-medium")
     >>> model.load_model()
     >>> result = model.detect(image)
     """
 
     def __init__(
         self,
-        model_name: str = "rfdetr-base",
+        model_name: str = "rfdetr-medium",
         rfdetr_size: Optional[str] = None,
         resolution: Optional[int] = None,
         from_scratch: bool = False,
@@ -93,6 +92,9 @@ class RFDETRModel(BaseDetectionModel):
         else:
             self.base_model_name = model_name
 
+        self.base_model_name = self.base_model_name.replace("rf-detr", "rfdetr").replace(
+            "rf_detr", "rfdetr"
+        )
         self.model_class = RFDETR_MODELS.get(self.base_model_name)
         if self.model_class is None:
             raise ValueError(
@@ -115,7 +117,7 @@ class RFDETRModel(BaseDetectionModel):
                 size_short = size.replace("rfdetr-", "")
                 if size_short in candidate:
                     return size
-        return "rfdetr-base"
+        return "rfdetr-medium"
 
     def load_model(self, model_path: Optional[str] = None) -> None:
         """Load RF-DETR model."""

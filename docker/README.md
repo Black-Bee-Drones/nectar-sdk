@@ -2,11 +2,14 @@
 
 ## Images
 
+Images are tagged by ROS distro (`nectar-sdk:<distro>`), e.g. `:humble`, `:jazzy`, `:kilted`. AI variants append `-full-<torch>`:
+
 | Tag | Contents | PyTorch |
 |-----|----------|---------|
-| `:latest` | core + control + vision + interface + realsense + oakd | None |
-| `:full-cpu` | All above + AI packages | CPU |
-| `:full-cu124` | All above + AI packages | CUDA 12.4 |
+| `:humble` | core + control + vision + interface + realsense + oakd | None |
+| `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
+| `:humble-full-cpu` | All above + AI packages | CPU |
+| `:humble-full-cu124` | All above + AI packages | CUDA 12.4 |
 
 ## Quick Start
 
@@ -106,7 +109,7 @@ You can also install CUDA torch inside a running CPU container:
 ## RealSense
 
 RealSense support is opt-in (builds librealsense from source, adds ~15-20 min and ~500 MB).
-It is installed in the `sdk` stage, so both `:latest` and `:full` images include it.
+It is installed in the `sdk` stage, so both the base (`:<distro>`) and full (`:<distro>-full-*`) images include it.
 
 ```bash
 # SDK with RealSense (no AI)
