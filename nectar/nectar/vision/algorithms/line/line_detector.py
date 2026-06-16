@@ -517,6 +517,60 @@ class RansacLine(ILineEstimationMethod):
     """
 
     @staticmethod
+    def _fit_line_ransac(
+        points: np.ndarray,
+        residual_threshold: float = 4.0,
+        max_iterations: int = 100,
+    ) -> Tuple[float, float]:
+        """
+        Estimate a line direction from 2D points using RANSAC.
+
+        Samples point pairs to build candidate lines, scores each by the
+        number of inliers within ``residual_threshold`` (perpendicular
+        distance), then refits the largest consensus set with least squares.
+        Robust to outliers and handles arbitrary orientations.
+
+        Parameters
+        ----------
+        points : np.ndarray
+            Array of shape (N, 2) with point coordinates.
+        residual_threshold : float, default=4.0
+            Maximum perpendicular distance (pixels) for an inlier.
+        max_iterations : int, default=100
+            Number of RANSAC sampling iterations.
+
+        Returns
+        -------
+        tuple of float
+            (vx, vy) unit direction vector of the fitted line.
+        """
+        pts = points.astype(np.float64).reshape(-1, 2)
+
+        best_inliers = None
+        best_count = 0
+        rng = np.random.default_rng(0)
+
+        for _ in range(max_iterations):
+            i, j = rng.choice(len(pts), size=2, replace=False)
+            direction = pts[j] - pts[i]
+            norm = np.hypot(direction[0], direction[1])
+            if norm < 1e-6:
+                continue
+
+            normal = np.array([-direction[1], direction[0]]) / norm
+            distances = np.abs((pts - pts[i]) @ normal)
+            inliers = distances < residual_threshold
+            count = int(np.count_nonzero(inliers))
+
+            if count > best_count:
+                best_count = count
+                best_inliers = inliers
+
+        fit_points = pts[best_inliers] if best_count >= 2 else pts
+        vx, vy, _, _ = cv2.fitLine(fit_points.astype(np.float32), cv2.DIST_L2, 0, 0.01, 0.01)
+        return float(vx[0]), float(vy[0])
+
+    @staticmethod
     def estimate(
         img_detect: np.ndarray,
         img_out: np.ndarray,
@@ -549,16 +603,18 @@ class RansacLine(ILineEstimationMethod):
 
         angle = center_x = center_y = float("nan")
 
-        if len(contours) > 0 and cv2.contourArea(contours[0]) > 1500:
-            points = np.vstack(contours[0]).squeeze()
+        if len(contours) > 0:
+            largest_contour = max(contours, key=cv2.contourArea)
+            points = largest_contour.reshape(-1, 2)
+            moments = cv2.moments(largest_contour)
 
-            if len(points) >= 5:
-                vx, vy, x, y = cv2.fitLine(points, cv2.DIST_L2, 0, 0.01, 0.01)
+            if cv2.contourArea(largest_contour) > 1500 and len(points) >= 5 and moments["m00"] != 0:
+                vx, vy = RansacLine._fit_line_ransac(points)
 
-                center_x = x[0] + offset[0]
-                center_y = y[0] + offset[1]
+                center_x = moments["m10"] / moments["m00"] + offset[0]
+                center_y = moments["m01"] / moments["m00"] + offset[1]
 
-                angle = math.degrees(math.atan2(vy[0], vx[0]))
+                angle = math.degrees(math.atan2(vy, vx))
                 if angle <= 0:
                     angle += 90.0
                 else:
@@ -568,24 +624,12 @@ class RansacLine(ILineEstimationMethod):
                     m = 100
                     cv2.line(
                         img_out,
-                        (
-                            int(x[0] + offset[0] - m * vx[0]),
-                            int(y[0] + offset[1] - m * vy[0]),
-                        ),
-                        (
-                            int(x[0] + offset[0] + m * vx[0]),
-                            int(y[0] + offset[1] + m * vy[0]),
-                        ),
+                        (int(center_x - m * vx), int(center_y - m * vy)),
+                        (int(center_x + m * vx), int(center_y + m * vy)),
                         (0, 255, 0),
                         2,
                     )
-                    cv2.circle(
-                        img_out,
-                        (int(x[0] + offset[0]), int(y[0] + offset[1])),
-                        3,
-                        (0, 0, 255),
-                        -1,
-                    )
+                    cv2.circle(img_out, (int(center_x), int(center_y)), 3, (0, 0, 255), -1)
 
         width, height, x, y, w, h, rotated_box = calc_width_height(img_detect)
 
