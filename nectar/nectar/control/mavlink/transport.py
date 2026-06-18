@@ -10,7 +10,7 @@
   (single reader, many senders). A 1 Hz heartbeat timer announces the companion.
 
 Frame conventions: the core speaks ENU/FLU (see
-:mod:`nectar.control.ardupilot.types`); this transport converts to the wire's
+:mod:`nectar.control.vehicle.types`); this transport converts to the wire's
 NED/FRD on egress and back to ENU on ingest, exactly as MAVROS does internally.
 """
 
@@ -22,8 +22,12 @@ from typing import Dict, Optional, Union
 
 from pymavlink import mavutil
 
-from nectar.control.ardupilot.transport import MavlinkTransport
-from nectar.control.ardupilot.types import (
+from nectar.control.mavlink.connection import MavlinkConnection
+from nectar.control.mavlink.modes import ArduPilotModeCodec, MavlinkModeCodec
+from nectar.control.mavlink.streams import request_message_intervals
+from nectar.control.types import PoseSource
+from nectar.control.vehicle.transport import VehicleTransport
+from nectar.control.vehicle.types import (
     Attitude,
     DistanceReading,
     GeoPoint,
@@ -35,9 +39,6 @@ from nectar.control.ardupilot.types import (
     Vec3,
     VehicleState,
 )
-from nectar.control.mavlink.connection import MavlinkConnection
-from nectar.control.mavlink.streams import request_message_intervals
-from nectar.control.types import PoseSource
 from nectar.utils.log import OK
 
 _M = mavutil.mavlink
@@ -80,7 +81,7 @@ def _enu_yaw_to_ned(yaw_enu: float) -> float:
     return _normalize_angle(math.pi / 2.0 - yaw_enu)
 
 
-class PymavlinkTransport(MavlinkTransport):
+class PymavlinkTransport(VehicleTransport):
     """Transport that talks MAVLink directly over a :class:`MavlinkConnection`.
 
     Parameters
@@ -88,14 +89,24 @@ class PymavlinkTransport(MavlinkTransport):
     connection : MavlinkConnection, optional
         Pre-built endpoint to share (e.g. with a rangefinder publisher). When
         ``None``, one is created from the drone config in :meth:`attach`.
+    mode_codec : MavlinkModeCodec, optional
+        Firmware-specific flight-mode encode/decode. Defaults to
+        :class:`~nectar.control.mavlink.modes.ArduPilotModeCodec`; PX4 passes a
+        ``Px4ModeCodec``.
     """
 
-    def __init__(self, connection: Optional[MavlinkConnection] = None) -> None:
+    def __init__(
+        self,
+        connection: Optional[MavlinkConnection] = None,
+        mode_codec: Optional[MavlinkModeCodec] = None,
+    ) -> None:
         self._drone = None
         self._config = None
         self._pose_source = PoseSource.GPS
         self._connection = connection
         self._owns_connection = connection is None
+        # Firmware-specific flight-mode handling; ArduPilot by default.
+        self._mode_codec = mode_codec or ArduPilotModeCodec()
 
         self._rx_timer = None
         self._hb_timer = None
@@ -195,6 +206,11 @@ class PymavlinkTransport(MavlinkTransport):
         """The underlying endpoint (shareable with sensor publishers)."""
         return self._connection
 
+    @property
+    def node(self):
+        """The drone's ROS node (used by mode codecs for logging)."""
+        return self._node
+
     # RX path (executor thread)
 
     def _drain_rx(self) -> None:
@@ -215,11 +231,11 @@ class PymavlinkTransport(MavlinkTransport):
             return
         self._last_heartbeat = time.monotonic()
         armed = bool(msg.base_mode & _M.MAV_MODE_FLAG_SAFETY_ARMED)
-        mode = mavutil.mode_string_v10(msg)
+        mode = self._mode_codec.decode_mode(msg)
         self._vehicle_state = VehicleState(
             connected=True,
             armed=armed,
-            guided=(mode == "GUIDED"),
+            guided=self._mode_codec.is_guided(mode),
             mode=mode,
             system_status=msg.system_status,
         )
@@ -242,7 +258,7 @@ class PymavlinkTransport(MavlinkTransport):
 
     def _geoid_separation(self, lat: float, lon: float) -> float:
         """EGM96 geoid undulation N such that ellipsoid = AMSL + N."""
-        from nectar.control.ardupilot.gps_utils import GPSUtils
+        from nectar.control.vehicle.gps_utils import GPSUtils
 
         try:
             return GPSUtils.geoid_height(lat, lon)
@@ -429,19 +445,7 @@ class PymavlinkTransport(MavlinkTransport):
     # Commands
 
     def set_mode(self, mode: str) -> bool:
-        master = self._connection.master
-        mapping = master.mode_mapping() or {}
-        mode_id = mapping.get(mode)
-        if mode_id is None:
-            self._node.get_logger().error(
-                f"Unknown flight mode '{mode}'. Available: {sorted(mapping)}"
-            )
-            return False
-        with self._connection.send_lock:
-            master.mav.set_mode_send(
-                master.target_system, _M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mode_id
-            )
-        return True
+        return self._mode_codec.set_mode(self, mode)
 
     def arm(self) -> bool:
         return self._command_long(_M.MAV_CMD_COMPONENT_ARM_DISARM, 1, 0)
@@ -453,7 +457,7 @@ class PymavlinkTransport(MavlinkTransport):
         return self._command_long(_M.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, float(altitude))
 
     def command_land(self) -> bool:
-        return self.set_mode("LAND")
+        return self.set_mode(self._mode_codec.land_mode)
 
     def set_home(self, current: bool = True) -> bool:
         return self._command_long(_M.MAV_CMD_DO_SET_HOME, 1 if current else 0)

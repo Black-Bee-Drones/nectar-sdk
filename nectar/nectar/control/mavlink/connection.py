@@ -6,6 +6,16 @@ from typing import Optional
 
 from pymavlink import mavutil
 
+_NET_SCHEMES = ("tcp", "tcpin", "udp", "udpin", "udpout", "udpbcast")
+
+
+def normalize_connection_string(device: str) -> str:
+    """Accept both ``scheme://host:port`` and pymavlink's ``scheme:host:port``."""
+    for scheme in _NET_SCHEMES:
+        if device.startswith(f"{scheme}://"):
+            return f"{scheme}:{device[len(scheme) + 3 :]}"
+    return device
+
 
 class MavlinkConnection:
     """
@@ -81,7 +91,9 @@ class MavlinkConnection:
         Parameters
         ----------
         device : str
-            Connection string passed to ``mavutil.mavlink_connection``.
+            Connection string. Both ``tcp:host:port`` (pymavlink) and
+            ``tcp://host:port`` (URL form) are accepted; serial uses a device
+            path such as ``/dev/ttyUSB0``.
         baud : int, optional
             Serial baud rate. Ignored for non-serial connections.
 
@@ -90,6 +102,7 @@ class MavlinkConnection:
         TimeoutError
             If no FCU heartbeat is received within ``heartbeat_timeout``.
         """
+        device = normalize_connection_string(device)
         self.master = mavutil.mavlink_connection(
             device,
             baud=baud,

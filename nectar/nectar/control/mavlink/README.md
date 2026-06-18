@@ -1,8 +1,10 @@
 # Direct MAVLink Control
 
-A direct [pymavlink](https://mavlink.io/en/mavgen_python/) control path for ArduPilot vehicles, for cases where the [MAVROS](../mavros/README.md) bridge is unavailable, undesired, or insufficient (lighter companion stack, custom plugins, or a single owner of the FCU serial port).
+A direct [pymavlink](https://mavlink.io/en/mavgen_python/) control path for ArduPilot **and PX4** vehicles, for cases where the [MAVROS](../mavros/README.md) bridge is unavailable, undesired, or insufficient (lighter companion stack, custom plugins, or a single owner of the FCU serial port).
 
 `MavlinkDrone` is the same ArduPilot vehicle as [`MavrosDrone`](../mavros/drone.py), reached over a different transport. Both subclass the shared [`ArduPilotDrone`](../ardupilot/README.md) core, so **all flight/navigation logic is identical** — only the wire plumbing differs.
+
+`PymavlinkTransport` is **firmware-neutral**: an injected [`MavlinkModeCodec`](modes.py) isolates the one firmware difference (flight-mode encode/decode). `ArduPilotModeCodec` (default, `SET_MODE` + pymavlink `mode_mapping()`) backs `MavlinkDrone`; [`Px4ModeCodec`](../px4/mavlink_drone.py) (`MAV_CMD_DO_SET_MODE` with PX4 `(main, sub)` modes) backs [`Px4MavlinkDrone`](../px4/mavlink_drone.py). Telemetry, setpoints, arming, params and stream rates are shared unchanged.
 
 ```mermaid
 classDiagram
