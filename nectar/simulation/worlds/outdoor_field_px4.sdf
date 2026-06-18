@@ -1,47 +1,40 @@
 <?xml version="1.0" ?>
 <!--
-  Nectar SDK — Outdoor field world for Gazebo Harmonic.
+  Nectar SDK — outdoor field world for PX4 SITL (Gazebo Harmonic).
 
-  Uses the iris_with_gimbal model from ardupilot_gazebo with added front
-  RGBD camera (simulates D435i), downward RGB camera, and lidar rangefinder.
+  Mirrors outdoor_field.sdf (ArduPilot) so both firmwares fly the same arena:
+  same ground, sun, GPS origin, gate and obstacle field. The drone+sensors are
+  not embedded here — PX4 spawns x500_nectar (which carries the matched sensor
+  suite) at startup. Gazebo systems are loaded by PX4 via server.config (see
+  src/modules/simulation/gz_bridge/server.config), so this file declares only
+  scene/scenery — no <plugin> tags — to follow PX4 conventions.
 
-  GPS enabled via NavSat plugin.  Default SITL coordinates (Canberra).
+  Discovery: install_px4.sh symlinks this file into PX4_GZ_WORLDS so PX4 can
+  start it via PX4_GZ_WORLD=outdoor_field_px4.
 
   Usage:
-    gz sim -v4 -r outdoor_field.sdf
+    PX4_GZ_WORLD=outdoor_field_px4 PX4_SIM_MODEL=gz_x500_nectar make px4_sitl
 -->
 <sdf version="1.9">
-  <world name="outdoor_field">
+  <world name="outdoor_field_px4">
 
-    <!-- Physics -->
-    <physics name="1ms" type="ignore">
-      <max_step_size>0.001</max_step_size>
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
     </physics>
-
-    <!-- Plugins -->
-    <plugin filename="gz-sim-physics-system"
-      name="gz::sim::systems::Physics"/>
-    <plugin filename="gz-sim-sensors-system"
-      name="gz::sim::systems::Sensors">
-      <render_engine>ogre2</render_engine>
-    </plugin>
-    <plugin filename="gz-sim-user-commands-system"
-      name="gz::sim::systems::UserCommands"/>
-    <plugin filename="gz-sim-scene-broadcaster-system"
-      name="gz::sim::systems::SceneBroadcaster"/>
-    <plugin filename="gz-sim-imu-system"
-      name="gz::sim::systems::Imu"/>
-    <plugin filename="gz-sim-navsat-system"
-      name="gz::sim::systems::NavSat"/>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
 
     <scene>
       <ambient>1.0 1.0 1.0</ambient>
       <background>0.8 0.8 0.8</background>
+      <shadows>true</shadows>
       <sky></sky>
     </scene>
 
-    <!-- ── GUI — camera feeds + topic echo inside Gazebo window ──── -->
+    <!-- ── GUI — same camera feeds as outdoor_field.sdf so both firmwares look identical ── -->
     <gui fullscreen="0">
       <plugin filename="MinimalScene" name="3D View">
         <gz-gui>
@@ -127,7 +120,6 @@
         <real_time_factor>true</real_time_factor>
         <iterations>false</iterations>
       </plugin>
-      <!-- Camera feeds — start collapsed, expand to view -->
       <plugin filename="ImageDisplay" name="Front Camera RGB">
         <gz-gui>
           <property type="string" key="state">docked_collapsed</property>
@@ -146,7 +138,6 @@
         </gz-gui>
         <topic>/down_camera</topic>
       </plugin>
-      <!-- Topic echo — select any Gazebo topic to view live data -->
       <plugin filename="TopicEcho" name="Topic Echo">
         <gz-gui>
           <property type="string" key="state">docked_collapsed</property>
@@ -154,16 +145,16 @@
       </plugin>
     </gui>
 
-    <!-- GPS origin — matches ArduPilot SITL default (Canberra) -->
+    <!-- GPS origin — matches outdoor_field.sdf (ArduPilot SITL default, Canberra) -->
     <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
       <latitude_deg>-35.363262</latitude_deg>
       <longitude_deg>149.165237</longitude_deg>
       <elevation>584</elevation>
       <heading_deg>0</heading_deg>
-      <surface_model>EARTH_WGS84</surface_model>
     </spherical_coordinates>
 
-    <!-- Sunlight -->
     <light type="directional" name="sun">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 10 0 0 0</pose>
@@ -178,7 +169,6 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- Ground plane -->
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
@@ -205,152 +195,14 @@
       </link>
     </model>
 
-    <!-- ── Obstacle zone (centered around x=15, clear of takeoff) ── -->
-    <!-- Shared scenery (gate + obstacle field) — also used by the PX4 world -->
+    <!-- Shared scenery (gate + obstacle field) — same model the ArduPilot world uses -->
     <include>
       <uri>model://outdoor_field_scenery</uri>
     </include>
 
-    <!-- Iris quadcopter with gimbal (ardupilot_gazebo model) -->
-    <include>
-      <uri>model://iris_with_gimbal</uri>
-      <name>iris</name>
-      <pose degrees="true">0 0 0.195 0 0 0</pose>
-    </include>
-
-    <!-- ── Front RGBD camera (simulates RealSense D435i) ────────── -->
-    <model name="front_camera">
-      <static>false</static>
-      <pose relative_to="iris::iris_with_standoffs::base_link">0.18 0 -0.02 0 0 0</pose>
-      <link name="link">
-        <inertial>
-          <mass>0.07</mass>
-          <inertia>
-            <ixx>1e-5</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>1e-5</iyy><iyz>0</iyz>
-            <izz>1e-5</izz>
-          </inertia>
-        </inertial>
-        <visual name="visual">
-          <geometry><box><size>0.025 0.09 0.025</size></box></geometry>
-          <material>
-            <ambient>0.5 0.5 0.5 1</ambient>
-            <diffuse>0.6 0.6 0.6 1</diffuse>
-          </material>
-        </visual>
-        <sensor name="front_rgbd" type="rgbd_camera">
-          <always_on>true</always_on>
-          <update_rate>15</update_rate>
-          <topic>/front_camera</topic>
-          <camera>
-            <horizontal_fov>1.5184</horizontal_fov>
-            <image>
-              <width>640</width>
-              <height>480</height>
-              <format>R8G8B8</format>
-            </image>
-            <clip>
-              <near>0.1</near>
-              <far>10.0</far>
-            </clip>
-            <depth_camera>
-              <clip>
-                <near>0.1</near>
-                <far>10.0</far>
-              </clip>
-            </depth_camera>
-          </camera>
-        </sensor>
-      </link>
-    </model>
-    <joint name="front_camera_joint" type="fixed">
-      <parent>iris::iris_with_standoffs::base_link</parent>
-      <child>front_camera::link</child>
-    </joint>
-
-    <!-- ── Downward RGB camera (simulates Arducam) ─────────────── -->
-    <model name="down_camera">
-      <static>false</static>
-      <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.04 0 1.5708 0</pose>
-      <link name="link">
-        <inertial>
-          <mass>0.03</mass>
-          <inertia>
-            <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>1e-6</iyy><iyz>0</iyz>
-            <izz>1e-6</izz>
-          </inertia>
-        </inertial>
-        <visual name="visual">
-          <geometry><box><size>0.02 0.02 0.015</size></box></geometry>
-          <material>
-            <ambient>0.2 0.2 0.2 1</ambient>
-            <diffuse>0.3 0.3 0.3 1</diffuse>
-          </material>
-        </visual>
-        <sensor name="down_rgb" type="camera">
-          <always_on>true</always_on>
-          <update_rate>15</update_rate>
-          <topic>/down_camera</topic>
-          <camera>
-            <horizontal_fov>1.047</horizontal_fov>
-            <image>
-              <width>640</width>
-              <height>480</height>
-              <format>R8G8B8</format>
-            </image>
-            <clip>
-              <near>0.1</near>
-              <far>50.0</far>
-            </clip>
-          </camera>
-        </sensor>
-      </link>
-    </model>
-    <joint name="down_camera_joint" type="fixed">
-      <parent>iris::iris_with_standoffs::base_link</parent>
-      <child>down_camera::link</child>
-    </joint>
-
-    <!-- ── Downward lidar rangefinder ───────────────────────────── -->
-    <model name="lidar_rangefinder">
-      <static>false</static>
-      <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.05 0 1.5708 0</pose>
-      <link name="link">
-        <inertial>
-          <mass>0.03</mass>
-          <inertia>
-            <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>1e-6</iyy><iyz>0</iyz>
-            <izz>1e-6</izz>
-          </inertia>
-        </inertial>
-        <sensor name="lidar_rangefinder" type="gpu_lidar">
-          <always_on>true</always_on>
-          <update_rate>50</update_rate>
-          <topic>/lidar/range</topic>
-          <ray>
-            <scan>
-              <horizontal>
-                <samples>1</samples>
-                <resolution>1</resolution>
-                <min_angle>0</min_angle>
-                <max_angle>0</max_angle>
-              </horizontal>
-            </scan>
-            <range>
-              <min>0.1</min>
-              <max>40.0</max>
-              <resolution>0.01</resolution>
-            </range>
-          </ray>
-        </sensor>
-      </link>
-    </model>
-    <joint name="lidar_joint" type="fixed">
-      <parent>iris::iris_with_standoffs::base_link</parent>
-      <child>lidar_rangefinder::link</child>
-    </joint>
+    <!-- Drone is NOT embedded; PX4 spawns x500_nectar at startup
+         (PX4_SIM_MODEL=gz_x500_nectar). x500_nectar carries the
+         matched sensor suite (front RGBD, down RGB, down lidar). -->
 
   </world>
 </sdf>
