@@ -1,4 +1,4 @@
-"""GPS helpers for the ArduPilot core"""
+"""GPS helpers for the vehicle core"""
 
 from math import cos, radians
 from typing import Optional, Tuple
@@ -6,13 +6,13 @@ from typing import Optional, Tuple
 from geopy.distance import geodesic
 from pygeodesy.geoids import GeoidPGM
 
-from nectar.control.ardupilot.types import GlobalTarget
+from nectar.control.vehicle.types import GlobalTarget
 
 _EARTH_RADIUS_M = 6371000.0
 
 
 class GPSUtils:
-    """GPS utilities for ArduPilot navigation."""
+    """GPS utilities for vehicle navigation."""
 
     _egm96: Optional[GeoidPGM] = None
 

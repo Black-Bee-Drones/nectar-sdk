@@ -1,6 +1,8 @@
 # ArduPilot Vehicle Core
 
-Transport-agnostic ArduPilot flight logic shared by every ArduPilot drone in the SDK. `MavrosDrone` and `MavlinkDrone` are the **same vehicle reached over two different transports** — all navigation, takeoff/land detection, GPS math, parameter handling, and PID/setpoint control live here exactly once. The transport READMEs ([mavros](../mavros/README.md), [mavlink](../mavlink/README.md)) cover only their wire specifics and link back here for behavior.
+ArduPilot firmware specialization of the shared [vehicle core](../vehicle/README.md). `ArduPilotDrone` adds ArduPilot's flight semantics — GUIDED-mode arming, the `GUID_OPTIONS`/`WPNAV` setpoint configuration, and native `RTL`-mode return-to-launch — on top of [`VehicleDrone`](../vehicle/drone.py); the transport-agnostic navigation, takeoff/land detection, GPS math, and PID control are inherited from the core. `MavrosDrone` and `MavlinkDrone` are the **same vehicle reached over two different transports** ([mavros](../mavros/README.md), [mavlink](../mavlink/README.md)).
+
+> The navigation, movement, frame, altitude, and PID sections below document the **shared** vehicle-core behavior and apply to every vehicle (ArduPilot and PX4 alike); the parameter handling, GUIDED-mode controllers, and `WPNAV`/`RTL` parameters are ArduPilot-specific. PX4 deviations are in [px4/README.md](../px4/README.md).
 
 ## Design
 

@@ -1,11 +1,6 @@
-"""ArduPilot firmware specialization.
+"""Firmware-agnostic vehicle core."""
 
-The shared vehicle core (plain types, transport ABC, navigator) now lives in
-:mod:`nectar.control.vehicle`. The plain types are re-exported here for
-backward compatibility; ``SetpointNavConfig`` is ArduPilot-specific.
-"""
-
-from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
+from nectar.control.vehicle.transport import VehicleTransport
 from nectar.control.vehicle.types import (
     Attitude,
     DistanceReading,
@@ -20,6 +15,7 @@ from nectar.control.vehicle.types import (
 )
 
 __all__ = [
+    "VehicleTransport",
     "Attitude",
     "DistanceReading",
     "GeoPoint",
@@ -27,7 +23,6 @@ __all__ = [
     "LocalPose",
     "LocalTarget",
     "SensorOrientation",
-    "SetpointNavConfig",
     "TargetFrame",
     "Vec3",
     "VehicleState",

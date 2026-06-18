@@ -1,4 +1,4 @@
-"""types for the ArduPilot vehicle core.
+"""types for the vehicle core.
 
 Conventions
 -----------

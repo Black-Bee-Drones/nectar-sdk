@@ -1,4 +1,4 @@
-"""Takeoff/land settle detection for ArduPilot vehicles."""
+"""Takeoff/land settle detection for multicopter vehicles."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, Tuple
 from nectar.utils.log import ARROW
 
 if TYPE_CHECKING:
-    from nectar.control.ardupilot.drone import ArduPilotDrone
+    from nectar.control.vehicle.drone import VehicleDrone
 
 
 class FlightSequencer:
     """Liftoff/touchdown detection with size-agnostic velocity gating."""
 
-    # ArduCopter sets HEARTBEAT.system_status = MAV_STATE_ACTIVE only when
+    # The FCU sets HEARTBEAT.system_status = MAV_STATE_ACTIVE only when
     # armed AND not landed; useful for in-flight detection.
     _MAV_STATE_ACTIVE = 4
     _AIRBORNE_THRESHOLD = 0.5  # m, altitude fallback for is_airborne
@@ -35,7 +35,7 @@ class FlightSequencer:
     _LAND_SETTLE_WINDOW = 1.2  # s, rolling window for descent velocity
     _LAND_STOP_VELOCITY = 0.05  # m/s, descent rate below which touchdown is declared
 
-    def __init__(self, drone: "ArduPilotDrone") -> None:
+    def __init__(self, drone: "VehicleDrone") -> None:
         self._drone = drone
 
     @property
@@ -166,10 +166,5 @@ class FlightSequencer:
         return lifted, last_alt
 
     def _settle_band(self, climb: float) -> float:
-        """Altitude tolerance below target for declaring the takeoff settled.
-
-        Scales with the commanded climb so short hops use a tight band and tall
-        climbs are not forced to hit the target exactly (the post-settle altitude
-        adjustment refines the remainder).
-        """
+        """Altitude tolerance below target for declaring the takeoff settled."""
         return min(self._SETTLE_ALT_TOLERANCE, self._SETTLE_ALT_FRACTION * climb)

@@ -4,7 +4,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
-from nectar.control.ardupilot.types import DistanceReading, SensorOrientation
 from nectar.control.base import BaseDrone
 from nectar.control.capabilities import Capability
 from nectar.control.config import (
@@ -57,16 +56,18 @@ from nectar.control.types import (
     PoseSource,
     RTLMethod,
 )
+from nectar.control.vehicle.types import DistanceReading, SensorOrientation
 
 _LAZY_ATTRS = {
     # Concrete drones (heavy: MAVROS / olympe / cflib)
     "MavrosDrone": "nectar.control.mavros.drone",
-    "ArduPilotNavigator": "nectar.control.ardupilot.navigator",
+    "VehicleDrone": "nectar.control.vehicle.drone",
+    "VehicleNavigator": "nectar.control.vehicle.navigator",
     "MavlinkDrone": "nectar.control.mavlink.drone",
     "BebopDrone": "nectar.control.bebop.drone",
     "CrazyflieDrone": "nectar.control.crazyflie.drone",
     # GPS helpers (pull geopy + pygeodesy; only used for GPS missions)
-    "GPSUtils": "nectar.control.ardupilot.gps_utils",
+    "GPSUtils": "nectar.control.vehicle.gps_utils",
     # Camera-based obstacle detectors (pyrealsense2 / sklearn)
     "DepthObstacleDetector": "nectar.control.obstacles.depth_camera",
     # Direct MAVLink connection (pymavlink)
@@ -88,14 +89,15 @@ def __dir__():
 
 
 if TYPE_CHECKING:
-    from nectar.control.ardupilot.gps_utils import GPSUtils
-    from nectar.control.ardupilot.navigator import ArduPilotNavigator
     from nectar.control.bebop.drone import BebopDrone
     from nectar.control.crazyflie.drone import CrazyflieDrone
     from nectar.control.mavlink.connection import MavlinkConnection
     from nectar.control.mavlink.drone import MavlinkDrone
     from nectar.control.mavros.drone import MavrosDrone
     from nectar.control.obstacles.depth_camera import DepthObstacleDetector
+    from nectar.control.vehicle.drone import VehicleDrone
+    from nectar.control.vehicle.gps_utils import GPSUtils
+    from nectar.control.vehicle.navigator import VehicleNavigator
 
 
 __all__ = [
@@ -135,8 +137,9 @@ __all__ = [
     "PositionPIDConfig",
     "SetpointNavConfig",
     "BaseDrone",
+    "VehicleDrone",
     "MavrosDrone",
-    "ArduPilotNavigator",
+    "VehicleNavigator",
     "MavlinkDrone",
     "BebopDrone",
     "CrazyflieDrone",

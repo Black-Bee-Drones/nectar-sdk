@@ -2,8 +2,8 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
-from nectar.control.ardupilot.types import SensorOrientation
 from nectar.control.types import PoseSource
+from nectar.control.vehicle.types import SensorOrientation
 
 # ArduPilot navigation PID/setpoint presets
 _ARDUPILOT_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "ardupilot", "config")
