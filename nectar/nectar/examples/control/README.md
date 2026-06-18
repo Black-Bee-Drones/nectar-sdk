@@ -2,21 +2,24 @@
 
 | File | Description | Key args |
 |------|-------------|------|
-| `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone {mavros,mavlink,bebop,crazyflie}` · `--mode {velocity,hover,position}` · `--connection` (mavlink) · `--height --side --velocity --precision --hover-time --cf-name --backend` |
+| `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone {mavros,mavlink,px4,px4_mavlink,px4_dds,bebop,crazyflie}` · `--env {outdoor,indoor}` · `--mode {velocity,hover,position}` · `--connection` (mavlink/px4_mavlink) · `--height --side --velocity --precision --hover-time --cf-name --backend` |
 | `sensors.py` | Monitor GPS/vision/local data | `--source gps\|vision` |
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |
-| `navigation.py` | ArduPilot navigation test suite | `--drone {mavros,mavlink}` · `--mode {indoor,outdoor}` · `--connection` · `--strategy --test --distance` (see below) |
-| `interactive_navigation.py` | Interactive REPL — type waypoints live | `--drone {mavros,mavlink}` · `--mode {indoor,outdoor}` · `--connection --strategy --altitude --no-takeoff` |
+| `navigation.py` | ArduPilot/PX4 navigation test suite | `--drone {mavros,mavlink,px4}` · `--mode {indoor,outdoor}` · `--connection` · `--strategy --test --distance` (see below) |
+| `interactive_navigation.py` | Interactive REPL — type waypoints live | `--drone {mavros,mavlink,px4,px4_mavlink,px4_dds}` · `--mode {indoor,outdoor}` · `--connection --strategy --altitude --no-takeoff` |
 | `servo_test.py` | Interactive REPL — pre-flight servo / PWM tester via `MAV_CMD_DO_SET_SERVO` | `--channel --hold --release` |
 | `obstacles.py` | Depth-camera obstacle-aware navigation (RealSense) | run directly: `python3 obstacles.py` |
 
-> `--mode` differs per script: `basic.py` selects the **flight pattern** (`velocity`/`hover`/`position`); `navigation.py` / `interactive_navigation.py` select the **pose source** (`indoor` = vision, `outdoor` = GPS). `--connection` overrides the MAVLink endpoint and applies only to `--drone mavlink`.
+> Pose source vs flight pattern: in `basic.py`, `--env {outdoor,indoor}` selects the **pose source** (outdoor = GPS, indoor = vision — match the sim's `ENV=`) and `--mode` selects the **flight pattern** (`velocity`/`hover`/`position`). In `navigation.py` / `interactive_navigation.py`, `--mode {indoor,outdoor}` selects the pose source. `--connection` overrides the connection string for the direct-pymavlink drones `--drone mavlink` (ArduPilot, e.g. `tcp:127.0.0.1:5762`) and `--drone px4_mavlink` (PX4, e.g. `udp:0.0.0.0:14540`); `--drone px4` (MAVROS) uses a `fcu_url` like `udp://:14540@127.0.0.1:14580`.
 
 ## Basic Flight
 
 ```bash
-# MAVROS -- velocity box at 2m altitude
+# MAVROS -- velocity box at 2m altitude (outdoor / GPS, default)
 python3 basic.py --drone mavros --height 2.0
+
+# MAVROS indoor (vision pose, GPS-denied) -- position box
+python3 basic.py --drone mavros --env indoor --mode position --height 2.0
 
 # Crazyflie -- hover test in simulation
 python3 basic.py --drone crazyflie --mode hover --height 0.5 --backend sim --hover-time 10
@@ -29,6 +32,15 @@ python3 basic.py --drone crazyflie --mode velocity --height 0.4 --velocity 0.2 -
 
 # Bebop -- velocity box
 python3 basic.py --drone bebop --mode velocity
+
+# PX4 over MAVROS (PX4 SITL: make sim-start FIRMWARE=px4 ENV=outdoor + make sim-bridge FIRMWARE=px4 ENV=outdoor)
+python3 basic.py --drone px4 --height 2.0
+
+# PX4 over direct pymavlink, no MAVROS (sim-bridge ... PROTOCOL=mavlink)
+python3 basic.py --drone px4_mavlink --connection udp:0.0.0.0:14540 --height 2.0
+
+# PX4 over native uXRCE-DDS (sim-bridge ... PROTOCOL=dds runs MicroXRCEAgent)
+python3 basic.py --drone px4_dds --height 2.0
 ```
 
 ### Modes
@@ -56,7 +68,7 @@ python3 pid_simulation.py --plot
 
 ## Navigation
 
-ArduPilot only — `--drone mavros|mavlink` (default `mavros`). `--mode indoor` uses the vision pose source, `--mode outdoor` (default) uses GPS.
+ArduPilot or PX4 — `--drone mavros|mavlink|px4` (default `mavros`). `--mode indoor` uses the vision pose source, `--mode outdoor` (default) uses GPS.
 
 ```bash
 # Full outdoor flight (default: PID strategy)

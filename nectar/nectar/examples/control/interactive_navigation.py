@@ -25,6 +25,9 @@ from nectar.control import (
     MoveReference,
     NavigationMethod,
     PoseSource,
+    Px4DdsConfig,
+    Px4MavlinkConfig,
+    Px4MavrosConfig,
 )
 
 log = logging.getLogger("interactive_navigation")
@@ -74,6 +77,18 @@ class InteractiveNav:
             if getattr(args, "connection", None):
                 kwargs["connection_string"] = args.connection
             config = MavlinkConfig(**kwargs)
+        elif args.drone == "px4":
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if getattr(args, "connection", None):
+                kwargs["connection_string"] = args.connection
+            config = Px4MavrosConfig(**kwargs)
+        elif args.drone == "px4_mavlink":
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if getattr(args, "connection", None):
+                kwargs["connection_string"] = args.connection
+            config = Px4MavlinkConfig(**kwargs)
+        elif args.drone == "px4_dds":
+            config = Px4DdsConfig(pose_source=pose_source, start_driver=False)
         else:
             config = MavrosConfig(pose_source=pose_source, start_driver=False)
         self.drone = DroneFactory.create(args.drone, config)
@@ -293,12 +308,15 @@ def parse_args() -> argparse.Namespace:
             "  help         → full command list\n"
         ),
     )
-    parser.add_argument("--drone", choices=["mavros", "mavlink"], default="mavros")
+    parser.add_argument(
+        "--drone", choices=["mavros", "mavlink", "px4", "px4_mavlink", "px4_dds"], default="mavros"
+    )
     parser.add_argument("--mode", choices=["indoor", "outdoor"], default="outdoor")
     parser.add_argument(
         "--connection",
         default=None,
-        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
+        help="MAVLink endpoint override (mavlink/px4_mavlink), e.g. tcp:127.0.0.1:5762 "
+        "(ArduPilot SITL) or udp:0.0.0.0:14540 (PX4 SITL)",
     )
     parser.add_argument("--no-takeoff", action="store_true", help="Hand-held testing")
     parser.add_argument(
