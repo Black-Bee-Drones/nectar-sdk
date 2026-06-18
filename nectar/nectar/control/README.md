@@ -8,9 +8,11 @@ Protocol-based drone control for ROS 2. `DroneFactory` builds a drone by key beh
 
 | README | Scope |
 |--------|-------|
-| [ardupilot/](ardupilot/README.md) | Shared ArduPilot vehicle core: navigation, frames, takeoff/land, RTL, PID/setpoint, GPS/EGM96, parameters |
-| [mavros/](mavros/README.md) | MAVROS transport (`MavrosDrone`) |
-| [mavlink/](mavlink/README.md) | Direct pymavlink transport (`MavlinkDrone`) |
+| [vehicle/](vehicle/README.md) | Firmware-agnostic vehicle core: navigation, frames, takeoff/land, GPS/EGM96, PID, firmware hooks |
+| [ardupilot/](ardupilot/README.md) | ArduPilot specialization + shared flight behavior: GUIDED, RTL, PID/setpoint, GPS/EGM96 |
+| [px4/](px4/README.md) | PX4 specialization: OFFBOARD setpoint streaming, AUTO.LAND/RTL; MAVROS / direct-MAVLink / uXRCE-DDS backends |
+| [mavros/](mavros/README.md) | MAVROS transport (`MavrosDrone`, `Px4MavrosDrone`) |
+| [mavlink/](mavlink/README.md) | Firmware-neutral pymavlink transport (`MavlinkDrone`, `Px4MavlinkDrone`) |
 | [localization/](localization/README.md) | Indoor VSLAM external-nav: Isaac producer + vision-pose bridge |
 | [obstacles/](obstacles/README.md) | Obstacle detection + avoidance strategies |
 | [pid/](pid/README.md) | PID controller and tuning |
@@ -90,7 +92,7 @@ classDiagram
 
     class ArduPilotDrone {
         <<abstract>>
-        -_transport MavlinkTransport
+        -_transport VehicleTransport
         -_navigator ArduPilotNavigator
         -_sequencer FlightSequencer
         -_pid_config Optional~PositionPIDConfig~
@@ -125,7 +127,7 @@ classDiagram
         +from_config(config, executor)$ CrazyflieDrone
     }
 
-    class MavlinkTransport {
+    class VehicleTransport {
         <<abstract>>
         +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() command_land() set_param()
@@ -199,9 +201,9 @@ classDiagram
     BaseDrone <|-- CrazyflieDrone
     ArduPilotDrone <|-- MavrosDrone
     ArduPilotDrone <|-- MavlinkDrone
-    ArduPilotDrone o-- MavlinkTransport
-    MavlinkTransport <|.. MavrosTransport
-    MavlinkTransport <|.. PymavlinkTransport
+    ArduPilotDrone o-- VehicleTransport
+    VehicleTransport <|.. MavrosTransport
+    VehicleTransport <|.. PymavlinkTransport
     MavrosDrone ..> MavrosTransport : builds
     MavlinkDrone ..> PymavlinkTransport : builds
     BaseDrone *-- ObstacleManager
@@ -224,14 +226,17 @@ Three usage patterns share the same primitives:
 - **Yasmin mission**: call `nectar.use_executor(YasminNode.get_instance()._executor)` once at startup. SDK subsystems created afterwards register with the Yasmin executor instead of spawning a second spin thread.
 - **GUI**: `ROSExecutor.start()` registers its `MultiThreadedExecutor` with `nectar.runtime`. Drones/handlers created from inside tabs share that executor automatically.
 
-## ArduPilot Transport Architecture
+## Transport Architecture
 
-`MavrosDrone` and `MavlinkDrone` are the **same ArduPilot vehicle reached over two transports**. All flight/navigation logic lives once in the transport-agnostic [`ArduPilotDrone`](ardupilot/README.md) core, which reads telemetry and issues commands/setpoints through a pluggable `MavlinkTransport` interface:
+Both firmwares are reached over interchangeable transports behind one core. All flight/navigation logic lives once in the transport-agnostic [`VehicleDrone`](vehicle/README.md); firmware specializations ([`ArduPilotDrone`](ardupilot/README.md), [`Px4Drone`](px4/README.md)) add only firmware semantics, reading telemetry and issuing commands/setpoints through a pluggable `VehicleTransport`:
 
-- `MavrosTransport` — subscriptions → telemetry, service clients → commands, publishers → setpoints (requires a running `mavros_node`).
-- `PymavlinkTransport` — owns the FCU link directly; a ROS timer drains the RX stream, commands/setpoints go out via `mav.*_send`. Indoor it auto-starts a `VisionPoseBridge` to feed the EKF (replacing `vision_to_mavros`). See [mavlink/README.md](mavlink/README.md).
+- `MavrosTransport` — subscriptions → telemetry, service clients → commands, publishers → setpoints (requires a running `mavros_node`). Shared by `MavrosDrone` (ArduPilot) and `Px4MavrosDrone`.
+- `PymavlinkTransport` — owns the FCU link directly (a ROS timer drains RX; commands/setpoints go out via `mav.*_send`). Firmware-neutral: an injected `MavlinkModeCodec` isolates the only firmware difference — flight-mode encode/decode. `ArduPilotModeCodec` (default, `SET_MODE`) backs `MavlinkDrone`; `Px4ModeCodec` (`MAV_CMD_DO_SET_MODE`) backs `Px4MavlinkDrone`. Indoor it auto-starts a `VisionPoseBridge` to feed the EKF. See [mavlink/README.md](mavlink/README.md).
+- `Px4DdsTransport` — native PX4 uORB over the uXRCE-DDS bridge (`px4_msgs`), for `Px4DdsDrone`. See [px4/README.md](px4/README.md).
 
-The core operates on plain, ROS-free types (`ardupilot/types.py`); each transport converts its wire types (`mavros_msgs`/`geometry_msgs` or raw MAVLink) to/from these. ENU/FLU and radians throughout; transports handle NED/FRD conversion.
+So PX4 offers three backends (`px4` = MAVROS, `px4_mavlink` = direct MAVLink, `px4_dds` = uXRCE-DDS) and ArduPilot two (`mavros`, `mavlink`) — all sharing the same `Px4Drone` / `ArduPilotDrone` flight logic, so missions are backend-agnostic.
+
+The core operates on plain, ROS-free types; each transport converts its wire types (`mavros_msgs`/`geometry_msgs`, raw MAVLink, or `px4_msgs`) to/from these. ENU/FLU and radians throughout; transports handle NED/FRD conversion.
 
 ### Capabilities
 
@@ -240,6 +245,7 @@ Each drone declares a `frozenset[Capability]` (see `capabilities.py`); query wit
 Declared sets per drone:
 
 - `ArduPilotDrone` (MAVROS/MAVLink): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `SERVO`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`.
+- `Px4Drone` (`px4`, `px4_mavlink`, `px4_dds`): same as ArduPilot minus `SERVO` (PX4 exposes no equivalent servo path); `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`. Capabilities are identical across the three PX4 backends.
 - `CrazyflieDrone`: `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `PARAMS`.
 - `BebopDrone`: `VELOCITY_BODY`, `NATIVE_RTL`.
 
@@ -257,8 +263,11 @@ DroneFactory.register(drone_type: str, factory_func: Callable)
 ```
 
 **Supported Types**:
-- `mavros`: ArduPilot/PX4 via MAVROS
+- `mavros`: ArduPilot via MAVROS
 - `mavlink`: ArduPilot via direct pymavlink (no MAVROS)
+- `px4`: PX4 via MAVROS (OFFBOARD setpoint streaming)
+- `px4_mavlink`: PX4 via direct pymavlink (no MAVROS)
+- `px4_dds`: PX4 via native uXRCE-DDS (`px4_msgs`)
 - `bebop`: Parrot Bebop 2
 - `crazyflie`: Bitcraze Crazyflie
 
@@ -434,9 +443,11 @@ drone.land()
 
 ## Implementation Modules
 
-- **ardupilot/**: Shared transport-agnostic ArduPilot core (ArduPilotDrone, navigator, target computer, GPS utils, sequencer, transport ABC, plain types)
-- **mavros/**: MAVROS transport (MavrosTransport, MavrosDrone)
-- **mavlink/**: Direct pymavlink transport (PymavlinkTransport, MavlinkDrone, connection, streams, vision bridge)
+- **vehicle/**: Firmware-agnostic vehicle core (VehicleDrone, VehicleNavigator, target computer, GPS utils, sequencer, VehicleTransport ABC, plain types)
+- **ardupilot/**: ArduPilot specialization (ArduPilotDrone: GUIDED, WPNAV/GUID_OPTIONS setpoint config, native RTL)
+- **px4/**: PX4 specialization (Px4Drone: OFFBOARD setpoint pump, AUTO.LAND/RTL; backends Px4MavrosDrone, Px4MavlinkDrone, Px4DdsDrone; shared PX4 mode map `modes.py`)
+- **mavros/**: MAVROS transport (MavrosTransport, MavrosDrone, Px4MavrosDrone)
+- **mavlink/**: Firmware-neutral pymavlink transport (PymavlinkTransport + mode codecs, MavlinkDrone, connection, streams, vision bridge)
 - **bebop/**: Parrot Bebop 2 implementation (BebopDrone, velocity control, acrobatic maneuvers)
 - **crazyflie/**: Bitcraze Crazyflie implementation
 - **localization/**: Indoor VSLAM external-nav (MavrosVisionRelay, vision_pose_node, Isaac launches, RViz)
