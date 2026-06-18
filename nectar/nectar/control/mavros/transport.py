@@ -25,8 +25,10 @@ from sensor_msgs.msg import NavSatFix, Range
 from std_msgs.msg import Float64
 from tf_transformations import quaternion_from_euler
 
-from nectar.control.ardupilot.transport import MavlinkTransport
-from nectar.control.ardupilot.types import (
+from nectar.control.config import DistanceSensorTopic
+from nectar.control.types import PoseSource
+from nectar.control.vehicle.transport import VehicleTransport
+from nectar.control.vehicle.types import (
     DistanceReading,
     GeoPoint,
     GlobalTarget,
@@ -36,8 +38,6 @@ from nectar.control.ardupilot.types import (
     Vec3,
     VehicleState,
 )
-from nectar.control.config import DistanceSensorTopic
-from nectar.control.types import PoseSource
 from nectar.utils.position_utils import PositionUtils
 from nectar.utils.process import ProcessUtils
 
@@ -59,7 +59,7 @@ _POSITION_MASK = (
 _VELOCITY_MASK = 1479
 
 
-class MavrosTransport(MavlinkTransport):
+class MavrosTransport(VehicleTransport):
     """MAVROS-backed transport for ArduPilot/PX4 flight controllers."""
 
     def __init__(self) -> None:
@@ -287,7 +287,9 @@ class MavrosTransport(MavlinkTransport):
         return "mavros_node"
 
     def driver_command(self) -> str:
-        return f"ros2 launch mavros apm.launch fcu_url:={self._config.connection_string}"
+        # ArduPilot uses apm.launch; PX4 uses px4.launch. Selected via config.
+        launch_file = getattr(self._config, "mavros_launch", "apm.launch")
+        return f"ros2 launch mavros {launch_file} fcu_url:={self._config.connection_string}"
 
     def start_driver(self) -> bool:
         driver_name = self.driver_name()

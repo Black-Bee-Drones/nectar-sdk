@@ -67,6 +67,11 @@ install(DIRECTORY nectar/control/ardupilot/config/
   FILES_MATCHING PATTERN "*.yaml"
 )
 
+install(DIRECTORY nectar/control/px4/config/
+  DESTINATION share/${PROJECT_NAME}/control/px4/config
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
 install(DIRECTORY nectar/interface/images/
   DESTINATION share/${PROJECT_NAME}/interface/images
   FILES_MATCHING PATTERN "*.png"

@@ -41,6 +41,11 @@ DRIVER_INFO: Dict[str, DriverInfo] = {
         node_patterns=["mavros_node", "mavros"],
         session_name="mavros_node",
     ),
+    "px4": DriverInfo(
+        name="MAVROS (PX4)",
+        node_patterns=["mavros_node", "mavros"],
+        session_name="mavros_node",
+    ),
     "bebop": DriverInfo(
         name="Bebop Driver",
         node_patterns=["bebop_driver"],

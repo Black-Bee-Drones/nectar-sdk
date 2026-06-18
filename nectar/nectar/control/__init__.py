@@ -10,6 +10,13 @@ from nectar.control.config import (
     MAVLINK_SITL_CONFIG,
     MAVLINK_SITL_GAZEBO_CONFIG,
     MAVLINK_SITL_VISION_CONFIG,
+    PX4_DDS_SITL_CONFIG,
+    PX4_MAVLINK_SITL_CONFIG,
+    PX4_MAVLINK_SITL_GAZEBO_CONFIG,
+    PX4_MAVLINK_SITL_VISION_CONFIG,
+    PX4_SITL_CONFIG,
+    PX4_SITL_GAZEBO_CONFIG,
+    PX4_SITL_VISION_CONFIG,
     SITL_CONFIG,
     SITL_GAZEBO_CONFIG,
     SITL_GPS_CONFIG,
@@ -20,6 +27,9 @@ from nectar.control.config import (
     DroneConfig,
     MavlinkConfig,
     MavrosConfig,
+    Px4DdsConfig,
+    Px4MavlinkConfig,
+    Px4MavrosConfig,
 )
 from nectar.control.driver_monitor import (
     DRIVER_INFO,
@@ -61,6 +71,9 @@ from nectar.control.vehicle.types import DistanceReading, SensorOrientation
 _LAZY_ATTRS = {
     # Concrete drones (heavy: MAVROS / olympe / cflib)
     "MavrosDrone": "nectar.control.mavros.drone",
+    "Px4MavrosDrone": "nectar.control.px4.mavros_drone",
+    "Px4MavlinkDrone": "nectar.control.px4.mavlink_drone",
+    "Px4DdsDrone": "nectar.control.px4.dds_drone",
     "VehicleDrone": "nectar.control.vehicle.drone",
     "VehicleNavigator": "nectar.control.vehicle.navigator",
     "MavlinkDrone": "nectar.control.mavlink.drone",
@@ -95,6 +108,9 @@ if TYPE_CHECKING:
     from nectar.control.mavlink.drone import MavlinkDrone
     from nectar.control.mavros.drone import MavrosDrone
     from nectar.control.obstacles.depth_camera import DepthObstacleDetector
+    from nectar.control.px4.dds_drone import Px4DdsDrone
+    from nectar.control.px4.mavlink_drone import Px4MavlinkDrone
+    from nectar.control.px4.mavros_drone import Px4MavrosDrone
     from nectar.control.vehicle.drone import VehicleDrone
     from nectar.control.vehicle.gps_utils import GPSUtils
     from nectar.control.vehicle.navigator import VehicleNavigator
@@ -109,6 +125,9 @@ __all__ = [
     "DroneConfig",
     "MavrosConfig",
     "MavlinkConfig",
+    "Px4MavrosConfig",
+    "Px4MavlinkConfig",
+    "Px4DdsConfig",
     "DistanceSensorTopic",
     "BebopConfig",
     "CrazyflieConfig",
@@ -122,6 +141,13 @@ __all__ = [
     "MAVLINK_SITL_CONFIG",
     "MAVLINK_SITL_GAZEBO_CONFIG",
     "MAVLINK_SITL_VISION_CONFIG",
+    "PX4_SITL_CONFIG",
+    "PX4_SITL_GAZEBO_CONFIG",
+    "PX4_SITL_VISION_CONFIG",
+    "PX4_DDS_SITL_CONFIG",
+    "PX4_MAVLINK_SITL_CONFIG",
+    "PX4_MAVLINK_SITL_GAZEBO_CONFIG",
+    "PX4_MAVLINK_SITL_VISION_CONFIG",
     "DroneFactory",
     "DriverMonitor",
     "DriverStatus",
@@ -139,6 +165,9 @@ __all__ = [
     "BaseDrone",
     "VehicleDrone",
     "MavrosDrone",
+    "Px4MavrosDrone",
+    "Px4MavlinkDrone",
+    "Px4DdsDrone",
     "VehicleNavigator",
     "MavlinkDrone",
     "BebopDrone",

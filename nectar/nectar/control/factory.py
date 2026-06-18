@@ -15,6 +15,9 @@ BuilderFunc = Callable[[DroneConfig, Optional[Executor]], Drone]
 _BUILTINS: Dict[str, Tuple[str, str]] = {
     "mavros": ("nectar.control.mavros.drone", "MavrosDrone"),
     "mavlink": ("nectar.control.mavlink.drone", "MavlinkDrone"),
+    "px4": ("nectar.control.px4.mavros_drone", "Px4MavrosDrone"),
+    "px4_mavlink": ("nectar.control.px4.mavlink_drone", "Px4MavlinkDrone"),
+    "px4_dds": ("nectar.control.px4.dds_drone", "Px4DdsDrone"),
     "bebop": ("nectar.control.bebop.drone", "BebopDrone"),
     "crazyflie": ("nectar.control.crazyflie.drone", "CrazyflieDrone"),
 }
