@@ -87,19 +87,13 @@ show_help() {
     echo "  ./setup.sh docker-run         Run container (selects image, GPU auto)"
     echo "  ./setup.sh docker-exec        Open new shell in running container"
     echo ""
-    echo -e "${BLUE}Simulation:${NC}"
-    echo "  ./setup.sh sim-install        Install ArduPilot SITL"
-    echo "  ./setup.sh sim-install-gazebo Install Gazebo Harmonic + ArduPilot plugin"
-    echo "  ./setup.sh sim-start          Start SITL (headless)"
-    echo "  ./setup.sh sim-start-outdoor  Start SITL in Gazebo mode (outdoor, GPS)"
-    echo "  ./setup.sh sim-start-indoor   Start SITL in Gazebo mode (no GPS, indoor)"
-    echo "  ./setup.sh sim-mavros         Launch MAVROS (connects to running SITL)"
-    echo "  ./setup.sh sim-gazebo         Launch Gazebo + MAVROS"
-    echo "  ./setup.sh sim-outdoor        Launch Gazebo outdoor world + MAVROS"
-    echo "  ./setup.sh sim-outdoor-direct Launch Gazebo outdoor world only (no MAVROS, direct MAVLink)"
-    echo "  ./setup.sh sim-indoor         Launch Gazebo indoor world + MAVROS + vision bridge"
-    echo "  ./setup.sh sim-indoor-direct  Launch Gazebo indoor world + vision source (no MAVROS, direct MAVLink)"
-    echo "  ./setup.sh sim-stop           Stop all simulation processes"
+    echo -e "${BLUE}Simulation (FIRMWARE=ardupilot|px4  ENV=outdoor|indoor  PROTOCOL=mavros|mavlink):${NC}"
+    echo "  ./setup.sh sim-install --firmware F   Install SITL + Gazebo (ardupilot|px4|all)"
+    echo "  ./setup.sh sim-start --firmware F --env E    Terminal 1: start the simulator"
+    echo "  ./setup.sh sim-bridge --firmware F --env E --protocol P   Terminal 2: ROS stack"
+    echo "  ./setup.sh sim-stop                   Stop all simulation processes (both firmwares)"
+    echo "    Defaults: ardupilot / outdoor / mavros. PROTOCOL=mavlink is ArduPilot-only;"
+    echo "    for PX4 use mavros (or dds for native uXRCE-DDS). Extra tokens pass through."
     echo ""
     echo -e "${BLUE}Docker env vars:${NC}"
     echo "  ROS_DISTRO=jazzy              Build for different ROS distro"
@@ -462,18 +456,10 @@ main() {
         realsense)          cmd_realsense ;;
         realsense-verify)   cmd_realsense_verify ;;
 
-        # Simulation
+        # Simulation — unified, parameterized (FIRMWARE/ENV/PROTOCOL via flags)
         sim-install)        cmd_sim_install "$@" ;;
-        sim-install-gazebo) cmd_sim_install_gazebo "$@" ;;
         sim-start)          cmd_sim_start "$@" ;;
-        sim-start-outdoor)  cmd_sim_start_outdoor "$@" ;;
-        sim-start-indoor)   cmd_sim_start_indoor "$@" ;;
-        sim-mavros)         cmd_sim_mavros "$@" ;;
-        sim-gazebo)         cmd_sim_gazebo "$@" ;;
-        sim-outdoor)        cmd_sim_outdoor "$@" ;;
-        sim-outdoor-direct) cmd_sim_outdoor_direct "$@" ;;
-        sim-indoor)         cmd_sim_indoor "$@" ;;
-        sim-indoor-direct)  cmd_sim_indoor_direct "$@" ;;
+        sim-bridge)         cmd_sim_bridge "$@" ;;
         sim-stop)           cmd_sim_stop ;;
 
         # Docker

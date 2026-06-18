@@ -1,7 +1,7 @@
 # Thin wrapper around scripts/setup.sh.
 
 .PHONY: help setup system update ros2 geographiclib ros2-env rosdep-init \
-        drone-mavros drone-crazyflie drone-bebop drone-all \
+        drone-mavros drone-px4 drone-crazyflie drone-bebop drone-all \
         python python-control python-vision python-ai python-interface python-sensors \
         install-all install-full pytorch \
         clone ros2-deps build build-pkg clean verify test \
@@ -10,9 +10,7 @@
         isaac-run \
         full-install \
         lint lint-fix format check \
-        sim-install sim-install-gazebo sim-start sim-start-outdoor \
-        sim-start-indoor sim-mavros sim-gazebo sim-outdoor sim-outdoor-direct \
-        sim-indoor sim-indoor-direct sim-stop
+        sim-install sim-start sim-bridge sim-stop
 
 SETUP := ./scripts/setup.sh
 
@@ -34,6 +32,7 @@ rosdep-init:        ; @$(SETUP) rosdep-init
 
 # Drone drivers
 drone-mavros:       ; @$(SETUP) drone mavros
+drone-px4:          ; @$(SETUP) drone px4
 drone-crazyflie:    ; @$(SETUP) drone crazyflie
 drone-bebop:        ; @$(SETUP) drone bebop
 drone-all:          ; @$(SETUP) drone all
@@ -78,19 +77,24 @@ lint:               ; @cd nectar && ruff check .
 lint-fix:           ; @cd nectar && ruff check --fix .
 format:             ; @cd nectar && ruff format .
 
-# Simulation
-sim-install:        ; @$(SETUP) sim-install
-sim-install-gazebo: ; @$(SETUP) sim-install-gazebo
-sim-start:          ; @$(SETUP) sim-start
-sim-start-outdoor:  ; @$(SETUP) sim-start-outdoor
-sim-start-indoor:   ; @$(SETUP) sim-start-indoor
-sim-mavros:         ; @$(SETUP) sim-mavros
-sim-gazebo:         ; @$(SETUP) sim-gazebo
-sim-outdoor:        ; @$(SETUP) sim-outdoor
-sim-outdoor-direct: ; @$(SETUP) sim-outdoor-direct
-sim-indoor:         ; @$(SETUP) sim-indoor
-sim-indoor-direct:  ; @$(SETUP) sim-indoor-direct
-sim-stop:           ; @$(SETUP) sim-stop
+# Simulation — unified, parameterized. Choose the firmware/environment/protocol
+# with make variables; both firmwares follow the same two-terminal pattern.
+#   FIRMWARE = ardupilot | px4         (sim-install also accepts: all)
+#   ENV      = outdoor   | indoor
+#   PROTOCOL = mavros    | mavlink     (mavlink is ArduPilot-only; px4 also: dds)
+#   ARGS     = extra tokens forwarded to the underlying script/launch
+#
+# Example:
+#   make sim-start  FIRMWARE=px4 ENV=outdoor          # Terminal 1
+#   make sim-bridge FIRMWARE=px4 ENV=outdoor          # Terminal 2
+FIRMWARE ?= ardupilot
+ENV      ?= outdoor
+PROTOCOL ?= mavros
+
+sim-install: ; @$(SETUP) sim-install --firmware $(FIRMWARE) $(ARGS)
+sim-start:   ; @$(SETUP) sim-start --firmware $(FIRMWARE) --env $(ENV) $(ARGS)
+sim-bridge:  ; @$(SETUP) sim-bridge --firmware $(FIRMWARE) --env $(ENV) --protocol $(PROTOCOL) $(ARGS)
+sim-stop:    ; @$(SETUP) sim-stop
 
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install
