@@ -104,6 +104,9 @@ class DriverWorker(QObject):
         if self._drone_type == "mavros":
             conn = self._connection_string or "serial:///dev/ttyUSB0:921600"
             return f"ros2 launch mavros apm.launch fcu_url:={conn}"
+        if self._drone_type == "px4":
+            conn = self._connection_string or "udp://:14540@127.0.0.1:14580"
+            return f"ros2 launch mavros px4.launch fcu_url:={conn}"
         if self._drone_type == "crazyflie":
             backend = self._backend or "cpp"
             cmd = f"ros2 launch crazyflie launch.py backend:={backend}"
@@ -114,11 +117,11 @@ class DriverWorker(QObject):
         return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={ip}"
 
     def _get_session_name(self) -> str:
-        names = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
+        names = {"mavros": "mavros_node", "px4": "mavros_node", "crazyflie": "crazyflie_server"}
         return names.get(self._drone_type, "bebop_driver")
 
     def _get_node_pattern(self) -> str:
-        patterns = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
+        patterns = {"mavros": "mavros_node", "px4": "mavros_node", "crazyflie": "crazyflie_server"}
         return patterns.get(self._drone_type, "bebop_driver")
 
 
@@ -176,7 +179,11 @@ class DriverStatusChecker(QObject):
         try:
             from nectar.utils.process import ProcessUtils
 
-            patterns = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
+            patterns = {
+                "mavros": "mavros_node",
+                "px4": "mavros_node",
+                "crazyflie": "crazyflie_server",
+            }
             pattern = patterns.get(self._drone_type, "bebop_driver")
             is_running = ProcessUtils.is_node_running(pattern, timeout=2.0)
             self.status_checked.emit(is_running)
@@ -431,7 +438,7 @@ class ControlTab(QWidget):
         lbl = QLabel("Drone:")
         lbl.setProperty("secondary", True)
         self._drone_combo = QComboBox()
-        self._drone_combo.addItems(["Mavros", "Mavlink", "Bebop", "Crazyflie"])
+        self._drone_combo.addItems(["Mavros", "Mavlink", "Px4", "Bebop", "Crazyflie"])
         self._drone_combo.setFixedWidth(100)
         self._drone_combo.currentTextChanged.connect(self._on_drone_type_changed)
         type_layout.addWidget(lbl)
@@ -1045,9 +1052,9 @@ class ControlTab(QWidget):
         self._status_checker.status_checked.connect(self._on_driver_status_checked)
         self._checker_thread.start()
 
-    def _is_ardupilot(self) -> bool:
-        """True for ArduPilot drone types that share the flight/telemetry API."""
-        return self._drone_type in ("mavros", "mavlink")
+    def _is_fcu_vehicle(self) -> bool:
+        """True for FCU drone types (ArduPilot/PX4) sharing the flight/telemetry API."""
+        return self._drone_type in ("mavros", "mavlink", "px4")
 
     def _is_direct(self) -> bool:
         """True for drone types whose link opens inside the instance (no driver)."""
@@ -1086,16 +1093,16 @@ class ControlTab(QWidget):
 
         controls_active = can_control and self._controls_enabled
         self._set_velocity_control_enabled(controls_active)
-        self._set_mavros_controls_enabled(controls_active and self._is_ardupilot())
+        self._set_mavros_controls_enabled(controls_active and self._is_fcu_vehicle())
         self._set_bebop_controls_enabled(controls_active and self._drone_type == "bebop")
         self._set_crazyflie_controls_enabled(controls_active and self._drone_type == "crazyflie")
         self._set_position_control_enabled(
-            controls_active and (self._is_ardupilot() or self._drone_type == "crazyflie")
+            controls_active and (self._is_fcu_vehicle() or self._drone_type == "crazyflie")
         )
 
     def _update_status_indicators(self) -> None:
-        self._status_fcu.setVisible(self._is_ardupilot())
-        self._status_armed.setVisible(self._is_ardupilot() or self._drone_type == "crazyflie")
+        self._status_fcu.setVisible(self._is_fcu_vehicle())
+        self._status_armed.setVisible(self._is_fcu_vehicle() or self._drone_type == "crazyflie")
 
     def _set_mavros_controls_enabled(self, enabled: bool) -> None:
         self._arm_btn.setEnabled(enabled)
@@ -1174,7 +1181,7 @@ class ControlTab(QWidget):
         self._driver_connected = False
         self._driver_missed_checks = 0
 
-        self._mavros_actions.setVisible(self._is_ardupilot())
+        self._mavros_actions.setVisible(self._is_fcu_vehicle())
         self._bebop_actions.setVisible(self._drone_type == "bebop")
         self._crazyflie_actions.setVisible(self._drone_type == "crazyflie")
         self._config_panel.set_drone_type(self._drone_type)
@@ -1188,8 +1195,8 @@ class ControlTab(QWidget):
         self._trigger_driver_check()
 
     def _update_capability_panels(self) -> None:
-        has_position_control = self._is_ardupilot() or self._drone_type == "crazyflie"
-        has_telemetry = self._is_ardupilot() or self._drone_type == "crazyflie"
+        has_position_control = self._is_fcu_vehicle() or self._drone_type == "crazyflie"
+        has_telemetry = self._is_fcu_vehicle() or self._drone_type == "crazyflie"
         is_crazyflie = self._drone_type == "crazyflie"
 
         self._position_panel.setVisible(has_position_control)
@@ -1449,7 +1456,7 @@ class ControlTab(QWidget):
             and self._controls_enabled
         )
         actual_enabled = enabled and controls_should_be_active
-        if self._is_ardupilot():
+        if self._is_fcu_vehicle():
             self._arm_btn.setEnabled(actual_enabled)
             self._disarm_btn.setEnabled(actual_enabled)
             self._takeoff_btn.setEnabled(actual_enabled)
@@ -1613,7 +1620,7 @@ class ControlTab(QWidget):
         reference = reference_map.get(ref_name, MoveReference.BODY)
         method_name = self._pos_strategy_combo.currentText()
         default_method = (
-            NavigationMethod.PID_EKF if self._is_ardupilot() else NavigationMethod.POSITION
+            NavigationMethod.PID_EKF if self._is_fcu_vehicle() else NavigationMethod.POSITION
         )
         method = method_map.get(method_name, default_method)
         alt_name = self._pos_alt_source_combo.currentText()
@@ -1697,7 +1704,7 @@ class ControlTab(QWidget):
             (self._is_direct() or self._driver_connected)
             and self._instance_initialized
             and self._controls_enabled
-            and (self._is_ardupilot() or self._drone_type == "crazyflie")
+            and (self._is_fcu_vehicle() or self._drone_type == "crazyflie")
         )
 
     @Slot()
@@ -1752,7 +1759,7 @@ class ControlTab(QWidget):
             return
 
         try:
-            if self._is_ardupilot():
+            if self._is_fcu_vehicle():
                 self._update_ardupilot_telemetry()
             elif self._drone_type == "crazyflie":
                 self._update_crazyflie_telemetry()

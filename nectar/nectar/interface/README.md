@@ -53,8 +53,9 @@ Drone control interface with keyboard-based velocity control and position naviga
 - Configurable precision and timeout
 
 **Supported Drones**:
-- **MAVROS**: Full control (arm, takeoff, land, velocity, position, telemetry) over the MAVROS bridge
+- **MAVROS**: Full ArduPilot control (arm, takeoff, land, velocity, position, telemetry) over the MAVROS bridge
 - **MAVLink**: Same ArduPilot control over a direct pymavlink link (no MAVROS); set the connection string and, for indoor flight, the vision-pose topic preset (`/visual_slam/tracking/vo_pose_covariance`)
+- **Px4**: PX4 over MAVROS (OFFBOARD setpoint streaming); reuses the MAVROS config panel — set the connection string to the PX4 endpoint (e.g. `udp://:14540@127.0.0.1:14580` for SITL)
 - **Bebop**: Basic control (takeoff, land, velocity, flips)
 - **Crazyflie**: Takeoff, land, velocity, and onboard position (`goTo`)
 

@@ -548,10 +548,11 @@ class DroneConfigPanel(QWidget):
         Parameters
         ----------
         drone_type : str
-            Drone type ('mavros', 'bebop', or 'crazyflie').
+            Drone type ('mavros', 'mavlink', 'px4', 'bebop', or 'crazyflie').
         """
         self._drone_type = drone_type.lower()
-        self._mavros_panel.setVisible(self._drone_type == "mavros")
+        # PX4 over MAVROS reuses the MAVROS config panel (same fields).
+        self._mavros_panel.setVisible(self._drone_type in ("mavros", "px4"))
         self._mavlink_panel.setVisible(self._drone_type == "mavlink")
         self._bebop_panel.setVisible(self._drone_type == "bebop")
         self._crazyflie_panel.setVisible(self._drone_type == "crazyflie")
@@ -565,7 +566,7 @@ class DroneConfigPanel(QWidget):
         Dict[str, Any]
             Configuration values for current drone type.
         """
-        if self._drone_type == "mavros":
+        if self._drone_type in ("mavros", "px4"):
             return self._get_mavros_config()
         if self._drone_type == "mavlink":
             return self._get_mavlink_config()
@@ -661,7 +662,7 @@ class DroneConfigPanel(QWidget):
         config : Dict[str, Any]
             Configuration values to apply.
         """
-        if self._drone_type == "mavros":
+        if self._drone_type in ("mavros", "px4"):
             self._set_mavros_config(config)
         elif self._drone_type == "mavlink":
             self._set_mavlink_config(config)
@@ -799,6 +800,22 @@ class DroneConfigPanel(QWidget):
                 apply_setpoint_params=config_dict["apply_setpoint_params"],
                 connection_string=config_dict["connection_string"],
             )
+        elif self._drone_type == "px4":
+            from nectar.control import Px4MavrosConfig
+
+            # PX4 has no WPNAV/setpoint config. The MAVROS panel's serial default
+            # is meaningless for PX4, so fall back to the PX4 SITL offboard URL.
+            conn = config_dict["connection_string"]
+            kwargs = {
+                "start_driver": False,
+                "pose_source": config_dict["pose_source"],
+                "expect_lidar": config_dict["use_lidar"],
+                "lidar_topic": config_dict["lidar_topic"],
+                "pid_config_file": config_dict["pid_config_file"],
+            }
+            if conn and conn != "serial:///dev/ttyUSB0:921600":
+                kwargs["connection_string"] = conn
+            return Px4MavrosConfig(**kwargs)
         elif self._drone_type == "mavlink":
             from nectar.control import MavlinkConfig
 
