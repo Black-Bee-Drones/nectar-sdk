@@ -145,13 +145,24 @@
       </plugin>
     </gui>
 
-    <!-- GPS origin — matches outdoor_field.sdf (ArduPilot SITL default, Canberra) -->
+    <!-- GPS origin. Intentionally a near-zero magnetic-declination location
+         (decl ~0.2deg here) and NOT ArduPilot's Canberra (decl ~12.6deg).
+         Rationale: PX4's gz_bridge feeds the EKF gz Harmonic's magnetometer,
+         which derives the field from its own location table with a known
+         ENU/NED frame bug (gazebosim/gz-sim#2536, #3270; gz-sensors#425; see the
+         x500_base mag TODO re gz-sim#2460). The EKF expects PX4's geo-table
+         declination, so the two disagree by ~2x declination — at Canberra that
+         skewed the cold-start mag yaw ~24deg, making the first body-relative move
+         veer until GPS-course converged it. At ~0 declination there is nothing to
+         skew, so the heading is correct from cold start. ArduPilot is unaffected
+         (it simulates its own consistent magnetometer) and keeps Canberra; the
+         scenery/sensors/physics here are identical, only the GPS origin differs. -->
     <spherical_coordinates>
       <surface_model>EARTH_WGS84</surface_model>
       <world_frame_orientation>ENU</world_frame_orientation>
-      <latitude_deg>-35.363262</latitude_deg>
-      <longitude_deg>149.165237</longitude_deg>
-      <elevation>584</elevation>
+      <latitude_deg>0.0</latitude_deg>
+      <longitude_deg>40.0</longitude_deg>
+      <elevation>0</elevation>
       <heading_deg>0</heading_deg>
     </spherical_coordinates>
 
