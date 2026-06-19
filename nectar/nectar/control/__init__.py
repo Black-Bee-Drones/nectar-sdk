@@ -36,6 +36,8 @@ from nectar.control.driver_monitor import (
     DriverInfo,
     DriverMonitor,
     DriverStatus,
+    build_driver_command,
+    is_driver_running,
 )
 from nectar.control.exceptions import (
     CapabilityNotSupportedError,
@@ -153,6 +155,8 @@ __all__ = [
     "DriverStatus",
     "DriverInfo",
     "DRIVER_INFO",
+    "build_driver_command",
+    "is_driver_running",
     "DroneError",
     "DriverNotFoundError",
     "TakeoffPositionNotSetError",

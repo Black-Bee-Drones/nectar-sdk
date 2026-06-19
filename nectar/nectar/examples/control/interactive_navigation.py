@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Interactive ArduPilot (MAVROS/MAVLink) navigation REPL.
+Interactive ArduPilot / PX4 navigation REPL (MAVROS, direct MAVLink, or DDS).
 
 Type waypoints in the terminal and the drone executes them immediately.
 Supports move_to (local) and move_to_gps commands with configurable
@@ -9,6 +9,9 @@ method, precision, and reference frame — changeable at runtime.
 Usage:
     python3 interactive_navigation.py --mode outdoor
     python3 interactive_navigation.py --drone mavlink --mode outdoor
+    python3 interactive_navigation.py --drone px4 --mode outdoor
+    python3 interactive_navigation.py --drone px4_mavlink --connection udp:0.0.0.0:14540
+    python3 interactive_navigation.py --drone px4_dds --mode outdoor
     python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0
     python3 interactive_navigation.py --mode indoor --no-takeoff
 """
@@ -92,6 +95,7 @@ class InteractiveNav:
         else:
             config = MavrosConfig(pose_source=pose_source, start_driver=False)
         self.drone = DroneFactory.create(args.drone, config)
+        self._drone_type = args.drone
         self.method = STRATEGY_MAP.get(args.strategy, NavigationMethod.PID)
         self.reference = MoveReference.BODY
         self.precision = args.precision
@@ -101,7 +105,8 @@ class InteractiveNav:
 
     def setup(self, altitude: float) -> bool:
         if self._no_takeoff:
-            if not self.drone.set_mode("GUIDED"):
+            is_px4 = self._drone_type.startswith("px4")
+            if not is_px4 and not self.drone.set_mode("GUIDED"):
                 log.error("Failed to set GUIDED mode")
                 return False
             self.drone.delay(1.0)
@@ -297,7 +302,7 @@ class InteractiveNav:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Interactive ArduPilot navigation REPL (MAVROS/MAVLink)",
+        description="Interactive ArduPilot / PX4 navigation REPL (MAVROS / MAVLink / DDS)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Once running, type waypoints directly:\n"
@@ -309,7 +314,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--drone", choices=["mavros", "mavlink", "px4", "px4_mavlink", "px4_dds"], default="mavros"
+        "--drone",
+        choices=["mavros", "mavlink", "px4", "px4_mavlink", "px4_dds"],
+        default="mavros",
     )
     parser.add_argument("--mode", choices=["indoor", "outdoor"], default="outdoor")
     parser.add_argument(

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -20,9 +21,6 @@ class DroneConfigPanel(QWidget):
     """
     Compact configuration panel for drone settings.
 
-    Dynamically generates UI based on drone config dataclass fields.
-    Supports Mavros, Bebop, and Crazyflie configuration types.
-
     Signals
     -------
     config_changed : Signal
@@ -31,9 +29,19 @@ class DroneConfigPanel(QWidget):
 
     config_changed = Signal()
 
+    _MAVROS_CONN_DEFAULTS = {
+        "ardupilot": "serial:///dev/ttyUSB0:921600",
+        "px4": "udp://:14540@127.0.0.1:14580",
+    }
+    _MAVLINK_CONN_DEFAULTS = {
+        "ardupilot": "tcp:127.0.0.1:5762",
+        "px4": "udp:0.0.0.0:14540",
+    }
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._drone_type: str = "mavros"
+        self._firmware: str = "ardupilot"
         self._config_widgets: Dict[str, QWidget] = {}
 
         self._setup_ui()
@@ -45,15 +53,18 @@ class DroneConfigPanel(QWidget):
 
         self._mavros_panel = self._create_mavros_panel()
         self._mavlink_panel = self._create_mavlink_panel()
+        self._dds_panel = self._create_dds_panel()
         self._bebop_panel = self._create_bebop_panel()
         self._crazyflie_panel = self._create_crazyflie_panel()
 
         layout.addWidget(self._mavros_panel)
         layout.addWidget(self._mavlink_panel)
+        layout.addWidget(self._dds_panel)
         layout.addWidget(self._bebop_panel)
         layout.addWidget(self._crazyflie_panel)
 
         self._mavlink_panel.setVisible(False)
+        self._dds_panel.setVisible(False)
         self._bebop_panel.setVisible(False)
         self._crazyflie_panel.setVisible(False)
 
@@ -142,11 +153,9 @@ class DroneConfigPanel(QWidget):
             self._create_config_row("Connection:", self._mavros_connection, "FCU connection string")
         )
 
-        # PID config file
+        # PID config file (repopulated for the active firmware in set_drone_type)
         self._mavros_pid_file = QComboBox()
-        self._mavros_pid_file.addItem("(default)", "")
-        for f in self._list_config_files("position_"):
-            self._mavros_pid_file.addItem(f, f)
+        self._populate_config_combo(self._mavros_pid_file, "position_", "ardupilot")
         self._mavros_pid_file.currentIndexChanged.connect(self._on_config_changed)
         layout.addLayout(
             self._create_config_row(
@@ -156,21 +165,21 @@ class DroneConfigPanel(QWidget):
             )
         )
 
-        # Setpoint config file
+        # Setpoint config file (ArduPilot only; hidden for PX4)
         self._mavros_setpoint_file = QComboBox()
-        self._mavros_setpoint_file.addItem("(default)", "")
-        for f in self._list_config_files("setpoint_"):
-            self._mavros_setpoint_file.addItem(f, f)
+        self._populate_config_combo(self._mavros_setpoint_file, "setpoint_", "ardupilot")
         self._mavros_setpoint_file.currentIndexChanged.connect(self._on_config_changed)
-        layout.addLayout(
+        self._mavros_setpoint_container = QWidget()
+        self._mavros_setpoint_container.setLayout(
             self._create_config_row(
                 "Setpoint:",
                 self._mavros_setpoint_file,
                 "Setpoint nav YAML (default = auto by mode)",
             )
         )
+        layout.addWidget(self._mavros_setpoint_container)
 
-        # Apply setpoint params to FCU
+        # Apply setpoint params to FCU (ArduPilot only; hidden for PX4)
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
         apply_row.setSpacing(8)
@@ -182,7 +191,9 @@ class DroneConfigPanel(QWidget):
         )
         self._mavros_apply_setpoint.stateChanged.connect(self._on_config_changed)
         apply_row.addWidget(self._mavros_apply_setpoint)
-        layout.addLayout(apply_row)
+        self._mavros_apply_container = QWidget()
+        self._mavros_apply_container.setLayout(apply_row)
+        layout.addWidget(self._mavros_apply_container)
 
         return panel
 
@@ -288,11 +299,9 @@ class DroneConfigPanel(QWidget):
         lidar_row.addWidget(self._mavlink_use_lidar)
         layout.addLayout(lidar_row)
 
-        # PID config file
+        # PID config file (repopulated for the active firmware in set_drone_type)
         self._mavlink_pid_file = QComboBox()
-        self._mavlink_pid_file.addItem("(default)", "")
-        for f in self._list_config_files("position_"):
-            self._mavlink_pid_file.addItem(f, f)
+        self._populate_config_combo(self._mavlink_pid_file, "position_", "ardupilot")
         self._mavlink_pid_file.currentIndexChanged.connect(self._on_config_changed)
         layout.addLayout(
             self._create_config_row(
@@ -302,21 +311,21 @@ class DroneConfigPanel(QWidget):
             )
         )
 
-        # Setpoint config file
+        # Setpoint config file (ArduPilot only; hidden for PX4)
         self._mavlink_setpoint_file = QComboBox()
-        self._mavlink_setpoint_file.addItem("(default)", "")
-        for f in self._list_config_files("setpoint_"):
-            self._mavlink_setpoint_file.addItem(f, f)
+        self._populate_config_combo(self._mavlink_setpoint_file, "setpoint_", "ardupilot")
         self._mavlink_setpoint_file.currentIndexChanged.connect(self._on_config_changed)
-        layout.addLayout(
+        self._mavlink_setpoint_container = QWidget()
+        self._mavlink_setpoint_container.setLayout(
             self._create_config_row(
                 "Setpoint:",
                 self._mavlink_setpoint_file,
                 "Setpoint nav YAML (default = auto by mode)",
             )
         )
+        layout.addWidget(self._mavlink_setpoint_container)
 
-        # Apply setpoint params to FCU
+        # Apply setpoint params to FCU (ArduPilot only; hidden for PX4)
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
         apply_row.setSpacing(8)
@@ -328,7 +337,9 @@ class DroneConfigPanel(QWidget):
         )
         self._mavlink_apply_setpoint.stateChanged.connect(self._on_config_changed)
         apply_row.addWidget(self._mavlink_apply_setpoint)
-        layout.addLayout(apply_row)
+        self._mavlink_apply_container = QWidget()
+        self._mavlink_apply_container.setLayout(apply_row)
+        layout.addWidget(self._mavlink_apply_container)
 
         return panel
 
@@ -355,6 +366,80 @@ class DroneConfigPanel(QWidget):
         self._mavlink_connection.setCurrentText(current or "tcp:127.0.0.1:5762")
         self._mavlink_connection.blockSignals(False)
         self._on_config_changed()
+
+    def _create_dds_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {COLORS.surface_elevated};
+                border: 1px solid {COLORS.border};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """
+        )
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        header = QLabel("UXRCE-DDS")
+        header.setStyleSheet(
+            f"""
+            color: {COLORS.accent};
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        """
+        )
+        layout.addWidget(header)
+
+        # Pose source
+        self._dds_pose_source = QComboBox()
+        self._dds_pose_source.addItems(["GPS (Outdoor)", "Vision (Indoor)"])
+        self._dds_pose_source.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row("Pose:", self._dds_pose_source, "Position estimation source")
+        )
+
+        # Micro XRCE-DDS Agent UDP port
+        self._dds_agent_port = QSpinBox()
+        self._dds_agent_port.setRange(1, 65535)
+        self._dds_agent_port.setValue(8888)
+        self._dds_agent_port.valueChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "Agent port:",
+                self._dds_agent_port,
+                "UDP port of the MicroXRCEAgent (PX4 SITL default 8888)",
+            )
+        )
+
+        # PX4 topic namespace (PX4 -n); blank = default /fmu
+        self._dds_namespace = QLineEdit()
+        self._dds_namespace.setPlaceholderText("(default /fmu)")
+        self._dds_namespace.textChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "Namespace:",
+                self._dds_namespace,
+                "uXRCE-DDS topic namespace prefix (PX4 -n); blank = default",
+            )
+        )
+
+        # PID config file (PX4 presets)
+        self._dds_pid_file = QComboBox()
+        self._populate_config_combo(self._dds_pid_file, "position_", "px4")
+        self._dds_pid_file.currentIndexChanged.connect(self._on_config_changed)
+        layout.addLayout(
+            self._create_config_row(
+                "PID:",
+                self._dds_pid_file,
+                "PID parameters YAML (default = auto by mode)",
+            )
+        )
+
+        return panel
 
     def _create_bebop_panel(self) -> QFrame:
         panel = QFrame()
@@ -513,49 +598,104 @@ class DroneConfigPanel(QWidget):
         return panel
 
     @staticmethod
-    def _ardupilot_config_dir() -> str:
+    def _config_dir(firmware: str) -> str:
         import os
 
-        # widgets/ -> interface/ -> nectar/ -> control/ardupilot/config
+        # widgets/ -> interface/ -> nectar/ -> control/<firmware>/config
         nectar_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        return os.path.join(nectar_dir, "control", "ardupilot", "config")
+        sub = "px4" if firmware == "px4" else "ardupilot"
+        return os.path.join(nectar_dir, "control", sub, "config")
 
     @classmethod
-    def _list_config_files(cls, prefix: str) -> list:
-        """List YAML filenames matching prefix in the ArduPilot config dir."""
+    def _list_config_files(cls, prefix: str, firmware: str) -> list:
+        """List YAML filenames matching prefix in the firmware's config dir."""
         import glob
         import os
 
-        files = sorted(glob.glob(os.path.join(cls._ardupilot_config_dir(), f"{prefix}*.yaml")))
+        files = sorted(glob.glob(os.path.join(cls._config_dir(firmware), f"{prefix}*.yaml")))
         return [os.path.basename(f) for f in files]
 
     @classmethod
-    def _resolve_config_path(cls, filename: str) -> "Optional[str]":
-        """Resolve a config filename to full path, or None if empty."""
+    def _resolve_config_path(cls, filename: str, firmware: str) -> "Optional[str]":
+        """Resolve a config filename to a full path, or None if empty."""
         import os
 
         if not filename:
             return None
-        return os.path.join(cls._ardupilot_config_dir(), filename)
+        return os.path.join(cls._config_dir(firmware), filename)
+
+    def _populate_config_combo(self, combo: QComboBox, prefix: str, firmware: str) -> None:
+        """Fill a config-file combo from the firmware dir, preserving selection."""
+        current = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("(default)", "")
+        for name in self._list_config_files(prefix, firmware):
+            combo.addItem(name, name)
+        idx = combo.findData(current) if current else 0
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
 
     def _on_config_changed(self) -> None:
         self.config_changed.emit()
 
     def set_drone_type(self, drone_type: str) -> None:
         """
-        Set the active drone type and show corresponding config panel.
+        Set the active drone type and show the corresponding config panel.
+
+        The MAVROS and MAVLink panels are shared by ArduPilot and PX4; the
+        firmware is inferred from the drone type and applied to the panel
+        (connection defaults, PID preset dir, firmware-specific fields).
 
         Parameters
         ----------
         drone_type : str
-            Drone type ('mavros', 'mavlink', 'px4', 'bebop', or 'crazyflie').
+            Drone type: ``'mavros'``, ``'mavlink'``, ``'px4'``,
+            ``'px4_mavlink'``, ``'px4_dds'``, ``'bebop'``, or ``'crazyflie'``.
         """
         self._drone_type = drone_type.lower()
-        # PX4 over MAVROS reuses the MAVROS config panel (same fields).
-        self._mavros_panel.setVisible(self._drone_type in ("mavros", "px4"))
-        self._mavlink_panel.setVisible(self._drone_type == "mavlink")
+        self._firmware = "px4" if self._drone_type.startswith("px4") else "ardupilot"
+
+        is_mavros = self._drone_type in ("mavros", "px4")
+        is_mavlink = self._drone_type in ("mavlink", "px4_mavlink")
+
+        self._mavros_panel.setVisible(is_mavros)
+        self._mavlink_panel.setVisible(is_mavlink)
+        self._dds_panel.setVisible(self._drone_type == "px4_dds")
         self._bebop_panel.setVisible(self._drone_type == "bebop")
         self._crazyflie_panel.setVisible(self._drone_type == "crazyflie")
+
+        if is_mavros:
+            self._apply_mavros_firmware(self._firmware)
+        elif is_mavlink:
+            self._apply_mavlink_firmware(self._firmware)
+
+    def _apply_mavros_firmware(self, firmware: str) -> None:
+        """Adapt the shared MAVROS panel to ArduPilot or PX4."""
+        defaults = self._MAVROS_CONN_DEFAULTS
+        current = self._mavros_connection.text().strip()
+        if not current or current in defaults.values():
+            self._mavros_connection.setText(defaults[firmware])
+        self._mavros_connection.setPlaceholderText(defaults[firmware])
+
+        self._populate_config_combo(self._mavros_pid_file, "position_", firmware)
+
+        is_ardupilot = firmware == "ardupilot"
+        self._mavros_setpoint_container.setVisible(is_ardupilot)
+        self._mavros_apply_container.setVisible(is_ardupilot)
+
+    def _apply_mavlink_firmware(self, firmware: str) -> None:
+        """Adapt the shared MAVLink panel to ArduPilot or PX4."""
+        defaults = self._MAVLINK_CONN_DEFAULTS
+        current = self._mavlink_connection.currentText().strip()
+        if not current or current in defaults.values():
+            self._mavlink_connection.setCurrentText(defaults[firmware])
+
+        self._populate_config_combo(self._mavlink_pid_file, "position_", firmware)
+
+        is_ardupilot = firmware == "ardupilot"
+        self._mavlink_setpoint_container.setVisible(is_ardupilot)
+        self._mavlink_apply_container.setVisible(is_ardupilot)
 
     def get_config(self) -> Dict[str, Any]:
         """
@@ -568,8 +708,10 @@ class DroneConfigPanel(QWidget):
         """
         if self._drone_type in ("mavros", "px4"):
             return self._get_mavros_config()
-        if self._drone_type == "mavlink":
+        if self._drone_type in ("mavlink", "px4_mavlink"):
             return self._get_mavlink_config()
+        if self._drone_type == "px4_dds":
+            return self._get_dds_config()
         if self._drone_type == "crazyflie":
             return self._get_crazyflie_config()
         return self._get_bebop_config()
@@ -590,10 +732,12 @@ class DroneConfigPanel(QWidget):
             "lidar_topic": self._mavros_lidar_topic.text().strip()
             or "/mavros/rangefinder/rangefinder",
             "connection_string": self._mavros_connection.text().strip()
-            or "serial:///dev/ttyUSB0:921600",
-            "pid_config_file": self._resolve_config_path(self._mavros_pid_file.currentData()),
+            or self._MAVROS_CONN_DEFAULTS[self._firmware],
+            "pid_config_file": self._resolve_config_path(
+                self._mavros_pid_file.currentData(), self._firmware
+            ),
             "setpoint_config_file": self._resolve_config_path(
-                self._mavros_setpoint_file.currentData()
+                self._mavros_setpoint_file.currentData(), self._firmware
             ),
             "apply_setpoint_params": self._mavros_apply_setpoint.isChecked(),
         }
@@ -620,13 +764,32 @@ class DroneConfigPanel(QWidget):
             "vision_pose_topic": self._mavlink_vision_topic.currentText().strip()
             or "/visual_slam/tracking/vo_pose_covariance",
             "connection_string": self._mavlink_connection.currentText().strip()
-            or "tcp:127.0.0.1:5762",
+            or self._MAVLINK_CONN_DEFAULTS[self._firmware],
             "baud": _int_or(self._mavlink_baud.currentText(), 921600),
-            "pid_config_file": self._resolve_config_path(self._mavlink_pid_file.currentData()),
+            "pid_config_file": self._resolve_config_path(
+                self._mavlink_pid_file.currentData(), self._firmware
+            ),
             "setpoint_config_file": self._resolve_config_path(
-                self._mavlink_setpoint_file.currentData()
+                self._mavlink_setpoint_file.currentData(), self._firmware
             ),
             "apply_setpoint_params": self._mavlink_apply_setpoint.isChecked(),
+        }
+
+    def _get_dds_config(self) -> Dict[str, Any]:
+        from nectar.control import PoseSource
+
+        pose_source_map = {
+            0: PoseSource.GPS,
+            1: PoseSource.VISION,
+        }
+
+        return {
+            "pose_source": pose_source_map.get(
+                self._dds_pose_source.currentIndex(), PoseSource.GPS
+            ),
+            "agent_port": self._dds_agent_port.value(),
+            "px4_namespace": self._dds_namespace.text().strip(),
+            "pid_config_file": self._resolve_config_path(self._dds_pid_file.currentData(), "px4"),
         }
 
     def _get_bebop_config(self) -> Dict[str, Any]:
@@ -664,8 +827,10 @@ class DroneConfigPanel(QWidget):
         """
         if self._drone_type in ("mavros", "px4"):
             self._set_mavros_config(config)
-        elif self._drone_type == "mavlink":
+        elif self._drone_type in ("mavlink", "px4_mavlink"):
             self._set_mavlink_config(config)
+        elif self._drone_type == "px4_dds":
+            self._set_dds_config(config)
         elif self._drone_type == "crazyflie":
             self._set_crazyflie_config(config)
         else:
@@ -749,6 +914,24 @@ class DroneConfigPanel(QWidget):
         if "apply_setpoint_params" in config:
             self._mavlink_apply_setpoint.setChecked(config["apply_setpoint_params"])
 
+    def _set_dds_config(self, config: Dict[str, Any]) -> None:
+        from nectar.control import PoseSource
+
+        if "pose_source" in config:
+            idx = 0 if config["pose_source"] == PoseSource.GPS else 1
+            self._dds_pose_source.setCurrentIndex(idx)
+        if "agent_port" in config:
+            self._dds_agent_port.setValue(int(config["agent_port"]))
+        if "px4_namespace" in config:
+            self._dds_namespace.setText(config["px4_namespace"])
+        if "pid_config_file" in config and config["pid_config_file"]:
+            import os
+
+            name = os.path.basename(config["pid_config_file"])
+            idx = self._dds_pid_file.findData(name)
+            if idx >= 0:
+                self._dds_pid_file.setCurrentIndex(idx)
+
     def _set_bebop_config(self, config: Dict[str, Any]) -> None:
         if "ip" in config:
             self._bebop_ip.setText(config["ip"])
@@ -782,8 +965,10 @@ class DroneConfigPanel(QWidget):
 
         Returns
         -------
-        MavrosConfig | BebopConfig | CrazyflieConfig
-            Configuration object for current drone type.
+        DroneConfig
+            A config dataclass for the current drone type: ``MavrosConfig``,
+            ``Px4MavrosConfig``, ``MavlinkConfig``, ``Px4MavlinkConfig``,
+            ``Px4DdsConfig``, ``BebopConfig``, or ``CrazyflieConfig``.
         """
         config_dict = self.get_config()
 
@@ -803,19 +988,16 @@ class DroneConfigPanel(QWidget):
         elif self._drone_type == "px4":
             from nectar.control import Px4MavrosConfig
 
-            # PX4 has no WPNAV/setpoint config. The MAVROS panel's serial default
-            # is meaningless for PX4, so fall back to the PX4 SITL offboard URL.
-            conn = config_dict["connection_string"]
-            kwargs = {
-                "start_driver": False,
-                "pose_source": config_dict["pose_source"],
-                "expect_lidar": config_dict["use_lidar"],
-                "lidar_topic": config_dict["lidar_topic"],
-                "pid_config_file": config_dict["pid_config_file"],
-            }
-            if conn and conn != "serial:///dev/ttyUSB0:921600":
-                kwargs["connection_string"] = conn
-            return Px4MavrosConfig(**kwargs)
+            # PX4 has no WPNAV/setpoint params; the panel defaults the connection
+            # to the PX4 offboard endpoint, so it can be passed through directly.
+            return Px4MavrosConfig(
+                start_driver=False,
+                pose_source=config_dict["pose_source"],
+                expect_lidar=config_dict["use_lidar"],
+                lidar_topic=config_dict["lidar_topic"],
+                pid_config_file=config_dict["pid_config_file"],
+                connection_string=config_dict["connection_string"],
+            )
         elif self._drone_type == "mavlink":
             from nectar.control import MavlinkConfig
 
@@ -829,6 +1011,28 @@ class DroneConfigPanel(QWidget):
                 pid_config_file=config_dict["pid_config_file"],
                 setpoint_config_file=config_dict["setpoint_config_file"],
                 apply_setpoint_params=config_dict["apply_setpoint_params"],
+            )
+        elif self._drone_type == "px4_mavlink":
+            from nectar.control import Px4MavlinkConfig
+
+            return Px4MavlinkConfig(
+                start_driver=False,
+                pose_source=config_dict["pose_source"],
+                expect_lidar=config_dict["use_lidar"],
+                vision_pose_topic=config_dict["vision_pose_topic"],
+                connection_string=config_dict["connection_string"],
+                baud=config_dict["baud"],
+                pid_config_file=config_dict["pid_config_file"],
+            )
+        elif self._drone_type == "px4_dds":
+            from nectar.control import Px4DdsConfig
+
+            return Px4DdsConfig(
+                start_driver=False,
+                pose_source=config_dict["pose_source"],
+                pid_config_file=config_dict["pid_config_file"],
+                agent_port=config_dict["agent_port"],
+                px4_namespace=config_dict["px4_namespace"],
             )
         elif self._drone_type == "crazyflie":
             from nectar.control import CrazyflieConfig
