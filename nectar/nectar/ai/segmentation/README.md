@@ -299,6 +299,39 @@ nectar-ai segment dataset download --source ultralytics --dataset crack-seg --ou
 # Roboflow projects
 nectar-ai segment dataset download --source roboflow --api-key KEY \
   --workspace ws --project proj --version 1 --roboflow-format yolov8
+
+# HuggingFace Hub (native seg dataset -> YOLO-seg or COCO-seg on disk)
+nectar-ai segment dataset download --source huggingface \
+  --repo blackbeedrones/sae-2026-hook --format yolo --output data/sae-2026-hook
+```
+
+### Upload to HuggingFace
+
+`upload` converts a local YOLO-seg/COCO-seg dataset to the Hub-native schema
+(`image` + `objects.{bbox, category, area, segmentation}`) and pushes Parquet
+shards plus a generated dataset card. The Hub viewer renders bounding-box
+overlays (derived from the polygons); the polygons themselves are stored for
+mask training and round-trip back to YOLO-seg via `HuggingFaceSegHandler`.
+
+```bash
+nectar-ai segment dataset upload --target huggingface \
+  --repo user/my-seg-dataset --dataset data/my-seg \
+  --public --title "My Seg Dataset" --model-repo user/my-model
+
+# Upload files as-is (no viewer / no Parquet):
+nectar-ai segment dataset upload --target huggingface --raw \
+  --repo user/my-seg-dataset --dataset data/my-seg
+```
+
+```python
+from nectar.ai.segmentation.datasets import HuggingFaceSegDatasetUploader
+
+uploader = HuggingFaceSegDatasetUploader(repo_id="user/my-seg-dataset", private=False)
+result = uploader.upload_native(
+    dataset_path="data/my-seg",          # YOLO-seg or COCO-seg, auto-detected
+    card_metadata={"title": "My Seg Dataset", "model_repo": "user/my-model"},
+)
+print(result["splits"], result["class_names"])
 ```
 
 ### Format Conversion
@@ -518,10 +551,13 @@ segmentation/
 │   └── exceptions.py           # SegmentationError hierarchy
 ├── datasets/
 │   ├── format.py               # SegFormatConverter (YOLO-seg <-> COCO-seg)
+│   ├── hf_converter.py         # YOLO-seg/COCO-seg <-> HuggingFace DatasetDict + dataset card
+│   ├── upload.py               # HuggingFaceSegDatasetUploader (native Parquet upload)
 │   ├── analyze.py              # SegDatasetAnalyzer
 │   └── handlers/
 │       ├── ultralytics_seg.py  # UltralyticsSegHandler (crack-seg, etc.)
-│       └── roboflow.py         # RoboflowSegHandler
+│       ├── roboflow.py         # RoboflowSegHandler
+│       └── huggingface.py      # HuggingFaceSegHandler (download)
 ├── evaluation/
 │   ├── evaluator.py            # SegmentationEvaluator
 │   ├── analysis.py             # PR curves, error statistics
