@@ -209,7 +209,7 @@ ros2 topic echo /mavros/distance_sensor/rangefinder_front --once
 
 In code, both transports expose every reported unit via `drone.distance_sensors`
 and `drone.get_distance(orientation)` (the downward unit also updates
-`drone.rangefinder`); see the [ArduPilot core README](../nectar/control/ardupilot/README.md#distance-sensors).
+`drone.rangefinder`); see the [vehicle core README](../nectar/control/vehicle/README.md#distance-sensors).
 The MAVROS path relies on the `distance_sensor` plugin entries in
 `config/apm_config_sitl.yaml` (`rangefinder/rangefinder`, `rangefinder/front`,
 `rangefinder/back`) mapped to orientations.

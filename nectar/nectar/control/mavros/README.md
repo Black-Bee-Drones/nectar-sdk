@@ -1,21 +1,21 @@
 # MAVROS Transport
 
-`MavrosTransport` connects the shared [ArduPilot vehicle core](../ardupilot/README.md) to a running [`mavros_node`](https://github.com/mavlink/mavros). It is one of two transports for the same vehicle — all flight, navigation, takeoff/land, GPS, RTL, PID/setpoint, and parameter behavior is **shared and documented in [`ardupilot/README.md`](../ardupilot/README.md)**.
+`MavrosTransport` connects the shared [vehicle core](../vehicle/README.md) to a running [`mavros_node`](https://github.com/mavlink/mavros). It backs the same vehicle over MAVROS for both firmwares (`MavrosDrone` for ArduPilot, `Px4MavrosDrone` for PX4) — the firmware-agnostic flight, navigation, takeoff/land, GPS, RTL, and PID behavior is **shared and documented in [`vehicle/README.md`](../vehicle/README.md)** (ArduPilot setpoint/parameter specifics in [`ardupilot/README.md`](../ardupilot/README.md)).
 
-> For the public `Drone` API, navigation methods, references, altitude sources, takeoff/land detection, setpoint/PID configuration and tunables, see the [ArduPilot Vehicle Core](../ardupilot/README.md).
+> For the public `Drone` API, navigation methods, references, altitude sources, takeoff/land detection, and PID configuration, see the [vehicle core README](../vehicle/README.md).
 
 ## Role
 
-[`MavrosTransport`](transport.py) implements the [`MavlinkTransport`](../ardupilot/transport.py) interface against MAVROS:
+[`MavrosTransport`](transport.py) implements the [`VehicleTransport`](../vehicle/transport.py) interface against MAVROS:
 
-- **Telemetry** ← ROS **subscriptions**. Each callback converts a `mavros_msgs`/`geometry_msgs`/`sensor_msgs` message into a plain `ardupilot/types` value and stores it atomically.
+- **Telemetry** ← ROS **subscriptions**. Each callback converts a `mavros_msgs`/`geometry_msgs`/`sensor_msgs` message into a plain `vehicle/types` value and stores it atomically.
 - **Commands** → ROS **service clients** (`/mavros/set_mode`, `/mavros/cmd/*`, `/mavros/param/set_parameters`).
 - **Setpoints** → ROS **publishers** (`/mavros/setpoint_raw/local`, `/mavros/setpoint_position/global`).
 - **Frame conversion** is handled by MAVROS itself (ENU↔NED), so the transport publishes ROS-convention values directly.
 
 ```mermaid
 classDiagram
-    class MavlinkTransport {
+    class VehicleTransport {
         <<abstract>>
         +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() command_land() set_param()
@@ -27,11 +27,11 @@ classDiagram
         +start() close() driver_command()
         +send_command_long(command, *params) bool
     }
-    MavlinkTransport <|.. MavrosTransport
+    VehicleTransport <|.. MavrosTransport
     MavrosTransport ..> mavros_node : ROS topics/services
 ```
 
-`MavrosDrone` is simply `ArduPilotDrone` built with a `MavrosTransport` (see [`drone.py`](drone.py)).
+`MavrosDrone` is simply `ArduPilotDrone` built with a `MavrosTransport`, and `Px4MavrosDrone` is `Px4Drone` built with the same transport (see [`drone.py`](drone.py) and [`../px4/mavros_drone.py`](../px4/mavros_drone.py)).
 
 ## Requirements
 
@@ -99,7 +99,7 @@ config = MavrosConfig(
 )
 ```
 
-`sensor_type` is derived from `Range.radiation_type`; `signal_quality` is not available over MAVROS and stays `None`. The direct [MAVLink transport](../mavlink/README.md) needs none of this, reading id and orientation straight from `DISTANCE_SENSOR`. See the [ArduPilot core README](../ardupilot/README.md#distance-sensors) for the data model.
+`sensor_type` is derived from `Range.radiation_type`; `signal_quality` is not available over MAVROS and stays `None`. The direct [MAVLink transport](../mavlink/README.md) needs none of this, reading id and orientation straight from `DISTANCE_SENSOR`. See the [vehicle core README](../vehicle/README.md#distance-sensors) for the data model.
 
 ## ROS2 Topics and Services
 
@@ -149,7 +149,7 @@ The transport interprets responses as follows:
 | generic `COMMAND_LONG` (`set_speed`, `do_servo`) | `send_command_long` | `bool(res) and res.success` |
 | `set_param` | — | all `results[].successful` |
 
-**Why the service-ACK heuristic for arm/takeoff/land**: validating `res.success` / `res.result` on these services produced false negatives and unnecessary retries, so the transport treats a well-formed MAVROS response as acceptance and lets the vehicle core confirm the outcome from telemetry: `arm()` polls `is_armed`/mode, and takeoff/land use [`FlightSequencer`](../ardupilot/README.md#takeoff-and-landing) settle detection. Generic `COMMAND_LONG` has no follow-up state to poll, so it still checks `res.success`.
+**Why the service-ACK heuristic for arm/takeoff/land**: validating `res.success` / `res.result` on these services produced false negatives and unnecessary retries, so the transport treats a well-formed MAVROS response as acceptance and lets the vehicle core confirm the outcome from telemetry: `arm()` polls `is_armed`/mode, and takeoff/land use [`FlightSequencer`](../vehicle/README.md#takeoff-and-landing) settle detection. Generic `COMMAND_LONG` has no follow-up state to poll, so it still checks `res.success`.
 
 ### MAV_RESULT Codes
 
@@ -170,4 +170,4 @@ The EKF origin must be set indoors (see [EKF Origin](../ardupilot/README.md#ekf-
 - [SET_POSITION_TARGET_LOCAL_NED](https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED) · [MAV_RESULT](https://mavlink.io/en/messages/common.html#MAV_RESULT) · [VISION_POSITION_ESTIMATE](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE)
 - [ROS 2 Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html) · [ROS 2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
 - [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros) · [Isaac ROS cuVSLAM with RealSense](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)
-- Shared flight logic and ArduPilot references: [`ardupilot/README.md`](../ardupilot/README.md)
+- Shared flight logic: [`vehicle/README.md`](../vehicle/README.md) · ArduPilot specifics: [`ardupilot/README.md`](../ardupilot/README.md)

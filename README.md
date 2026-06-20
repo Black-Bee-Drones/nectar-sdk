@@ -248,10 +248,10 @@ flowchart TB
             direction TB
             DroneFactory(["DroneFactory"])
             DroneProto{{"Drone protocol"}}
-            subgraph CORE["ardupilot - shared vehicle core"]
+            subgraph CORE["vehicle - shared core"]
                 direction TB
                 ArduPilotDrone["ArduPilotDrone"]
-                Navigator["ArduPilotNavigator"]
+                Navigator["VehicleNavigator"]
                 Sequencer["FlightSequencer"]
                 PID["PIDController"]
                 MavrosT["MavrosTransport"]
@@ -372,8 +372,8 @@ detector = Detector("model.bin", framework="custom")
 |----------|----------|
 | [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, Docker, drone drivers, troubleshooting |
 | [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, capabilities, submodule index |
-| [Vehicle Core](nectar/nectar/control/vehicle/README.md) | Firmware-agnostic core: bridge design, firmware hooks, navigation, frames, modules |
-| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | Shared flight logic + ArduPilot specifics: navigation, frames, takeoff/land, RTL, setpoint/PID, GPS/EGM96, parameters |
+| [Vehicle Core](nectar/nectar/control/vehicle/README.md) | Firmware-agnostic core: bridge design, firmware hooks, navigation, frames, altitude, takeoff/land, GPS/EGM96, PID |
+| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | ArduPilot specifics: GUIDED arming, `GUID_OPTIONS`/WPNAV, native RTL, parameters |
 | [PX4](nectar/nectar/control/px4/README.md) | PX4 specifics: OFFBOARD setpoint streaming, flight modes, AUTO.LAND/RTL; MAVROS / direct-MAVLink / uXRCE-DDS backends |
 | [MAVROS Transport](nectar/nectar/control/mavros/README.md) | MAVROS plumbing: telemetry mapping, topics/services, service-ACK behavior, indoor vision |
 | [MAVLink Transport](nectar/nectar/control/mavlink/README.md) | Direct pymavlink: connection, RX/TX, stream rates, vision bridge |

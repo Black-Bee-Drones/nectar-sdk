@@ -9,7 +9,7 @@ Protocol-based drone control for ROS 2. `DroneFactory` builds a drone by key beh
 | README | Scope |
 |--------|-------|
 | [vehicle/](vehicle/README.md) | Firmware-agnostic vehicle core: navigation, frames, takeoff/land, GPS/EGM96, PID, firmware hooks |
-| [ardupilot/](ardupilot/README.md) | ArduPilot specialization + shared flight behavior: GUIDED, RTL, PID/setpoint, GPS/EGM96 |
+| [ardupilot/](ardupilot/README.md) | ArduPilot specialization: GUIDED arming, `GUID_OPTIONS`/WPNAV, native RTL, parameters |
 | [px4/](px4/README.md) | PX4 specialization: OFFBOARD setpoint streaming, AUTO.LAND/RTL; MAVROS / direct-MAVLink / uXRCE-DDS backends |
 | [mavros/](mavros/README.md) | MAVROS transport (`MavrosDrone`, `Px4MavrosDrone`) |
 | [mavlink/](mavlink/README.md) | Firmware-neutral pymavlink transport (`MavlinkDrone`, `Px4MavlinkDrone`) |
@@ -93,7 +93,7 @@ classDiagram
     class ArduPilotDrone {
         <<abstract>>
         -_transport VehicleTransport
-        -_navigator ArduPilotNavigator
+        -_navigator VehicleNavigator
         -_sequencer FlightSequencer
         -_pid_config Optional~PositionPIDConfig~
         -_setpoint_config Optional~SetpointNavConfig~
@@ -299,7 +299,7 @@ Duck-typed interface defining drone contract. All drones must implement:
 
 **State**:
 - `is_ready`: connection and driver status (all drones)
-- ArduPilot drones additionally expose `is_armed`, `flight_mode`, `is_fcu_connected` (see [ardupilot/README.md](ardupilot/README.md)); other platforms expose their own readiness fields
+- FCU drones (ArduPilot/PX4) additionally expose `is_armed`, `flight_mode`, `is_fcu_connected` (see [vehicle/README.md](vehicle/README.md)); other platforms expose their own readiness fields
 
 ### BaseDrone
 
@@ -342,7 +342,7 @@ BebopConfig(
 
 ## Movement, Navigation, RTL
 
-`MoveReference` selects the frame: `BODY` (relative to current heading), `WORLD` (ENU world frame), `TAKEOFF` (relative to the takeoff pose). The public movement API — `move_velocity`, `move_to`, `move_to_gps`, `rtl` — plus the navigation methods (`POSITION`, `POSITION_GLOBAL`, `PID`, `PID_EKF`), altitude sources, GPS/EGM96 handling, and RTL modes are defined once in the shared core: see **[ardupilot/README.md](ardupilot/README.md)**. Bebop and Crazyflie support a subset (see their READMEs and the capability matrix above).
+`MoveReference` selects the frame: `BODY` (relative to current heading), `WORLD` (ENU world frame), `TAKEOFF` (relative to the takeoff pose). The public movement API — `move_velocity`, `move_to`, `move_to_gps`, `rtl` — plus the navigation methods (`POSITION`, `POSITION_GLOBAL`, `PID`, `PID_EKF`), altitude sources, GPS/EGM96 handling, and RTL modes are defined once in the shared core: see **[vehicle/README.md](vehicle/README.md)**. Bebop and Crazyflie support a subset (see their READMEs and the capability matrix above).
 
 ## Obstacle Detection
 
@@ -357,7 +357,7 @@ drone.enable_all_obstacle_detectors()
 
 ## PID Control
 
-Per-axis position PID (x/y/z/yaw), loaded from `ardupilot/config/*.yaml` by `is_indoor` and overridable at runtime via `drone.set_pid_config(...)`. Tuning, config schema, and the loading lifecycle live in **[pid/README.md](pid/README.md)** and **[ardupilot/README.md](ardupilot/README.md)**.
+Per-axis position PID (x/y/z/yaw), loaded from each firmware's `config/*.yaml` by `is_indoor` and overridable at runtime via `drone.set_pid_config(...)`. The loading lifecycle lives in **[vehicle/README.md](vehicle/README.md#pid-configuration)**; tuning and the config schema are in **[pid/README.md](pid/README.md)**.
 
 ## Exception Hierarchy
 

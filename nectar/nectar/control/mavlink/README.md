@@ -13,7 +13,7 @@ classDiagram
         +takeoff() land() move_to() move_to_gps() rtl()
         +arm() set_mode() set_param() get_altitude()
     }
-    class MavlinkTransport {
+    class VehicleTransport {
         <<abstract>>
         +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() set_param()
@@ -21,9 +21,9 @@ classDiagram
     }
     class MavrosTransport
     class PymavlinkTransport
-    ArduPilotDrone o-- MavlinkTransport
-    MavlinkTransport <|.. MavrosTransport
-    MavlinkTransport <|.. PymavlinkTransport
+    ArduPilotDrone o-- VehicleTransport
+    VehicleTransport <|.. MavrosTransport
+    VehicleTransport <|.. PymavlinkTransport
     ArduPilotDrone <|-- MavrosDrone
     ArduPilotDrone <|-- MavlinkDrone
     MavlinkDrone ..> PymavlinkTransport : builds
@@ -38,7 +38,7 @@ Thin wrapper around `mavutil.mavlink_connection` in [`connection.py`](connection
 
 ### `PymavlinkTransport`
 
-[`transport.py`](transport.py) — the `MavlinkTransport` implementation that owns the FCU link directly.
+[`transport.py`](transport.py) — the `VehicleTransport` implementation that owns the FCU link directly.
 
 - **RX**: a ROS timer on the drone's node drains `recv_match(blocking=False)` and dispatches each message through a handler table. Decoded types: `HEARTBEAT`, `GLOBAL_POSITION_INT`, `LOCAL_POSITION_NED`, `ATTITUDE`, `RANGEFINDER`/`DISTANCE_SENSOR`, `PARAM_VALUE`, `COMMAND_ACK`, and `STATUSTEXT`. This keeps the concurrency model identical to MAVROS — telemetry updates on the executor thread, blocking flight calls read it on the user thread.
 - **TX**: a 1 Hz heartbeat timer announces the companion; commands go via `command_long`/`set_mode`/`param_set`; setpoints via `set_position_target_local_ned` / `set_position_target_global_int`.
@@ -55,7 +55,7 @@ MAVROS forwards FCU [`STATUSTEXT`](https://mavlink.io/en/messages/common.html#ST
 
 #### Distance sensors
 
-Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by sensor id in a copy-on-write map, exposed as `distance_sensors` (and `get_distance(orientation)` on the drone). The downward sensor also updates `rangefinder`. Every reported orientation is collected automatically, with no SDK-side configuration beyond the FCU rangefinder/proximity setup. See the [ArduPilot core README](../ardupilot/README.md#distance-sensors) for the data model.
+Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by sensor id in a copy-on-write map, exposed as `distance_sensors` (and `get_distance(orientation)` on the drone). The downward sensor also updates `rangefinder`. Every reported orientation is collected automatically, with no SDK-side configuration beyond the FCU rangefinder/proximity setup. See the [vehicle core README](../vehicle/README.md#distance-sensors) for the data model.
 
 #### Stream rates
 

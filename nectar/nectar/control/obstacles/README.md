@@ -532,7 +532,7 @@ disable_x, disable_y, disable_z = manager.get_axis_control()
 
 **Navigation Integration**:
 ```python
-# In ArduPilotNavigator.navigate_pid()
+# In VehicleNavigator.navigate_pid()
 while True:
     if not drone.obstacle_manager.should_continue_navigation(drone):
         continue  # Pause or sequence executing
