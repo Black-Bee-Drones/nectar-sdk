@@ -18,6 +18,23 @@ class DroneConfig:
     start_driver: bool = False
 
 
+def require_config(config: DroneConfig, expected: type) -> DroneConfig:
+    """Return ``config`` unchanged, or raise ``TypeError`` on a type mismatch.
+
+    The :class:`~nectar.control.factory.DroneFactory` builders pass the user's
+    config straight through. This guards against silently discarding a
+    wrong-typed config (and the settings it carries) by substituting a typed
+    default — a mismatch is a programming error, so fail fast with a clear
+    message naming the expected and received types.
+    """
+    if not isinstance(config, expected):
+        raise TypeError(
+            f"{expected.__name__} expected, got {type(config).__name__}. "
+            f"Pass a {expected.__name__} (or a preset of that type)."
+        )
+    return config
+
+
 @dataclass(frozen=True)
 class DistanceSensorTopic:
     topic: str
@@ -26,8 +43,13 @@ class DistanceSensorTopic:
 
 
 @dataclass(frozen=True)
-class MavrosConfig(DroneConfig):
-    name: str = "mavros_drone"
+class _MavrosTelemetryConfig(DroneConfig):
+    """Shared MAVROS telemetry topics + sensor/PID/setpoint settings.
+
+    Common base for the ArduPilot (:class:`MavrosConfig`) and PX4
+    (:class:`Px4MavrosConfig`) MAVROS configs so the topic defaults live once.
+    """
+
     pose_source: PoseSource = PoseSource.GPS
     expect_lidar: bool = True
     sensor_timeout: float = 10.0
@@ -40,26 +62,21 @@ class MavrosConfig(DroneConfig):
     local_position_topic: str = "/mavros/local_position/pose"
     distance_sensors: Tuple[DistanceSensorTopic, ...] = ()
     pid_config_file: Optional[str] = None
+    # Setpoint speed/accel/jerk limits (WPNAV on ArduPilot, MPC_* on PX4).
+    # Applied to the FCU when apply_setpoint_params=True.
     setpoint_config_file: Optional[str] = None
     apply_setpoint_params: bool = False
+
+
+@dataclass(frozen=True)
+class MavrosConfig(_MavrosTelemetryConfig):
+    name: str = "mavros_drone"
     connection_string: str = "serial:///dev/ttyUSB0:921600"
 
 
 @dataclass(frozen=True)
-class Px4MavrosConfig(DroneConfig):
+class Px4MavrosConfig(_MavrosTelemetryConfig):
     name: str = "px4_drone"
-    pose_source: PoseSource = PoseSource.GPS
-    expect_lidar: bool = True
-    sensor_timeout: float = 10.0
-    lidar_topic: str = "/mavros/rangefinder/rangefinder"
-    vision_topic: str = "/mavros/vision_pose/pose_cov"
-    gps_topic: str = "/mavros/global_position/global"
-    heading_topic: str = "/mavros/global_position/compass_hdg"
-    rel_alt_topic: str = "/mavros/global_position/rel_alt"
-    state_topic: str = "/mavros/state"
-    local_position_topic: str = "/mavros/local_position/pose"
-    distance_sensors: Tuple[DistanceSensorTopic, ...] = ()
-    pid_config_file: Optional[str] = None
     # PX4 needs offboard setpoints streamed faster than 2 Hz (500 ms timeout).
     offboard_rate_hz: float = 20.0
     # PX4 SITL exposes the offboard MAVLink API on UDP 14540.
@@ -87,12 +104,16 @@ class Px4DdsConfig(DroneConfig):
 
 
 @dataclass(frozen=True)
-class MavlinkConfig(DroneConfig):
-    name: str = "mavlink_drone"
+class _MavlinkLinkConfig(DroneConfig):
+    """Shared direct-pymavlink link settings for ArduPilot and PX4.
+
+    Common base for :class:`MavlinkConfig` and :class:`Px4MavlinkConfig` so the
+    stream/heartbeat/vision/PID/setpoint defaults live once.
+    """
+
     pose_source: PoseSource = PoseSource.GPS
     expect_lidar: bool = True
     sensor_timeout: float = 10.0
-    connection_string: str = "/dev/ttyUSB0"
     baud: int = 921600
     source_system: int = 1
     source_component: int = 191  # MAV_COMP_ID_ONBOARD_COMPUTER
@@ -101,39 +122,34 @@ class MavlinkConfig(DroneConfig):
     heartbeat_hz: float = 1.0
     stream_rates: Optional[Dict[str, float]] = None
     vision_pose_topic: str = "/visual_slam/tracking/vo_pose_covariance"
-    vision_rate_hz: float = 90.0
     pid_config_file: Optional[str] = None
+    # Setpoint speed/accel/jerk limits (WPNAV on ArduPilot, MPC_* on PX4).
+    # Applied to the FCU when apply_setpoint_params=True.
     setpoint_config_file: Optional[str] = None
     apply_setpoint_params: bool = False
 
 
 @dataclass(frozen=True)
-class Px4MavlinkConfig(DroneConfig):
+class MavlinkConfig(_MavlinkLinkConfig):
+    name: str = "mavlink_drone"
+    connection_string: str = "/dev/ttyUSB0"
+    vision_rate_hz: float = 90.0
+
+
+@dataclass(frozen=True)
+class Px4MavlinkConfig(_MavlinkLinkConfig):
     """PX4 over a direct pymavlink link (no MAVROS).
 
-    Mirrors :class:`MavlinkConfig` (pymavlink endpoint + stream settings) but
-    drops ArduPilot setpoint-param fields and adds ``offboard_rate_hz`` for the
-    PX4 offboard setpoint pump.
+    Mirrors :class:`MavlinkConfig` (pymavlink endpoint + stream settings) and
+    adds ``offboard_rate_hz`` for the PX4 offboard setpoint pump.
     """
 
     name: str = "px4_mavlink_drone"
-    pose_source: PoseSource = PoseSource.GPS
-    expect_lidar: bool = True
-    sensor_timeout: float = 10.0
     # PX4 SITL exposes the offboard MAVLink API on UDP 14540 (pymavlink listens).
     # Real hardware overrides this (e.g. a serial path like /dev/ttyACM0).
     connection_string: str = "udp:0.0.0.0:14540"
-    baud: int = 921600
-    source_system: int = 1
-    source_component: int = 191  # MAV_COMP_ID_ONBOARD_COMPUTER
-    heartbeat_timeout: float = 30.0
-    rx_rate_hz: float = 100.0
-    heartbeat_hz: float = 1.0
-    stream_rates: Optional[Dict[str, float]] = None
-    vision_pose_topic: str = "/visual_slam/tracking/vo_pose_covariance"
     # PX4 needs offboard setpoints streamed faster than 2 Hz (500 ms timeout).
     offboard_rate_hz: float = 20.0
-    pid_config_file: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -238,6 +254,8 @@ PX4_SITL_GAZEBO_CONFIG = Px4MavrosConfig(
     pose_source=PoseSource.GPS,
     expect_lidar=True,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_outdoor.yaml"),
+    setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_outdoor.yaml"),
+    apply_setpoint_params=True,
 )
 """Px4MavrosConfig preset for PX4 SITL + Gazebo (x500_nectar outdoor, GPS + rangefinder).
 
@@ -250,6 +268,8 @@ PX4_SITL_VISION_CONFIG = Px4MavrosConfig(
     pose_source=PoseSource.VISION,
     expect_lidar=False,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_indoor.yaml"),
+    setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_indoor.yaml"),
+    apply_setpoint_params=True,
 )
 """Px4MavrosConfig preset for PX4 SITL + Gazebo indoor (EKF2 external vision)."""
 
@@ -274,6 +294,8 @@ PX4_MAVLINK_SITL_GAZEBO_CONFIG = Px4MavlinkConfig(
     pose_source=PoseSource.GPS,
     expect_lidar=True,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_outdoor.yaml"),
+    setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_outdoor.yaml"),
+    apply_setpoint_params=True,
 )
 """Px4MavlinkConfig preset for PX4 SITL + Gazebo over direct pymavlink (x500_nectar outdoor).
 
@@ -285,5 +307,7 @@ PX4_MAVLINK_SITL_VISION_CONFIG = Px4MavlinkConfig(
     pose_source=PoseSource.VISION,
     expect_lidar=False,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_indoor.yaml"),
+    setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_indoor.yaml"),
+    apply_setpoint_params=True,
 )
 """Px4MavlinkConfig preset for PX4 SITL indoor over direct pymavlink (VISION_POSITION_ESTIMATE)."""

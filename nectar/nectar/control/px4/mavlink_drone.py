@@ -15,7 +15,7 @@ from typing import Optional
 from pymavlink import mavutil
 from rclpy.executors import Executor
 
-from nectar.control.config import DroneConfig, Px4MavlinkConfig
+from nectar.control.config import DroneConfig, Px4MavlinkConfig, require_config
 from nectar.control.factory import DroneFactory
 from nectar.control.mavlink.connection import MavlinkConnection
 from nectar.control.mavlink.modes import MavlinkModeCodec
@@ -77,9 +77,7 @@ class Px4MavlinkDrone(Px4Drone):
         executor: Optional[Executor] = None,
     ) -> "Px4MavlinkDrone":
         """Factory entry point for :class:`DroneFactory`."""
-        if not isinstance(config, Px4MavlinkConfig):
-            config = Px4MavlinkConfig()
-        return cls(config, executor)
+        return cls(require_config(config, Px4MavlinkConfig), executor)
 
     @property
     def connection(self) -> MavlinkConnection:

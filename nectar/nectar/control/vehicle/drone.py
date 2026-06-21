@@ -28,6 +28,7 @@ from nectar.control.types import (
 from nectar.control.vehicle.gps_utils import GPSUtils
 from nectar.control.vehicle.navigator import VehicleNavigator
 from nectar.control.vehicle.sequencer import FlightSequencer
+from nectar.control.vehicle.setpoint_config import SetpointConfig
 from nectar.control.vehicle.target_computer import TargetComputer
 from nectar.control.vehicle.transport import VehicleTransport
 from nectar.control.vehicle.types import (
@@ -65,6 +66,10 @@ class VehicleDrone(BaseDrone):
         ROS 2 executor to register this drone's node with.
     """
 
+    # Firmware setpoint-config class (a SetpointConfig subclass), or None when
+    # the firmware exposes no FCU speed/accel parameters. Set by subclasses.
+    _setpoint_config_class: Optional[type] = None
+
     def __init__(
         self,
         config: DroneConfig,
@@ -74,6 +79,7 @@ class VehicleDrone(BaseDrone):
         self._transport = transport
         self._pose_source = config.pose_source
         self._pid_config: Optional[PositionPIDConfig] = None
+        self._setpoint_config: Optional[SetpointConfig] = None
         self._takeoff_position: Optional[Union[LocalTarget, GlobalTarget]] = None
         self._takeoff_local: Optional[LocalTarget] = None
         self._initial_altitude: float = 0.0
@@ -101,12 +107,24 @@ class VehicleDrone(BaseDrone):
     def _rtl_native(self, altitude: Optional[float], land: bool) -> bool:
         """Trigger the autopilot's native return-to-launch mode."""
 
+    @abstractmethod
+    def _change_speed(self, speed: float, speed_type: str) -> bool:
+        """Apply a runtime speed limit on ``speed_type`` (firmware-specific).
+
+        ``speed_type`` is one of ``"horizontal"``, ``"climb"``, ``"descent"``.
+        ArduPilot issues ``MAV_CMD_DO_CHANGE_SPEED``; PX4 updates the matching
+        ``MPC_*`` parameter.
+        """
+
     def _load_firmware_config(self) -> None:
         """Load firmware-specific configuration (e.g. setpoint parameters).
 
-        Called at the end of construction. No-op by default; ArduPilot loads
-        its ``SetpointNavConfig`` here.
+        Called at the end of construction. Loads the FCU setpoint-navigation
+        config when the firmware declares a ``_setpoint_config_class``.
+        Subclasses override to add behavior (PX4 starts the offboard pump) but
+        should call ``super()._load_firmware_config()`` to keep this.
         """
+        self._load_setpoint_config()
 
     def _command_takeoff(self, altitude: float) -> bool:
         """Issue the firmware takeoff command for ``altitude`` meters."""
@@ -158,7 +176,7 @@ class VehicleDrone(BaseDrone):
 
     @property
     def flight_mode(self) -> Optional[str]:
-        """Current ArduPilot flight mode."""
+        """Current FCU flight mode (firmware-specific name)."""
         return self._transport.state.mode
 
     @property
@@ -229,6 +247,11 @@ class VehicleDrone(BaseDrone):
     def pid_config(self) -> Optional[PositionPIDConfig]:
         """Current PID configuration for position control."""
         return self._pid_config
+
+    @property
+    def setpoint_config(self) -> Optional[SetpointConfig]:
+        """Current setpoint navigation configuration, or None if unsupported."""
+        return self._setpoint_config
 
     def get_altitude(self, source: AltitudeSource = AltitudeSource.AUTO) -> Optional[float]:
         """
@@ -752,6 +775,8 @@ class VehicleDrone(BaseDrone):
                 self._emit_velocity(vels[0], vels[1], vels[2], float(vyaw), frame)
                 self.delay(rate)
 
+            self._emit_velocity(0.0, 0.0, 0.0, 0.0, frame)
+
     def move_to(
         self,
         x: Optional[float] = None,
@@ -1238,6 +1263,88 @@ class VehicleDrone(BaseDrone):
             raise TypeError(f"Invalid config type: {type(config)}")
         self._node.get_logger().info("PID configuration updated")
 
+    # Setpoint navigation configuration (FCU speed/accel parameters)
+
+    def _load_setpoint_config(self) -> None:
+        """Load the firmware setpoint config from file or bundled preset.
+
+        No-op when the firmware declares no ``_setpoint_config_class``. The
+        preset is chosen by ``is_indoor`` from the firmware's ``config/`` dir.
+        """
+        cls = self._setpoint_config_class
+        if cls is None:
+            self._setpoint_config = None
+            return
+        file = getattr(self._config, "setpoint_config_file", None)
+        if file:
+            path = Path(file)
+        else:
+            name = "setpoint_indoor.yaml" if self.is_indoor else "setpoint_outdoor.yaml"
+            path = self._config_dir() / name
+        self._setpoint_config = cls.from_yaml(path) if path.exists() else cls()
+
+    def _apply_setpoint_config(self) -> None:
+        """Push the setpoint parameters to the FCU via ``set_param``.
+
+        Generic primary-name + alias fallback. ArduPilot overrides this to add
+        its cm/s unit conversion for the v4.8 ``WP_*`` aliases and radius
+        bookkeeping.
+        """
+        if self._setpoint_config is None:
+            return
+        cfg = self._setpoint_config
+        aliases = cfg.PARAM_ALIASES
+        failed = []
+        for name, val in cfg.to_fcu_params().items():
+            if self.set_param(name, val):
+                continue
+            alias = aliases.get(name)
+            if alias and self.set_param(alias, val):
+                continue
+            failed.append(name)
+        if failed:
+            self._node.get_logger().warn(f"Setpoint config: failed to set {', '.join(failed)}")
+        else:
+            self._node.get_logger().info("Setpoint config applied")
+
+    def set_setpoint_config(self, config, apply: bool = True) -> None:
+        """
+        Update setpoint navigation configuration.
+
+        When ``apply=True`` (default) the parameters are pushed to the FCU via
+        ``set_param`` (persisted to the autopilot's storage). Use ``apply=False``
+        to update the SDK-side config only.
+
+        Parameters
+        ----------
+        config : str | Path | dict | SetpointConfig
+            YAML file path, configuration dictionary, or a setpoint config of
+            this firmware's type.
+        apply : bool, default=True
+            If True, push the parameters to the FCU.
+
+        Raises
+        ------
+        CapabilityNotSupportedError
+            If this firmware exposes no setpoint configuration.
+        TypeError
+            If the config type is not supported.
+        """
+        cls = self._setpoint_config_class
+        if cls is None:
+            raise CapabilityNotSupportedError("setpoint configuration", self._config.name)
+        if isinstance(config, (str, Path)):
+            self._setpoint_config = cls.from_yaml(config)
+        elif isinstance(config, dict):
+            self._setpoint_config = cls.from_dict(config)
+        elif isinstance(config, cls):
+            self._setpoint_config = config
+        else:
+            raise TypeError(f"Invalid config type: {type(config)}")
+        if apply:
+            self._apply_setpoint_config()
+        self._node.get_logger().info("Setpoint navigation configuration updated")
+
     # Vehicle commands
 
     def emergency_stop(self) -> None:
@@ -1313,81 +1420,117 @@ class VehicleDrone(BaseDrone):
 
     def set_speed(self, speed: float, speed_type: str = "horizontal") -> bool:
         """
-        Change the speed limit at runtime via MAV_CMD_DO_CHANGE_SPEED.
+        Change the speed limit at runtime.
 
-        Immediately updates the position controller speed limits in the current
-        flight mode (both position-hold and waypoint sub-modes).
+        Updates the firmware's position-controller speed limit on the given
+        axis. ArduPilot issues ``MAV_CMD_DO_CHANGE_SPEED`` (active immediately);
+        PX4 updates the matching ``MPC_*`` parameter. See the firmware
+        specializations for the exact semantics.
 
         Parameters
         ----------
         speed : float
-            Speed in m/s. Use -1 for no change, -2 to revert to default.
+            Speed in m/s.
         speed_type : str, default="horizontal"
             Speed axis: "horizontal", "climb", or "descent".
 
         Returns
         -------
         bool
-            True if the command was accepted, False on failure or timeout.
-
-        See Also
-        --------
-        https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-do-change-speed
+            True if the change was accepted, False on failure or timeout.
         """
-        type_map = {"horizontal": 0, "climb": 1, "descent": 2}
-        if speed_type not in type_map:
+        if speed_type not in ("horizontal", "climb", "descent"):
             self._node.get_logger().error(
-                f"Invalid speed_type '{speed_type}'. Use: {list(type_map.keys())}"
+                f"Invalid speed_type '{speed_type}'. Use: horizontal, climb, descent"
             )
             return False
-        try:
-            return bool(
-                self._transport.send_command_long(
-                    178,  # MAV_CMD_DO_CHANGE_SPEED
-                    float(type_map[speed_type]),
-                    float(speed),
-                    -1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                )
-            )
-        except TimeoutError as e:
-            self._node.get_logger().error(f"Set speed failed: {e}")
-            return False
+        return self._change_speed(float(speed), speed_type)
 
-    def do_servo(self, aux_out: int, pwm_value: int) -> bool:
+    def set_actuator(self, index: int, value: float, group: int = 0) -> bool:
         """
-        Control an auxiliary servo output via MAV_CMD_DO_SET_SERVO.
+        Drive a payload actuator output via ``MAV_CMD_DO_SET_ACTUATOR``.
+
+        Firmware-neutral normalized actuator control: ArduPilot routes it to the
+        servo output assigned the matching actuator function, PX4 to the
+        ``Peripheral Actuator Set`` outputs (see the PX4 generic actuator
+        control docs). Untargeted actuators are left unchanged (``NaN``).
 
         Parameters
         ----------
-        aux_out : int
-            Servo channel (0-7 maps to AUX outputs 1-8, FCU channels 9-16).
-        pwm_value : int
-            PWM value in microseconds (typically 1000-2000).
+        index : int
+            Actuator number within the group, 1-6.
+        value : float
+            Normalized output in [-1, 1].
+        group : int, default=0
+            Actuator set/group index (param7); 0 = first set of 6 outputs.
 
         Returns
         -------
         bool
-            True if the command was sent, False on failure or timeout.
+            True if the command was accepted, False on failure or timeout.
+
+        Raises
+        ------
+        CapabilityNotSupportedError
+            If the drone does not declare ``Capability.ACTUATOR``.
+        ValueError
+            If ``index`` is outside 1-6.
         """
+        self._require(Capability.ACTUATOR)
+        if not 1 <= index <= 6:
+            raise ValueError(f"Actuator index must be 1-6, got {index}")
+        value = max(-1.0, min(float(value), 1.0))
+        params = [float("nan")] * 6
+        params[index - 1] = value
         try:
             return bool(
                 self._transport.send_command_long(
-                    183,  # MAV_CMD_DO_SET_SERVO
-                    float(aux_out + 8),
-                    float(pwm_value),
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
+                    187,  # MAV_CMD_DO_SET_ACTUATOR
+                    *params,
+                    float(group),
                 )
             )
         except TimeoutError as e:
-            self._node.get_logger().error(f"Servo command failed: {e}")
+            self._node.get_logger().error(f"Set actuator failed: {e}")
+            return False
+
+    def set_gripper(self, grab: bool, instance: int = 1) -> bool:
+        """
+        Open or close a gripper via ``MAV_CMD_DO_GRIPPER``.
+
+        Firmware-neutral gripper control supported by both ArduPilot (Gripper
+        library) and PX4 (Gripper output function). Ideal for payload release
+        (e.g. a hook): ``grab=False`` releases, ``grab=True`` grabs/holds.
+
+        Parameters
+        ----------
+        grab : bool
+            True to grab/close, False to release/open.
+        instance : int, default=1
+            Gripper instance id.
+
+        Returns
+        -------
+        bool
+            True if the command was accepted, False on failure or timeout.
+
+        Raises
+        ------
+        CapabilityNotSupportedError
+            If the drone does not declare ``Capability.GRIPPER``.
+        """
+        self._require(Capability.GRIPPER)
+        # GRIPPER_ACTION: 0 = release, 1 = grab.
+        try:
+            return bool(
+                self._transport.send_command_long(
+                    211,  # MAV_CMD_DO_GRIPPER
+                    float(instance),
+                    1.0 if grab else 0.0,
+                )
+            )
+        except TimeoutError as e:
+            self._node.get_logger().error(f"Gripper command failed: {e}")
             return False
 
     # Return to launch

@@ -9,7 +9,7 @@ from typing import Optional
 from rclpy.executors import Executor
 
 from nectar.control.ardupilot.drone import ArduPilotDrone
-from nectar.control.config import DroneConfig, MavlinkConfig
+from nectar.control.config import DroneConfig, MavlinkConfig, require_config
 from nectar.control.factory import DroneFactory
 from nectar.control.mavlink.connection import MavlinkConnection
 from nectar.control.mavlink.transport import PymavlinkTransport
@@ -46,9 +46,7 @@ class MavlinkDrone(ArduPilotDrone):
         executor: Optional[Executor] = None,
     ) -> "MavlinkDrone":
         """Factory entry point for :class:`DroneFactory`."""
-        if not isinstance(config, MavlinkConfig):
-            config = MavlinkConfig()
-        return cls(config, executor)
+        return cls(require_config(config, MavlinkConfig), executor)
 
     @property
     def connection(self) -> MavlinkConnection:

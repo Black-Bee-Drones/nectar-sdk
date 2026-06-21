@@ -1,0 +1,20 @@
+# Outdoor setpoint navigation parameters (PX4 multicopter position controller)
+# Maps to MPC_* parameters; all values SI (m/s, m/s/s, m/s³) except yaw_rate (deg/s).
+# Applied to the FCU when apply_setpoint_params=True (MAVROS / direct-MAVLink
+# backends only; not bridged over uXRCE-DDS).
+
+speed: 5.0        # MPC_XY_CRUISE  - desired horizontal cruise speed
+vel_max: 12.0     # MPC_XY_VEL_MAX - horizontal speed hard cap
+speed_up: 3.0     # MPC_Z_VEL_MAX_UP
+speed_down: 1.5   # MPC_Z_VEL_MAX_DN
+
+# Acceleration limits (m/s/s)
+accel: 3.0        # MPC_ACC_HOR
+accel_up: 4.0     # MPC_ACC_UP_MAX
+accel_down: 3.0   # MPC_ACC_DOWN_MAX
+
+# Jerk limit for the trajectory generator (m/s³) and auto yaw rate (deg/s)
+jerk: 8.0         # MPC_JERK_AUTO
+yaw_rate: 45.0    # MPC_YAWRAUTO_MAX
+
+takeoff_speed: 1.5  # MPC_TKO_SPEED

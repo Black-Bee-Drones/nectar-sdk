@@ -55,8 +55,16 @@ _POSITION_MASK = (
     | PositionTarget.IGNORE_VZ
 )
 
-# Bitmask: velocity + yaw-rate active (position/accel/yaw ignored).
-_VELOCITY_MASK = 1479
+# Bitmask: velocity + yaw-rate active (position/accel/yaw ignored). Equals 1479.
+_VELOCITY_MASK = (
+    PositionTarget.IGNORE_PX
+    | PositionTarget.IGNORE_PY
+    | PositionTarget.IGNORE_PZ
+    | PositionTarget.IGNORE_AFX
+    | PositionTarget.IGNORE_AFY
+    | PositionTarget.IGNORE_AFZ
+    | PositionTarget.IGNORE_YAW
+)
 
 
 class MavrosTransport(VehicleTransport):

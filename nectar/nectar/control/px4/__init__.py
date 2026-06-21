@@ -10,6 +10,7 @@ _LAZY_ATTRS = {
     "Px4ModeCodec": "nectar.control.px4.mavlink_drone",
     "Px4DdsDrone": "nectar.control.px4.dds_drone",
     "Px4DdsTransport": "nectar.control.px4.dds_transport",
+    "Px4SetpointConfig": "nectar.control.px4.setpoint_config",
 }
 
 
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from nectar.control.px4.drone import Px4Drone
     from nectar.control.px4.mavlink_drone import Px4MavlinkDrone, Px4ModeCodec
     from nectar.control.px4.mavros_drone import Px4MavrosDrone
+    from nectar.control.px4.setpoint_config import Px4SetpointConfig
 
 
 __all__ = [
@@ -41,4 +43,5 @@ __all__ = [
     "Px4ModeCodec",
     "Px4DdsDrone",
     "Px4DdsTransport",
+    "Px4SetpointConfig",
 ]

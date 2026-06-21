@@ -1,0 +1,19 @@
+# Indoor setpoint navigation parameters (PX4 multicopter position controller)
+# Gentle speed/accel limits for confined GPS-denied flight (vision pose).
+# Maps to MPC_* parameters; all values SI except yaw_rate (deg/s).
+
+speed: 1.5        # MPC_XY_CRUISE  - slow horizontal cruise indoors
+vel_max: 3.0      # MPC_XY_VEL_MAX - low horizontal cap
+speed_up: 1.0     # MPC_Z_VEL_MAX_UP
+speed_down: 0.7   # MPC_Z_VEL_MAX_DN
+
+# Acceleration limits (m/s/s) - gentle for tight spaces
+accel: 2.0        # MPC_ACC_HOR
+accel_up: 2.0     # MPC_ACC_UP_MAX
+accel_down: 2.0   # MPC_ACC_DOWN_MAX
+
+# Jerk limit (m/s³) and auto yaw rate (deg/s)
+jerk: 4.0         # MPC_JERK_AUTO
+yaw_rate: 30.0    # MPC_YAWRAUTO_MAX
+
+takeoff_speed: 1.0  # MPC_TKO_SPEED

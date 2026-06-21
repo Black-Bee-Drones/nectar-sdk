@@ -58,10 +58,12 @@ except ImportError:  # px4_msgs not built into the workspace
 
 # PX4 nav_state -> readable mode name (subset used by the SDK).
 # Source: px4_msgs VehicleStatus NAVIGATION_STATE_* constants.
+_NAV_STATE_OFFBOARD = 14
+
 _NAV_STATE_TO_MODE = {
     4: "AUTO.LOITER",
     5: "AUTO.RTL",
-    14: "OFFBOARD",
+    _NAV_STATE_OFFBOARD: "OFFBOARD",
     17: "AUTO.TAKEOFF",
     18: "AUTO.LAND",
 }
@@ -194,7 +196,7 @@ class Px4DdsTransport(VehicleTransport):
         self._vehicle_state = VehicleState(
             connected=True,
             armed=int(msg.arming_state) == _ARMING_STATE_ARMED,
-            guided=int(msg.nav_state) == 14,
+            guided=int(msg.nav_state) == _NAV_STATE_OFFBOARD,
             mode=mode,
             system_status=int(msg.arming_state),
         )

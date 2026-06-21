@@ -139,7 +139,7 @@ class VehicleTransport(ABC):
 
     @abstractmethod
     def set_param(self, name: str, value: Union[int, float]) -> bool:
-        """Set an ArduPilot parameter."""
+        """Set an autopilot parameter (ArduPilot or PX4)."""
 
     @abstractmethod
     def send_command_long(self, command: int, *params: float) -> bool:

@@ -2,6 +2,8 @@
 
 Configures GUID_OPTIONS, speed limits, arrival radius, acceleration,
 jerk limits, and rangefinder usage for setpoint-based navigation strategies.
+Shared YAML/dict I/O and range-clamping live in the firmware-agnostic
+:class:`~nectar.control.vehicle.setpoint_config.SetpointConfig` base.
 
 ArduPilot parameters reference:
     https://ardupilot.org/copter/docs/parameters.html#wpnav-parameters
@@ -10,13 +12,13 @@ ArduPilot parameters reference:
 """
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import ClassVar, Dict, Tuple
 
-import yaml
+from nectar.control.vehicle.setpoint_config import SetpointConfig
 
 
 @dataclass
-class SetpointNavConfig:
+class SetpointNavConfig(SetpointConfig):
     """
     Configuration for ArduPilot setpoint navigation parameters.
 
@@ -69,7 +71,7 @@ class SetpointNavConfig:
     rfnd_use: int = 1
 
     # ArduPilot v4.8+ renamed WPNAV_* → WP_*. Maps primary (4.6.3) name → alias (4.8+) name.
-    PARAM_ALIASES = {
+    PARAM_ALIASES: ClassVar[Dict[str, str]] = {
         "WPNAV_SPEED": "WP_SPD",
         "WPNAV_SPEED_UP": "WP_SPD_UP",
         "WPNAV_SPEED_DN": "WP_SPD_DN",
@@ -81,7 +83,7 @@ class SetpointNavConfig:
     }
 
     # ArduPilot valid ranges
-    _RANGES = {
+    _RANGES: ClassVar[Dict[str, Tuple[float, float]]] = {
         "speed": (0.1, 20.0),  # WPNAV_SPEED: 10–2000 cm/s
         "speed_up": (0.1, 10.0),  # WPNAV_SPEED_UP: 10–1000 cm/s
         "speed_down": (0.1, 5.0),  # WPNAV_SPEED_DN: 10–500 cm/s
@@ -94,67 +96,12 @@ class SetpointNavConfig:
     def __post_init__(self) -> None:
         self.guid_options = int(self.guid_options)
         self.rfnd_use = int(bool(self.rfnd_use))
-        for field_name, (lo, hi) in self._RANGES.items():
-            setattr(self, field_name, max(lo, min(float(getattr(self, field_name)), hi)))
+        super().__post_init__()
 
     @property
     def use_wpnav(self) -> bool:
         """True if GUID_OPTIONS bit 6 (WPNav S-curve) is enabled."""
         return bool(self.guid_options & (1 << 6))
-
-    @classmethod
-    def from_yaml(cls, file_path: str | Path) -> "SetpointNavConfig":
-        """
-        Load configuration from YAML file.
-
-        Parameters
-        ----------
-        file_path : str or Path
-            Path to YAML configuration file.
-
-        Returns
-        -------
-        SetpointNavConfig
-
-        Raises
-        ------
-        ValueError
-            If YAML content is not a mapping.
-        """
-        with open(file_path, "r", encoding="utf-8") as f:
-            config_dict = yaml.safe_load(f)
-
-        if config_dict is None:
-            return cls()
-        if not isinstance(config_dict, dict):
-            raise ValueError(f"Expected YAML mapping, got {type(config_dict).__name__}")
-        return cls.from_dict(config_dict)
-
-    @classmethod
-    def from_dict(cls, config_dict: dict) -> "SetpointNavConfig":
-        """
-        Create from dictionary.
-
-        Parameters
-        ----------
-        config_dict : dict
-            Dictionary with configuration parameters.
-
-        Returns
-        -------
-        SetpointNavConfig
-        """
-        return cls(
-            guid_options=config_dict.get("guid_options", 1),
-            speed=config_dict.get("speed", 2.0),
-            speed_up=config_dict.get("speed_up", 1.5),
-            speed_down=config_dict.get("speed_down", 1.5),
-            accel=config_dict.get("accel", 1.0),
-            radius=config_dict.get("radius", 0.2),
-            jerk=config_dict.get("jerk", 1.0),
-            psc_jerk=config_dict.get("psc_jerk", 5.0),
-            rfnd_use=config_dict.get("rfnd_use", 1),
-        )
 
     def to_fcu_params(self) -> dict:
         """Return ArduPilot parameter names and values in FCU units.
@@ -174,18 +121,4 @@ class SetpointNavConfig:
             "WPNAV_JERK": float(self.jerk),
             "WPNAV_RFND_USE": int(self.rfnd_use),
             "PSC_JERK_XY": float(self.psc_jerk),
-        }
-
-    def to_dict(self) -> dict:
-        """Convert configuration to dictionary."""
-        return {
-            "guid_options": self.guid_options,
-            "speed": self.speed,
-            "speed_up": self.speed_up,
-            "speed_down": self.speed_down,
-            "accel": self.accel,
-            "radius": self.radius,
-            "jerk": self.jerk,
-            "psc_jerk": self.psc_jerk,
-            "rfnd_use": self.rfnd_use,
         }

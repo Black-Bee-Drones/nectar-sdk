@@ -61,6 +61,7 @@ from nectar.control.pid import (
     PIDController,
     PositionPIDConfig,
 )
+from nectar.control.px4.setpoint_config import Px4SetpointConfig
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
@@ -68,6 +69,7 @@ from nectar.control.types import (
     PoseSource,
     RTLMethod,
 )
+from nectar.control.vehicle.setpoint_config import SetpointConfig
 from nectar.control.vehicle.types import DistanceReading, SensorOrientation
 
 _LAZY_ATTRS = {
@@ -165,7 +167,9 @@ __all__ = [
     "PIDController",
     "PIDConfig",
     "PositionPIDConfig",
+    "SetpointConfig",
     "SetpointNavConfig",
+    "Px4SetpointConfig",
     "BaseDrone",
     "VehicleDrone",
     "MavrosDrone",

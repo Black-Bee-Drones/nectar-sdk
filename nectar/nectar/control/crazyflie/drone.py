@@ -12,7 +12,7 @@ from tf2_msgs.msg import TFMessage
 
 from nectar.control.base import BaseDrone
 from nectar.control.capabilities import Capability
-from nectar.control.config import CrazyflieConfig, DroneConfig
+from nectar.control.config import CrazyflieConfig, DroneConfig, require_config
 from nectar.control.exceptions import (
     CapabilityNotSupportedError,
     TakeoffPositionNotSetError,
@@ -116,9 +116,7 @@ class CrazyflieDrone(BaseDrone):
         executor: Optional[Executor] = None,
     ) -> "CrazyflieDrone":
         """Factory entry point for :class:`DroneFactory`."""
-        if not isinstance(config, CrazyflieConfig):
-            config = CrazyflieConfig()
-        return cls(config, executor)
+        return cls(require_config(config, CrazyflieConfig), executor)
 
     # Properties
 

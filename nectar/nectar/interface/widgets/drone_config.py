@@ -165,7 +165,7 @@ class DroneConfigPanel(QWidget):
             )
         )
 
-        # Setpoint config file (ArduPilot only; hidden for PX4)
+        # Setpoint config file (ArduPilot WPNAV / PX4 MPC_*; preset dir per firmware)
         self._mavros_setpoint_file = QComboBox()
         self._populate_config_combo(self._mavros_setpoint_file, "setpoint_", "ardupilot")
         self._mavros_setpoint_file.currentIndexChanged.connect(self._on_config_changed)
@@ -179,14 +179,15 @@ class DroneConfigPanel(QWidget):
         )
         layout.addWidget(self._mavros_setpoint_container)
 
-        # Apply setpoint params to FCU (ArduPilot only; hidden for PX4)
+        # Apply setpoint params to FCU (ArduPilot WPNAV / PX4 MPC_*)
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
         apply_row.setSpacing(8)
         self._mavros_apply_setpoint = QCheckBox("Apply setpoint params to FCU")
         self._mavros_apply_setpoint.setChecked(False)
         self._mavros_apply_setpoint.setToolTip(
-            "Push WPNAV/GUID_OPTIONS from YAML to Pixhawk on arm. "
+            "Push setpoint speed/accel params from YAML to the FCU on arm "
+            "(WPNAV/GUID_OPTIONS on ArduPilot, MPC_* on PX4). "
             "Off = use existing FCU values (default)."
         )
         self._mavros_apply_setpoint.stateChanged.connect(self._on_config_changed)
@@ -311,7 +312,7 @@ class DroneConfigPanel(QWidget):
             )
         )
 
-        # Setpoint config file (ArduPilot only; hidden for PX4)
+        # Setpoint config file (ArduPilot WPNAV / PX4 MPC_*; preset dir per firmware)
         self._mavlink_setpoint_file = QComboBox()
         self._populate_config_combo(self._mavlink_setpoint_file, "setpoint_", "ardupilot")
         self._mavlink_setpoint_file.currentIndexChanged.connect(self._on_config_changed)
@@ -325,14 +326,15 @@ class DroneConfigPanel(QWidget):
         )
         layout.addWidget(self._mavlink_setpoint_container)
 
-        # Apply setpoint params to FCU (ArduPilot only; hidden for PX4)
+        # Apply setpoint params to FCU (ArduPilot WPNAV / PX4 MPC_*)
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
         apply_row.setSpacing(8)
         self._mavlink_apply_setpoint = QCheckBox("Apply setpoint params to FCU")
         self._mavlink_apply_setpoint.setChecked(False)
         self._mavlink_apply_setpoint.setToolTip(
-            "Push WPNAV/GUID_OPTIONS from YAML to Pixhawk on arm. "
+            "Push setpoint speed/accel params from YAML to the FCU on arm "
+            "(WPNAV/GUID_OPTIONS on ArduPilot, MPC_* on PX4). "
             "Off = use existing FCU values (default)."
         )
         self._mavlink_apply_setpoint.stateChanged.connect(self._on_config_changed)
@@ -678,11 +680,10 @@ class DroneConfigPanel(QWidget):
             self._mavros_connection.setText(defaults[firmware])
         self._mavros_connection.setPlaceholderText(defaults[firmware])
 
+        # PID and setpoint presets both switch to the firmware's config dir
+        # (ArduPilot WPNAV/GUID_OPTIONS vs PX4 MPC_*); both apply to either FCU.
         self._populate_config_combo(self._mavros_pid_file, "position_", firmware)
-
-        is_ardupilot = firmware == "ardupilot"
-        self._mavros_setpoint_container.setVisible(is_ardupilot)
-        self._mavros_apply_container.setVisible(is_ardupilot)
+        self._populate_config_combo(self._mavros_setpoint_file, "setpoint_", firmware)
 
     def _apply_mavlink_firmware(self, firmware: str) -> None:
         """Adapt the shared MAVLink panel to ArduPilot or PX4."""
@@ -691,11 +692,10 @@ class DroneConfigPanel(QWidget):
         if not current or current in defaults.values():
             self._mavlink_connection.setCurrentText(defaults[firmware])
 
+        # PID and setpoint presets both switch to the firmware's config dir
+        # (ArduPilot WPNAV/GUID_OPTIONS vs PX4 MPC_*); both apply to either FCU.
         self._populate_config_combo(self._mavlink_pid_file, "position_", firmware)
-
-        is_ardupilot = firmware == "ardupilot"
-        self._mavlink_setpoint_container.setVisible(is_ardupilot)
-        self._mavlink_apply_container.setVisible(is_ardupilot)
+        self._populate_config_combo(self._mavlink_setpoint_file, "setpoint_", firmware)
 
     def get_config(self) -> Dict[str, Any]:
         """
@@ -988,14 +988,15 @@ class DroneConfigPanel(QWidget):
         elif self._drone_type == "px4":
             from nectar.control import Px4MavrosConfig
 
-            # PX4 has no WPNAV/setpoint params; the panel defaults the connection
-            # to the PX4 offboard endpoint, so it can be passed through directly.
+            # PX4 setpoint params are MPC_* (applied over MAVROS when enabled).
             return Px4MavrosConfig(
                 start_driver=False,
                 pose_source=config_dict["pose_source"],
                 expect_lidar=config_dict["use_lidar"],
                 lidar_topic=config_dict["lidar_topic"],
                 pid_config_file=config_dict["pid_config_file"],
+                setpoint_config_file=config_dict["setpoint_config_file"],
+                apply_setpoint_params=config_dict["apply_setpoint_params"],
                 connection_string=config_dict["connection_string"],
             )
         elif self._drone_type == "mavlink":
@@ -1015,6 +1016,7 @@ class DroneConfigPanel(QWidget):
         elif self._drone_type == "px4_mavlink":
             from nectar.control import Px4MavlinkConfig
 
+            # PX4 setpoint params are MPC_* (applied over the direct link when enabled).
             return Px4MavlinkConfig(
                 start_driver=False,
                 pose_source=config_dict["pose_source"],
@@ -1023,6 +1025,8 @@ class DroneConfigPanel(QWidget):
                 connection_string=config_dict["connection_string"],
                 baud=config_dict["baud"],
                 pid_config_file=config_dict["pid_config_file"],
+                setpoint_config_file=config_dict["setpoint_config_file"],
+                apply_setpoint_params=config_dict["apply_setpoint_params"],
             )
         elif self._drone_type == "px4_dds":
             from nectar.control import Px4DdsConfig

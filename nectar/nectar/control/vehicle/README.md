@@ -16,7 +16,8 @@ classDiagram
         -_navigator VehicleNavigator
         -_sequencer FlightSequencer
         +takeoff() land() move_to() move_to_gps() move_velocity() rtl()
-        +arm()* _rtl_native()* capabilities*
+        +set_speed() set_actuator() set_gripper() set_setpoint_config()
+        +arm()* _rtl_native()* _change_speed()* capabilities*
         +_command_takeoff() _command_land() _ensure_offboard_ready()
         +_emit_velocity() _prepare_position_setpoint() _load_firmware_config()
     }
@@ -48,6 +49,7 @@ classDiagram
 | --- | --- |
 | `types.py` | Plain dataclasses (`Vec3`, `LocalPose`, `GeoPoint`, `Attitude`, `VehicleState`, `LocalTarget`, `GlobalTarget`, `TargetFrame`). ENU/radians conventions. No ROS imports. |
 | `transport.py` | `VehicleTransport` ABC: telemetry read-properties + command/setpoint write-methods + lifecycle. |
+| `setpoint_config.py` | `SetpointConfig` base — SI speed/accel/jerk limits, shared YAML/dict I/O and range-clamp; firmware `to_fcu_params` (ArduPilot `WPNAV_*`, PX4 `MPC_*`). |
 | `drone.py` | `VehicleDrone(BaseDrone)` — shared flight behavior + firmware hooks. |
 | `navigator.py` | `VehicleNavigator` — PID and setpoint navigation loops over plain targets/poses. |
 | `target_computer.py` | Stateless target computation (local/GPS offsets → `LocalTarget`/`GlobalTarget`). |
@@ -67,7 +69,9 @@ classDiagram
 | `_ensure_offboard_ready()` | no-op | no-op (GUIDED persists) | (re)enter OFFBOARD, keep pump alive |
 | `_prepare_position_setpoint(p)` | no-op | sync `WPNAV_RADIUS` | no-op |
 | `_emit_velocity(...)` | transport send | transport send | also store for the offboard pump |
-| `_load_firmware_config()` | no-op | load `SetpointNavConfig` | start the offboard pump |
+| `_change_speed(v, axis)` | abstract | `DO_CHANGE_SPEED` | `MPC_XY_CRUISE`/`MPC_Z_VEL_MAX_*` param |
+| `_load_firmware_config()` | load setpoint config | + radius bookkeeping | + start the offboard pump |
+| `_apply_setpoint_config()` | `set_param` per param (+alias) | WPNAV cm/s + `WP_*` alias | `MPC_*` (SI) |
 | `capabilities` | abstract | declares ArduPilot set | declares PX4 set |
 
 ## Conventions

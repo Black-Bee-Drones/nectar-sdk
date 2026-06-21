@@ -10,7 +10,7 @@ from typing import Optional
 from rclpy.executors import Executor
 
 from nectar.control.ardupilot.drone import ArduPilotDrone
-from nectar.control.config import DroneConfig, MavrosConfig
+from nectar.control.config import DroneConfig, MavrosConfig, require_config
 from nectar.control.factory import DroneFactory
 from nectar.control.mavros.transport import MavrosTransport
 
@@ -43,9 +43,7 @@ class MavrosDrone(ArduPilotDrone):
         executor: Optional[Executor] = None,
     ) -> "MavrosDrone":
         """Factory entry point for :class:`DroneFactory`."""
-        if not isinstance(config, MavrosConfig):
-            config = MavrosConfig()
-        return cls(config, executor)
+        return cls(require_config(config, MavrosConfig), executor)
 
 
 DroneFactory.register("mavros", MavrosDrone.from_config)

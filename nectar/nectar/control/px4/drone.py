@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from nectar.control.capabilities import Capability
+from nectar.control.px4.setpoint_config import Px4SetpointConfig
 from nectar.control.vehicle.drone import VehicleDrone
 from nectar.control.vehicle.types import (
     GlobalTarget,
@@ -46,6 +47,9 @@ class Px4Drone(VehicleDrone):
     # Seconds to stream setpoints before requesting OFFBOARD so PX4 accepts it.
     _OFFBOARD_PRESTREAM_S = 0.5
 
+    # PX4 setpoint params come from a Px4SetpointConfig (MPC_* speed/accel/jerk).
+    _setpoint_config_class = Px4SetpointConfig
+
     # Capabilities
 
     @property
@@ -57,6 +61,8 @@ class Px4Drone(VehicleDrone):
             Capability.VELOCITY_BODY,
             Capability.VELOCITY_WORLD,
             Capability.VELOCITY_TAKEOFF,
+            Capability.ACTUATOR,
+            Capability.GRIPPER,
             Capability.PARAMS,
             Capability.NATIVE_RTL,
             Capability.OBSTACLE_AVOIDANCE,
@@ -77,7 +83,8 @@ class Px4Drone(VehicleDrone):
     # Offboard setpoint pump
 
     def _load_firmware_config(self) -> None:
-        """Start the offboard setpoint pump (no PX4 setpoint-param config)."""
+        """Load the MPC setpoint config and start the offboard setpoint pump."""
+        super()._load_firmware_config()
         self._offboard_setpoint: Optional[tuple] = None
         self._offboard_active: bool = False
         rate = float(getattr(self._config, "offboard_rate_hz", 20.0) or 20.0)
@@ -166,6 +173,10 @@ class Px4Drone(VehicleDrone):
                 return False
             if not self._wait_until(lambda: self.flight_mode == _MODE_OFFBOARD, 3.0):
                 self._node.get_logger().warn(f"{WARN} OFFBOARD slow to reflect in state")
+            # MPC_* speed/accel limits (no-op on the uXRCE-DDS backend, which has
+            # no apply_setpoint_params field and cannot set_param).
+            if getattr(self._config, "apply_setpoint_params", False):
+                self._apply_setpoint_config()
             if not self._transport.arm():
                 return False
             if not self._wait_until(lambda: self.is_armed, 6.0):
@@ -212,3 +223,26 @@ class Px4Drone(VehicleDrone):
         except TimeoutError as e:
             self._node.get_logger().error(f"RTL PX4 failed: {e}")
             return False
+
+    # Runtime speed (PX4 MPC_* parameters)
+
+    def _change_speed(self, speed: float, speed_type: str) -> bool:
+        """Runtime speed change by updating the PX4 ``MPC_*`` velocity parameter.
+
+        ``horizontal`` sets the cruise speed and raises the hard cap to match;
+        ``climb`` / ``descent`` set the vertical limits. Requires a backend that
+        can set parameters (MAVROS / direct MAVLink); the uXRCE-DDS backend
+        cannot and returns False.
+        """
+        if speed <= 0:
+            self._node.get_logger().error("PX4 set_speed requires a positive speed (m/s)")
+            return False
+        params = {
+            "horizontal": ("MPC_XY_CRUISE", "MPC_XY_VEL_MAX"),
+            "climb": ("MPC_Z_VEL_MAX_UP",),
+            "descent": ("MPC_Z_VEL_MAX_DN",),
+        }[speed_type]
+        ok = True
+        for name in params:
+            ok = self.set_param(name, float(speed)) and ok
+        return ok

@@ -110,7 +110,8 @@ classDiagram
         +position position_as_target
         +get_altitude(source) Optional~float~
         +distance_sensors get_distance(orientation)
-        +set_mode(mode) set_param(id, value) set_speed(speed, type) do_servo()
+        +set_mode(mode) set_param(id, value) set_speed(speed, type)
+        +do_servo() set_actuator() set_gripper()
         +set_home() set_takeoff_position() set_pid_config() set_setpoint_config()
     }
 
@@ -244,8 +245,8 @@ Each drone declares a `frozenset[Capability]` (see `capabilities.py`); query wit
 
 Declared sets per drone:
 
-- `ArduPilotDrone` (MAVROS/MAVLink): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `SERVO`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`.
-- `Px4Drone` (`px4`, `px4_mavlink`, `px4_dds`): same as ArduPilot minus `SERVO` (PX4 exposes no equivalent servo path); `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`. Capabilities are identical across the three PX4 backends.
+- `ArduPilotDrone` (MAVROS/MAVLink): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `SERVO`, `ACTUATOR`, `GRIPPER`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`.
+- `Px4Drone` (`px4`, `px4_mavlink`, `px4_dds`): same as ArduPilot minus `SERVO` — PX4 has no per-channel PWM `do_servo`, but keeps `ACTUATOR` (`DO_SET_ACTUATOR`) and `GRIPPER` (`DO_GRIPPER`) for payloads; `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor) from `pose_source`. Capabilities are identical across the three PX4 backends.
 - `CrazyflieDrone`: `LOCAL_SETPOINT`, `VELOCITY_BODY`, `VELOCITY_WORLD`, `VELOCITY_TAKEOFF`, `PARAMS`.
 - `BebopDrone`: `VELOCITY_BODY`, `NATIVE_RTL`.
 

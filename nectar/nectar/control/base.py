@@ -163,6 +163,15 @@ class BaseDrone(ABC):
         """Return whether this drone declares ``capability``."""
         return capability in self.capabilities
 
+    def _require(self, capability: Capability) -> None:
+        """Raise :class:`CapabilityNotSupportedError` if ``capability`` is absent.
+
+        Single enforcement path for capability-gated operations, so the declared
+        capability set is the source of truth rather than scattered ad-hoc checks.
+        """
+        if capability not in self.capabilities:
+            raise CapabilityNotSupportedError(capability.name, self._config.name)
+
     def add_obstacle_detector(
         self,
         name: str,
@@ -347,7 +356,7 @@ class BaseDrone(ABC):
             Execution time. If None, command is continuous.
         reference : MoveReference (enum), default=BODY
             - BODY: relative to current orientation
-            - WORLD: relative to world frame (NED frame)
+            - WORLD: absolute world frame (ENU directions)
             - TAKEOFF: relative to takeoff position
         """
         pass
@@ -398,7 +407,7 @@ class BaseDrone(ABC):
         reference : MoveReference (enum), default=BODY
             Reference frame for movement:
             - BODY: relative to current orientation
-            - WORLD: relative to world frame (NED frame)
+            - WORLD: absolute world frame (ENU directions)
             - TAKEOFF: relative to takeoff position
 
         timeout : Optional[float], default=60.0

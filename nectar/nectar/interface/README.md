@@ -62,7 +62,7 @@ Drone control interface with keyboard-based velocity control and position naviga
 - **Bebop**: Basic control (takeoff, land, velocity, flips)
 - **Crazyflie**: Takeoff, land, velocity, and onboard position (`goTo`)
 
-The MAVROS and MAVLink panels are shared by ArduPilot and PX4 and adapt to the firmware: the connection default switches to the PX4 offboard endpoint, the ArduPilot-only setpoint (WPNAV/GUID_OPTIONS) fields are hidden, and the PID preset list is loaded from [`control/px4/config`](../control/px4/config) instead of [`control/ardupilot/config`](../control/ardupilot/config) (both include the `*_sim_*` SITL presets).
+The MAVROS and MAVLink panels are shared by ArduPilot and PX4 and adapt to the firmware: the connection default switches to the PX4 offboard endpoint, and the PID and setpoint preset lists are loaded from [`control/px4/config`](../control/px4/config) instead of [`control/ardupilot/config`](../control/ardupilot/config) (both include the `*_sim_*` SITL presets). The setpoint config exposes each firmware's speed/accel limits — ArduPilot `WPNAV`/`GUID_OPTIONS` or PX4 `MPC_*` — with **Apply setpoint params to FCU** pushing them on arm. The uXRCE-DDS panel (`px4_dds`) shows only the PID preset, since PX4 parameters are not bridged over uXRCE-DDS.
 
 ### Vision Tab
 

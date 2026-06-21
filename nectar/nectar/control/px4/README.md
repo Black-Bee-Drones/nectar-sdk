@@ -68,7 +68,7 @@ Unlike ArduPilot's single `GUIDED` mode, PX4 separates offboard control from the
 
 ## Capabilities
 
-`Px4Drone.capabilities` is derived from the configured `pose_source` (see [`capabilities.py`](../capabilities.py)): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`/`WORLD`/`TAKEOFF`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor). PX4 does not expose ArduPilot's `SERVO` path, so it is not declared.
+`Px4Drone.capabilities` is derived from the configured `pose_source` (see [`capabilities.py`](../capabilities.py)): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`/`WORLD`/`TAKEOFF`, `ACTUATOR`, `GRIPPER`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor). PX4 declares `ACTUATOR` (`DO_SET_ACTUATOR`) and `GRIPPER` (`DO_GRIPPER`) for payloads, but not ArduPilot's per-channel PWM `SERVO` path (`do_servo`); see [Payload actuators](#payload-actuators--gripper).
 
 ## Configuration
 
@@ -86,9 +86,51 @@ config = Px4MavrosConfig(
 drone = DroneFactory.create("px4", config)
 ```
 
-`Px4MavrosConfig` carries the MAVROS topic names (identical to `MavrosConfig`), `connection_string` (a MAVROS `fcu_url`), `offboard_rate_hz`, and `mavros_launch` (default `px4.launch`). It has no `setpoint_config_file`/WPNAV fields — PX4 has no equivalent of ArduPilot's `GUID_OPTIONS`/`WPNAV` parameters.
+`Px4MavrosConfig` carries the MAVROS topic names (identical to `MavrosConfig`), `connection_string` (a MAVROS `fcu_url`), `offboard_rate_hz`, `mavros_launch` (default `px4.launch`), and the setpoint-config fields `setpoint_config_file` / `apply_setpoint_params` (see below).
 
 **SITL presets** (in [`config.py`](../config.py)): `PX4_SITL_CONFIG`, `PX4_SITL_GAZEBO_CONFIG`, `PX4_SITL_VISION_CONFIG`.
+
+## Setpoint configuration (speed / acceleration)
+
+PX4's analog of ArduPilot's WPNAV parameters is the multicopter position-controller `MPC_*` family. [`Px4SetpointConfig`](setpoint_config.py) carries SI-unit speed/accel/jerk limits and maps them to `MPC_*` (see the [PX4 Controller Diagrams](https://docs.px4.io/main/en/flight_stack/controller_diagrams) and [Parameter Reference](https://docs.px4.io/main/en/advanced/parameter_reference)):
+
+| Field | PX4 param | Meaning |
+|-------|-----------|---------|
+| `speed` | `MPC_XY_CRUISE` | Horizontal cruise speed |
+| `vel_max` | `MPC_XY_VEL_MAX` | Horizontal speed hard cap (raised to ≥ `speed`) |
+| `speed_up` / `speed_down` | `MPC_Z_VEL_MAX_UP` / `MPC_Z_VEL_MAX_DN` | Climb / descent speed |
+| `accel` | `MPC_ACC_HOR` | Horizontal acceleration |
+| `accel_up` / `accel_down` | `MPC_ACC_UP_MAX` / `MPC_ACC_DOWN_MAX` | Vertical acceleration |
+| `jerk` | `MPC_JERK_AUTO` | Trajectory jerk limit |
+| `yaw_rate` | `MPC_YAWRAUTO_MAX` | Auto yaw rate (deg/s) |
+| `takeoff_speed` | `MPC_TKO_SPEED` | Takeoff climb speed |
+
+These govern the **POSITION / POSITION_GLOBAL** setpoint paths and the PX4 offboard takeoff climb. The default **PID / PID_EKF** path is unaffected — there the SDK computes velocity and the ceiling is the per-axis PID output clamp (see [vehicle/README.md](../vehicle/README.md#pid-configuration)), identical to ArduPilot.
+
+Set via config (`apply_setpoint_params=True` pushes the params to the FCU on `arm()`) or at runtime; `set_speed` changes a single axis live:
+
+```python
+from nectar.control import DroneFactory, Px4MavrosConfig, Px4SetpointConfig
+
+drone = DroneFactory.create("px4", Px4MavrosConfig(
+    setpoint_config_file="setpoint_outdoor.yaml", apply_setpoint_params=True,
+))
+drone.set_setpoint_config({"speed": 3.0, "accel": 2.5})  # push MPC_* to the FCU
+drone.set_speed(2.0, "horizontal")                        # live: MPC_XY_CRUISE/VEL_MAX
+```
+
+Bundled presets live in [`config/`](config) (`setpoint_outdoor.yaml`, `setpoint_indoor.yaml`, and the `setpoint_sim_*` SITL variants). **Limitation:** the native uXRCE-DDS backend (`px4_dds`) cannot set parameters, so `apply_setpoint_params` / `set_setpoint_config` / `set_speed` are no-ops there — use the MAVROS or direct-MAVLink backend, or set the `MPC_*` params in QGC.
+
+## Payload actuators / gripper
+
+For payloads (e.g. a release hook), use the firmware-neutral API on any backend:
+
+```python
+drone.set_gripper(grab=False)        # MAV_CMD_DO_GRIPPER: release (grab=True closes)
+drone.set_actuator(index=1, value=1.0)  # MAV_CMD_DO_SET_ACTUATOR: normalized -1..1
+```
+
+PX4 maps these to the `Gripper` and `Peripheral Actuator Set` output functions configured in [Actuators](https://docs.px4.io/main/en/config/actuators.html) / [Servo Gripper](https://docs.px4.io/main/en/peripherals/gripper_servo.html). ArduPilot's per-channel `do_servo(channel, pwm)` is not available on PX4 (it declares no `SERVO` capability); `set_actuator` / `set_gripper` are the portable replacements.
 
 ## Requirements
 

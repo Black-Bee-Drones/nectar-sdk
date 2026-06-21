@@ -39,7 +39,7 @@ The full core class diagram (`VehicleDrone`, `VehicleNavigator`, `VehicleTranspo
 
 ## Capabilities
 
-`ArduPilotDrone.capabilities` is derived declaratively from the configured `pose_source` (see [`capabilities.py`](../capabilities.py)): outdoor adds `GPS_NAV`/`GLOBAL_SETPOINT`, indoor adds `VISION_POSE`. On top of the shared set it declares `SERVO` (ArduPilot's `do_servo` path), which PX4 does not expose. Use `drone.supports(Capability.GPS_NAV)` instead of ad-hoc checks; unsupported operations raise `CapabilityNotSupportedError`.
+`ArduPilotDrone.capabilities` is derived declaratively from the configured `pose_source` (see [`capabilities.py`](../capabilities.py)): outdoor adds `GPS_NAV`/`GLOBAL_SETPOINT`, indoor adds `VISION_POSE`. On top of the shared set it declares `SERVO` (ArduPilot's per-channel PWM `do_servo` path, which PX4 does not expose) plus `ACTUATOR` (`DO_SET_ACTUATOR`) and `GRIPPER` (`DO_GRIPPER`) for payloads (both shared with PX4). Capability-gated operations call `_require(...)`, so `do_servo` / `set_actuator` / `set_gripper` raise `CapabilityNotSupportedError` on a drone that does not declare them; query with `drone.supports(Capability.SERVO)`.
 
 ## MAVLink and the FCU
 
