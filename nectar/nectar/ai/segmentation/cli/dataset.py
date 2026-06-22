@@ -28,8 +28,10 @@ def cmd_download(args):
     output_dir = Path(args.output).resolve()
     default_data_dir = Path(DEFAULT_DATA_DIR).resolve()
     if output_dir == default_data_dir:
-        dataset_id = getattr(args, "dataset", handler_name)
-        output_dir = output_dir / dataset_id
+        dataset_id = getattr(args, "dataset", None)
+        if not dataset_id and handler_name in ("huggingface", "hf") and args.repo:
+            dataset_id = args.repo.split("/")[-1]
+        output_dir = output_dir / (dataset_id or handler_name)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,6 +55,18 @@ def cmd_download(args):
             project=args.project,
             version=args.version,
             format_type=args.roboflow_format or "yolov8",
+        )
+    elif handler_name in ("huggingface", "hf"):
+        if not args.repo:
+            logger.error("--repo is required for huggingface source (e.g. user/dataset)")
+            sys.exit(1)
+        hf_format = args.format if args.format in ("coco", "yolo") else "yolo"
+        handler = handler_class(str(output_dir), token=args.token)
+        handler.download(
+            repo_id=args.repo,
+            format_type=hf_format,
+            split=args.split,
+            revision=args.revision,
         )
     else:
         logger.error("Handler %s not yet supported in CLI", handler_name)
@@ -106,6 +120,88 @@ def cmd_analyze(args):
     logger.info("Analysis complete. Results saved to: %s", args.output or f"{args.input}/analysis")
 
 
+def cmd_upload(args):
+    """Upload a segmentation dataset to HuggingFace Hub or Roboflow."""
+    if args.target == "huggingface":
+        from nectar.ai.segmentation.datasets.upload import HuggingFaceSegDatasetUploader
+
+        uploader = HuggingFaceSegDatasetUploader(
+            repo_id=args.repo,
+            token=args.token,
+            private=not args.public,
+        )
+
+        if not uploader.ensure_repo_exists():
+            logger.error("Failed to create/access repository: %s", args.repo)
+            sys.exit(1)
+
+        if args.raw:
+            uploader.upload_dataset(
+                dataset_path=args.dataset,
+                commit_message=args.message,
+                ignore_patterns=args.ignore,
+            )
+        else:
+            card_metadata = {}
+            if args.title:
+                card_metadata["title"] = args.title
+            if args.description:
+                card_metadata["description"] = args.description
+            if args.license:
+                card_metadata["license"] = args.license
+            if args.tag:
+                card_metadata["tags"] = args.tag
+            if args.model_repo:
+                card_metadata["model_repo"] = args.model_repo
+
+            result = uploader.upload_native(
+                dataset_path=args.dataset,
+                source_format=args.annotation_format,
+                commit_message=args.message,
+                card_metadata=card_metadata or None,
+            )
+            logger.info(
+                "Pushed splits %s with classes %s",
+                result["splits"],
+                result["class_names"],
+            )
+        logger.info("Dataset uploaded to: https://huggingface.co/datasets/%s", args.repo)
+    elif args.target == "roboflow":
+        from nectar.ai.detection.datasets.upload import RoboflowUploader
+
+        if not args.api_key:
+            logger.error("--api-key is required for Roboflow upload")
+            sys.exit(1)
+
+        uploader = RoboflowUploader(api_key=args.api_key, workspace=args.workspace)
+
+        if args.images_only:
+            uploader.upload_directory(
+                directory_path=args.dataset,
+                project_name=args.project,
+                batch_name=args.batch_name,
+                recursive=args.recursive,
+                verbose=True,
+                max_workers=args.max_workers,
+            )
+            logger.info("Images uploaded to Roboflow project: %s", args.project)
+        else:
+            uploader.upload_dataset(
+                dataset_path=args.dataset,
+                project_name=args.project,
+                annotation_format=args.annotation_format,
+                splits=args.splits,
+                batch_name=args.batch_name,
+                tag_names=args.tag,
+                max_workers=args.max_workers,
+                verbose=True,
+            )
+            logger.info("Dataset (images + annotations) uploaded to: %s", args.project)
+    else:
+        logger.error("Unknown upload target: %s", args.target)
+        sys.exit(1)
+
+
 def main():
     """Main entry point for segmentation dataset CLI."""
     parser = argparse.ArgumentParser(description="Segmentation dataset management")
@@ -116,7 +212,7 @@ def main():
     dl_parser.add_argument(
         "--source",
         required=True,
-        help="Dataset source (ultralytics, roboflow)",
+        help="Dataset source (ultralytics, roboflow, huggingface)",
     )
     dl_parser.add_argument(
         "--dataset",
@@ -148,6 +244,18 @@ def main():
         default=None,
         help="Roboflow export format (yolov8, coco, etc.)",
     )
+    dl_parser.add_argument(
+        "--repo", help="HuggingFace dataset repo (user/name) (for huggingface source)"
+    )
+    dl_parser.add_argument(
+        "--token",
+        help="HuggingFace API token (for huggingface source; falls back to HF_TOKEN)",
+    )
+    dl_parser.add_argument(
+        "--split",
+        help="Single split to load (for huggingface source: train/validation/test)",
+    )
+    dl_parser.add_argument("--revision", help="Git revision/branch/tag (for huggingface source)")
 
     # ---- convert ----
     conv_parser = subparsers.add_parser("convert", help="Convert dataset format")
@@ -176,6 +284,83 @@ def main():
     an_parser.add_argument("--input", required=True, help="Input dataset directory")
     an_parser.add_argument("--output", help="Output directory (default: input/analysis)")
 
+    # ---- upload ----
+    up_parser = subparsers.add_parser(
+        "upload", help="Upload segmentation dataset to HuggingFace Hub or Roboflow"
+    )
+    up_parser.add_argument(
+        "--target",
+        required=True,
+        choices=["huggingface", "roboflow"],
+        help="Upload target",
+    )
+    up_parser.add_argument("--dataset", required=True, help="Dataset directory to upload")
+    up_parser.add_argument(
+        "--repo", help="HuggingFace repository ID (user/repo, required for huggingface)"
+    )
+    up_parser.add_argument(
+        "--message", default="Upload dataset", help="Commit message (for huggingface)"
+    )
+    up_parser.add_argument(
+        "--token", help="HuggingFace API token (uses HF_TOKEN env var if not provided)"
+    )
+    up_parser.add_argument(
+        "--public", action="store_true", help="Make repository public (for huggingface)"
+    )
+    up_parser.add_argument(
+        "--ignore",
+        nargs="*",
+        help="Patterns to ignore (for huggingface --raw)",
+    )
+    up_parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="huggingface: upload files as-is instead of converting to native Parquet",
+    )
+    up_parser.add_argument("--title", help="Dataset card title (huggingface native)")
+    up_parser.add_argument("--description", help="Dataset card description (huggingface native)")
+    up_parser.add_argument(
+        "--license",
+        default=None,
+        help="Dataset license tag (huggingface native, default apache-2.0)",
+    )
+    up_parser.add_argument(
+        "--model-repo",
+        help="Linked trained-model repo id (huggingface native dataset card)",
+    )
+    up_parser.add_argument("--api-key", help="Roboflow API key (required for roboflow)")
+    up_parser.add_argument("--project", help="Roboflow project name (required for roboflow)")
+    up_parser.add_argument("--workspace", help="Roboflow workspace (for roboflow)")
+    up_parser.add_argument("--batch-name", help="Batch name (for roboflow)")
+    up_parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Include subdirectories (for roboflow --images-only)",
+    )
+    up_parser.add_argument(
+        "--max-workers", type=int, default=10, help="Parallel threads (for roboflow)"
+    )
+    up_parser.add_argument(
+        "--images-only",
+        action="store_true",
+        help="roboflow: upload images without annotations",
+    )
+    up_parser.add_argument(
+        "--annotation-format",
+        choices=["coco", "yolo"],
+        help="Override annotation format detection (default: auto-detect)",
+    )
+    up_parser.add_argument(
+        "--splits",
+        nargs="+",
+        help="Limit upload to these splits (e.g. train valid test). Defaults to all available.",
+    )
+    up_parser.add_argument(
+        "--tag",
+        action="append",
+        help="Tag to apply (repeatable). Roboflow image tag / HuggingFace dataset tag.",
+    )
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -192,6 +377,7 @@ def main():
         "convert": cmd_convert,
         "subset": cmd_subset,
         "analyze": cmd_analyze,
+        "upload": cmd_upload,
     }
 
     try:

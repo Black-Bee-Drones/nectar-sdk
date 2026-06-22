@@ -263,10 +263,10 @@ metrics = evaluator.evaluate()
 
 | File | Description |
 |------|-------------|
-| `PR_curve.png` | Precision-Recall curve |
-| `P_curve.png` | Precision vs confidence |
-| `R_curve.png` | Recall vs confidence |
-| `F1_curve.png` | F1 vs confidence |
+| `BoxPR_curve.png` / `MaskPR_curve.png` | Precision-Recall curve (Box always; Mask when masks present) |
+| `BoxP_curve.png` / `MaskP_curve.png` | Precision vs confidence |
+| `BoxR_curve.png` / `MaskR_curve.png` | Recall vs confidence |
+| `BoxF1_curve.png` / `MaskF1_curve.png` | F1 vs confidence |
 | `confusion_matrix.png` | Confusion matrix |
 | `error_analysis.png` | FP/FN breakdown, top confusions |
 | `performance_analysis.png` | Per-class AP bar + P-R scatter |
@@ -299,6 +299,39 @@ nectar-ai segment dataset download --source ultralytics --dataset crack-seg --ou
 # Roboflow projects
 nectar-ai segment dataset download --source roboflow --api-key KEY \
   --workspace ws --project proj --version 1 --roboflow-format yolov8
+
+# HuggingFace Hub (native seg dataset -> YOLO-seg or COCO-seg on disk)
+nectar-ai segment dataset download --source huggingface \
+  --repo blackbeedrones/sae-2026-hook --format yolo --output data/sae-2026-hook
+```
+
+### Upload to HuggingFace
+
+`upload` converts a local YOLO-seg/COCO-seg dataset to the Hub-native schema
+(`image` + `objects.{bbox, category, area, segmentation}`) and pushes Parquet
+shards plus a generated dataset card. The Hub viewer renders bounding-box
+overlays (derived from the polygons); the polygons themselves are stored for
+mask training and round-trip back to YOLO-seg via `HuggingFaceSegHandler`.
+
+```bash
+nectar-ai segment dataset upload --target huggingface \
+  --repo user/my-seg-dataset --dataset data/my-seg \
+  --public --title "My Seg Dataset" --model-repo user/my-model
+
+# Upload files as-is (no viewer / no Parquet):
+nectar-ai segment dataset upload --target huggingface --raw \
+  --repo user/my-seg-dataset --dataset data/my-seg
+```
+
+```python
+from nectar.ai.segmentation.datasets import HuggingFaceSegDatasetUploader
+
+uploader = HuggingFaceSegDatasetUploader(repo_id="user/my-seg-dataset", private=False)
+result = uploader.upload_native(
+    dataset_path="data/my-seg",          # YOLO-seg or COCO-seg, auto-detected
+    card_metadata={"title": "My Seg Dataset", "model_repo": "user/my-model"},
+)
+print(result["splits"], result["class_names"])
 ```
 
 ### Format Conversion
@@ -479,7 +512,7 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 
 - **Shared callbacks**: `detection/utils/callbacks.py` provides `setup_ultralytics_hf_callbacks()`, `setup_ultralytics_gc_callback()`, and `get_hf_upload_ptl_callback()` used by both detection and segmentation models
 - **RF-DETR Custom Training API**: Both detection and segmentation RF-DETR models use `build_trainer` + `trainer.callbacks.extend()` instead of `rfdetr_wrapper.train()`, enabling callback injection
-- **RF-DETR dependency**: Pinned to upstream develop branch for PTL training support and segmentation fixes
+- **RF-DETR dependency**: Pinned to `rfdetr==1.7.1` (PyPI) for PTL training support and segmentation fixes
 - **COCO category IDs**: `SegFormatConverter` uses standard 1-indexed IDs (YOLO 0-indexed classes map to COCO `category_id = class_id + 1`)
 - **Evaluation metrics**: `SegmentationEvaluator` uses `supervision.metrics` with `MetricTarget.MASKS` when masks are present; falls back to `MetricTarget.BOXES` otherwise
 
@@ -490,7 +523,6 @@ Example training configs in `configs/`:
 | Config | Framework | Description |
 |--------|-----------|-------------|
 | `crackseg_yolo26n_seg.yaml` | Ultralytics | YOLO26n-seg, 3 epochs, 320px, 500 train samples |
-| `crackseg_yolo11n_seg.yaml` | Ultralytics | YOLO11n-seg, 50 epochs, 640px |
 | `crackseg_rfdetr_seg_nano.yaml` | RF-DETR | RF-DETR Seg Nano, 10 epochs, 312px, cosine LR |
 | `crackseg_mask2former.yaml` | Transformers | MaskFormer Swin-Tiny, 2 epochs, 320px |
 
@@ -518,10 +550,13 @@ segmentation/
 │   └── exceptions.py           # SegmentationError hierarchy
 ├── datasets/
 │   ├── format.py               # SegFormatConverter (YOLO-seg <-> COCO-seg)
+│   ├── hf_converter.py         # YOLO-seg/COCO-seg <-> HuggingFace DatasetDict + dataset card
+│   ├── upload.py               # HuggingFaceSegDatasetUploader (native Parquet upload)
 │   ├── analyze.py              # SegDatasetAnalyzer
 │   └── handlers/
 │       ├── ultralytics_seg.py  # UltralyticsSegHandler (crack-seg, etc.)
-│       └── roboflow.py         # RoboflowSegHandler
+│       ├── roboflow.py         # RoboflowSegHandler
+│       └── huggingface.py      # HuggingFaceSegHandler (download)
 ├── evaluation/
 │   ├── evaluator.py            # SegmentationEvaluator
 │   ├── analysis.py             # PR curves, error statistics

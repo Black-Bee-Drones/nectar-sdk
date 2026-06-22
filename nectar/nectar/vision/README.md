@@ -280,7 +280,7 @@ Creates camera instances from source identifiers. Auto-detects source type.
 
 **API**:
 ```python
-CameraFactory.from_source(source: str, config: CameraConfig = None, node: Node = None) -> AbstractCam
+CameraFactory.from_source(source: str, *, config: CameraConfig = None, node: Node = None) -> AbstractCam
 CameraFactory.register(key: str, builder: Type[AbstractCam])
 ```
 
@@ -344,7 +344,7 @@ ImageHandler(
 - `run()`: Start continuous frame capture with timer
 - `open()`: Manual camera initialization
 - `close()`: Stop camera
-- `take_photo(timeout, wait_for_new)`: Single-shot capture
+- `take_photo(timeout_sec=1.0, wait_for_new=True)`: Single-shot capture
 - `cleanup()`: Release the camera, destroy the timer, and unregister the internal node
 
 **Example**:
@@ -1140,7 +1140,7 @@ classDiagram
     class ColorCalibrationNode {
         -color_detector ColorDetector
         -img_handler ImageHandler
-        +process_image(img)
+        -_process(img)
     }
 
     class CameraPublisherNode {
@@ -1162,7 +1162,7 @@ classDiagram
 ### ArUco Detection Node
 
 ```bash
-ros2 run nectar aruco_node --ros-args \
+ros2 run nectar aruco_node.py --ros-args \
     -p image_source:=webcam \
     -p marker_dict:=5 \
     -p tag_size:=0.05
@@ -1181,7 +1181,7 @@ ros2 run nectar aruco_node --ros-args \
 ### Line Detection Node
 
 ```bash
-ros2 run nectar line_detection_node --ros-args \
+ros2 run nectar line_detection_node.py --ros-args \
     -p line_colors:="blue,red" \
     -p method:=HoughLinesP \
     -p spaces:="hsv,lab" \

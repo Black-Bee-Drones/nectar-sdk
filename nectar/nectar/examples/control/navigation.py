@@ -15,6 +15,7 @@ from nectar.control import (
     MoveReference,
     NavigationMethod,
     PoseSource,
+    Px4MavrosConfig,
 )
 from nectar.utils.gps_calculate import GPSCalculate
 
@@ -50,7 +51,7 @@ def _csv_num(v: Optional[float]) -> str:
 
 
 class NavigationTest:
-    """ArduPilot (MAVROS/MAVLink) navigation test driver."""
+    """ArduPilot (MAVROS/MAVLink) and PX4 navigation test driver."""
 
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -61,6 +62,11 @@ class NavigationTest:
             if args.connection:
                 kwargs["connection_string"] = args.connection
             config = MavlinkConfig(**kwargs)
+        elif args.drone == "px4":
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if args.connection:
+                kwargs["connection_string"] = args.connection
+            config = Px4MavrosConfig(**kwargs)
         else:
             config = MavrosConfig(pose_source=pose_source, start_driver=False)
         self.drone = DroneFactory.create(args.drone, config)
@@ -726,9 +732,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--drone",
-        choices=["mavros", "mavlink"],
+        choices=["mavros", "mavlink", "px4"],
         default="mavros",
-        help="ArduPilot transport: mavros (ROS) or mavlink (direct pymavlink). Default: mavros",
+        help="Vehicle: mavros/mavlink (ArduPilot) or px4 (PX4 over MAVROS). Default: mavros",
     )
     parser.add_argument(
         "--mode",
@@ -739,7 +745,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--connection",
         default=None,
-        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
+        help="Connection override (mavlink/px4), e.g. tcp:127.0.0.1:5762 (mavlink SITL) "
+        "or udp://:14540@127.0.0.1:14580 (px4 SITL)",
     )
     parser.add_argument(
         "--no-takeoff",

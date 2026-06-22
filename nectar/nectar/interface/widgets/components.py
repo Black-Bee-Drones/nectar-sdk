@@ -391,9 +391,11 @@ class VideoDisplay(QLabel):
         h, w, ch = rgb_frame.shape
         self._current_frame_size = (w, h)
         bytes_per_line = ch * w
-        q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-
         display_size = self.size()
+        # QImage wraps rgb_frame's buffer without copying; QPixmap.fromImage on the
+        # next line deep-copies it, so keep them adjacent (and rgb_frame alive until
+        # then) rather than paying for an extra per-frame QImage.copy().
+        q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
         scaled_pixmap = QPixmap.fromImage(q_img).scaled(
             display_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
         )

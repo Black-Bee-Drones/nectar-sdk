@@ -1,4 +1,4 @@
-"""Navigation loops for ArduPilot vehicles."""
+"""Navigation loops for multicopter vehicles."""
 
 from __future__ import annotations
 
@@ -8,34 +8,34 @@ from typing import TYPE_CHECKING, Optional, Union
 import numpy as np
 from rclpy.duration import Duration
 
-from nectar.control.ardupilot.gps_utils import GPSUtils
-from nectar.control.ardupilot.types import GlobalTarget, LocalTarget
 from nectar.control.exceptions import SensorNotAvailableError
 from nectar.control.pid import PIDController
 from nectar.control.types import AltitudeSource, MoveReference
+from nectar.control.vehicle.gps_utils import GPSUtils
+from nectar.control.vehicle.types import GlobalTarget, LocalTarget
 from nectar.utils.position_utils import PositionUtils
 
 if TYPE_CHECKING:
-    from nectar.control.ardupilot.drone import ArduPilotDrone
+    from nectar.control.vehicle.drone import VehicleDrone
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
 YAW_THRESHOLD = np.radians(3)
 
 
-class ArduPilotNavigator:
+class VehicleNavigator:
     """
-    Navigation controller for :class:`ArduPilotDrone`.
+    Navigation controller for :class:`VehicleDrone`.
 
     Handles PID velocity-based and FCU setpoint navigation for both local
     (:class:`LocalTarget`) and global (:class:`GlobalTarget`) targets.
 
     Parameters
     ----------
-    drone : ArduPilotDrone
+    drone : VehicleDrone
         Drone instance providing telemetry, setpoint egress, and configuration.
     """
 
-    def __init__(self, drone: "ArduPilotDrone") -> None:
+    def __init__(self, drone: "VehicleDrone") -> None:
         self._drone = drone
 
     def navigate_pid(

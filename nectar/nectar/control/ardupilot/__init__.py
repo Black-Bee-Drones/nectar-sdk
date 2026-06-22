@@ -1,7 +1,12 @@
-"""Shared ArduPilot/MAVLink vehicle core."""
+"""ArduPilot firmware specialization.
+
+The shared vehicle core (plain types, transport ABC, navigator) now lives in
+:mod:`nectar.control.vehicle`. The plain types are re-exported here for
+backward compatibility; ``SetpointNavConfig`` is ArduPilot-specific.
+"""
 
 from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
-from nectar.control.ardupilot.types import (
+from nectar.control.vehicle.types import (
     Attitude,
     DistanceReading,
     GeoPoint,

@@ -1,6 +1,6 @@
 import shlex
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Callable, Dict, List, Optional
 
@@ -28,11 +28,26 @@ class DriverInfo:
         ROS2 node name patterns to check for driver status.
     session_name : str
         Tmux session name for the driver process.
+    topic_patterns : List[str]
+        ROS2 topic name patterns that signal the driver is up, used when
+        ``detect_via == "topic"`` (e.g. PX4's ``/fmu/*`` once the uXRCE-DDS
+        agent and the FCU client have connected).
+    driverless : bool, default=False
+        True when the transport opens the FCU link inside the drone instance
+        (no separate driver process), e.g. the direct pymavlink backends.
+    detect_via : str, default="node"
+        How to detect a running driver: ``"node"`` queries the ROS 2 node
+        graph for ``node_patterns``; ``"topic"`` queries the topic graph for
+        ``topic_patterns`` (for processes exposed only through their data
+        topics, e.g. the Micro XRCE-DDS Agent, which is not a ROS 2 node).
     """
 
     name: str
     node_patterns: List[str]
     session_name: str
+    topic_patterns: List[str] = field(default_factory=list)
+    driverless: bool = False
+    detect_via: str = "node"
 
 
 DRIVER_INFO: Dict[str, DriverInfo] = {
@@ -40,6 +55,30 @@ DRIVER_INFO: Dict[str, DriverInfo] = {
         name="MAVROS",
         node_patterns=["mavros_node", "mavros"],
         session_name="mavros_node",
+    ),
+    "mavlink": DriverInfo(
+        name="Direct MAVLink",
+        node_patterns=[],
+        session_name="",
+        driverless=True,
+    ),
+    "px4": DriverInfo(
+        name="MAVROS (PX4)",
+        node_patterns=["mavros_node", "mavros"],
+        session_name="mavros_node",
+    ),
+    "px4_mavlink": DriverInfo(
+        name="Direct MAVLink (PX4)",
+        node_patterns=[],
+        session_name="",
+        driverless=True,
+    ),
+    "px4_dds": DriverInfo(
+        name="Micro XRCE-DDS Agent",
+        node_patterns=[],
+        session_name="micro_xrce_agent",
+        topic_patterns=["/fmu/"],
+        detect_via="topic",
     ),
     "bebop": DriverInfo(
         name="Bebop Driver",
@@ -52,6 +91,99 @@ DRIVER_INFO: Dict[str, DriverInfo] = {
         session_name="crazyflie_server",
     ),
 }
+
+
+def build_driver_command(
+    drone_type: str,
+    *,
+    connection_string: str = "",
+    ip: str = "",
+    backend: str = "",
+    mocap: bool = False,
+    agent_port: int = 8888,
+) -> str:
+    """
+    Build the shell command that launches a drone's driver process.
+
+    Single source of truth for the driver launch commands shared by the SDK
+    and the GUI.
+
+    Parameters
+    ----------
+    drone_type : str
+        Drone type identifier (e.g. ``"mavros"``, ``"px4"``, ``"px4_dds"``).
+    connection_string : str, optional
+        FCU connection string / ``fcu_url`` for the MAVROS backends.
+    ip : str, optional
+        Drone IP address (Bebop).
+    backend : str, optional
+        Crazyswarm2 backend (Crazyflie).
+    mocap : bool, default=False
+        Whether to enable motion capture (Crazyflie).
+    agent_port : int, default=8888
+        UDP port for the Micro XRCE-DDS Agent (``px4_dds``).
+
+    Returns
+    -------
+    str
+        Command to run in a tmux session.
+
+    Raises
+    ------
+    ValueError
+        If the drone type has no driver process (driverless or unknown).
+    """
+    key = drone_type.lower()
+    if key == "mavros":
+        conn = connection_string or "serial:///dev/ttyUSB0:921600"
+        return f"ros2 launch mavros apm.launch fcu_url:={conn}"
+    if key == "px4":
+        conn = connection_string or "udp://:14540@127.0.0.1:14580"
+        return f"ros2 launch mavros px4.launch fcu_url:={conn}"
+    if key == "px4_dds":
+        return f"MicroXRCEAgent udp4 -p {agent_port}"
+    if key == "crazyflie":
+        command = f"ros2 launch crazyflie launch.py backend:={backend or 'cpp'}"
+        if not mocap:
+            command += " mocap:=False"
+        return command
+    if key == "bebop":
+        return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={ip or '192.168.42.1'}"
+    raise ValueError(f"No driver command for drone type: '{drone_type}'")
+
+
+def is_driver_running(drone_type: str, timeout: float = 2.0) -> bool:
+    """
+    Check whether a drone's driver is currently up.
+
+    Dispatches on the driver's ``detect_via`` strategy: a ROS 2 node-graph
+    lookup for node-based drivers, or a topic-graph lookup for transports that
+    surface only through their data topics (e.g. the Micro XRCE-DDS Agent,
+    detected by PX4's ``/fmu/*`` topics). Topic detection is independent of how
+    the agent was launched (GUI, ``make sim-bridge PROTOCOL=dds``, or manually),
+    so an externally started agent is recognized too.
+
+    Parameters
+    ----------
+    drone_type : str
+        Drone type identifier.
+    timeout : float, default=2.0
+        Maximum time for the ROS 2 graph query.
+
+    Returns
+    -------
+    bool
+        True if the driver is running. Always False for driverless or
+        unknown types.
+    """
+    info = DRIVER_INFO.get(drone_type.lower())
+    if info is None or info.driverless:
+        return False
+    if info.detect_via == "topic":
+        topics = ProcessUtils.get_ros2_topics(timeout)
+        return any(pattern in topic for pattern in info.topic_patterns for topic in topics)
+    nodes = ProcessUtils.get_ros2_nodes(timeout)
+    return any(pattern in node for pattern in info.node_patterns for node in nodes)
 
 
 class DriverMonitor:

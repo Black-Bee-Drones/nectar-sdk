@@ -1,18 +1,11 @@
-"""Transport abstraction for the ArduPilot vehicle core.
-
-Telemetry properties return plain types from
-:mod:`nectar.control.ardupilot.types`. They must be cheap, non-blocking reads
-of the most recent value,
-and are expected to be assigned as whole objects so the
-flight thread never observes a half-written value.
-"""
+"""Transport abstraction for the vehicle core."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
-from nectar.control.ardupilot.types import (
+from nectar.control.vehicle.types import (
     Attitude,
     DistanceReading,
     GeoPoint,
@@ -24,15 +17,15 @@ from nectar.control.ardupilot.types import (
 )
 
 if TYPE_CHECKING:
-    from nectar.control.ardupilot.drone import ArduPilotDrone
+    from nectar.control.vehicle.drone import VehicleDrone
 
 
-class MavlinkTransport(ABC):
+class VehicleTransport(ABC):
     """Abstract FCU transport: telemetry in, commands/setpoints out."""
 
     # Lifecycle
 
-    def attach(self, drone: "ArduPilotDrone") -> None:
+    def attach(self, drone: "VehicleDrone") -> None:
         """Bind the transport to its drone (and ROS node) before ``start()``.
 
         Stores the drone so the transport can create ROS entities on
@@ -146,7 +139,7 @@ class MavlinkTransport(ABC):
 
     @abstractmethod
     def set_param(self, name: str, value: Union[int, float]) -> bool:
-        """Set an ArduPilot parameter."""
+        """Set an autopilot parameter (ArduPilot or PX4)."""
 
     @abstractmethod
     def send_command_long(self, command: int, *params: float) -> bool:

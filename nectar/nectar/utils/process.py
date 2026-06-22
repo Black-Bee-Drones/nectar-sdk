@@ -93,6 +93,92 @@ class ProcessUtils:
         return any(node_pattern in node for node in nodes)
 
     @staticmethod
+    def get_ros2_topics(timeout: float = 5.0) -> List[str]:
+        """
+        Get list of advertised ROS2 topics.
+
+        Parameters
+        ----------
+        timeout : float, default=5.0
+            Maximum time to wait for the ros2 topic list command in seconds.
+
+        Returns
+        -------
+        List[str]
+            List of topic names. Empty list on error or timeout.
+        """
+        try:
+            result = subprocess.run(
+                shlex.split("ros2 topic list"),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode == 0:
+                return [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+            return []
+        except subprocess.TimeoutExpired:
+            return []
+        except Exception:
+            return []
+
+    @staticmethod
+    def is_topic_present(topic_pattern: str, timeout: float = 5.0) -> bool:
+        """
+        Check if a ROS2 topic matching pattern is advertised.
+
+        Useful to detect a transport that exposes data topics rather than a
+        named node (e.g. the Micro XRCE-DDS Agent, whose readiness shows up as
+        PX4's ``/fmu/*`` topics once the FCU client connects).
+
+        Parameters
+        ----------
+        topic_pattern : str
+            Topic name or pattern to search for (substring match).
+        timeout : float, default=5.0
+            Maximum time to wait for the ros2 topic list command in seconds.
+
+        Returns
+        -------
+        bool
+            True if a matching topic is found, False otherwise.
+        """
+        topics = ProcessUtils.get_ros2_topics(timeout)
+        return any(topic_pattern in topic for topic in topics)
+
+    @staticmethod
+    def wait_for_topic(
+        topic_pattern: str,
+        timeout: float = 10.0,
+        poll_interval: float = 0.5,
+    ) -> bool:
+        """
+        Wait for a ROS2 topic to appear in the topic graph.
+
+        Parameters
+        ----------
+        topic_pattern : str
+            Topic name or pattern to search for (substring match).
+        timeout : float, default=10.0
+            Maximum time to wait in seconds.
+        poll_interval : float, default=0.5
+            Time between status checks in seconds.
+
+        Returns
+        -------
+        bool
+            True if topic appeared within timeout, False otherwise.
+        """
+        elapsed = 0.0
+        while elapsed < timeout:
+            if ProcessUtils.is_topic_present(topic_pattern, timeout=2.0):
+                return True
+            sleep(poll_interval)
+            elapsed += poll_interval
+        return False
+
+    @staticmethod
     def wait_for_node(
         node_pattern: str,
         timeout: float = 10.0,

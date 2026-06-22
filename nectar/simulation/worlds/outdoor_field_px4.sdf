@@ -1,0 +1,219 @@
+<?xml version="1.0" ?>
+<!--
+  Nectar SDK — outdoor field world for PX4 SITL (Gazebo Harmonic).
+
+  Mirrors outdoor_field.sdf (ArduPilot) so both firmwares fly the same arena:
+  same ground, sun, GPS origin, gate and obstacle field. The drone+sensors are
+  not embedded here — PX4 spawns x500_nectar (which carries the matched sensor
+  suite) at startup. Gazebo systems are loaded by PX4 via server.config (see
+  src/modules/simulation/gz_bridge/server.config), so this file declares only
+  scene/scenery — no <plugin> tags — to follow PX4 conventions.
+
+  Discovery: install_px4.sh symlinks this file into PX4_GZ_WORLDS so PX4 can
+  start it via PX4_GZ_WORLD=outdoor_field_px4.
+
+  Usage:
+    PX4_GZ_WORLD=outdoor_field_px4 PX4_SIM_MODEL=gz_x500_nectar make px4_sitl
+-->
+<sdf version="1.9">
+  <world name="outdoor_field_px4">
+
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+
+    <scene>
+      <ambient>1.0 1.0 1.0</ambient>
+      <background>0.8 0.8 0.8</background>
+      <shadows>true</shadows>
+      <sky></sky>
+    </scene>
+
+    <!-- ── GUI — same camera feeds as outdoor_field.sdf so both firmwares look identical ── -->
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+        <camera_pose>-5 0 8 0 0.8 0</camera_pose>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <gz-gui>
+          <property key="state" type="string">floating</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">145</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>false</start_paused>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>false</iterations>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Front Camera RGB">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/front_camera/image</topic>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Front Camera Depth">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/front_camera/depth_image</topic>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Down Camera">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/down_camera</topic>
+      </plugin>
+      <plugin filename="TopicEcho" name="Topic Echo">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+      </plugin>
+    </gui>
+
+    <!-- GPS origin. Intentionally a near-zero magnetic-declination location
+         (decl ~0.2deg here) and NOT ArduPilot's Canberra (decl ~12.6deg).
+         Rationale: PX4's gz_bridge feeds the EKF gz Harmonic's magnetometer,
+         which derives the field from its own location table with a known
+         ENU/NED frame bug (gazebosim/gz-sim#2536, #3270; gz-sensors#425; see the
+         x500_base mag TODO re gz-sim#2460). The EKF expects PX4's geo-table
+         declination, so the two disagree by ~2x declination — at Canberra that
+         skewed the cold-start mag yaw ~24deg, making the first body-relative move
+         veer until GPS-course converged it. At ~0 declination there is nothing to
+         skew, so the heading is correct from cold start. ArduPilot is unaffected
+         (it simulates its own consistent magnetometer) and keeps Canberra; the
+         scenery/sensors/physics here are identical, only the GPS origin differs. -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>0.0</latitude_deg>
+      <longitude_deg>40.0</longitude_deg>
+      <elevation>0</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.8 0.8 0.8 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.3 1</ambient>
+            <diffuse>0.3 0.5 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Shared scenery (gate + obstacle field) — same model the ArduPilot world uses -->
+    <include>
+      <uri>model://outdoor_field_scenery</uri>
+    </include>
+
+    <!-- Drone is NOT embedded; PX4 spawns x500_nectar at startup
+         (PX4_SIM_MODEL=gz_x500_nectar). x500_nectar carries the
+         matched sensor suite (front RGBD, down RGB, down lidar). -->
+
+  </world>
+</sdf>

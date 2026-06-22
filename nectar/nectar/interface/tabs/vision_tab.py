@@ -309,6 +309,7 @@ class CameraInitWorker(QObject):
     def camera(self):
         return self._camera
 
+    @Slot()
     def run(self) -> None:
         try:
             camera_type = self._config.get("type", "webcam")
@@ -506,6 +507,35 @@ class CameraInitWorker(QObject):
             return CameraFactory.from_source(camera_type)
 
 
+class DetectionWorker(QObject):
+    """Runs AI object detection off the GUI thread.
+
+    The vision frame loop hands the latest frame here when idle and keeps
+    drawing the most recent result, so multi-tens-of-ms inference never blocks
+    the GUI. The detector reference is set via :meth:`set_detector`.
+    """
+
+    result_ready = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._detector = None
+
+    def set_detector(self, detector) -> None:
+        self._detector = detector
+
+    @Slot(object, float, float)
+    def detect(self, frame, conf: float, iou: float) -> None:
+        detector = self._detector
+        if detector is None or not getattr(detector, "is_loaded", False):
+            self.result_ready.emit(None)
+            return
+        try:
+            self.result_ready.emit(detector.detect(frame, conf=conf, iou=iou))
+        except Exception:
+            self.result_ready.emit(None)
+
+
 class VisionTab(QWidget):
     """
     Vision processing tab with camera controls and filters.
@@ -529,6 +559,10 @@ class VisionTab(QWidget):
         "AdaptiveHoughLinesP",
     ]
 
+    # Hands the latest frame to the detection worker (queued, cross-thread) so
+    # AI inference never runs on the GUI thread.
+    _detect_requested = Signal(object, float, float)
+
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
@@ -550,10 +584,13 @@ class VisionTab(QWidget):
 
         self._color_manager = ColorCalibrationManager()
 
-        # AI Detection state
+        # AI Detection state (inference runs on a worker thread; see DetectionWorker)
         self._ai_detector = None
         self._detection_enabled = False
         self._last_detection_result = None
+        self._detection_busy = False
+        self._detection_thread: Optional[QThread] = None
+        self._detection_worker: Optional[DetectionWorker] = None
 
         # Depth estimation state
         self._depth_enabled = False
@@ -1251,6 +1288,9 @@ class VisionTab(QWidget):
     def _on_detector_ready(self, detector) -> None:
         """Handle detector loaded event."""
         self._ai_detector = detector
+        self._setup_detection_worker()
+        self._detection_worker.set_detector(detector)
+        self._detection_busy = False
         self._object_detect_cb.setEnabled(True)
         self._object_detect_cb.setChecked(True)
         self._detection_enabled = True
@@ -1262,6 +1302,35 @@ class VisionTab(QWidget):
         self._detection_enabled = False
         self._object_detect_cb.setChecked(False)
         self._last_detection_result = None
+        if self._detection_worker is not None:
+            self._detection_worker.set_detector(None)
+        self._detection_busy = False
+
+    def _setup_detection_worker(self) -> None:
+        """Lazily create the off-thread detection worker (idempotent)."""
+        if self._detection_worker is not None:
+            return
+        self._detection_thread = QThread()
+        self._detection_worker = DetectionWorker()
+        self._detection_worker.moveToThread(self._detection_thread)
+        self._detection_worker.result_ready.connect(self._on_detection_result)
+        # Cross-thread (auto -> queued): runs detect() on the worker thread.
+        self._detect_requested.connect(self._detection_worker.detect)
+        self._detection_thread.start()
+
+    @Slot(object)
+    def _on_detection_result(self, result) -> None:
+        """Receive an inference result from the worker (runs on the GUI thread)."""
+        self._detection_busy = False
+        if result is None:
+            return
+        self._last_detection_result = result
+        class_counts: Dict[str, int] = {}
+        for det in result:
+            name = det.class_name or f"class_{det.class_id}"
+            class_counts[name] = class_counts.get(name, 0) + 1
+        inference_ms = result.inference_time * 1000
+        self._detection_panel.update_stats(len(result), inference_ms, class_counts)
 
     def _create_aruco_section(self) -> CollapsibleSection:
         section = CollapsibleSection("ArUco Markers")
@@ -1624,6 +1693,8 @@ class VisionTab(QWidget):
 
     @Slot()
     def _start_camera(self) -> None:
+        if self._camera_thread and self._camera_thread.isRunning():
+            return
         config = self._camera_config.get_config()
 
         if config.get("type") == "t265":
@@ -1989,7 +2060,11 @@ class VisionTab(QWidget):
 
     def _apply_object_detection(self, frame: np.ndarray) -> np.ndarray:
         """
-        Run AI object detection on frame and draw results.
+        Request async detection on ``frame`` and overlay the latest result.
+
+        Inference runs on :class:`DetectionWorker` (off the GUI thread); this
+        hands off a frame copy when the worker is idle and draws the most recent
+        detections, so the frame loop never blocks on inference.
 
         Parameters
         ----------
@@ -1999,20 +2074,25 @@ class VisionTab(QWidget):
         Returns
         -------
         np.ndarray
-            Frame with detection annotations.
+            Frame with the most recent detection annotations.
         """
         if self._ai_detector is None or not self._ai_detector.is_loaded:
             return frame
 
-        try:
-            # Run detection
-            conf = self._detection_panel.conf_threshold
-            iou = self._detection_panel.iou_threshold
-            result = self._ai_detector.detect(frame, conf=conf, iou=iou)
-            self._last_detection_result = result
+        # Hand the latest frame to the worker when idle; inference runs
+        # off-thread and the result arrives via _on_detection_result.
+        if self._detection_worker is not None and not self._detection_busy:
+            self._detection_busy = True
+            self._detect_requested.emit(
+                frame.copy(),
+                self._detection_panel.conf_threshold,
+                self._detection_panel.iou_threshold,
+            )
 
-            # Draw detections on frame
-            if len(result) > 0:
+        # Overlay the most recent result (cheap), so detections render every frame.
+        result = self._last_detection_result
+        if result is not None and len(result) > 0:
+            try:
                 frame = self._ai_detector.draw_detections(
                     frame,
                     result,
@@ -2020,19 +2100,8 @@ class VisionTab(QWidget):
                     show_confidence=self._detection_panel.show_confidence,
                     show_class=self._detection_panel.show_labels,
                 )
-
-            # Update stats in panel
-            class_counts = {}
-            for det in result:
-                name = det.class_name or f"class_{det.class_id}"
-                class_counts[name] = class_counts.get(name, 0) + 1
-
-            inference_ms = result.inference_time * 1000
-            self._detection_panel.update_stats(len(result), inference_ms, class_counts)
-
-        except Exception as e:
-            # Log error but don't crash the frame loop
-            self._info_label.setText(f"Detection error: {str(e)[:30]}")
+            except Exception:
+                pass
 
         return frame
 
@@ -2041,6 +2110,10 @@ class VisionTab(QWidget):
 
     def cleanup(self) -> None:
         self._frame_timer.stop()
+
+        if self._detection_thread and self._detection_thread.isRunning():
+            self._detection_thread.quit()
+            self._detection_thread.wait(1000)
 
         if self._camera_thread and self._camera_thread.isRunning():
             self._camera_thread.quit()

@@ -3,13 +3,14 @@
 Atomic SITL tests — each test starts from a guaranteed clean hover.
 
 
-Prerequisites:
-    Terminal 1: make sim-start-outdoor  (or make sim-start-indoor / sim-start)
-    Terminal 2: make sim-outdoor        (or make sim-indoor for indoor)
+Prerequisites (defaults shown; set FIRMWARE=px4 for PX4, ENV=indoor for indoor):
+    Terminal 1: make sim-start FIRMWARE=ardupilot ENV=outdoor
+    Terminal 2: make sim-bridge FIRMWARE=ardupilot ENV=outdoor
 
 Usage:
-    python3 sitl_test.py                  # all outdoor tests (MAVROS)
+    python3 sitl_test.py                  # all outdoor tests (ArduPilot MAVROS)
     python3 sitl_test.py --mavlink        # all outdoor tests (direct pymavlink, tcp 5762)
+    python3 sitl_test.py --px4            # all outdoor tests (PX4 over MAVROS, udp 14540)
     python3 sitl_test.py --indoor         # all indoor-compatible tests
     python3 sitl_test.py pid_fwd          # single test
     python3 sitl_test.py --indoor --group vel   # velocity group indoor
@@ -26,6 +27,8 @@ import nectar
 from nectar.control import (
     MAVLINK_SITL_GAZEBO_CONFIG,
     MAVLINK_SITL_VISION_CONFIG,
+    PX4_SITL_GAZEBO_CONFIG,
+    PX4_SITL_VISION_CONFIG,
     SITL_GPS_CONFIG,
     SITL_VISION_CONFIG,
     DroneFactory,
@@ -74,9 +77,18 @@ class SITLTest:
 
     ALTITUDE = 3.0
 
-    def __init__(self, fresh: bool = False, indoor: bool = False, mavlink: bool = False):
+    def __init__(
+        self,
+        fresh: bool = False,
+        indoor: bool = False,
+        mavlink: bool = False,
+        px4: bool = False,
+    ):
         self.indoor = indoor
-        if mavlink:
+        if px4:
+            drone_type = "px4"
+            config = PX4_SITL_VISION_CONFIG if indoor else PX4_SITL_GAZEBO_CONFIG
+        elif mavlink:
             drone_type = "mavlink"
             config = MAVLINK_SITL_VISION_CONFIG if indoor else MAVLINK_SITL_GAZEBO_CONFIG
         else:
@@ -526,6 +538,11 @@ class SITLTest:
         d = self.drone
         log = logging.getLogger("sitl_test")
 
+        # WPNav is ArduPilot-specific (GUID_OPTIONS/WPNAV); PX4 has no equivalent.
+        if getattr(d, "setpoint_config", None) is None:
+            self._result("SETPOINT_WPNAV", True, "skipped (no WPNav on this firmware)")
+            return True
+
         # Save original config
         orig_cfg = d.setpoint_config
 
@@ -742,6 +759,10 @@ class SITLTest:
     def test_sq_wpnav(self) -> bool:
         """Square 3m: SETPOINT + WPNav S-curve (GUID_OPTIONS=65)."""
         d = self.drone
+        # WPNav is ArduPilot-specific; PX4 has no equivalent.
+        if getattr(d, "setpoint_config", None) is None:
+            self._result("SQ_WPNAV", True, "skipped (no WPNav on this firmware)")
+            return True
         orig_cfg = d.setpoint_config
         d.set_param("WP_JERK", 50.0)
         wpnav_cfg = SetpointNavConfig(guid_options=65, speed=3.0, accel=1.5, radius=0.5)
@@ -1038,6 +1059,7 @@ def main():
             print(f"  {name:20s} {', '.join(tests)}")
         print("\nFlags:")
         print("  --mavlink            Use direct pymavlink (MavlinkDrone) on tcp 5762")
+        print("  --px4                Use PX4 over MAVROS (PX4 SITL, offboard udp 14540)")
         print("  --indoor             Use vision config (skip GPS-only tests)")
         print("  --fresh              Land between tests for full reset")
         return
@@ -1045,6 +1067,7 @@ def main():
     fresh = "--fresh" in sys.argv
     indoor = "--indoor" in sys.argv
     mavlink = "--mavlink" in sys.argv
+    px4 = "--px4" in sys.argv
 
     # Parse test names
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -1076,7 +1099,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     nectar.init()
-    node = SITLTest(fresh=fresh, indoor=indoor, mavlink=mavlink)
+    node = SITLTest(fresh=fresh, indoor=indoor, mavlink=mavlink, px4=px4)
 
     try:
         mode = "indoor (vision)" if indoor else "outdoor (GPS)"

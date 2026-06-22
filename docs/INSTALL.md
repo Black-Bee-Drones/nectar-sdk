@@ -73,7 +73,8 @@ Or via the setup script directly:
 Each drone type needs its own driver; install only the ones you use (defined in `scripts/lib/drones.sh`):
 
 ```bash
-make drone-mavros      # MAVROS (ArduPilot/PX4) + GeographicLib datasets
+make drone-mavros      # MAVROS (ArduPilot) + GeographicLib datasets
+make drone-px4         # PX4 over MAVROS (reuses MAVROS, launched with px4.launch)
 make drone-crazyflie   # Crazyswarm2 (apt when available, else source) + rowan
 make drone-bebop       # Parrot Bebop 2: ros2_parrot_arsdk + ros2_bebop_driver (source build)
 make drone-all         # all of the above
@@ -112,22 +113,18 @@ On NVIDIA GPUs librealsense builds with CUDA automatically (detected via `nvcc`)
 
 Indoor (GPS-denied) navigation is built into the SDK's [localization module](../nectar/nectar/control/localization/README.md): RealSense + Isaac ROS Visual SLAM (Jetson) feeding the FCU via MAVROS or direct MAVLink. The Isaac container is managed by [`docker/isaac_vslam`](../docker/isaac_vslam) (`make isaac-run`); see [`docker/README.md`](../docker/README.md#isaac-ros-visual-slam-jetson) for the producer container and the localization README for the full pipeline.
 
-## Simulation (Gazebo + ArduPilot SITL)
+## Simulation (Gazebo + ArduPilot / PX4 SITL)
 
-### ArduPilot SITL
-
-```bash
-make sim-install           # Clone ArduPilot, build ArduCopter SITL binary
-```
-
-### Gazebo
-
-Installs Gazebo, the `ros_gz` bridge, and the ArduPilot Gazebo plugin. The script
-auto-selects the correct Gazebo version and install method per ROS distro (per-distro
-table in [`docker/README.md`](../docker/README.md#gazebo)):
+One install command per firmware. ArduPilot pulls ArduCopter SITL + Gazebo +
+the `ros_gz` bridge + the ArduPilot Gazebo plugin (auto-selecting the Gazebo
+version per ROS distro; per-distro table in
+[`docker/README.md`](../docker/README.md#gazebo)). PX4 pulls PX4-Autopilot +
+Gazebo and symlinks the Nectar shared assets into the PX4 tree.
 
 ```bash
-make sim-install-gazebo    # Native install (auto-detects distro)
+make sim-install FIRMWARE=ardupilot   # ArduCopter SITL + Gazebo + plugin
+make sim-install FIRMWARE=px4          # PX4 SITL + Gazebo + Nectar assets
+make sim-install FIRMWARE=all          # both
 ```
 
 ### Docker with Gazebo
@@ -141,18 +138,22 @@ See [`docker/README.md`](../docker/README.md) for more options.
 
 ### Running the simulation
 
-Two terminals: physics (terminal 1) + Gazebo world & ROS stack (terminal 2). Pair the matching row:
+Two terminals, the same pattern for both firmwares: the simulator (terminal 1)
++ the ROS stack (terminal 2). Choose `FIRMWARE`/`ENV`/`PROTOCOL`
+(defaults: `ardupilot` / `outdoor` / `mavros`):
 
 ```bash
-# Outdoor (GPS)
-make sim-start-outdoor   ;  make sim-outdoor          # MAVROS
-make sim-start-outdoor   ;  make sim-outdoor-direct   # direct MAVLink
-# Indoor (no GPS, vision)
-make sim-start-indoor    ;  make sim-indoor           # MAVROS
-make sim-start-indoor    ;  make sim-indoor-direct    # direct MAVLink
-# Headless (no Gazebo)
-make sim-start           ;  make sim-mavros
-make sim-stop                                          # stop everything
+# ArduPilot outdoor over MAVROS (the default)
+make sim-start   ;  make sim-bridge
+# ArduPilot outdoor over direct MAVLink
+make sim-start FIRMWARE=ardupilot ENV=outdoor ; make sim-bridge FIRMWARE=ardupilot ENV=outdoor PROTOCOL=mavlink
+# ArduPilot indoor (vision)
+make sim-start FIRMWARE=ardupilot ENV=indoor  ; make sim-bridge FIRMWARE=ardupilot ENV=indoor
+# PX4 outdoor over MAVROS
+make sim-start FIRMWARE=px4 ENV=outdoor       ; make sim-bridge FIRMWARE=px4 ENV=outdoor
+# PX4 indoor (onboard VIO)
+make sim-start FIRMWARE=px4 ENV=indoor        ; make sim-bridge FIRMWARE=px4 ENV=indoor
+make sim-stop                                  # stop everything (both firmwares)
 ```
 
 See the [Simulation guide](../nectar/simulation/README.md) for the full matrix, the vision pipeline, and the automated test suite.

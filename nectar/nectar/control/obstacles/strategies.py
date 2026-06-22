@@ -90,7 +90,12 @@ class DisableAxisStrategy(AvoidanceStrategy):
         self.disable_z = disable_z
 
     def execute(self, drone: "BaseDrone", info: ObstacleInfo) -> bool:
-        return not info.detected
+        # Never pauses navigation: the axes to disable while an obstacle is
+        # present are signalled separately via the handler's
+        # get_axis_modifiers() (gated on info.detected), which the navigator
+        # reads each loop. Returning False here would make the navigator skip
+        # the iteration before those axis modifiers are ever applied.
+        return True
 
     def reset(self) -> None:
         pass

@@ -68,12 +68,13 @@ Standard PID implementation with anti-windup and output clamping.
 from nectar.control.pid import PIDController
 
 pid = PIDController(
-    kp: float = 1.0,                      # Proportional gain
+    kp: float = 0.0,                      # Proportional gain
     ki: float = 0.0,                      # Integral gain
     kd: float = 0.0,                      # Derivative gain
     setpoint: float = 0.0,                # Target value
     output_limits: tuple = (-1.0, 1.0),   # Output clamp
-    integral_limits: tuple = (-1.0, 1.0)  # Anti-windup
+    integral_limits: tuple = (-1.0, 1.0), # Anti-windup
+    output_deadband: float = 0.0          # Symmetric output deadband (0 disables)
 )
 ```
 
@@ -209,7 +210,7 @@ config = PositionPIDConfig.from_yaml("position_config.yaml")
 PID controllers created per-axis from configuration:
 
 ```python
-# In ArduPilotNavigator.navigate_pid()
+# In VehicleNavigator.navigate_pid()
 pid_x = self._create_pid("x")      # Creates from self._pid_config.x
 pid_y = self._create_pid("y")
 pid_z = self._create_pid("z")

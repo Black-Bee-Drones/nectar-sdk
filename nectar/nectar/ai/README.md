@@ -32,7 +32,7 @@ flowchart TB
         subgraph Segmentation["segmentation/"]
             Segmentor["Segmentor"]
             SegCore["Core, Models, Training, Evaluation"]
-            SegDatasets["Datasets (UltralyticsSegHandler, Roboflow,<br/>SegFormatConverter, SegDatasetAnalyzer)"]
+            SegDatasets["Datasets (UltralyticsSegHandler, Roboflow, HuggingFace,<br/>SegFormatConverter, SegDatasetAnalyzer)"]
         end
     end
 
@@ -114,6 +114,10 @@ from nectar.ai.segmentation import (
     SegFormatConverter, SegDatasetAnalyzer,
     UltralyticsSegHandler, RoboflowSegHandler,
 )
+from nectar.ai.segmentation.datasets import (
+    HuggingFaceSegHandler, HuggingFaceSegDatasetUploader,
+    seg_coco_to_hf, seg_yolo_to_hf, hf_to_coco_seg, hf_to_yolo_seg, generate_seg_dataset_card,
+)
 ```
 
 ## CLI
@@ -143,7 +147,9 @@ nectar-ai detect eval --model-path best.pt --dataset-path data/visdrone --framew
 # Segmentation
 nectar-ai segment train --config configs/crackseg_yolo26n_seg.yaml
 nectar-ai segment dataset download --source ultralytics --dataset crack-seg --output data/crack-seg
+nectar-ai segment dataset download --source huggingface --repo user/my-seg --format yolo --output data/my-seg
 nectar-ai segment dataset analyze --input data/crack-seg
+nectar-ai segment dataset upload --target huggingface --repo user/my-seg --dataset data/my-seg --public --model-repo user/my-model
 nectar-ai segment eval --model-path best.pt --dataset-path data/crack-seg --framework ultralytics
 nectar-ai segment predict --model best.pt --input image.jpg --output predictions/ --save-masks
 ```
@@ -216,7 +222,7 @@ segmentor = Segmentor("model.pt", device="0")      # GPU 0
 |---------|---------|---------|
 | `ultralytics` | 8.4.36 | YOLO models |
 | `transformers` | 5.5.0 | DETR, MaskFormer, SegFormer |
-| `rfdetr` | 1.6.0 (develop) | RF-DETR detection + segmentation |
+| `rfdetr` | 1.7.1 | RF-DETR detection + segmentation |
 | `supervision` | 0.27.0 | Metrics, visualization, Detections bridge |
 | `huggingface-hub` | 1.9.2 | Model upload/download |
 | `tensorboard` | 2.20.0 | Training visualization |

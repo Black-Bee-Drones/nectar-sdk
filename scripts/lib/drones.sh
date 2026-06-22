@@ -25,6 +25,19 @@ _drone_mavros() {
     _drone_activation_hint
 }
 
+# PX4 over MAVROS. PX4 reuses the MAVROS stack (launched with px4.launch);
+# the only difference from ArduPilot is the launch file and flight semantics.
+_drone_px4() {
+    log_section "INSTALLING PX4 DRIVER (MAVROS)"
+    _drone_mavros
+    log_info "PX4 uses the MAVROS driver via px4.launch."
+    log_info "Connect to a PX4 FCU/SITL with:"
+    log_info "  ros2 launch mavros px4.launch fcu_url:=udp://:14540@127.0.0.1:14580"
+    log_info "For PX4 SITL + Gazebo, see: make sim-install FIRMWARE=px4 (scripts/simulation/install_px4.sh)"
+    log_info "For the native uXRCE-DDS path (drone 'px4_dds'): build px4_msgs + the"
+    log_info "  Micro XRCE-DDS Agent with: make sim-install FIRMWARE=px4 ARGS=--native"
+}
+
 # Crazyswarm2 (Crazyflie 2.x). Prefer apt binaries; fall back to source build.
 _drone_crazyflie() {
     log_section "INSTALLING CRAZYFLIE DRIVER (Crazyswarm2)"
@@ -141,15 +154,16 @@ cmd_drone() {
     local kind="${1:-}"
     case "$kind" in
         mavros)    _drone_mavros ;;
+        px4)       _drone_px4 ;;
         crazyflie) _drone_crazyflie ;;
         bebop)     _drone_bebop ;;
         all)       _drone_mavros && _drone_crazyflie && _drone_bebop ;;
         ""|list)
             echo "Usage: ./setup.sh drone <type>"
-            echo "  types: mavros, crazyflie, bebop, all"
+            echo "  types: mavros, px4, crazyflie, bebop, all"
             ;;
         *)
-            log_error "Unknown drone type: $kind (expected mavros|crazyflie|bebop|all)"
+            log_error "Unknown drone type: $kind (expected mavros|px4|crazyflie|bebop|all)"
             return 1
             ;;
     esac

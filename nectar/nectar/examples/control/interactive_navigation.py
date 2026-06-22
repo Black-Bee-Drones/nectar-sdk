@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Interactive ArduPilot (MAVROS/MAVLink) navigation REPL.
+Interactive ArduPilot / PX4 navigation REPL (MAVROS, direct MAVLink, or DDS).
 
 Type waypoints in the terminal and the drone executes them immediately.
 Supports move_to (local) and move_to_gps commands with configurable
@@ -9,6 +9,9 @@ method, precision, and reference frame — changeable at runtime.
 Usage:
     python3 interactive_navigation.py --mode outdoor
     python3 interactive_navigation.py --drone mavlink --mode outdoor
+    python3 interactive_navigation.py --drone px4 --mode outdoor
+    python3 interactive_navigation.py --drone px4_mavlink --connection udp:0.0.0.0:14540
+    python3 interactive_navigation.py --drone px4_dds --mode outdoor
     python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0
     python3 interactive_navigation.py --mode indoor --no-takeoff
 """
@@ -25,6 +28,9 @@ from nectar.control import (
     MoveReference,
     NavigationMethod,
     PoseSource,
+    Px4DdsConfig,
+    Px4MavlinkConfig,
+    Px4MavrosConfig,
 )
 
 log = logging.getLogger("interactive_navigation")
@@ -74,9 +80,22 @@ class InteractiveNav:
             if getattr(args, "connection", None):
                 kwargs["connection_string"] = args.connection
             config = MavlinkConfig(**kwargs)
+        elif args.drone == "px4":
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if getattr(args, "connection", None):
+                kwargs["connection_string"] = args.connection
+            config = Px4MavrosConfig(**kwargs)
+        elif args.drone == "px4_mavlink":
+            kwargs = {"pose_source": pose_source, "start_driver": False}
+            if getattr(args, "connection", None):
+                kwargs["connection_string"] = args.connection
+            config = Px4MavlinkConfig(**kwargs)
+        elif args.drone == "px4_dds":
+            config = Px4DdsConfig(pose_source=pose_source, start_driver=False)
         else:
             config = MavrosConfig(pose_source=pose_source, start_driver=False)
         self.drone = DroneFactory.create(args.drone, config)
+        self._drone_type = args.drone
         self.method = STRATEGY_MAP.get(args.strategy, NavigationMethod.PID)
         self.reference = MoveReference.BODY
         self.precision = args.precision
@@ -86,7 +105,8 @@ class InteractiveNav:
 
     def setup(self, altitude: float) -> bool:
         if self._no_takeoff:
-            if not self.drone.set_mode("GUIDED"):
+            is_px4 = self._drone_type.startswith("px4")
+            if not is_px4 and not self.drone.set_mode("GUIDED"):
                 log.error("Failed to set GUIDED mode")
                 return False
             self.drone.delay(1.0)
@@ -282,7 +302,7 @@ class InteractiveNav:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Interactive ArduPilot navigation REPL (MAVROS/MAVLink)",
+        description="Interactive ArduPilot / PX4 navigation REPL (MAVROS / MAVLink / DDS)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Once running, type waypoints directly:\n"
@@ -293,12 +313,17 @@ def parse_args() -> argparse.Namespace:
             "  help         → full command list\n"
         ),
     )
-    parser.add_argument("--drone", choices=["mavros", "mavlink"], default="mavros")
+    parser.add_argument(
+        "--drone",
+        choices=["mavros", "mavlink", "px4", "px4_mavlink", "px4_dds"],
+        default="mavros",
+    )
     parser.add_argument("--mode", choices=["indoor", "outdoor"], default="outdoor")
     parser.add_argument(
         "--connection",
         default=None,
-        help="MAVLink endpoint override (mavlink only), e.g. tcp:127.0.0.1:5762 for SITL",
+        help="MAVLink endpoint override (mavlink/px4_mavlink), e.g. tcp:127.0.0.1:5762 "
+        "(ArduPilot SITL) or udp:0.0.0.0:14540 (PX4 SITL)",
     )
     parser.add_argument("--no-takeoff", action="store_true", help="Hand-held testing")
     parser.add_argument(

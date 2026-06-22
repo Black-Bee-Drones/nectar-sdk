@@ -22,7 +22,7 @@ main()
 Or from command line:
 
 ```bash
-ros2 run nectar gui
+ros2 run nectar app.py
 ```
 
 ## Features
@@ -32,39 +32,43 @@ ros2 run nectar gui
 Drone control interface with keyboard-based velocity control and position navigation.
 
 **Connection Flow**:
-1. **Connect Driver**: Starts the ROS 2 driver (MAVROS / Bebop / Crazyflie) in the background; the direct-MAVLink transport opens the FCU link itself (no driver process)
-2. **Initialize Instance**: Creates the drone object with the configuration selected in the panel
-3. **Ready**: Flight controls enabled
+1. **Select Firmware + Link**: Pick the firmware (ArduPilot, PX4, Bebop, Crazyflie) and, for ArduPilot/PX4, the transport (MAVROS, MAVLink, or DDS). The config panel adapts to the selection.
+2. **Connect Driver**: Starts the background driver process — MAVROS (`apm.launch` / `px4.launch`), the Crazyflie server, the Bebop driver, or `MicroXRCEAgent` for PX4 DDS. Direct-MAVLink links (ArduPilot/PX4) open the FCU link inside the instance, so this step is skipped.
+3. **Initialize Instance**: Creates the drone object with the configuration selected in the panel.
+4. **Ready**: Flight controls enabled.
 
 **Status Indicators**:
-- **Driver**: ROS2 driver process running
+- **Driver**: ROS2 driver / agent process running
 - **Instance**: Drone object initialized
-- **FCU**: Flight controller connected (Mavros only)
-- **Armed**: Motors armed state (Mavros only)
+- **FCU**: Flight controller connected (FCU vehicles)
+- **Armed**: Motors armed state (FCU vehicles / Crazyflie)
 
 **Velocity Control**:
 - **Keyboard**: W/S (up/down), A/D (yaw), Arrow keys (forward/back/left/right)
 - **Sliders**: Adjust max velocity per axis (Vx, Vy, Vz, Vyaw)
 - **Reference Frame**: Body, World, or Takeoff
 
-**Position Control** (Mavros only):
+**Position Control** (FCU vehicles and Crazyflie):
 - Navigate to target position with X, Y, Z, Yaw offsets
 - Reference frames: Body or Takeoff
 - Configurable precision and timeout
 
-**Supported Drones**:
-- **MAVROS**: Full control (arm, takeoff, land, velocity, position, telemetry) over the MAVROS bridge
-- **MAVLink**: Same ArduPilot control over a direct pymavlink link (no MAVROS); set the connection string and, for indoor flight, the vision-pose topic preset (`/visual_slam/tracking/vo_pose_covariance`)
+**Backends** (Firmware + Link):
+- **ArduPilot / MAVROS** (`mavros`): Full ArduPilot control (arm, takeoff, land, velocity, position, telemetry) over the MAVROS bridge
+- **ArduPilot / MAVLink** (`mavlink`): Same control over a direct pymavlink link (no MAVROS); set the connection string and, for indoor flight, the vision-pose topic preset (`/visual_slam/tracking/vo_pose_covariance`)
+- **PX4 / MAVROS** (`px4`): PX4 over MAVROS with OFFBOARD setpoint streaming; the connection defaults to the PX4 offboard endpoint (`udp://:14540@127.0.0.1:14580` for SITL)
+- **PX4 / MAVLink** (`px4_mavlink`): PX4 over a direct pymavlink link (no MAVROS); defaults to `udp:0.0.0.0:14540`
+- **PX4 / DDS** (`px4_dds`): PX4 over native uXRCE-DDS. **Connect Driver** launches `MicroXRCEAgent` on the configured UDP port (default 8888); an agent already started elsewhere (e.g. `make sim-bridge FIRMWARE=px4 PROTOCOL=dds`) is detected automatically. Readiness is the appearance of PX4's `/fmu/*` topics (agent + FCU client connected), not a process or session name, so detection works regardless of how the agent was started
 - **Bebop**: Basic control (takeoff, land, velocity, flips)
 - **Crazyflie**: Takeoff, land, velocity, and onboard position (`goTo`)
 
-For the ArduPilot transports, the panel offers the indoor/outdoor PID + setpoint config combinations from [`control/ardupilot/config`](../control/ardupilot/config) (including the `*_sim_*` SITL presets).
+The MAVROS and MAVLink panels are shared by ArduPilot and PX4 and adapt to the firmware: the connection default switches to the PX4 offboard endpoint, and the PID and setpoint preset lists are loaded from [`control/px4/config`](../control/px4/config) instead of [`control/ardupilot/config`](../control/ardupilot/config) (both include the `*_sim_*` SITL presets). The setpoint config exposes each firmware's speed/accel limits — ArduPilot `WPNAV`/`GUID_OPTIONS` or PX4 `MPC_*` — with **Apply setpoint params to FCU** pushing them on arm. The uXRCE-DDS panel (`px4_dds`) exposes pose source, agent UDP port (default 8888), namespace, and the PID preset — but no setpoint/apply-setpoint controls, since PX4 parameters are not bridged over uXRCE-DDS.
 
 ### Vision Tab
 
 Real-time computer vision processing with multiple camera sources and filters.
 
-**Camera Sources**: Webcam, RealSense, OAK-D, ROS topic, File
+**Camera Sources**: Webcam, RealSense, T265, OAK-D, C920, IMX219, ROS topic, ROS depth, File
 
 **Filter Categories**:
 - **Color**: HSV color filtering with calibration
@@ -109,7 +113,8 @@ ROS2 system introspection and interaction tools.
 ```mermaid
 classDiagram
     class NectarApp {
-        +main()$
+        QMainWindow root
+        owns tabs + ROSExecutor
     }
 
     class ROSExecutor {
@@ -157,7 +162,6 @@ flowchart TB
         Workers[DriverWorker, MoveToWorker, etc.]
     end
 
-    UI --> |"QTimer"| ROSThread
     UI --> |"Start"| WorkerThreads
     WorkerThreads --> |"Signals"| UI
     ROSThread --> |"Signals"| UI
@@ -239,14 +243,17 @@ worker_thread.start()
 
 ### Service Calls
 
-ROS2 services use async pattern to avoid deadlocks. The SDK's `BaseDrone._wait` is the cooperative tick — it spins when the SDK owns ROS, sleeps when the user's executor (e.g. `ROSExecutor`) is already running. Either way, `node.executor` is preserved so later subscriptions still wake the right executor:
+ROS 2 service calls use an async pattern to avoid deadlocks. `BaseDrone._call_service` issues `call_async`, then blocks the calling thread on a `threading.Event` set by the future's done-callback — the shared executor (the SDK's background spin thread or the GUI's `ROSExecutor`) drives the future to completion on its own thread:
 
 ```python
-future = service.call_async(request)
-while not future.done():
-    self._wait(0.05)  # spin (SDK-owned) or sleep (user-owned executor)
+future = client.call_async(request)
+done = threading.Event()
+future.add_done_callback(lambda _f: done.set())
+done.wait(timeout=...)        # calling thread blocks; the executor thread completes the future
 result = future.result()
 ```
+
+Blocking flight calls (takeoff, move_to, …) poll their own completion with `_wait_until(predicate, timeout)` (a `time.sleep(0.05)` loop), relying on that same background executor to keep delivering telemetry callbacks.
 
 ### Module Structure
 
@@ -276,11 +283,11 @@ Colors defined in `theme.py`:
 ```python
 from nectar.interface import COLORS
 
-COLORS.background      # #0D1117
-COLORS.surface         # #161B22
-COLORS.accent          # #FDCE01 (yellow)
-COLORS.success         # #3FB950 (green)
-COLORS.error           # #F85149 (red)
+COLORS.background      # #0A0E14
+COLORS.surface         # #12171E
+COLORS.accent          # #F5A623 (amber)
+COLORS.success         # #34C759 (green)
+COLORS.error           # #FF453A (red)
 # ... see theme.py for full list
 ```
 

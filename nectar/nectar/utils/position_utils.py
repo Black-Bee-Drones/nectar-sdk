@@ -2,7 +2,7 @@
 
 These work on two families of inputs:
 
-1. **Plain core types** (:mod:`nectar.control.ardupilot.types`) -
+1. **Plain core types** (:mod:`nectar.control.vehicle.types`) -
    ``LocalPose``/``GeoPoint`` for the current position and
    ``LocalTarget``/``GlobalTarget`` for the goal. The transport-agnostic
    vehicle core uses only these, so the math never depends on ROS.
@@ -19,7 +19,7 @@ import numpy as np
 from geographiclib.geodesic import Geodesic
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
 
-from nectar.control.ardupilot.types import (
+from nectar.control.vehicle.types import (
     GeoPoint,
     GlobalTarget,
     LocalPose,

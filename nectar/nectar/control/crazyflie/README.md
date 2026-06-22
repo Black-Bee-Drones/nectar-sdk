@@ -222,13 +222,14 @@ drone.set_group_mask(1)  # Assign to group 1 for broadcast commands
 
 ### Duration Estimation
 
-The Crazyflie `goTo` service requires an explicit `duration` parameter. The SDK estimates it as:
+The Crazyflie `goTo` service requires an explicit `duration` parameter. For `move_to` the SDK estimates it from both the travel distance and the yaw change:
 
 ```
-duration = max(distance / default_velocity, 1.0)
+yaw_duration = yaw_diff / radians(60)              # ~60 deg/s
+duration = max(distance / default_velocity, yaw_duration, 1.0)
 ```
 
-Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). For precise timing control, use the `go_to()` method directly.
+Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff/land use their own fixed floor (2.0 s). For precise timing control, use the `go_to()` method directly.
 
 ### Velocity Control
 

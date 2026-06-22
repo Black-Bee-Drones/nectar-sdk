@@ -7,6 +7,7 @@ from nectar.ai.detection.datasets.subset import SubsetCreator
 from nectar.ai.segmentation.datasets.format import SegFormatConverter
 from nectar.ai.segmentation.datasets.handlers import (
     BaseDatasetHandler,
+    HuggingFaceSegHandler,
     RoboflowSegHandler,
     SegDatasetHandlerRegistry,
     UltralyticsSegHandler,
@@ -16,6 +17,13 @@ _LAZY_ATTRS = {
     "SegDatasetAnalyzer": "nectar.ai.segmentation.datasets.analyze",
     "RoboflowUploader": "nectar.ai.detection.datasets.upload",
     "HuggingFaceDatasetUploader": "nectar.ai.detection.datasets.upload",
+    # Segmentation HuggingFace dataset support (pull huggingface_hub / datasets)
+    "HuggingFaceSegDatasetUploader": "nectar.ai.segmentation.datasets.upload",
+    "seg_coco_to_hf": "nectar.ai.segmentation.datasets.hf_converter",
+    "seg_yolo_to_hf": "nectar.ai.segmentation.datasets.hf_converter",
+    "hf_to_coco_seg": "nectar.ai.segmentation.datasets.hf_converter",
+    "hf_to_yolo_seg": "nectar.ai.segmentation.datasets.hf_converter",
+    "generate_seg_dataset_card": "nectar.ai.segmentation.datasets.hf_converter",
 }
 
 
@@ -38,6 +46,14 @@ if TYPE_CHECKING:
         RoboflowUploader,
     )
     from nectar.ai.segmentation.datasets.analyze import SegDatasetAnalyzer
+    from nectar.ai.segmentation.datasets.hf_converter import (
+        generate_seg_dataset_card,
+        hf_to_coco_seg,
+        hf_to_yolo_seg,
+        seg_coco_to_hf,
+        seg_yolo_to_hf,
+    )
+    from nectar.ai.segmentation.datasets.upload import HuggingFaceSegDatasetUploader
 
 
 __all__ = [
@@ -47,6 +63,14 @@ __all__ = [
     "BaseDatasetHandler",
     "UltralyticsSegHandler",
     "RoboflowSegHandler",
+    "HuggingFaceSegHandler",
+    # Segmentation HuggingFace dataset conversion + upload
+    "HuggingFaceSegDatasetUploader",
+    "seg_coco_to_hf",
+    "seg_yolo_to_hf",
+    "hf_to_coco_seg",
+    "hf_to_yolo_seg",
+    "generate_seg_dataset_card",
     # Re-exported from detection (format-agnostic utilities)
     "SubsetCreator",
     "RoboflowUploader",

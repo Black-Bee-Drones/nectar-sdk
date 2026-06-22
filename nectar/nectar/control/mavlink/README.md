@@ -1,17 +1,21 @@
 # Direct MAVLink Control
 
-A direct [pymavlink](https://mavlink.io/en/mavgen_python/) control path for ArduPilot vehicles, for cases where the [MAVROS](../mavros/README.md) bridge is unavailable, undesired, or insufficient (lighter companion stack, custom plugins, or a single owner of the FCU serial port).
+A direct [pymavlink](https://mavlink.io/en/mavgen_python/) control path for ArduPilot **and PX4** vehicles, for cases where the [MAVROS](../mavros/README.md) bridge is unavailable, undesired, or insufficient (lighter companion stack, custom plugins, or a single owner of the FCU serial port).
 
 `MavlinkDrone` is the same ArduPilot vehicle as [`MavrosDrone`](../mavros/drone.py), reached over a different transport. Both subclass the shared [`ArduPilotDrone`](../ardupilot/README.md) core, so **all flight/navigation logic is identical** — only the wire plumbing differs.
 
+`PymavlinkTransport` is **firmware-neutral**: an injected [`MavlinkModeCodec`](modes.py) isolates the one firmware difference (flight-mode encode/decode). `ArduPilotModeCodec` (default, `SET_MODE` + pymavlink `mode_mapping()`) backs `MavlinkDrone`; [`Px4ModeCodec`](../px4/mavlink_drone.py) (`MAV_CMD_DO_SET_MODE` with PX4 `(main, sub)` modes) backs [`Px4MavlinkDrone`](../px4/mavlink_drone.py). Telemetry, setpoints, arming, params and stream rates are shared unchanged.
+
 ```mermaid
 classDiagram
-    class ArduPilotDrone {
+    class VehicleDrone {
         <<abstract>>
         +takeoff() land() move_to() move_to_gps() rtl()
-        +arm() set_mode() set_param() get_altitude()
+        +arm()* set_mode() set_param() get_altitude()
     }
-    class MavlinkTransport {
+    class ArduPilotDrone
+    class Px4Drone
+    class VehicleTransport {
         <<abstract>>
         +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
         +arm() set_mode() command_takeoff() set_param()
@@ -19,13 +23,26 @@ classDiagram
     }
     class MavrosTransport
     class PymavlinkTransport
-    ArduPilotDrone o-- MavlinkTransport
-    MavlinkTransport <|.. MavrosTransport
-    MavlinkTransport <|.. PymavlinkTransport
+    class MavlinkModeCodec {
+        <<abstract>>
+    }
+    class ArduPilotModeCodec
+    class Px4ModeCodec
+
+    VehicleDrone o-- VehicleTransport
+    VehicleDrone <|-- ArduPilotDrone
+    VehicleDrone <|-- Px4Drone
+    VehicleTransport <|.. MavrosTransport
+    VehicleTransport <|.. PymavlinkTransport
     ArduPilotDrone <|-- MavrosDrone
     ArduPilotDrone <|-- MavlinkDrone
+    Px4Drone <|-- Px4MavlinkDrone
     MavlinkDrone ..> PymavlinkTransport : builds
+    Px4MavlinkDrone ..> PymavlinkTransport : builds
     PymavlinkTransport o-- MavlinkConnection
+    PymavlinkTransport o-- MavlinkModeCodec
+    MavlinkModeCodec <|.. ArduPilotModeCodec
+    MavlinkModeCodec <|.. Px4ModeCodec
 ```
 
 ## Components
@@ -36,12 +53,12 @@ Thin wrapper around `mavutil.mavlink_connection` in [`connection.py`](connection
 
 ### `PymavlinkTransport`
 
-[`transport.py`](transport.py) — the `MavlinkTransport` implementation that owns the FCU link directly.
+[`transport.py`](transport.py) — the `VehicleTransport` implementation that owns the FCU link directly.
 
 - **RX**: a ROS timer on the drone's node drains `recv_match(blocking=False)` and dispatches each message through a handler table. Decoded types: `HEARTBEAT`, `GLOBAL_POSITION_INT`, `LOCAL_POSITION_NED`, `ATTITUDE`, `RANGEFINDER`/`DISTANCE_SENSOR`, `PARAM_VALUE`, `COMMAND_ACK`, and `STATUSTEXT`. This keeps the concurrency model identical to MAVROS — telemetry updates on the executor thread, blocking flight calls read it on the user thread.
 - **TX**: a 1 Hz heartbeat timer announces the companion; commands go via `command_long`/`set_mode`/`param_set`; setpoints via `set_position_target_local_ned` / `set_position_target_global_int`.
 - **Frames**: the core speaks ENU/FLU; the transport converts to the wire's NED/FRD on egress and back to ENU on ingest (exactly what MAVROS does internally).
-- **Streams**: on `start()` it requests message intervals via [`streams.py`](streams.py) (`MAV_CMD_SET_MESSAGE_INTERVAL`, with a `REQUEST_DATA_STREAM` fallback).
+- **Streams**: on `start()` it requests message intervals via [`streams.py`](streams.py) (`MAV_CMD_SET_MESSAGE_INTERVAL`); a legacy `REQUEST_DATA_STREAM` helper (`request_data_streams`) is also provided in `streams.py` for older firmware but is not called automatically.
 
 #### STATUSTEXT surfacing
 
@@ -53,7 +70,7 @@ MAVROS forwards FCU [`STATUSTEXT`](https://mavlink.io/en/messages/common.html#ST
 
 #### Distance sensors
 
-Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by sensor id in a copy-on-write map, exposed as `distance_sensors` (and `get_distance(orientation)` on the drone). The downward sensor also updates `rangefinder`. Every reported orientation is collected automatically, with no SDK-side configuration beyond the FCU rangefinder/proximity setup. See the [ArduPilot core README](../ardupilot/README.md#distance-sensors) for the data model.
+Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by sensor id in a copy-on-write map, exposed as `distance_sensors` (and `get_distance(orientation)` on the drone). The downward sensor also updates `rangefinder`. Every reported orientation is collected automatically, with no SDK-side configuration beyond the FCU rangefinder/proximity setup. See the [vehicle core README](../vehicle/README.md#distance-sensors) for the data model.
 
 #### Stream rates
 

@@ -35,7 +35,13 @@ class Capability(Enum):
     """Velocity commands relative to the takeoff frame."""
 
     SERVO = auto()
-    """Auxiliary servo / actuator control."""
+    """Per-channel PWM servo control (ArduPilot ``DO_SET_SERVO``)."""
+
+    ACTUATOR = auto()
+    """Normalized payload actuator output (``DO_SET_ACTUATOR``)."""
+
+    GRIPPER = auto()
+    """Gripper open/close (``DO_GRIPPER``)."""
 
     PARAMS = auto()
     """Read/write autopilot parameters."""

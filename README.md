@@ -49,7 +49,7 @@ ROS 2 software development kit for autonomous aerial systems. Provides unified i
 
 ### [Drone Control](nectar/nectar/control/README.md)
 
-Protocol-based drone interface with factory instantiation. `DroneFactory` creates drone implementations by key — ArduPilot reachable over two transports ([MAVROS](https://github.com/mavlink/mavros) or direct [pymavlink](https://mavlink.io/en/mavgen_python/)), plus Parrot Bebop 2 and Bitcraze Crazyflie, extensible to any platform. The two ArduPilot transports share one vehicle core, so flight behavior is identical regardless of the link. All drones implement the same `Drone` protocol: takeoff, land, move_to, move_to_gps, move_velocity, rtl, obstacle management.
+Protocol-based drone interface with factory instantiation. `DroneFactory` creates drone implementations by key — [ArduPilot](https://ardupilot.org/) over two transports ([MAVROS](https://github.com/mavlink/mavros) or direct [pymavlink](https://mavlink.io/en/mavgen_python/)) and [PX4](https://px4.io/) over three (MAVROS, direct pymavlink, or native [uXRCE-DDS](https://docs.px4.io/main/en/middleware/uxrce_dds.html)), plus Parrot Bebop 2 and Bitcraze Crazyflie, extensible to any platform. ArduPilot and PX4 share one firmware-agnostic vehicle core, so flight behavior is identical regardless of autopilot or link; each firmware adds only its own semantics (ArduPilot GUIDED, PX4 OFFBOARD streaming). All drones implement the same `Drone` protocol: takeoff, land, move_to, move_to_gps, move_velocity, rtl, obstacle management.
 
 - Position navigation via PID control or FCU setpoints, in body, world, or takeoff reference frames
 - GPS waypoint missions with [EGM96](https://en.wikipedia.org/wiki/EGM96) geoid correction for AMSL altitude
@@ -59,13 +59,16 @@ Protocol-based drone interface with factory instantiation. `DroneFactory` create
 
 ```python
 import nectar
-from nectar.control import DroneFactory, MavrosConfig, MavlinkConfig, BebopConfig, PoseSource
+from nectar.control import DroneFactory, MavrosConfig, MavlinkConfig, Px4MavrosConfig, BebopConfig, PoseSource
 
 nectar.init()
 
 # Same interface, different platforms / transports
 drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS))
-# drone = DroneFactory.create("mavlink", MavlinkConfig())  # direct pymavlink, no MAVROS
+# drone = DroneFactory.create("mavlink", MavlinkConfig())       # ArduPilot direct pymavlink, no MAVROS
+# drone = DroneFactory.create("px4", Px4MavrosConfig())          # PX4 over MAVROS (OFFBOARD)
+# drone = DroneFactory.create("px4_mavlink", Px4MavlinkConfig()) # PX4 direct pymavlink, no MAVROS
+# drone = DroneFactory.create("px4_dds", Px4DdsConfig())         # PX4 native uXRCE-DDS
 # drone = DroneFactory.create("bebop", BebopConfig())
 
 drone.takeoff(altitude=2.0)
@@ -75,7 +78,7 @@ drone.land()
 nectar.shutdown()
 ```
 
-[Control overview](nectar/nectar/control/README.md) · [ArduPilot core](nectar/nectar/control/ardupilot/README.md) · [MAVROS](nectar/nectar/control/mavros/README.md) · [MAVLink](nectar/nectar/control/mavlink/README.md) · [Localization](nectar/nectar/control/localization/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md) · [Crazyflie](nectar/nectar/control/crazyflie/README.md)
+[Control overview](nectar/nectar/control/README.md) · [Vehicle core](nectar/nectar/control/vehicle/README.md) · [ArduPilot](nectar/nectar/control/ardupilot/README.md) · [PX4](nectar/nectar/control/px4/README.md) · [MAVROS](nectar/nectar/control/mavros/README.md) · [MAVLink](nectar/nectar/control/mavlink/README.md) · [Localization](nectar/nectar/control/localization/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md) · [Crazyflie](nectar/nectar/control/crazyflie/README.md)
 
 ### [Computer Vision](nectar/nectar/vision/README.md)
 
@@ -190,7 +193,7 @@ ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:9
 
 ### [Interface](nectar/nectar/interface/README.md)
 
-[Qt6 / PySide6](https://doc.qt.io/qtforpython-6/) desktop application for testing and operating the SDK without writing code. Three tabs: **Control** (drone connection for MAVROS/MAVLink/Bebop/Crazyflie, arm/takeoff/land, keyboard velocity control, position navigation), **Vision** (camera streaming with 20+ real-time filters including ArUco detection and MediaPipe tracking), and **ROS** (topic browser/subscriber/publisher, service caller, parameter viewer, image subscriber).
+[Qt6 / PySide6](https://doc.qt.io/qtforpython-6/) desktop application for testing and operating the SDK without writing code. Three tabs: **Control** (firmware + link selection for ArduPilot and PX4 over MAVROS / direct MAVLink / uXRCE-DDS, plus Bebop and Crazyflie; arm/takeoff/land, keyboard velocity control, position navigation), **Vision** (camera streaming with 20+ real-time filters including ArUco detection and MediaPipe tracking), and **ROS** (topic browser/subscriber/publisher, service caller, parameter viewer, image subscriber).
 
 [Interface overview](nectar/nectar/interface/README.md) — architecture, tabs, widgets, threading model, camera integration, theming
 
@@ -245,14 +248,17 @@ flowchart TB
             direction TB
             DroneFactory(["DroneFactory"])
             DroneProto{{"Drone protocol"}}
-            subgraph CORE["ardupilot - shared vehicle core"]
+            subgraph CORE["vehicle - shared core"]
                 direction TB
+                VehicleDrone["VehicleDrone<br/>shared flight logic"]
                 ArduPilotDrone["ArduPilotDrone"]
-                Navigator["ArduPilotNavigator"]
+                Px4Drone["Px4Drone"]
+                Navigator["VehicleNavigator"]
                 Sequencer["FlightSequencer"]
                 PID["PIDController"]
                 MavrosT["MavrosTransport"]
                 PymavlinkT["PymavlinkTransport"]
+                DdsT["Px4DdsTransport"]
             end
             Bebop["BebopDrone"]
             Crazyflie["CrazyflieDrone"]
@@ -305,10 +311,11 @@ flowchart TB
     GUI --> DroneFactory & CameraFactory
 
     DroneFactory --> DroneProto
-    DroneProto -. implements .-> ArduPilotDrone
+    DroneProto -. implements .-> VehicleDrone
     DroneProto -.-> Bebop
     DroneProto -.-> Crazyflie
-    ArduPilotDrone --> Navigator & Sequencer & ObstacleMgr & MavrosT & PymavlinkT
+    VehicleDrone -. firmware .-> ArduPilotDrone & Px4Drone
+    VehicleDrone --> Navigator & Sequencer & ObstacleMgr & MavrosT & PymavlinkT & DdsT
     Navigator --> PID & GPSU & PosU
 
     CameraFactory --> ImageHandler --> VisAlgos
@@ -317,6 +324,7 @@ flowchart TB
 
     MavrosT <--> Topics
     PymavlinkT <--> FCU
+    DdsT <--> FCU
     VSLAM --> VisionBridge --> FCU
     Rangefinder --> FCU
     Topics <--> FCU
@@ -369,7 +377,9 @@ detector = Detector("model.bin", framework="custom")
 |----------|----------|
 | [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, Docker, drone drivers, troubleshooting |
 | [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, capabilities, submodule index |
-| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | Shared flight logic: navigation, frames, takeoff/land, RTL, setpoint/PID, GPS/EGM96, parameters |
+| [Vehicle Core](nectar/nectar/control/vehicle/README.md) | Firmware-agnostic core: bridge design, firmware hooks, navigation, frames, altitude, takeoff/land, GPS/EGM96, PID |
+| [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | ArduPilot specifics: GUIDED arming, `GUID_OPTIONS`/WPNAV, native RTL, parameters |
+| [PX4](nectar/nectar/control/px4/README.md) | PX4 specifics: OFFBOARD setpoint streaming, flight modes, AUTO.LAND/RTL; MAVROS / direct-MAVLink / uXRCE-DDS backends |
 | [MAVROS Transport](nectar/nectar/control/mavros/README.md) | MAVROS plumbing: telemetry mapping, topics/services, service-ACK behavior, indoor vision |
 | [MAVLink Transport](nectar/nectar/control/mavlink/README.md) | Direct pymavlink: connection, RX/TX, stream rates, vision bridge |
 | [Localization](nectar/nectar/control/localization/README.md) | Indoor VSLAM: Isaac producer, vision-pose bridge (MAVROS/MAVLink), Isaac container, RViz |
@@ -449,7 +459,7 @@ See: [control](nectar/nectar/examples/control/README.md) · [vision](nectar/nect
 
 ## Simulation
 
-ArduPilot SITL with Gazebo, indoor and outdoor, over MAVROS or direct MAVLink. Two terminals: one runs the physics (`make sim-start-outdoor` / `sim-start-indoor`), the other the Gazebo world + ROS stack (`make sim-outdoor` / `sim-indoor` / `*-direct`). See the **[Simulation guide](nectar/simulation/README.md)** for the full target matrix and the test suite.
+ArduPilot or PX4 SITL with Gazebo, indoor and outdoor, over MAVROS or direct MAVLink — one unified, parameterized CLI. Two terminals: `make sim-start FIRMWARE=.. ENV=..` runs the simulator, `make sim-bridge FIRMWARE=.. ENV=.. PROTOCOL=..` runs the Gazebo/ROS stack (defaults: `ardupilot` / `outdoor` / `mavros`). Both firmwares fly the same shared arena with a matched sensor suite. See the **[Simulation guide](nectar/simulation/README.md)** for the full matrix and the test suite.
 
 ## Directory Structure
 
@@ -470,8 +480,8 @@ nectar-sdk/
 │   ├── launch/                 # sitl, sitl_gazebo, isaac_vslam_realsense, vision_pose, vslam_rviz
 │   ├── simulation/             # Gazebo worlds, models, params, config
 │   └── nectar/                 # Python package
-│       ├── control/            # Drone control: ardupilot, mavros, mavlink, bebop, crazyflie,
-│       │                       #   localization, obstacles, pid, ardupilot/config, mavros/config
+│       ├── control/            # Drone control: vehicle (core), ardupilot, px4, mavros, mavlink,
+│       │                       #   bebop, crazyflie, localization, obstacles, pid, */config
 │       ├── vision/             # Computer vision
 │       ├── ai/                 # AI: detection, segmentation
 │       ├── sensors/            # Sensor drivers, filters, MAVLink bridges

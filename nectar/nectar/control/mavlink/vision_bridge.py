@@ -21,8 +21,8 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf_transformations import euler_from_quaternion
 
-from nectar.control.ardupilot.types import LocalPose, Vec3
 from nectar.control.mavlink.connection import MavlinkConnection
+from nectar.control.vehicle.types import LocalPose, Vec3
 
 PoseCallback = Callable[[LocalPose], None]
 

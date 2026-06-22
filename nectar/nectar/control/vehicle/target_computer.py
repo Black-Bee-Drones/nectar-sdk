@@ -1,12 +1,13 @@
-"""Stateless target computation for ArduPilot navigation."""
+"""Stateless target computation for vehicle navigation."""
 
 from typing import Optional
 
 import numpy as np
 from geographiclib.geodesic import Geodesic
 
-from nectar.control.ardupilot.gps_utils import GPSUtils
-from nectar.control.ardupilot.types import (
+from nectar.control.types import MoveReference
+from nectar.control.vehicle.gps_utils import GPSUtils
+from nectar.control.vehicle.types import (
     GeoPoint,
     GlobalTarget,
     LocalPose,
@@ -14,12 +15,11 @@ from nectar.control.ardupilot.types import (
     TargetFrame,
     Vec3,
 )
-from nectar.control.types import MoveReference
 from nectar.utils.gps_calculate import GPSCalculate
 
 
 class TargetComputer:
-    """Stateless target computation for ArduPilot navigation."""
+    """Stateless target computation for vehicle navigation."""
 
     @staticmethod
     def compute_local_target(

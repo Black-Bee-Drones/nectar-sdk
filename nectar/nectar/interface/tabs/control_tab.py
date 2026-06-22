@@ -25,6 +25,31 @@ from nectar.interface.widgets import (
     StatusIndicator,
 )
 
+# Drone types that share the firmware-agnostic FCU flight/telemetry API
+# (ArduPilot + PX4 over any transport).
+_FCU_TYPES = frozenset({"mavros", "mavlink", "px4", "px4_mavlink", "px4_dds"})
+
+# Drone types whose FCU link opens inside the instance, so there is no separate
+# driver process to launch (mirrors DriverInfo.driverless in driver_monitor).
+_DIRECT_TYPES = frozenset({"mavlink", "px4_mavlink"})
+
+# Firmware -> available transports for the two-level connection selector.
+_TRANSPORTS = {
+    "ArduPilot": ["MAVROS", "MAVLink"],
+    "PX4": ["MAVROS", "MAVLink", "DDS"],
+    "Bebop": [],
+    "Crazyflie": [],
+}
+
+# (firmware, transport) -> DroneFactory key.
+_DRONE_TYPE_MAP = {
+    ("ArduPilot", "MAVROS"): "mavros",
+    ("ArduPilot", "MAVLink"): "mavlink",
+    ("PX4", "MAVROS"): "px4",
+    ("PX4", "MAVLink"): "px4_mavlink",
+    ("PX4", "DDS"): "px4_dds",
+}
+
 
 class DriverWorker(QObject):
     finished = Signal(bool, str)
@@ -38,6 +63,7 @@ class DriverWorker(QObject):
         self._ip: str = ""
         self._backend: str = ""
         self._mocap: bool = False
+        self._agent_port: int = 8888
 
     def setup_connect(
         self,
@@ -46,6 +72,7 @@ class DriverWorker(QObject):
         ip: str = "",
         backend: str = "",
         mocap: bool = False,
+        agent_port: int = 8888,
     ) -> None:
         self._action = "connect"
         self._drone_type = drone_type
@@ -53,6 +80,7 @@ class DriverWorker(QObject):
         self._ip = ip
         self._backend = backend
         self._mocap = mocap
+        self._agent_port = agent_port
 
     def setup_disconnect(self, drone_type: str) -> None:
         self._action = "disconnect"
@@ -61,65 +89,69 @@ class DriverWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            from nectar.utils.process import ProcessUtils
-
             if self._action == "connect":
-                self._run_connect(ProcessUtils)
+                self._run_connect()
             else:
-                self._run_disconnect(ProcessUtils)
+                self._run_disconnect()
         except Exception as e:
             self.finished.emit(False, str(e))
 
-    def _run_connect(self, ProcessUtils) -> None:
-        session_name = self._get_session_name()
-        node_pattern = self._get_node_pattern()
+    def _run_connect(self) -> None:
+        from nectar.control import DRIVER_INFO, build_driver_command, is_driver_running
+        from nectar.utils.process import ProcessUtils
 
-        if ProcessUtils.is_node_running(node_pattern, timeout=2.0):
+        info = DRIVER_INFO.get(self._drone_type)
+        if info is None:
+            self.finished.emit(False, f"No driver for '{self._drone_type}'")
+            return
+
+        if is_driver_running(self._drone_type, timeout=2.0):
             self.finished.emit(True, "")
             return
 
         self.progress.emit("Starting driver...")
-        driver_cmd = self._get_driver_command()
+        command = build_driver_command(
+            self._drone_type,
+            connection_string=self._connection_string,
+            ip=self._ip,
+            backend=self._backend,
+            mocap=self._mocap,
+            agent_port=self._agent_port,
+        )
 
-        ProcessUtils.kill_process(session_name)
+        ProcessUtils.kill_process(info.session_name)
 
-        if not ProcessUtils.start_process(driver_cmd, session_name):
+        if not ProcessUtils.start_process(command, info.session_name):
             self.finished.emit(False, "Failed to start driver process")
             return
 
+        # Topic-detected drivers (e.g. the Micro XRCE-DDS Agent) are not ROS 2
+        # nodes; readiness is the appearance of their data topics (PX4's
+        # /fmu/* once the agent and the FCU client have connected).
+        if info.detect_via == "topic":
+            self.progress.emit("Waiting for uXRCE-DDS topics...")
+            if not ProcessUtils.wait_for_topic(info.topic_patterns[0], timeout=20.0):
+                self.finished.emit(False, "uXRCE-DDS topics not detected (is PX4 SITL running?)")
+                return
+            self.finished.emit(True, "")
+            return
+
         self.progress.emit("Waiting for driver...")
-        if not ProcessUtils.wait_for_node(node_pattern, timeout=20.0):
+        if not ProcessUtils.wait_for_node(info.node_patterns[0], timeout=20.0):
             self.finished.emit(False, "Driver did not start in time")
             return
 
         self.finished.emit(True, "")
 
-    def _run_disconnect(self, ProcessUtils) -> None:
+    def _run_disconnect(self) -> None:
+        from nectar.control import DRIVER_INFO
+        from nectar.utils.process import ProcessUtils
+
         self.progress.emit("Stopping driver...")
-        session_name = self._get_session_name()
-        ProcessUtils.kill_process(session_name)
+        info = DRIVER_INFO.get(self._drone_type)
+        if info and info.session_name:
+            ProcessUtils.kill_process(info.session_name)
         self.finished.emit(True, "")
-
-    def _get_driver_command(self) -> str:
-        if self._drone_type == "mavros":
-            conn = self._connection_string or "serial:///dev/ttyUSB0:921600"
-            return f"ros2 launch mavros apm.launch fcu_url:={conn}"
-        if self._drone_type == "crazyflie":
-            backend = self._backend or "cpp"
-            cmd = f"ros2 launch crazyflie launch.py backend:={backend}"
-            if not self._mocap:
-                cmd += " mocap:=False"
-            return cmd
-        ip = self._ip or "192.168.42.1"
-        return f"ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:={ip}"
-
-    def _get_session_name(self) -> str:
-        names = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
-        return names.get(self._drone_type, "bebop_driver")
-
-    def _get_node_pattern(self) -> str:
-        patterns = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
-        return patterns.get(self._drone_type, "bebop_driver")
 
 
 class DroneInstanceWorker(QObject):
@@ -174,12 +206,9 @@ class DriverStatusChecker(QObject):
         if not self._enabled:
             return
         try:
-            from nectar.utils.process import ProcessUtils
+            from nectar.control import is_driver_running
 
-            patterns = {"mavros": "mavros_node", "crazyflie": "crazyflie_server"}
-            pattern = patterns.get(self._drone_type, "bebop_driver")
-            is_running = ProcessUtils.is_node_running(pattern, timeout=2.0)
-            self.status_checked.emit(is_running)
+            self.status_checked.emit(is_driver_running(self._drone_type, timeout=2.0))
         except Exception:
             self.status_checked.emit(False)
 
@@ -218,6 +247,11 @@ class FlightActionWorker(QObject):
                 self.progress.emit("Landing...")
                 success = self._drone.land()
                 self.finished.emit(success, "" if success else "Land failed")
+            elif self._action == "prewarm":
+                # Enter OFFBOARD (PX4) off the GUI thread; a zero-velocity hold so
+                # the first teleop command publishes without blocking on mode entry.
+                self._drone.move_velocity(0.0, 0.0, 0.0, 0.0)
+                self.finished.emit(True, "")
             else:
                 self.finished.emit(False, f"Unknown action: {self._action}")
         except TimeoutError as e:
@@ -371,6 +405,10 @@ class ControlTab(QWidget):
 
     _DRIVER_DOWN_STRIKES = 3
 
+    # Emitted to run the driver-status probe on the checker thread. Queued
+    # (cross-thread) so is_driver_running()'s ~2s shell-out never blocks the GUI.
+    _check_requested = Signal()
+
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
@@ -396,6 +434,8 @@ class ControlTab(QWidget):
         self._flight_action_running: bool = False
         self._rtl_thread: Optional[QThread] = None
         self._rtl_worker: Optional[RTLWorker] = None
+        self._prewarm_thread: Optional[QThread] = None
+        self._prewarm_worker: Optional[FlightActionWorker] = None
         self._rtl_running: bool = False
         self._last_velocity_cmd: tuple = (0.0, 0.0, 0.0, 0.0)
         self._velocity_log_counter: int = 0
@@ -403,9 +443,7 @@ class ControlTab(QWidget):
         self._setup_ui()
         self._setup_timers()
         self._setup_status_checker()
-        self._update_ui_state()
-        self._update_capability_panels()
-        self._update_status_indicators()
+        self._on_firmware_changed(self._firmware_combo.currentText())
         self.setFocusPolicy(Qt.StrongFocus)
 
     def _setup_ui(self) -> None:
@@ -428,14 +466,24 @@ class ControlTab(QWidget):
 
         type_layout = QHBoxLayout()
         type_layout.setSpacing(6)
-        lbl = QLabel("Drone:")
-        lbl.setProperty("secondary", True)
-        self._drone_combo = QComboBox()
-        self._drone_combo.addItems(["Mavros", "Mavlink", "Bebop", "Crazyflie"])
-        self._drone_combo.setFixedWidth(100)
-        self._drone_combo.currentTextChanged.connect(self._on_drone_type_changed)
-        type_layout.addWidget(lbl)
-        type_layout.addWidget(self._drone_combo)
+
+        fw_lbl = QLabel("Firmware:")
+        fw_lbl.setProperty("secondary", True)
+        self._firmware_combo = QComboBox()
+        self._firmware_combo.addItems(["ArduPilot", "PX4", "Bebop", "Crazyflie"])
+        self._firmware_combo.setFixedWidth(100)
+        self._firmware_combo.currentTextChanged.connect(self._on_firmware_changed)
+
+        self._transport_lbl = QLabel("Link:")
+        self._transport_lbl.setProperty("secondary", True)
+        self._transport_combo = QComboBox()
+        self._transport_combo.setFixedWidth(90)
+        self._transport_combo.currentTextChanged.connect(self._on_selection_changed)
+
+        type_layout.addWidget(fw_lbl)
+        type_layout.addWidget(self._firmware_combo)
+        type_layout.addWidget(self._transport_lbl)
+        type_layout.addWidget(self._transport_combo)
         top_layout.addLayout(type_layout)
 
         self._config_panel = DroneConfigPanel()
@@ -1043,15 +1091,17 @@ class ControlTab(QWidget):
         self._status_checker = DriverStatusChecker()
         self._status_checker.moveToThread(self._checker_thread)
         self._status_checker.status_checked.connect(self._on_driver_status_checked)
+        # Cross-thread (auto -> queued): runs check() on the checker thread.
+        self._check_requested.connect(self._status_checker.check)
         self._checker_thread.start()
 
-    def _is_ardupilot(self) -> bool:
-        """True for ArduPilot drone types that share the flight/telemetry API."""
-        return self._drone_type in ("mavros", "mavlink")
+    def _is_fcu_vehicle(self) -> bool:
+        """True for FCU drone types (ArduPilot/PX4) sharing the flight/telemetry API."""
+        return self._drone_type in _FCU_TYPES
 
     def _is_direct(self) -> bool:
         """True for drone types whose link opens inside the instance (no driver)."""
-        return self._drone_type == "mavlink"
+        return self._drone_type in _DIRECT_TYPES
 
     def _update_ui_state(self) -> None:
         direct = self._is_direct()
@@ -1072,7 +1122,8 @@ class ControlTab(QWidget):
         self._instance_btn.setEnabled(link_ready)
         self._instance_btn.setText("Cleanup" if self._instance_initialized else "Initialize")
 
-        self._drone_combo.setEnabled(not self._instance_initialized)
+        self._firmware_combo.setEnabled(not self._instance_initialized)
+        self._transport_combo.setEnabled(not self._instance_initialized)
         self._config_panel.setEnabled(not self._instance_initialized)
 
         self._status_driver.set_status("active" if self._driver_connected else "inactive")
@@ -1086,16 +1137,16 @@ class ControlTab(QWidget):
 
         controls_active = can_control and self._controls_enabled
         self._set_velocity_control_enabled(controls_active)
-        self._set_mavros_controls_enabled(controls_active and self._is_ardupilot())
+        self._set_mavros_controls_enabled(controls_active and self._is_fcu_vehicle())
         self._set_bebop_controls_enabled(controls_active and self._drone_type == "bebop")
         self._set_crazyflie_controls_enabled(controls_active and self._drone_type == "crazyflie")
         self._set_position_control_enabled(
-            controls_active and (self._is_ardupilot() or self._drone_type == "crazyflie")
+            controls_active and (self._is_fcu_vehicle() or self._drone_type == "crazyflie")
         )
 
     def _update_status_indicators(self) -> None:
-        self._status_fcu.setVisible(self._is_ardupilot())
-        self._status_armed.setVisible(self._is_ardupilot() or self._drone_type == "crazyflie")
+        self._status_fcu.setVisible(self._is_fcu_vehicle())
+        self._status_armed.setVisible(self._is_fcu_vehicle() or self._drone_type == "crazyflie")
 
     def _set_mavros_controls_enabled(self, enabled: bool) -> None:
         self._arm_btn.setEnabled(enabled)
@@ -1165,16 +1216,43 @@ class ControlTab(QWidget):
                 # Best-effort stop; connection may be lost
                 pass
 
+    def _resolve_drone_type(self) -> str:
+        """Map the firmware + transport selection to a DroneFactory key."""
+        firmware = self._firmware_combo.currentText()
+        if firmware == "Bebop":
+            return "bebop"
+        if firmware == "Crazyflie":
+            return "crazyflie"
+        transport = self._transport_combo.currentText()
+        return _DRONE_TYPE_MAP.get((firmware, transport), "mavros")
+
     @Slot(str)
-    def _on_drone_type_changed(self, drone_type: str) -> None:
-        self._drone_type = drone_type.lower()
+    def _on_firmware_changed(self, firmware: str) -> None:
+        """Repopulate the contextual transport combo, then re-resolve the type."""
+        transports = _TRANSPORTS.get(firmware, [])
+        self._transport_combo.blockSignals(True)
+        self._transport_combo.clear()
+        self._transport_combo.addItems(transports)
+        if transports:
+            self._transport_combo.setCurrentIndex(0)
+        self._transport_combo.blockSignals(False)
+
+        has_transport = bool(transports)
+        self._transport_lbl.setVisible(has_transport)
+        self._transport_combo.setVisible(has_transport)
+
+        self._on_selection_changed()
+
+    @Slot()
+    def _on_selection_changed(self, *_args) -> None:
+        self._drone_type = self._resolve_drone_type()
 
         # Driver state is per-type; re-evaluate it for the new selection so a
         # driver from a different type does not lock the UI.
         self._driver_connected = False
         self._driver_missed_checks = 0
 
-        self._mavros_actions.setVisible(self._is_ardupilot())
+        self._mavros_actions.setVisible(self._is_fcu_vehicle())
         self._bebop_actions.setVisible(self._drone_type == "bebop")
         self._crazyflie_actions.setVisible(self._drone_type == "crazyflie")
         self._config_panel.set_drone_type(self._drone_type)
@@ -1188,8 +1266,8 @@ class ControlTab(QWidget):
         self._trigger_driver_check()
 
     def _update_capability_panels(self) -> None:
-        has_position_control = self._is_ardupilot() or self._drone_type == "crazyflie"
-        has_telemetry = self._is_ardupilot() or self._drone_type == "crazyflie"
+        has_position_control = self._is_fcu_vehicle() or self._drone_type == "crazyflie"
+        has_telemetry = self._is_fcu_vehicle() or self._drone_type == "crazyflie"
         is_crazyflie = self._drone_type == "crazyflie"
 
         self._position_panel.setVisible(has_position_control)
@@ -1206,7 +1284,9 @@ class ControlTab(QWidget):
         if self._is_direct():
             return
         if self._status_checker:
-            self._status_checker.check()
+            # Queued onto the checker thread; check() shells out (~2s) and must
+            # never run on the GUI thread.
+            self._check_requested.emit()
 
     @Slot(bool)
     def _on_driver_status_checked(self, is_running: bool) -> None:
@@ -1238,6 +1318,8 @@ class ControlTab(QWidget):
             self._connect_driver()
 
     def _connect_driver(self) -> None:
+        if self._driver_thread and self._driver_thread.isRunning():
+            return
         self._driver_btn.setEnabled(False)
         self._driver_btn.setText("Connecting...")
         self._show_progress("Connecting...")
@@ -1252,6 +1334,7 @@ class ControlTab(QWidget):
             ip=config.get("ip", ""),
             backend=config.get("backend", ""),
             mocap=config.get("mocap", False),
+            agent_port=config.get("agent_port", 8888),
         )
         self._driver_worker.moveToThread(self._driver_thread)
 
@@ -1263,6 +1346,8 @@ class ControlTab(QWidget):
         self._driver_thread.start()
 
     def _disconnect_driver(self) -> None:
+        if self._driver_thread and self._driver_thread.isRunning():
+            return
         if self._instance_initialized:
             self._cleanup_instance()
 
@@ -1388,6 +1473,8 @@ class ControlTab(QWidget):
             self._enable_btn.setText("Disable Controls")
             self._enable_btn.setProperty("danger", True)
             self._command_timer.start()
+            if self._is_fcu_vehicle() and self._drone is not None:
+                self._prewarm_offboard()
             if self._node:
                 self._node.get_logger().info("Controls enabled")
         else:
@@ -1402,6 +1489,19 @@ class ControlTab(QWidget):
         self._enable_btn.style().unpolish(self._enable_btn)
         self._enable_btn.style().polish(self._enable_btn)
         self._update_ui_state()
+
+    def _prewarm_offboard(self) -> None:
+        """Enter OFFBOARD off the GUI thread (one-shot) so the first teleop
+        command does not block on PX4 mode entry."""
+        if self._prewarm_thread and self._prewarm_thread.isRunning():
+            return
+        self._prewarm_thread = QThread()
+        self._prewarm_worker = FlightActionWorker()
+        self._prewarm_worker.setup(self._drone, "prewarm")
+        self._prewarm_worker.moveToThread(self._prewarm_thread)
+        self._prewarm_thread.started.connect(self._prewarm_worker.run)
+        self._prewarm_worker.finished.connect(self._prewarm_thread.quit)
+        self._prewarm_thread.start()
 
     @Slot()
     def _emergency_stop(self) -> None:
@@ -1449,7 +1549,7 @@ class ControlTab(QWidget):
             and self._controls_enabled
         )
         actual_enabled = enabled and controls_should_be_active
-        if self._is_ardupilot():
+        if self._is_fcu_vehicle():
             self._arm_btn.setEnabled(actual_enabled)
             self._disarm_btn.setEnabled(actual_enabled)
             self._takeoff_btn.setEnabled(actual_enabled)
@@ -1613,7 +1713,7 @@ class ControlTab(QWidget):
         reference = reference_map.get(ref_name, MoveReference.BODY)
         method_name = self._pos_strategy_combo.currentText()
         default_method = (
-            NavigationMethod.PID_EKF if self._is_ardupilot() else NavigationMethod.POSITION
+            NavigationMethod.PID_EKF if self._is_fcu_vehicle() else NavigationMethod.POSITION
         )
         method = method_map.get(method_name, default_method)
         alt_name = self._pos_alt_source_combo.currentText()
@@ -1697,7 +1797,7 @@ class ControlTab(QWidget):
             (self._is_direct() or self._driver_connected)
             and self._instance_initialized
             and self._controls_enabled
-            and (self._is_ardupilot() or self._drone_type == "crazyflie")
+            and (self._is_fcu_vehicle() or self._drone_type == "crazyflie")
         )
 
     @Slot()
@@ -1752,14 +1852,14 @@ class ControlTab(QWidget):
             return
 
         try:
-            if self._is_ardupilot():
-                self._update_ardupilot_telemetry()
+            if self._is_fcu_vehicle():
+                self._update_vehicle_telemetry()
             elif self._drone_type == "crazyflie":
                 self._update_crazyflie_telemetry()
         except Exception:
             pass
 
-    def _update_ardupilot_telemetry(self) -> None:
+    def _update_vehicle_telemetry(self) -> None:
         import numpy as np
 
         from nectar.control.types import AltitudeSource
@@ -1976,17 +2076,26 @@ class ControlTab(QWidget):
             self._instance_thread.quit()
             self._instance_thread.wait(1000)
 
+        # Flight/move/RTL workers run a blocking SDK call; quit() cannot
+        # interrupt it, so wait until run() returns (bounded by the SDK call's
+        # own timeout) rather than abandoning the thread after 1s, which risks
+        # "QThread destroyed while running". The re-entrancy guards ensure only
+        # one such worker runs at a time.
         if self._moveto_thread and self._moveto_thread.isRunning():
-            self._cancel_move_to()
+            self._cancel_move_to()  # makes the PID loop return promptly
             self._moveto_thread.quit()
-            self._moveto_thread.wait(1000)
+            self._moveto_thread.wait()
 
         if self._flight_thread and self._flight_thread.isRunning():
             self._flight_thread.quit()
-            self._flight_thread.wait(1000)
+            self._flight_thread.wait()
 
         if self._rtl_thread and self._rtl_thread.isRunning():
             self._rtl_thread.quit()
-            self._rtl_thread.wait(1000)
+            self._rtl_thread.wait()
+
+        if self._prewarm_thread and self._prewarm_thread.isRunning():
+            self._prewarm_thread.quit()
+            self._prewarm_thread.wait()
 
         self._cleanup_instance()

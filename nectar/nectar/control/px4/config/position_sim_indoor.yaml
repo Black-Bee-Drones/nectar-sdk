@@ -1,0 +1,36 @@
+# PX4 SITL indoor position control PID parameters (companion-side velocity PID)
+x:
+  kp: 0.8
+  ki: 0.0
+  kd: 0.0
+  output_min: -1.0
+  output_max: 1.0
+  integral_min: -1.0
+  integral_max: 1.0
+
+y:
+  kp: 0.8
+  ki: 0.0
+  kd: 0.0
+  output_min: -1.0
+  output_max: 1.0
+  integral_min: -1.0
+  integral_max: 1.0
+
+z:
+  kp: 0.5
+  ki: 0.0
+  kd: 0.0
+  output_min: -0.8
+  output_max: 0.8
+  integral_min: -1.0
+  integral_max: 1.0
+
+yaw:
+  kp: 0.5
+  ki: 0.1
+  kd: 0.0
+  output_min: -0.65
+  output_max: 0.65
+  integral_min: -0.5
+  integral_max: 0.5
