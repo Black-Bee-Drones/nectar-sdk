@@ -108,9 +108,9 @@ class BebopDrone(BaseDrone):
         Returns
         -------
         bool
-            True if driver is running.
+            True if the bebop_driver node is running.
         """
-        self._connected = self._driver_running
+        self._connected = self.check_driver_status()
         return self._connected
 
     def disconnect(self) -> None:

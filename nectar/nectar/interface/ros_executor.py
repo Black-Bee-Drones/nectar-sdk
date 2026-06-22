@@ -103,12 +103,12 @@ class ROSExecutor(QObject):
     def shutdown(self) -> None:
         """Complete shutdown of ROS2 context."""
         self.stop()
+        # Clear the runtime's reference to this (now-stopped) executor so it is
+        # not retained after the GUI closes. Nodes are torn down by their owners.
+        nectar_runtime.detach()
         try:
             if rclpy.ok():
                 rclpy.shutdown()
         except Exception:
             # Context may already be shutdown
             pass
-
-    def __del__(self) -> None:
-        self.shutdown()

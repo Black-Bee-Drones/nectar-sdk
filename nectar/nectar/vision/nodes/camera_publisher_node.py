@@ -256,7 +256,7 @@ class CameraPublisherNode(Node):
 
         # Build config & camera
         config = self._build_config()
-        camera = CameraFactory.from_source(self.camera_source, config=config)
+        camera = CameraFactory.from_source(self.camera_source, config=config, node=self)
         camera.start()
 
         self._log_camera_info(camera)

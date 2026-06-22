@@ -328,7 +328,7 @@ class LineDetectionNode(Node):
             Input BGR image frame.
         """
         try:
-            cv2.resize(img, self.IMG_SIZE, img)
+            img = cv2.resize(img, self.IMG_SIZE)
             display_img = img.copy() if self.show_visualization else None
 
             for color in self.line_colors:

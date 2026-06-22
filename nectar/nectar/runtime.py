@@ -109,6 +109,20 @@ class _Runtime:
             self._thread = None
             self._owns_executor = False
 
+    def detach(self) -> None:
+        """Release an externally-owned executor registration.
+
+        For an external owner that manages its
+        own spin thread and node lifecycle: drops the runtime's reference so a
+        stopped executor is not retained. No-op when the runtime owns the
+        executor (use :meth:`shutdown` instead). Does not destroy nodes.
+        """
+        with self._lock:
+            if self._owns_executor:
+                return
+            self._executor = None
+            self._nodes.clear()
+
     @property
     def is_initialized(self) -> bool:
         return self._executor is not None
@@ -154,6 +168,11 @@ def remove_node(node: Node) -> None:
 def shutdown() -> None:
     """Tear down all registered nodes and stop the SDK-owned executor."""
     _runtime.shutdown()
+
+
+def detach() -> None:
+    """Release an externally-managed executor registration (see ``_Runtime.detach``)."""
+    _runtime.detach()
 
 
 def is_initialized() -> bool:

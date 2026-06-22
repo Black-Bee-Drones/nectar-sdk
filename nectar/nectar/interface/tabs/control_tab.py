@@ -247,6 +247,11 @@ class FlightActionWorker(QObject):
                 self.progress.emit("Landing...")
                 success = self._drone.land()
                 self.finished.emit(success, "" if success else "Land failed")
+            elif self._action == "prewarm":
+                # Enter OFFBOARD (PX4) off the GUI thread; a zero-velocity hold so
+                # the first teleop command publishes without blocking on mode entry.
+                self._drone.move_velocity(0.0, 0.0, 0.0, 0.0)
+                self.finished.emit(True, "")
             else:
                 self.finished.emit(False, f"Unknown action: {self._action}")
         except TimeoutError as e:
@@ -400,6 +405,10 @@ class ControlTab(QWidget):
 
     _DRIVER_DOWN_STRIKES = 3
 
+    # Emitted to run the driver-status probe on the checker thread. Queued
+    # (cross-thread) so is_driver_running()'s ~2s shell-out never blocks the GUI.
+    _check_requested = Signal()
+
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
@@ -425,6 +434,8 @@ class ControlTab(QWidget):
         self._flight_action_running: bool = False
         self._rtl_thread: Optional[QThread] = None
         self._rtl_worker: Optional[RTLWorker] = None
+        self._prewarm_thread: Optional[QThread] = None
+        self._prewarm_worker: Optional[FlightActionWorker] = None
         self._rtl_running: bool = False
         self._last_velocity_cmd: tuple = (0.0, 0.0, 0.0, 0.0)
         self._velocity_log_counter: int = 0
@@ -1080,6 +1091,8 @@ class ControlTab(QWidget):
         self._status_checker = DriverStatusChecker()
         self._status_checker.moveToThread(self._checker_thread)
         self._status_checker.status_checked.connect(self._on_driver_status_checked)
+        # Cross-thread (auto -> queued): runs check() on the checker thread.
+        self._check_requested.connect(self._status_checker.check)
         self._checker_thread.start()
 
     def _is_fcu_vehicle(self) -> bool:
@@ -1271,7 +1284,9 @@ class ControlTab(QWidget):
         if self._is_direct():
             return
         if self._status_checker:
-            self._status_checker.check()
+            # Queued onto the checker thread; check() shells out (~2s) and must
+            # never run on the GUI thread.
+            self._check_requested.emit()
 
     @Slot(bool)
     def _on_driver_status_checked(self, is_running: bool) -> None:
@@ -1303,6 +1318,8 @@ class ControlTab(QWidget):
             self._connect_driver()
 
     def _connect_driver(self) -> None:
+        if self._driver_thread and self._driver_thread.isRunning():
+            return
         self._driver_btn.setEnabled(False)
         self._driver_btn.setText("Connecting...")
         self._show_progress("Connecting...")
@@ -1329,6 +1346,8 @@ class ControlTab(QWidget):
         self._driver_thread.start()
 
     def _disconnect_driver(self) -> None:
+        if self._driver_thread and self._driver_thread.isRunning():
+            return
         if self._instance_initialized:
             self._cleanup_instance()
 
@@ -1454,6 +1473,8 @@ class ControlTab(QWidget):
             self._enable_btn.setText("Disable Controls")
             self._enable_btn.setProperty("danger", True)
             self._command_timer.start()
+            if self._is_fcu_vehicle() and self._drone is not None:
+                self._prewarm_offboard()
             if self._node:
                 self._node.get_logger().info("Controls enabled")
         else:
@@ -1468,6 +1489,19 @@ class ControlTab(QWidget):
         self._enable_btn.style().unpolish(self._enable_btn)
         self._enable_btn.style().polish(self._enable_btn)
         self._update_ui_state()
+
+    def _prewarm_offboard(self) -> None:
+        """Enter OFFBOARD off the GUI thread (one-shot) so the first teleop
+        command does not block on PX4 mode entry."""
+        if self._prewarm_thread and self._prewarm_thread.isRunning():
+            return
+        self._prewarm_thread = QThread()
+        self._prewarm_worker = FlightActionWorker()
+        self._prewarm_worker.setup(self._drone, "prewarm")
+        self._prewarm_worker.moveToThread(self._prewarm_thread)
+        self._prewarm_thread.started.connect(self._prewarm_worker.run)
+        self._prewarm_worker.finished.connect(self._prewarm_thread.quit)
+        self._prewarm_thread.start()
 
     @Slot()
     def _emergency_stop(self) -> None:
@@ -2042,17 +2076,26 @@ class ControlTab(QWidget):
             self._instance_thread.quit()
             self._instance_thread.wait(1000)
 
+        # Flight/move/RTL workers run a blocking SDK call; quit() cannot
+        # interrupt it, so wait until run() returns (bounded by the SDK call's
+        # own timeout) rather than abandoning the thread after 1s, which risks
+        # "QThread destroyed while running". The re-entrancy guards ensure only
+        # one such worker runs at a time.
         if self._moveto_thread and self._moveto_thread.isRunning():
-            self._cancel_move_to()
+            self._cancel_move_to()  # makes the PID loop return promptly
             self._moveto_thread.quit()
-            self._moveto_thread.wait(1000)
+            self._moveto_thread.wait()
 
         if self._flight_thread and self._flight_thread.isRunning():
             self._flight_thread.quit()
-            self._flight_thread.wait(1000)
+            self._flight_thread.wait()
 
         if self._rtl_thread and self._rtl_thread.isRunning():
             self._rtl_thread.quit()
-            self._rtl_thread.wait(1000)
+            self._rtl_thread.wait()
+
+        if self._prewarm_thread and self._prewarm_thread.isRunning():
+            self._prewarm_thread.quit()
+            self._prewarm_thread.wait()
 
         self._cleanup_instance()

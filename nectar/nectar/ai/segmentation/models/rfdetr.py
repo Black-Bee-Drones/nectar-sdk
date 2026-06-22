@@ -196,6 +196,8 @@ class RFDETRSegModel(BaseSegmentationModel):
             pil_image = Image.open(image_path).convert("RGB")
         elif isinstance(image, np.ndarray):
             image_path = "array"
+            if image.ndim == 3 and image.shape[2] == 3:
+                image = np.ascontiguousarray(image[..., ::-1])
             pil_image = Image.fromarray(image).convert("RGB")
         elif isinstance(image, Image.Image):
             image_path = "pil"
