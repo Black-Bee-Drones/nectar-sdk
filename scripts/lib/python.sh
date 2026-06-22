@@ -5,7 +5,9 @@ _pip_flags() {
     if [[ "${NON_INTERACTIVE:-}" == "true" ]] && [[ $EUID -eq 0 ]]; then
         flags="--ignore-installed"
     fi
-    if [ -f /usr/lib/python3.*/EXTERNALLY-MANAGED ] 2>/dev/null; then
+    # `[ -f glob ]` breaks when the glob matches 0 or >1 paths; compgen -G handles
+    # any match count (e.g. systems with multiple python3.X dirs).
+    if compgen -G "/usr/lib/python3.*/EXTERNALLY-MANAGED" >/dev/null 2>&1; then
         flags="$flags --break-system-packages"
     fi
     echo "$flags"

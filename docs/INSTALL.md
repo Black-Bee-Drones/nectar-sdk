@@ -41,7 +41,7 @@ This is equivalent to:
 ./scripts/setup.sh setup
 ```
 
-Which runs: `system` → `geographiclib` → `git-lfs` → `python all` → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`.
+Which runs: `system` → `git-lfs` → `geographiclib` → `python all` → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`.
 
 ## Install by Module
 

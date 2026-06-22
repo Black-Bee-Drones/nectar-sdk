@@ -40,8 +40,8 @@ show_help() {
     echo -e "${BLUE}System:${NC}"
     echo "  ./setup.sh system             Install system packages (apt)"
     echo "  ./setup.sh update             Update system (apt upgrade)"
-        echo "  ./setup.sh git-ssh            Configure git and SSH keys"
-        echo "  ./setup.sh git-lfs            Install and initialize Git LFS"
+    echo "  ./setup.sh git-ssh            Configure git and SSH keys"
+    echo "  ./setup.sh git-lfs            Install and initialize Git LFS"
     echo ""
     echo -e "${BLUE}ROS2:${NC}"
     echo "  ./setup.sh ros2               Install ROS2 ${ROS_DISTRO^} + MAVROS"
@@ -387,7 +387,7 @@ interactive_menu() {
             echo ""
             echo "Select Python extras:"
             echo "  1) core only    2) control    3) vision    4) ai"
-            echo "  5) interface    6) all        7) full (all + cameras)"
+            echo "  5) interface    6) all        7) full (all + AI)"
             echo ""
             read -p "Option [6]: " py_opt
             py_opt=${py_opt:-6}
@@ -449,7 +449,7 @@ main() {
         build)              cmd_build ;;
         build-pkg)          cmd_build_pkg ;;
         clean)              cmd_clean ;;
-        verify)             cmd_verify ;;
+        verify)             cmd_verify "$@" ;;
         test)               cmd_test ;;
 
         # Hardware
