@@ -22,7 +22,7 @@ main()
 Or from command line:
 
 ```bash
-ros2 run nectar gui
+ros2 run nectar app.py
 ```
 
 ## Features
@@ -62,13 +62,13 @@ Drone control interface with keyboard-based velocity control and position naviga
 - **Bebop**: Basic control (takeoff, land, velocity, flips)
 - **Crazyflie**: Takeoff, land, velocity, and onboard position (`goTo`)
 
-The MAVROS and MAVLink panels are shared by ArduPilot and PX4 and adapt to the firmware: the connection default switches to the PX4 offboard endpoint, and the PID and setpoint preset lists are loaded from [`control/px4/config`](../control/px4/config) instead of [`control/ardupilot/config`](../control/ardupilot/config) (both include the `*_sim_*` SITL presets). The setpoint config exposes each firmware's speed/accel limits — ArduPilot `WPNAV`/`GUID_OPTIONS` or PX4 `MPC_*` — with **Apply setpoint params to FCU** pushing them on arm. The uXRCE-DDS panel (`px4_dds`) shows only the PID preset, since PX4 parameters are not bridged over uXRCE-DDS.
+The MAVROS and MAVLink panels are shared by ArduPilot and PX4 and adapt to the firmware: the connection default switches to the PX4 offboard endpoint, and the PID and setpoint preset lists are loaded from [`control/px4/config`](../control/px4/config) instead of [`control/ardupilot/config`](../control/ardupilot/config) (both include the `*_sim_*` SITL presets). The setpoint config exposes each firmware's speed/accel limits — ArduPilot `WPNAV`/`GUID_OPTIONS` or PX4 `MPC_*` — with **Apply setpoint params to FCU** pushing them on arm. The uXRCE-DDS panel (`px4_dds`) exposes pose source, agent UDP port (default 8888), namespace, and the PID preset — but no setpoint/apply-setpoint controls, since PX4 parameters are not bridged over uXRCE-DDS.
 
 ### Vision Tab
 
 Real-time computer vision processing with multiple camera sources and filters.
 
-**Camera Sources**: Webcam, RealSense, OAK-D, ROS topic, File
+**Camera Sources**: Webcam, RealSense, T265, OAK-D, C920, IMX219, ROS topic, ROS depth, File
 
 **Filter Categories**:
 - **Color**: HSV color filtering with calibration
@@ -113,7 +113,8 @@ ROS2 system introspection and interaction tools.
 ```mermaid
 classDiagram
     class NectarApp {
-        +main()$
+        QMainWindow root
+        owns tabs + ROSExecutor
     }
 
     class ROSExecutor {
@@ -161,7 +162,6 @@ flowchart TB
         Workers[DriverWorker, MoveToWorker, etc.]
     end
 
-    UI --> |"QTimer"| ROSThread
     UI --> |"Start"| WorkerThreads
     WorkerThreads --> |"Signals"| UI
     ROSThread --> |"Signals"| UI
@@ -243,14 +243,17 @@ worker_thread.start()
 
 ### Service Calls
 
-ROS2 services use async pattern to avoid deadlocks. The SDK's `BaseDrone._wait` is the cooperative tick — it spins when the SDK owns ROS, sleeps when the user's executor (e.g. `ROSExecutor`) is already running. Either way, `node.executor` is preserved so later subscriptions still wake the right executor:
+ROS 2 service calls use an async pattern to avoid deadlocks. `BaseDrone._call_service` issues `call_async`, then blocks the calling thread on a `threading.Event` set by the future's done-callback — the shared executor (the SDK's background spin thread or the GUI's `ROSExecutor`) drives the future to completion on its own thread:
 
 ```python
-future = service.call_async(request)
-while not future.done():
-    self._wait(0.05)  # spin (SDK-owned) or sleep (user-owned executor)
+future = client.call_async(request)
+done = threading.Event()
+future.add_done_callback(lambda _f: done.set())
+done.wait(timeout=...)        # calling thread blocks; the executor thread completes the future
 result = future.result()
 ```
+
+Blocking flight calls (takeoff, move_to, …) poll their own completion with `_wait_until(predicate, timeout)` (a `time.sleep(0.05)` loop), relying on that same background executor to keep delivering telemetry callbacks.
 
 ### Module Structure
 
@@ -280,11 +283,11 @@ Colors defined in `theme.py`:
 ```python
 from nectar.interface import COLORS
 
-COLORS.background      # #0D1117
-COLORS.surface         # #161B22
-COLORS.accent          # #FDCE01 (yellow)
-COLORS.success         # #3FB950 (green)
-COLORS.error           # #F85149 (red)
+COLORS.background      # #0A0E14
+COLORS.surface         # #12171E
+COLORS.accent          # #F5A623 (amber)
+COLORS.success         # #34C759 (green)
+COLORS.error           # #FF453A (red)
 # ... see theme.py for full list
 ```
 

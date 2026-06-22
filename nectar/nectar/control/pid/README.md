@@ -68,12 +68,13 @@ Standard PID implementation with anti-windup and output clamping.
 from nectar.control.pid import PIDController
 
 pid = PIDController(
-    kp: float = 1.0,                      # Proportional gain
+    kp: float = 0.0,                      # Proportional gain
     ki: float = 0.0,                      # Integral gain
     kd: float = 0.0,                      # Derivative gain
     setpoint: float = 0.0,                # Target value
     output_limits: tuple = (-1.0, 1.0),   # Output clamp
-    integral_limits: tuple = (-1.0, 1.0)  # Anti-windup
+    integral_limits: tuple = (-1.0, 1.0), # Anti-windup
+    output_deadband: float = 0.0          # Symmetric output deadband (0 disables)
 )
 ```
 

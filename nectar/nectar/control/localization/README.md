@@ -21,7 +21,7 @@ flowchart LR
     rs --> vslam
   end
   subgraph sdk [SDK container or host]
-    bridge[vision_pose_node backend mavros|mavlink]
+    bridge[vision_pose_node backend mavros/mavlink]
     mavros[MAVROS indoor]
   end
   vslam -->|"/visual_slam/tracking/vo_pose_covariance"| bridge

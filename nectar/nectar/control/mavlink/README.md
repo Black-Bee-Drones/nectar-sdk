@@ -8,11 +8,13 @@ A direct [pymavlink](https://mavlink.io/en/mavgen_python/) control path for Ardu
 
 ```mermaid
 classDiagram
-    class ArduPilotDrone {
+    class VehicleDrone {
         <<abstract>>
         +takeoff() land() move_to() move_to_gps() rtl()
-        +arm() set_mode() set_param() get_altitude()
+        +arm()* set_mode() set_param() get_altitude()
     }
+    class ArduPilotDrone
+    class Px4Drone
     class VehicleTransport {
         <<abstract>>
         +state local_pose vision_pose gps heading rel_alt rangefinder distance_sensors
@@ -21,13 +23,26 @@ classDiagram
     }
     class MavrosTransport
     class PymavlinkTransport
-    ArduPilotDrone o-- VehicleTransport
+    class MavlinkModeCodec {
+        <<abstract>>
+    }
+    class ArduPilotModeCodec
+    class Px4ModeCodec
+
+    VehicleDrone o-- VehicleTransport
+    VehicleDrone <|-- ArduPilotDrone
+    VehicleDrone <|-- Px4Drone
     VehicleTransport <|.. MavrosTransport
     VehicleTransport <|.. PymavlinkTransport
     ArduPilotDrone <|-- MavrosDrone
     ArduPilotDrone <|-- MavlinkDrone
+    Px4Drone <|-- Px4MavlinkDrone
     MavlinkDrone ..> PymavlinkTransport : builds
+    Px4MavlinkDrone ..> PymavlinkTransport : builds
     PymavlinkTransport o-- MavlinkConnection
+    PymavlinkTransport o-- MavlinkModeCodec
+    MavlinkModeCodec <|.. ArduPilotModeCodec
+    MavlinkModeCodec <|.. Px4ModeCodec
 ```
 
 ## Components
@@ -43,7 +58,7 @@ Thin wrapper around `mavutil.mavlink_connection` in [`connection.py`](connection
 - **RX**: a ROS timer on the drone's node drains `recv_match(blocking=False)` and dispatches each message through a handler table. Decoded types: `HEARTBEAT`, `GLOBAL_POSITION_INT`, `LOCAL_POSITION_NED`, `ATTITUDE`, `RANGEFINDER`/`DISTANCE_SENSOR`, `PARAM_VALUE`, `COMMAND_ACK`, and `STATUSTEXT`. This keeps the concurrency model identical to MAVROS — telemetry updates on the executor thread, blocking flight calls read it on the user thread.
 - **TX**: a 1 Hz heartbeat timer announces the companion; commands go via `command_long`/`set_mode`/`param_set`; setpoints via `set_position_target_local_ned` / `set_position_target_global_int`.
 - **Frames**: the core speaks ENU/FLU; the transport converts to the wire's NED/FRD on egress and back to ENU on ingest (exactly what MAVROS does internally).
-- **Streams**: on `start()` it requests message intervals via [`streams.py`](streams.py) (`MAV_CMD_SET_MESSAGE_INTERVAL`, with a `REQUEST_DATA_STREAM` fallback).
+- **Streams**: on `start()` it requests message intervals via [`streams.py`](streams.py) (`MAV_CMD_SET_MESSAGE_INTERVAL`); a legacy `REQUEST_DATA_STREAM` helper (`request_data_streams`) is also provided in `streams.py` for older firmware but is not called automatically.
 
 #### STATUSTEXT surfacing
 

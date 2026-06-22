@@ -222,7 +222,7 @@ segmentor = Segmentor("model.pt", device="0")      # GPU 0
 |---------|---------|---------|
 | `ultralytics` | 8.4.36 | YOLO models |
 | `transformers` | 5.5.0 | DETR, MaskFormer, SegFormer |
-| `rfdetr` | 1.6.0 (develop) | RF-DETR detection + segmentation |
+| `rfdetr` | 1.7.1 | RF-DETR detection + segmentation |
 | `supervision` | 0.27.0 | Metrics, visualization, Detections bridge |
 | `huggingface-hub` | 1.9.2 | Model upload/download |
 | `tensorboard` | 2.20.0 | Training visualization |

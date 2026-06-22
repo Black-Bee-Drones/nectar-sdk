@@ -250,12 +250,15 @@ flowchart TB
             DroneProto{{"Drone protocol"}}
             subgraph CORE["vehicle - shared core"]
                 direction TB
+                VehicleDrone["VehicleDrone<br/>shared flight logic"]
                 ArduPilotDrone["ArduPilotDrone"]
+                Px4Drone["Px4Drone"]
                 Navigator["VehicleNavigator"]
                 Sequencer["FlightSequencer"]
                 PID["PIDController"]
                 MavrosT["MavrosTransport"]
                 PymavlinkT["PymavlinkTransport"]
+                DdsT["Px4DdsTransport"]
             end
             Bebop["BebopDrone"]
             Crazyflie["CrazyflieDrone"]
@@ -308,10 +311,11 @@ flowchart TB
     GUI --> DroneFactory & CameraFactory
 
     DroneFactory --> DroneProto
-    DroneProto -. implements .-> ArduPilotDrone
+    DroneProto -. implements .-> VehicleDrone
     DroneProto -.-> Bebop
     DroneProto -.-> Crazyflie
-    ArduPilotDrone --> Navigator & Sequencer & ObstacleMgr & MavrosT & PymavlinkT
+    VehicleDrone -. firmware .-> ArduPilotDrone & Px4Drone
+    VehicleDrone --> Navigator & Sequencer & ObstacleMgr & MavrosT & PymavlinkT & DdsT
     Navigator --> PID & GPSU & PosU
 
     CameraFactory --> ImageHandler --> VisAlgos
@@ -320,6 +324,7 @@ flowchart TB
 
     MavrosT <--> Topics
     PymavlinkT <--> FCU
+    DdsT <--> FCU
     VSLAM --> VisionBridge --> FCU
     Rangefinder --> FCU
     Topics <--> FCU

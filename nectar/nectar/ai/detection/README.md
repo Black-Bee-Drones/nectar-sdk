@@ -540,7 +540,7 @@ for det in result:
     print(det.class_name, det.confidence)
 
 filtered = result.filter_by_confidence(0.5)
-filtered = result.filter_by_class([0, 1, 2])
+filtered = result.filter_by_class_id([0, 1, 2])          # by class id; filter_by_class([...]) takes class names
 ```
 
 ## Training
@@ -585,8 +585,8 @@ sequenceDiagram
     participant HF as HuggingFaceUploader
     participant TB as TensorBoardManager
 
+    User->>TB: start_server() (nectar-ai train CLI, if tensorboard)
     User->>Detector: train(TrainingConfig)
-    Detector->>TB: start_server() if tensorboard
     Detector->>Model: train(config)
     Model->>Framework: train(**args)
 
@@ -755,11 +755,10 @@ config = EvaluationConfig(
 
 evaluator = ObjectDetectionEvaluator(detector.model, config)
 
-# Optional: add post-processing strategies
-from nectar.ai.detection.postprocess import NMSStrategy, PerClassConfidenceFilter
+# Optional: add a per-class confidence filter (set_post_processor takes filter_strategy only)
+from nectar.ai.detection.postprocess import PerClassConfidenceFilter
 
 evaluator.set_post_processor(
-    merge_strategy=NMSStrategy(iou_threshold=0.5),
     filter_strategy=PerClassConfidenceFilter(csv_path="pr_analysis_results.csv"),
 )
 
@@ -948,10 +947,9 @@ nectar-ai detect train --model yolov8n.pt --dataset /path/to/dataset --epochs 10
 ```bash
 nectar-ai detect eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset
 
-# With post-processing
+# With per-class confidence thresholds (name=value pairs; resolved against the model's class names)
 nectar-ai detect eval --model-path best.pt --framework ultralytics --dataset-path /path/to/dataset \
-    --merge-strategy nms --merge-iou-threshold 0.5 \
-    --use-per-class-filter --per-class-thresholds evaluation/pr_analysis_results.csv
+    --conf-per-class 'crack=0.4,pothole=0.55'
 ```
 
 ## Dataset Management

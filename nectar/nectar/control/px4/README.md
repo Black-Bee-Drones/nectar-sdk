@@ -28,7 +28,8 @@ classDiagram
     class VehicleDrone {
         <<abstract>>
         +takeoff() land() move_to() move_to_gps() move_velocity() rtl()
-        #arm()* _rtl_native()* capabilities*
+        +arm()* capabilities*
+        #_rtl_native()* _change_speed()*
         #_command_takeoff() _command_land() _ensure_offboard_ready() _emit_velocity()
     }
     class Px4Drone {
@@ -42,16 +43,31 @@ classDiagram
     class Px4MavrosDrone {
         +from_config(config, executor)$
     }
+    class Px4MavlinkDrone {
+        +connection MavlinkConnection
+        +from_config(config, executor)$
+    }
+    class Px4DdsDrone {
+        +from_config(config, executor)$
+    }
     class VehicleTransport {
         <<abstract>>
     }
     class MavrosTransport
+    class PymavlinkTransport
+    class Px4DdsTransport
 
     VehicleDrone <|-- Px4Drone
     Px4Drone <|-- Px4MavrosDrone
+    Px4Drone <|-- Px4MavlinkDrone
+    Px4Drone <|-- Px4DdsDrone
     VehicleDrone o-- VehicleTransport
     VehicleTransport <|.. MavrosTransport
+    VehicleTransport <|.. PymavlinkTransport
+    VehicleTransport <|.. Px4DdsTransport
     Px4MavrosDrone ..> MavrosTransport : builds
+    Px4MavlinkDrone ..> PymavlinkTransport : builds
+    Px4DdsDrone ..> Px4DdsTransport : builds
 ```
 
 ## Flight modes

@@ -101,7 +101,6 @@ classDiagram
     }
 
     class DepthObstacleDetector {
-        -_node Node
         -_camera Optional~RealsenseCam~
         -_image_handler Optional~ImageHandler~
         -_detection_event Event
@@ -137,7 +136,7 @@ classDiagram
     class SequenceStrategy {
         -_sequence_func Callable
         -_executed bool
-        -_execution_event Event
+        -_executing Event
         +execute(drone, info) bool
         +reset()
     }

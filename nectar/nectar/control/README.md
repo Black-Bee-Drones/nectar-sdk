@@ -90,29 +90,38 @@ classDiagram
         #_get_driver_command()* str
     }
 
-    class ArduPilotDrone {
+    class VehicleDrone {
         <<abstract>>
         -_transport VehicleTransport
         -_navigator VehicleNavigator
         -_sequencer FlightSequencer
         -_pid_config Optional~PositionPIDConfig~
-        -_setpoint_config Optional~SetpointNavConfig~
+        -_setpoint_config Optional~SetpointConfig~
         -_takeoff_position Optional
         -_pose_source PoseSource
         +is_indoor bool
-        +state VehicleState
-        +gps Optional~GeoPoint~
-        +heading Optional~float~
-        +rel_alt Optional~float~
-        +local_pose Optional~LocalPose~
-        +vision_pose Optional~LocalPose~
+        +is_armed flight_mode is_fcu_connected
+        +gps heading rel_alt
+        +local_pose vision_pose Optional~LocalPose~
         +lidar_available bool
         +position position_as_target
         +get_altitude(source) Optional~float~
         +distance_sensors get_distance(orientation)
-        +set_mode(mode) set_param(id, value) set_speed(speed, type)
-        +do_servo() set_actuator() set_gripper()
-        +set_home() set_takeoff_position() set_pid_config() set_setpoint_config()
+        +takeoff() land() move_to() move_to_gps() move_velocity() rtl()
+        +set_mode() set_param() set_speed() set_home()
+        +set_actuator() set_gripper()
+        +set_takeoff_position() set_pid_config() set_setpoint_config()
+        +arm()* _rtl_native()* _change_speed()* capabilities*
+    }
+
+    class ArduPilotDrone {
+        GUIDED arm, GUID_OPTIONS/WPNAV
+        native RTL, do_servo, DO_CHANGE_SPEED
+    }
+
+    class Px4Drone {
+        OFFBOARD + setpoint pump
+        AUTO.LAND/RTL, MPC_* speed
     }
 
     class MavrosDrone {
@@ -122,6 +131,19 @@ classDiagram
     class MavlinkDrone {
         +connection MavlinkConnection
         +from_config(config, executor)$ MavlinkDrone
+    }
+
+    class Px4MavrosDrone {
+        +from_config(config, executor)$ Px4MavrosDrone
+    }
+
+    class Px4MavlinkDrone {
+        +connection MavlinkConnection
+        +from_config(config, executor)$ Px4MavlinkDrone
+    }
+
+    class Px4DdsDrone {
+        +from_config(config, executor)$ Px4DdsDrone
     }
 
     class CrazyflieDrone {
@@ -137,6 +159,7 @@ classDiagram
 
     class MavrosTransport
     class PymavlinkTransport
+    class Px4DdsTransport
 
     class BebopDrone {
         +from_config(config, executor)$ BebopDrone
@@ -186,6 +209,32 @@ classDiagram
         +namespace str
     }
 
+    class Px4MavrosConfig {
+        <<dataclass>>
+        +pose_source PoseSource
+        +offboard_rate_hz float
+        +mavros_launch str
+        +connection_string str
+        +shares MavrosConfig telemetry topics
+    }
+
+    class Px4MavlinkConfig {
+        <<dataclass>>
+        +pose_source PoseSource
+        +offboard_rate_hz float
+        +connection_string str
+        +shares MavlinkConfig link settings
+    }
+
+    class Px4DdsConfig {
+        <<dataclass>>
+        +pose_source PoseSource
+        +offboard_rate_hz float
+        +px4_namespace str
+        +agent_port int
+        +local_position_topic status_topic global_position_topic str
+    }
+
     class ObstacleManager {
         -_handlers dict~str,ObstacleHandler~
         +add(name, handler) remove(name) get(name)
@@ -197,23 +246,38 @@ classDiagram
 
     DroneFactory --> BaseDrone : creates
     Drone <|.. BaseDrone : implements
-    BaseDrone <|-- ArduPilotDrone
+    BaseDrone <|-- VehicleDrone
     BaseDrone <|-- BebopDrone
     BaseDrone <|-- CrazyflieDrone
+    VehicleDrone <|-- ArduPilotDrone
+    VehicleDrone <|-- Px4Drone
+    VehicleDrone o-- VehicleTransport
     ArduPilotDrone <|-- MavrosDrone
     ArduPilotDrone <|-- MavlinkDrone
-    ArduPilotDrone o-- VehicleTransport
+    Px4Drone <|-- Px4MavrosDrone
+    Px4Drone <|-- Px4MavlinkDrone
+    Px4Drone <|-- Px4DdsDrone
     VehicleTransport <|.. MavrosTransport
     VehicleTransport <|.. PymavlinkTransport
+    VehicleTransport <|.. Px4DdsTransport
     MavrosDrone ..> MavrosTransport : builds
     MavlinkDrone ..> PymavlinkTransport : builds
+    Px4MavrosDrone ..> MavrosTransport : builds
+    Px4MavlinkDrone ..> PymavlinkTransport : builds
+    Px4DdsDrone ..> Px4DdsTransport : builds
     BaseDrone *-- ObstacleManager
     BaseDrone o-- DroneConfig
     MavrosDrone o-- MavrosConfig
     MavlinkDrone o-- MavlinkConfig
+    Px4MavrosDrone o-- Px4MavrosConfig
+    Px4MavlinkDrone o-- Px4MavlinkConfig
+    Px4DdsDrone o-- Px4DdsConfig
     BebopDrone o-- BebopConfig
     DroneConfig <|-- MavrosConfig
     DroneConfig <|-- MavlinkConfig
+    DroneConfig <|-- Px4MavrosConfig
+    DroneConfig <|-- Px4MavlinkConfig
+    DroneConfig <|-- Px4DdsConfig
     DroneConfig <|-- BebopConfig
 ```
 
