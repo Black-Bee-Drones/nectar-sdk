@@ -30,15 +30,21 @@ if [[ ! -d "$COMMON_DIR" ]]; then
         https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common.git "$COMMON_DIR"
 fi
 
-# 2. Register the Nectar image layer (Dockerfile.nectar) with run_dev.sh.
-#    build_image_layers.sh matches token "nectar" -> Dockerfile.nectar in the
-#    search dir, layered on the prebuilt aarch64.ros2_humble base.
+# 2. Register the image layers with run_dev.sh.
+#    Image key tokens build bottom-up: prebuilt aarch64.ros2_humble NVCR base
+#    -> realsense (isaac_ros_common/docker/Dockerfile.realsense: librealsense
+#    v2.55.1 built from source with the RSUSB/libuvc backend + realsense-ros
+#    4.51.1-isaac) -> nectar (Dockerfile.nectar: Visual SLAM + helper).
+#    The RSUSB backend is required for the D435i IMU on JetPack 6, which removed
+#    the hiddraw kernel support the apt realsense2-camera build relies on.
+#    build_image_layers.sh finds Dockerfile.realsense in the default
+#    isaac_ros_common/docker search dir and Dockerfile.nectar in $SCRIPT_DIR.
 cat > "$COMMON_DIR/scripts/.isaac_ros_common-config" <<EOF
-CONFIG_IMAGE_KEY=ros2_humble.nectar
+CONFIG_IMAGE_KEY=ros2_humble.realsense.nectar
 CONFIG_DOCKER_SEARCH_DIRS=($SCRIPT_DIR)
 CONFIG_CONTAINER_NAME_SUFFIX=nectar
 EOF
 
 # 3. Launch the dev container (builds/pulls on first run, attaches afterwards).
 echo "Starting Isaac ROS dev container (ROS_DOMAIN_ID=$ROS_DOMAIN_ID) ..."
-exec "$RUN_DEV" -d "$WORKSPACE_DIR" "$@"
+exec "$RUN_DEV" -d "$WORKSPACE_DIR" -a "-v /dev/bus/usb:/dev/bus/usb" "$@"

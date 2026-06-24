@@ -1,15 +1,12 @@
 # Nectar image layer for the Isaac ROS dev container (release-3.2 / Humble).
 
-ARG BASE_IMAGE
+ARG BASE_IMAGE=realsense-image
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-isaac-ros-visual-slam \
-        ros-humble-isaac-ros-examples \
-        ros-humble-isaac-ros-realsense \
-        ros-humble-realsense2-camera \
         nano tmux less \
     && rm -rf /var/lib/apt/lists/*
 

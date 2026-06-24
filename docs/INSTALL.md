@@ -185,6 +185,7 @@ make test               # Run tests
 |-----|---------|----------------|
 | `:humble` | `make docker-build` | All modules except AI/torch (~5 min) |
 | `:humble-full-cpu` | `make docker-build-full` | Everything + PyTorch CPU + AI (~15 min) |
+| `:jetson` / `:jetson-full` | `make docker-build` / `-full` on a Jetson | L4T build, CUDA wheels; auto-detected |
 
 ```bash
 make docker-build           # SDK (no AI)
@@ -193,7 +194,7 @@ make docker-run             # Run with X11, cameras, USB
 make docker-exec            # Extra terminal in running container
 ```
 
-See [`docker/README.md`](../docker/README.md) for GPU, RealSense, and advanced options.
+On a Jetson, these auto-select [`Dockerfile.jetson`](../docker/Dockerfile.jetson) and `--runtime nvidia`. See [`docker/README.md`](../docker/README.md) for GPU, RealSense, and advanced options.
 
 ## All Commands
 

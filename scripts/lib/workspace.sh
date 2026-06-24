@@ -207,9 +207,13 @@ cmd_verify() {
     if [[ "$_active" == "1" ]]; then
         if _spec torch; then
             local _tv; _tv="$(_ver torch)"
-            _opt "torch ($_tv)"                       'true'
+
+            _req "torch ($_tv) import"                'python3 -c "import torch"'
             _opt "torchvision ($(_ver torchvision))"  '_spec torchvision'
-            if [[ "$_tv" == *"+cu"* ]]; then
+            # Run the GPU check whenever torch is a CUDA build. Jetson wheels are
+            # versioned without the "+cuXXX" local tag, so key off
+            # torch.version.cuda rather than the version string.
+            if python3 -c "import torch,sys; sys.exit(0 if torch.version.cuda else 1)" 2>/dev/null; then
                 # Single torch import does is_available + GPU tensor + device name.
                 local _gpu
                 if _gpu=$(python3 -c "import torch; assert torch.cuda.is_available(); assert torch.randn(2,2).cuda().is_cuda; print(torch.cuda.get_device_name(0))" 2>/dev/null); then

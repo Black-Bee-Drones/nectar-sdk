@@ -2,7 +2,7 @@
 
 ## Images
 
-Images are tagged by ROS distro (`nectar-sdk:<distro>`), e.g. `:humble`, `:jazzy`, `:kilted`. AI variants append `-full-<torch>`:
+x86_64 images (`Dockerfile`) are tagged by ROS distro (`nectar-sdk:<distro>`), e.g. `:humble`, `:jazzy`, `:kilted`; AI variants append `-full-<torch>`. Jetson images (`Dockerfile.jetson`) are tagged `:jetson` / `:jetson-full` — see [Jetson (Orin)](#jetson-orin).
 
 | Tag | Contents | PyTorch |
 |-----|----------|---------|
@@ -10,6 +10,8 @@ Images are tagged by ROS distro (`nectar-sdk:<distro>`), e.g. `:humble`, `:jazzy
 | `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
 | `:humble-full-cpu` | All above + AI packages | CPU |
 | `:humble-full-cu124` | All above + AI packages | CUDA 12.4 |
+| `:jetson` | all non-AI modules (L4T base) | None |
+| `:jetson-full` | All above + AI packages | CUDA 12.6 (Jetson wheels) |
 
 ## Quick Start
 
@@ -18,6 +20,8 @@ make docker-build       # SDK (no AI, ~5 min)
 make docker-run         # auto-selects image, GPU auto-detected
 make docker-exec        # open more terminals
 ```
+
+On Jetson, these auto-target `Dockerfile.jetson` (`:jetson` tags) and `--runtime nvidia` — see [Jetson (Orin)](#jetson-orin).
 
 ## Build
 
@@ -94,10 +98,10 @@ The script supports:
 | No GPU | `make docker-build-full` |
 | NVIDIA GPU | `TORCH_VARIANT=cu124 make docker-build-full` |
 | Auto-detect | `TORCH_VARIANT=auto make docker-build-full` |
-| Jetson | Use `Dockerfile.jetson` (planned) |
+| Jetson (Orin) | `make docker-build-full` (auto-detected → `Dockerfile.jetson`) |
 | No AI needed | `make docker-build` |
 
-GPU passthrough (`--gpus all`) is added automatically at run time when `nvidia-smi` is found.
+GPU passthrough is added automatically at run time: `--gpus all` on x86_64 when `nvidia-smi` is found, `--runtime nvidia` on Jetson.
 See [Docker GPU docs](https://docs.docker.com/desktop/features/gpu/) for setup.
 
 You can also install CUDA torch inside a running CPU container:
@@ -105,6 +109,23 @@ You can also install CUDA torch inside a running CPU container:
 ./scripts/setup.sh pytorch cu124
 ./scripts/setup.sh python ai
 ```
+
+## Jetson (Orin)
+
+`make docker-build` / `docker-build-full` auto-detect Jetson (Tegra) and build
+[`Dockerfile.jetson`](Dockerfile.jetson): an `l4t-jetpack` base with ROS 2 Humble and the SDK;
+`-full` adds PyTorch from the [Jetson AI Lab index](https://pypi.jetson-ai-lab.io/jp6/cu126)
+(CUDA 12.6) plus the AI stack. Images are tagged `:jetson` / `:jetson-full`.
+
+```bash
+make docker-build        # nectar-sdk:jetson
+make docker-build-full   # nectar-sdk:jetson-full
+make docker-run          # auto-uses --runtime nvidia (Tegra rejects --gpus all)
+```
+
+Requires the NVIDIA Container Toolkit. Override the base image or torch index with
+`L4T_TAG=` / `TORCH_INDEX=`. This is the SDK image (control/vision/AI); the GPS-denied
+VSLAM producer is a separate container — see [Isaac ROS Visual SLAM](#isaac-ros-visual-slam-jetson).
 
 ## RealSense
 
@@ -206,12 +227,31 @@ image or host runs the **consumer** side (MAVROS + vision-pose bridge), sharing
 
 [`docker/isaac_vslam`](isaac_vslam) is a self-contained wrapper around NVIDIA's
 official [`isaac_ros_common/run_dev.sh`](https://nvidia-isaac-ros.github.io/v/release-3.2/concepts/docker_devenv/index.html).
-A single command clones `isaac_ros_common` (`release-3.2`), registers the Nectar
-image layer ([`Dockerfile.nectar`](isaac_vslam/Dockerfile.nectar), which bakes
-Visual SLAM + RealSense + utils), pulls the matching prebuilt NVCR base, and drops
-you into the container with the workspace mounted. No manual base build is needed,
-and `run_dev.sh` supplies all device/GPU/X11/Jetson config (`--privileged`,
-`--runtime nvidia`, tegra mounts, `-e ROS_DOMAIN_ID`).
+A single command clones `isaac_ros_common` (`release-3.2`) and builds the image
+key `ros2_humble.realsense.nectar` bottom-up: the prebuilt NVCR base →
+`realsense` (isaac_ros_common's [`Dockerfile.realsense`](https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common):
+librealsense `v2.55.1` built from source with the **RSUSB/libuvc backend** +
+realsense-ros `4.51.1-isaac`) → `nectar`
+([`Dockerfile.nectar`](isaac_vslam/Dockerfile.nectar): Visual SLAM + the
+`nectar-vslam` helper). The RSUSB backend is **required for the D435i IMU on
+JetPack 6**, which removed the `hiddraw` kernel support that the apt
+`realsense2-camera` build relies on (otherwise: `No HID info provided, IMU is
+disabled`). **First build compiles librealsense (~40-50 min on Orin Nano); later runs
+are cached.** Do not apt-install `realsense2-camera` in `Dockerfile.nectar` — it
+would pull the broken kernel-HID build over the source one.
+
+`run_dev.sh` supplies all device/GPU/X11/Jetson config (`--privileged`,
+`--runtime nvidia`, tegra mounts, `-e ROS_DOMAIN_ID`). The wrapper additionally
+bind-mounts `-v /dev/bus/usb:/dev/bus/usb` so the RealSense is visible (the RSUSB
+librealsense backend reaches the camera and IMU over libusb). With `--privileged`
+alone the container's `/dev` is a static snapshot taken at creation, so the
+camera's nodes — (re)created on USB enumeration/reset after the container starts
+— never appear; the directory bind mount is a live view of the host that
+survives re-enumerations. **Do not mount all of `/dev` (`-v /dev:/dev`):** it
+shadows the GPU device nodes `--runtime nvidia` injects, and since `run_dev.sh`
+runs cuVSLAM as the non-root `admin` user, the CUDA memory-pool init then fails
+with `cudaErrorNotSupported` / `setCUDAMemoryPoolSize Error: GXF_FAILURE` and the
+visual_slam container aborts (works as root, fails as `admin`).
 
 ```bash
 # Producer (Isaac container) - clone + build (if needed) + enter
@@ -219,6 +259,17 @@ make isaac-run        # or: ./docker/isaac_vslam/run_docker.sh
 
 # inside the container, start the producer with the baked helper:
 nectar-vslam          # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
+```
+
+Run **only one** cuVSLAM/Isaac container at a time. The container uses `--ipc=host`
++ `--pid=host`, so if cuVSLAM crashes, the dead GXF process leaves a robust
+mutex in shared memory that aborts the next launch with `cudaErrorNotSupported`
+/ `setCUDAMemoryPoolSize Error` and a `pthread ... ESRCH` assertion. Recover by
+removing the container (which `run_dev.sh` would otherwise re-attach to):
+
+```bash
+make isaac-stop       # docker rm -f the nectar (and old isaac) containers
+make isaac-run        # fresh container; cuVSLAM initializes cleanly
 ```
 
 Consumer side (SDK image or host), same `ROS_DOMAIN_ID`:

@@ -86,6 +86,7 @@ show_help() {
     echo "  ./setup.sh docker-build-t265  Build SDK image with T265 support (librealsense v2.53.1)"
     echo "  ./setup.sh docker-run         Run container (selects image, GPU auto)"
     echo "  ./setup.sh docker-exec        Open new shell in running container"
+    echo "    On Jetson, build/run auto-use Dockerfile.jetson (:jetson tags) and --runtime nvidia"
     echo ""
     echo -e "${BLUE}Simulation (FIRMWARE=ardupilot|px4  ENV=outdoor|indoor  PROTOCOL=mavros|mavlink):${NC}"
     echo "  ./setup.sh sim-install --firmware F   Install SITL + Gazebo (ardupilot|px4|all)"
@@ -115,6 +116,26 @@ cmd_docker_build() {
     local target="${1:-sdk}"
     local tag_suffix="${2:-}"
     local variant="${TORCH_VARIANT}"
+
+    # Jetson (Tegra): build the dedicated Dockerfile.jetson (L4T base + CUDA
+    # wheels), tagged nectar-sdk:jetson / :jetson-full. Auto-detected; the x86
+    # distro/torch/realsense build args below do not apply. Override the L4T
+    # base or torch index with L4T_TAG / TORCH_INDEX.
+    if [ -f /etc/nv_tegra_release ] && [ -z "$tag_suffix" ]; then
+        local jtag="${DOCKER_IMAGE_PREFIX}:jetson"
+        [[ "$target" == "sdk-full" ]] && jtag="${DOCKER_IMAGE_PREFIX}:jetson-full"
+        local jargs=()
+        [ -n "${L4T_TAG:-}" ]     && jargs+=(--build-arg "L4T_TAG=${L4T_TAG}")
+        [ -n "${TORCH_INDEX:-}" ] && jargs+=(--build-arg "TORCH_INDEX=${TORCH_INDEX}")
+        log_info "Jetson detected — building $jtag from Dockerfile.jetson (target=$target)"
+        docker build --network=host \
+            "${jargs[@]}" \
+            --target "$target" \
+            -t "$jtag" \
+            -f "${PROJECT_DIR}/docker/Dockerfile.jetson" "$PROJECT_DIR"
+        log_success "Docker image $jtag built"
+        return
+    fi
 
     if [[ "$target" == "sdk-full" && "$variant" == "auto" ]]; then
         local cuda_ver
@@ -226,7 +247,10 @@ cmd_docker_run() {
     fi
 
     local gpu_flag=""
-    if command -v nvidia-smi &>/dev/null; then
+    if [ -f /etc/nv_tegra_release ]; then
+        gpu_flag="--runtime nvidia"
+        log_info "NVIDIA Jetson detected (using --runtime nvidia)"
+    elif command -v nvidia-smi &>/dev/null; then
         gpu_flag="--gpus all"
         log_info "NVIDIA GPU detected"
     fi
