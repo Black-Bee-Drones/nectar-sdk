@@ -82,7 +82,8 @@ SYSTEM_PACKAGES=(
 
 # ROS2 apt packages
 ROS2_PACKAGES=(
-    "ros-${ROS_DISTRO}-desktop-full"
+    "ros-${ROS_DISTRO}-ros-base"
+    "ros-${ROS_DISTRO}-rviz2"
     "ros-${ROS_DISTRO}-mavros"
     "ros-${ROS_DISTRO}-mavros-extras"
     "ros-${ROS_DISTRO}-tf-transformations"

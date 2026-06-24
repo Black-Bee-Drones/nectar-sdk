@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ROS_DISTRO=humble
-FROM osrf/ros:${ROS_DISTRO}-desktop-full AS base
+FROM ros:${ROS_DISTRO}-ros-base AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO
