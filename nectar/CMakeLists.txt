@@ -49,6 +49,7 @@ install(PROGRAMS
   nectar/control/pid/pid_node.py
   nectar/sensors/nodes/rangefinder_node.py
   nectar/control/localization/nodes/vision_pose_node.py
+  nectar/control/localization/nodes/path_window_node.py
   ../scripts/simulation/gz_vision_source.py
   DESTINATION lib/${PROJECT_NAME}
 )

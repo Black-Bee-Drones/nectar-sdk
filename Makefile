@@ -7,7 +7,7 @@
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
         docker-build docker-build-full docker-build-t265 docker-run docker-exec \
-        isaac-run \
+        isaac-run isaac-stop vslam-viz \
         full-install \
         lint lint-fix format check \
         sim-install sim-start sim-bridge sim-stop
@@ -70,6 +70,12 @@ docker-exec:        ; @$(SETUP) docker-exec
 
 # Isaac ROS Visual SLAM (Jetson) - self-contained producer container
 isaac-run:          ; @./docker/isaac_vslam/run_docker.sh
+# Tear down Isaac containers
+isaac-stop:         ; @docker rm -f isaac_ros_dev-aarch64-nectar-container isaac_ros_dev-aarch64-container 2>/dev/null; echo "Isaac containers removed"
+# VSLAM RViz. PROFILE=light|full, WINDOW=rolling buffer seconds (light, 0=full history)
+VSLAM_PROFILE ?= light
+VSLAM_WINDOW  ?= 15.0
+vslam-viz:          ; @ros2 launch nectar vslam_rviz.launch.py profile:=$(VSLAM_PROFILE) window_seconds:=$(VSLAM_WINDOW)
 
 # Code quality
 check:              ; @pre-commit run --all-files

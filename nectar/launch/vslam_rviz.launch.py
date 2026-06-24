@@ -1,11 +1,14 @@
 """RViz for Isaac VSLAM.
 
-  light : TF + odometry + SLAM path (tracking outputs only, no extra Jetson load)
+  light : TF + odometry + SLAM path (green) + VO path (purple), tracking outputs
+          only, no extra Jetson load. The two paths are shown as a rolling buffer
+          (last ``window_seconds``) via the path_window_node relay run here.
   full  : light + landmarks / loop-closure clouds + pose graph
           (requires the producer launched with enable_visualization:=true)
 
 Usage:
     ros2 launch nectar vslam_rviz.launch.py
+    ros2 launch nectar vslam_rviz.launch.py window_seconds:=30
     ros2 launch nectar vslam_rviz.launch.py profile:=full
 """
 
@@ -31,8 +34,9 @@ def _rviz_dir() -> str:
 
 def _setup(context):
     profile = LaunchConfiguration("profile").perform(context)
+    window_seconds = LaunchConfiguration("window_seconds").perform(context)
     config = os.path.join(_rviz_dir(), f"vslam_{profile}.rviz")
-    return [
+    nodes = [
         Node(
             package="rviz2",
             executable="rviz2",
@@ -41,6 +45,18 @@ def _setup(context):
             output="screen",
         )
     ]
+
+    if profile == "light":
+        nodes.append(
+            Node(
+                package="nectar",
+                executable="path_window_node.py",
+                name="path_window_node",
+                parameters=[{"window_seconds": float(window_seconds)}],
+                output="screen",
+            )
+        )
+    return nodes
 
 
 def generate_launch_description():
@@ -51,6 +67,12 @@ def generate_launch_description():
                 default_value="light",
                 choices=["light", "full"],
                 description="RViz profile: light (tracking only) or full (+ /vis topics)",
+            ),
+            DeclareLaunchArgument(
+                "window_seconds",
+                default_value="15.0",
+                description="light: keep only the last N seconds of path (rolling buffer); "
+                "0 = full history",
             ),
             OpaqueFunction(function=_setup),
         ]

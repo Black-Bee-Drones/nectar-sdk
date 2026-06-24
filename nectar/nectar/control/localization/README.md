@@ -92,13 +92,30 @@ Two profiles (`rviz/vslam_light.rviz`, `rviz/vslam_full.rviz`):
 
 | Profile | Shows | Producer cost |
 |---------|-------|---------------|
-| `light` (default) | TF + odometry + SLAM path | none (tracking topics are always published) |
+| `light` (default) | TF + odometry + SLAM path (green) + VO path (purple) | none (tracking topics are always published) |
 | `full` | light + landmarks / loop-closure clouds + pose graph | requires `enable_visualization:=true` |
+
+The `light` profile draws two always-published trajectories: the **green** SLAM
+path (`/visual_slam/tracking/slam_path`, loop-closure-corrected) and the
+**purple** VO path (`/visual_slam/tracking/vo_path`, raw odometry). When a loop
+closes, the green path snaps relative to the purple — that is the loop closure,
+visible with no producer cost. The literal purple loop-closure point cloud lives
+in `full` (it is a `/visual_slam/vis/*` topic, only published with
+`enable_visualization:=true`).
+
+Both `light` paths are shown as a **rolling buffer** (default last 15 s) so the
+window does not fill with the whole trajectory. `vslam_rviz.launch.py` runs a
+`path_window_node` relay next to RViz (no Jetson cost) that republishes
+`/visual_slam/tracking/{slam,vo}_path` trimmed to the last `window_seconds` onto
+`*_windowed` topics, which the light profile subscribes to. Set `window_seconds`
+to `0` for full history.
 
 ```bash
 # Laptop (nectar built)
-ros2 launch nectar vslam_rviz.launch.py profile:=light    # or profile:=full
-# Laptop (repo only, no build)
+ros2 launch nectar vslam_rviz.launch.py profile:=light            # or profile:=full
+ros2 launch nectar vslam_rviz.launch.py window_seconds:=30        # longer buffer
+# Laptop (repo only, no build) — run the relay too, else the light paths are empty:
+ros2 run nectar path_window_node.py    # if built; otherwise: python3 .../nodes/path_window_node.py
 rviz2 -d src/nectar-sdk/nectar/nectar/control/localization/rviz/vslam_light.rviz
 ```
 
