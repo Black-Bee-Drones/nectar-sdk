@@ -39,6 +39,7 @@ flowchart LR
 | Consumer launch | `nectar/launch/vision_pose.launch.py` | MAVROS (optional) + vision-pose bridge |
 | MAVROS relay | `control/localization/vision_pose_bridge.py` (`MavrosVisionRelay`) | republish pose to `/mavros/vision_pose/pose_cov` |
 | MAVLink bridge | reused from `nectar.control.mavlink.VisionPoseBridge` | send `VISION_POSITION_ESTIMATE` |
+| DDS bridge | `control/px4/vision_bridge.py` (`Px4VisionOdometryBridge`) | publish `px4_msgs/VehicleOdometry` to `/fmu/in/vehicle_visual_odometry` |
 | Node | `control/localization/nodes/vision_pose_node.py` | select backend, wire the bridge |
 | VSLAM params | `control/localization/config/vslam_realsense.yaml` | RealSense + Visual SLAM tuning |
 | MAVROS config | `control/mavros/config/indoor_mavros.yaml`, `indoor_pluginlists.yaml` | indoor MAVROS profile |
@@ -65,6 +66,9 @@ ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:9
 
 # direct pymavlink transport (no MAVROS)
 ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14551
+
+# native uXRCE-DDS (PX4 only; needs a running MicroXRCEAgent + px4_msgs)
+ros2 launch nectar vision_pose.launch.py backend:=dds
 ```
 
 ## FCU setup
@@ -125,6 +129,11 @@ Refs: [External position estimation](https://docs.px4.io/main/en/ros/external_po
 [`params_external_vision.yaml`](https://github.com/PX4/PX4-Autopilot/blob/main/src/modules/ekf2/params_external_vision.yaml),
 [`EKF2_EV_CTRL` default (#24298)](https://github.com/PX4/PX4-Autopilot/issues/24298).
 
+The `mavros`/`mavlink` backends deliver this estimate as `VISION_POSITION_ESTIMATE`;
+the native `dds` backend publishes `px4_msgs/VehicleOdometry` on
+`/fmu/in/vehicle_visual_odometry` instead (same EKF2 params, no MAVROS/MAVLink).
+See [Backends](#backends).
+
 ### Height source
 
 We do not use the **barometer** indoors — it drifts near the ground and in prop
@@ -152,6 +161,10 @@ VELXY / YAW) on vision:
   (ENU) onto `/mavros/vision_pose/pose_cov`; MAVROS converts to NED for the FCU.
 - `mavlink`: `nectar.control.mavlink.VisionPoseBridge` converts ENU->NED and
   sends `VISION_POSITION_ESTIMATE` over a dedicated pymavlink link.
+- `dds`: `nectar.control.px4.Px4VisionOdometryBridge` converts ENU->NED and
+  publishes `px4_msgs/VehicleOdometry` on `/fmu/in/vehicle_visual_odometry`
+  (PX4 native uXRCE-DDS). Needs a running `MicroXRCEAgent` and `px4_msgs`; set
+  `px4_namespace` to match a namespaced client.
 
 ## Visualization
 

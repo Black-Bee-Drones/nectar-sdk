@@ -5,11 +5,14 @@ the VSLAM pose reaches the FCU:
     backend:=mavros   start MAVROS (indoor config) + republish to
                       /mavros/vision_pose/pose_cov
     backend:=mavlink  send VISION_POSITION_ESTIMATE over a direct pymavlink link
+    backend:=dds      publish px4_msgs/VehicleOdometry on
+                      /fmu/in/vehicle_visual_odometry (PX4 native uXRCE-DDS)
 
 Usage::
 
     ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
     ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14551
+    ros2 launch nectar vision_pose.launch.py backend:=dds
 """
 
 import os
@@ -38,6 +41,8 @@ def generate_launch_description():
     tgt_component = LaunchConfiguration("tgt_component")
     namespace = LaunchConfiguration("namespace")
     mavlink_url = LaunchConfiguration("mavlink_url")
+    odometry_topic = LaunchConfiguration("odometry_topic")
+    px4_namespace = LaunchConfiguration("px4_namespace")
 
     cfg = os.path.join(get_package_share_directory("nectar"), "control", "mavros", "config")
     pluginlists = os.path.join(cfg, "indoor_pluginlists.yaml")
@@ -45,6 +50,7 @@ def generate_launch_description():
 
     is_mavros = IfCondition(PythonExpression(["'", backend, "' == 'mavros'"]))
     is_mavlink = IfCondition(PythonExpression(["'", backend, "' == 'mavlink'"]))
+    is_dds = IfCondition(PythonExpression(["'", backend, "' == 'dds'"]))
 
     # Resolved lazily so the mavlink-only path does not require MAVROS.
     mavros_launch = PathJoinSubstitution([FindPackageShare("mavros"), "launch", "node.launch"])
@@ -87,6 +93,22 @@ def generate_launch_description():
         ],
     )
 
+    bridge_dds = Node(
+        package="nectar",
+        executable="vision_pose_node.py",
+        name="vision_pose_node",
+        output="screen",
+        condition=is_dds,
+        parameters=[
+            {
+                "backend": "dds",
+                "input_topic": input_topic,
+                "odometry_topic": odometry_topic,
+                "px4_namespace": px4_namespace,
+            }
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("backend", default_value="mavros"),
@@ -100,8 +122,13 @@ def generate_launch_description():
             DeclareLaunchArgument("tgt_component", default_value="1"),
             DeclareLaunchArgument("namespace", default_value="mavros"),
             DeclareLaunchArgument("mavlink_url", default_value="udp:127.0.0.1:14551"),
+            DeclareLaunchArgument(
+                "odometry_topic", default_value="/fmu/in/vehicle_visual_odometry"
+            ),
+            DeclareLaunchArgument("px4_namespace", default_value=""),
             mavros_include,
             bridge_mavros,
             bridge_mavlink,
+            bridge_dds,
         ]
     )

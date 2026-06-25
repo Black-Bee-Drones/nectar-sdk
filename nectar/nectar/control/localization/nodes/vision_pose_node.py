@@ -7,12 +7,16 @@ The ``backend`` parameter selects how the external-nav estimate is delivered:
   MAVROS), via :class:`nectar.control.localization.MavrosVisionRelay`.
 - ``mavlink`` : send ``VISION_POSITION_ESTIMATE`` over a dedicated pymavlink
   link (no MAVROS), reusing :class:`nectar.control.mavlink.VisionPoseBridge`.
+- ``dds``     : publish ``px4_msgs/VehicleOdometry`` on
+  ``/fmu/in/vehicle_visual_odometry`` (PX4 native uXRCE-DDS), via
+  :class:`nectar.control.px4.vision_bridge.Px4VisionOdometryBridge`.
 
 Run::
 
     ros2 run nectar vision_pose_node.py --ros-args -p backend:=mavros
     ros2 run nectar vision_pose_node.py --ros-args \\
         -p backend:=mavlink -p mavlink_url:=udp:127.0.0.1:14551
+    ros2 run nectar vision_pose_node.py --ros-args -p backend:=dds
 """
 
 import rclpy
@@ -26,6 +30,7 @@ class VisionPoseNode(Node):
 
     BACKEND_MAVROS = "mavros"
     BACKEND_MAVLINK = "mavlink"
+    BACKEND_DDS = "dds"
 
     def __init__(self) -> None:
         super().__init__("vision_pose_node")
@@ -41,18 +46,25 @@ class VisionPoseNode(Node):
         self.declare_parameter("source_component", 191)
         self.declare_parameter("heartbeat_timeout_s", 30.0)
 
+        self.declare_parameter("odometry_topic", "/fmu/in/vehicle_visual_odometry")
+        self.declare_parameter("px4_namespace", "")
+
         self._relay = None
         self._connection = None
         self._bridge = None
+        self._dds_bridge = None
 
         backend = self.get_parameter("backend").value
         if backend == self.BACKEND_MAVROS:
             self._start_mavros()
         elif backend == self.BACKEND_MAVLINK:
             self._start_mavlink()
+        elif backend == self.BACKEND_DDS:
+            self._start_dds()
         else:
             raise ValueError(
-                f"Unknown backend '{backend}'. Valid: {self.BACKEND_MAVROS}, {self.BACKEND_MAVLINK}"
+                f"Unknown backend '{backend}'. Valid: {self.BACKEND_MAVROS}, "
+                f"{self.BACKEND_MAVLINK}, {self.BACKEND_DDS}"
             )
 
     def _start_mavros(self) -> None:
@@ -83,11 +95,24 @@ class VisionPoseNode(Node):
         )
         self._bridge.start()
 
+    def _start_dds(self) -> None:
+        from nectar.control.px4.vision_bridge import Px4VisionOdometryBridge
+
+        self._dds_bridge = Px4VisionOdometryBridge(
+            node=self,
+            input_topic=self.get_parameter("input_topic").value,
+            output_topic=self.get_parameter("odometry_topic").value,
+            px4_namespace=self.get_parameter("px4_namespace").value,
+        )
+        self._dds_bridge.start()
+
     def destroy_node(self) -> bool:
         if self._relay is not None:
             self._relay.stop()
         if self._bridge is not None:
             self._bridge.stop()
+        if self._dds_bridge is not None:
+            self._dds_bridge.stop()
         if self._connection is not None:
             self._connection.close()
         return super().destroy_node()

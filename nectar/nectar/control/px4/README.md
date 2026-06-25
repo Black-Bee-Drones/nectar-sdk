@@ -219,6 +219,8 @@ A second transport reaches PX4 directly over its [uXRCE-DDS bridge](https://docs
 - Commands via `/fmu/in/vehicle_command` (`VehicleCommand`); setpoints via `/fmu/in/offboard_control_mode` + `/fmu/in/trajectory_setpoint`.
 - PX4 NED/FRD is converted to/from the core's ENU/FLU in the transport.
 
+Indoor external vision uses the same DDS link: the localization `dds` backend publishes `px4_msgs/VehicleOdometry` on `/fmu/in/vehicle_visual_odometry` for EKF2 (`ros2 launch nectar vision_pose.launch.py backend:=dds`). See [Localization](../localization/README.md#backends).
+
 Requirements (one-time) — builds `px4_msgs` and the agent (against ROS's Fast-DDS):
 
 ```bash
