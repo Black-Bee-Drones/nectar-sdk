@@ -84,6 +84,7 @@ show_help() {
     echo "  ./setup.sh docker-build       Build SDK image (no AI, fast)"
     echo "  ./setup.sh docker-build-full  Build full image (+ PyTorch + AI)"
     echo "  ./setup.sh docker-build-t265  Build SDK image with T265 support (librealsense v2.53.1)"
+    echo "  ./setup.sh docker-publish-jetson  Verify + push the Jetson image to Docker Hub (run on Jetson)"
     echo "  ./setup.sh docker-run         Run container (selects image, GPU auto)"
     echo "  ./setup.sh docker-exec        Open new shell in running container"
     echo "    On Jetson, build/run auto-use Dockerfile.jetson (:jetson tags) and --runtime nvidia"
@@ -127,7 +128,11 @@ cmd_docker_build() {
         local jargs=()
         [ -n "${L4T_TAG:-}" ]     && jargs+=(--build-arg "L4T_TAG=${L4T_TAG}")
         [ -n "${TORCH_INDEX:-}" ] && jargs+=(--build-arg "TORCH_INDEX=${TORCH_INDEX}")
-        log_info "Jetson detected — building $jtag from Dockerfile.jetson (target=$target)"
+        jargs+=(--build-arg "INSTALL_REALSENSE=${INSTALL_REALSENSE:-false}")
+        jargs+=(--build-arg "REALSENSE_CUDA=${REALSENSE_CUDA:-false}")
+        [ -n "${LIBREALSENSE_VERSION:-}" ] && jargs+=(--build-arg "LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}")
+        [ -n "${REALSENSE_ROS_TAG:-}" ]    && jargs+=(--build-arg "REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}")
+        log_info "Jetson detected — building $jtag from Dockerfile.jetson (target=$target, realsense=${INSTALL_REALSENSE:-false}, realsense_cuda=${REALSENSE_CUDA:-false})"
         docker build --network=host \
             "${jargs[@]}" \
             --target "$target" \
@@ -180,6 +185,64 @@ cmd_docker_build_t265() {
     export INSTALL_REALSENSE="true"
     export ROS_DISTRO="humble"
     cmd_docker_build "sdk" "t265"
+}
+
+#   NAMESPACE=<dockerhub-user> VERSION=<release> make docker-publish-jetson
+cmd_docker_publish_jetson() {
+    local ns="${NAMESPACE:-}"
+    local version="${VERSION:-}"
+    local target="${TARGET:-sdk-full}"
+    local jetpack="${JETPACK:-jp6.2}"
+
+    if [ ! -f /etc/nv_tegra_release ]; then
+        log_error "Not a Jetson. The Jetson image must be built and published on a Jetson."
+        return 1
+    fi
+    if [ -z "$ns" ] || [ -z "$version" ]; then
+        log_error "Usage: NAMESPACE=<dockerhub-user> VERSION=<release> make docker-publish-jetson"
+        log_error "  optional: JETSON_TARGET=sdk|sdk-full (default sdk-full), JETSON_JETPACK=jp6.2"
+        return 1
+    fi
+
+    local variant="jetson"
+    [ "$target" = "sdk-full" ] && variant="jetson-full"
+    local local_tag="${DOCKER_IMAGE_PREFIX}:${variant}"
+
+    if ! docker image inspect "$local_tag" >/dev/null 2>&1; then
+        log_error "Image $local_tag not found. Build the complete image first:"
+        log_error "  INSTALL_REALSENSE=true REALSENSE_CUDA=true make docker-build-full"
+        return 1
+    fi
+
+    log_section "VERIFYING $local_tag ON THIS JETSON BEFORE PUBLISH"
+    log_info "SDK verify..."
+    docker run --rm --runtime nvidia "$local_tag" bash -lc \
+        'source /opt/ros/$ROS_DISTRO/setup.bash; source /home/ros2_ws/install/local_setup.bash 2>/dev/null; /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify' \
+        || { log_error "SDK verify failed — not publishing"; return 1; }
+
+    if [ "$target" = "sdk-full" ]; then
+        log_info "PyTorch CUDA verify..."
+        docker run --rm --runtime nvidia "$local_tag" \
+            python3 -c 'import torch; assert torch.cuda.is_available(), "CUDA not available"; print("torch", torch.__version__, "CUDA OK")' \
+            || { log_error "torch CUDA verify failed — not publishing"; return 1; }
+    fi
+
+    log_info "RealSense verify..."
+    docker run --rm --runtime nvidia -v /dev/bus/usb:/dev/bus/usb "$local_tag" bash -lc \
+        'source /opt/ros/$ROS_DISTRO/setup.bash; source /home/ros2_ws/install/local_setup.bash 2>/dev/null; /home/ros2_ws/src/nectar-sdk/scripts/setup.sh realsense-verify' \
+        || { log_error "RealSense verify failed — not publishing"; return 1; }
+
+    local remote="${ns}/${DOCKER_IMAGE_PREFIX}"
+    local tags=("${remote}:${variant}-${version}" "${remote}:${variant}-${jetpack}" "${remote}:${variant}")
+    log_section "PUSHING ${remote} (${variant}: ${version}, ${jetpack}, latest)"
+    log_warning "Requires 'docker login' to have been run for ${ns}."
+    local t
+    for t in "${tags[@]}"; do
+        docker tag "$local_tag" "$t"
+        log_info "Pushing $t ..."
+        docker push "$t" || { log_error "Push failed for $t (run 'docker login'?)"; return 1; }
+    done
+    log_success "Published: ${tags[*]}"
 }
 
 DOCKER_CONTAINER_PREFIX="${ROS2_PKG_NAME}"
@@ -490,6 +553,7 @@ main() {
         docker-build)       cmd_docker_build "sdk" ;;
         docker-build-full)  cmd_docker_build "sdk-full" ;;
         docker-build-t265)  cmd_docker_build_t265 ;;
+        docker-publish-jetson) cmd_docker_publish_jetson ;;
         docker-run)         cmd_docker_run ;;
         docker-exec)        cmd_docker_exec ;;
         # Setup

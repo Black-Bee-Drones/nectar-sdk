@@ -53,6 +53,31 @@ RUN make rosdep-init
 RUN make ros2-deps
 RUN make build
 
+# RealSense: udev rules + hotplug for runtime device access
+COPY docker/realsense/ /opt/realsense/
+RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
+RUN mkdir -p /etc/udev/rules.d && \
+    cp /opt/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/99-realsense-libusb.rules 2>/dev/null || true
+
+# RealSense: build librealsense from source (RSUSB backend, CUDA) + realsense-ros
+# + vision_to_mavros.
+ARG INSTALL_REALSENSE=false
+ARG REALSENSE_CUDA=false
+ARG LIBREALSENSE_VERSION
+ARG REALSENSE_ROS_TAG
+ENV REALSENSE_CUDA=${REALSENSE_CUDA}
+ENV LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}
+ENV REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then make realsense; fi
+# After realsense build, stale numpy/scipy .so files can conflict; reinstall clean.
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-*; \
+    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
+
 CMD ["/bin/bash"]
 
 # =============================================================================
@@ -73,8 +98,6 @@ FROM sdk AS sdk-full
 
 ARG TORCH_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126
 
-# Fetch the Jetson-native torch/torchvision wheels (no deps; their pure-Python
-# deps resolve from PyPI during the AI install below).
 RUN --mount=type=cache,target=/root/.cache/pip \
     mkdir -p /opt/torch-wheels && \
     pip download torch torchvision --no-deps --index-url "${TORCH_INDEX}" -d /opt/torch-wheels
@@ -84,10 +107,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         /opt/torch-wheels/torch-*.whl /opt/torch-wheels/torchvision-*.whl \
         -e ".[ai]"
 
-# Runtime libraries the Jetson torch wheel dynamically links but the l4t-jetpack
-# base does not ship: system OpenBLAS (libopenblas.so.0) and NVIDIA cuDSS
-# (libcudss.so.0). Without them `import torch` fails. (Kept after the AI install
-# so that heavier layer stays cached.)
 RUN apt-get update && apt-get install -y --no-install-recommends libopenblas0 && \
     rm -rf /var/lib/apt/lists/*
 
@@ -101,5 +120,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     echo "/usr/local/lib/python3.10/dist-packages/nvidia/cu12/lib" \
         > /etc/ld.so.conf.d/nvidia-cudss.conf && \
     ldconfig
+
+ARG INSTALL_REALSENSE=false
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
+    /usr/local/lib/python*/dist-packages/numpy* \
+    /usr/lib/python3/dist-packages/scipy* \
+    /usr/lib/python3/dist-packages/numpy-*; \
+    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
 
 CMD ["/bin/bash"]

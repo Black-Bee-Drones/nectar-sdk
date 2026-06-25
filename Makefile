@@ -7,6 +7,7 @@
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
         docker-build docker-build-full docker-build-t265 docker-run docker-exec \
+        docker-publish-jetson \
         isaac-run isaac-stop vslam-viz \
         full-install \
         lint lint-fix format check \
@@ -67,6 +68,15 @@ docker-build-full:  ; @$(SETUP) docker-build-full
 docker-build-t265:  ; @$(SETUP) docker-build-t265
 docker-run:         ; @$(SETUP) docker-run
 docker-exec:        ; @$(SETUP) docker-exec
+
+# Publish the Jetson image to Docker Hub (run ON the Jetson, after `docker login`).
+# Verifies (SDK + torch CUDA + RealSense) on this hardware, then pushes
+# <NAMESPACE>/nectar-sdk:<variant>-<VERSION>, :<variant>-<JETPACK>, :<variant>.
+#   make docker-publish-jetson JETSON_NAMESPACE=blackbee VERSION=v1.2.0
+JETSON_NAMESPACE ?=
+JETSON_TARGET    ?= sdk-full
+JETSON_JETPACK   ?= jp6.2
+docker-publish-jetson: ; @NAMESPACE="$(JETSON_NAMESPACE)" VERSION="$(VERSION)" TARGET="$(JETSON_TARGET)" JETPACK="$(JETSON_JETPACK)" $(SETUP) docker-publish-jetson
 
 # Isaac ROS Visual SLAM (Jetson) - self-contained producer container
 isaac-run:          ; @./docker/isaac_vslam/run_docker.sh
