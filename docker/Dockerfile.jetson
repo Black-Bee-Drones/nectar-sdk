@@ -9,6 +9,7 @@
 # Build on the Jetson (auto-detected by `make docker-build` / `docker-build-full`):
 #   make docker-build        # -> nectar-sdk:jetson
 #   make docker-build-full   # -> nectar-sdk:jetson-full
+#   INSTALL_REALSENSE=true REALSENSE_CUDA=true make docker-build-full   # + RealSense
 # Equivalent explicit form:
 #   docker build --target sdk      -t nectar-sdk:jetson      -f docker/Dockerfile.jetson .
 #   docker build --target sdk-full -t nectar-sdk:jetson-full -f docker/Dockerfile.jetson .

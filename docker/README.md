@@ -11,7 +11,7 @@ x86_64 images (`Dockerfile`) are tagged by ROS distro (`nectar-sdk:<distro>`), e
 | `:humble-full-cpu` | All above + AI packages | CPU |
 | `:humble-full-cu124` | All above + AI packages | CUDA 12.4 |
 | `:jetson` | all non-AI modules (L4T base) | None |
-| `:jetson-full` | All above + AI packages | CUDA 12.6 (Jetson wheels) |
+| `:jetson-full` | All above + AI + RealSense (RSUSB) | CUDA 12.6 (Jetson wheels) |
 
 ## Quick Start
 
@@ -126,6 +126,30 @@ make docker-run          # auto-uses --runtime nvidia (Tegra rejects --gpus all)
 Requires the NVIDIA Container Toolkit. Override the base image or torch index with
 `L4T_TAG=` / `TORCH_INDEX=`. This is the SDK image (control/vision/AI); the GPS-denied
 VSLAM producer is a separate container — see [Isaac ROS Visual SLAM](#isaac-ros-visual-slam-jetson).
+
+RealSense is opt-in here too (RSUSB backend, required for the D435i IMU on
+JetPack 6; CUDA optional). It builds librealsense from source, so the build takes
+~40-50 min on an Orin Nano:
+
+```bash
+INSTALL_REALSENSE=true REALSENSE_CUDA=true make docker-build-full
+```
+
+### Publishing the Jetson image
+
+The x86 CI cannot build the Jetson (L4T) image, so it is published manually from
+a Jetson on release. `make docker-publish-jetson` verifies the local image on
+this hardware (SDK + `torch.cuda` + RealSense) and pushes only if that passes:
+
+```bash
+docker login                                                       # Docker Hub account
+INSTALL_REALSENSE=true REALSENSE_CUDA=true make docker-build-full  # complete image
+make docker-publish-jetson JETSON_NAMESPACE=blackbeedrones VERSION=v1.1.0
+```
+
+This pushes three tags: `:jetson-full-<VERSION>`, `:jetson-full-jp6.2` (JetPack
+line — the image only runs on matching JetPack), and `:jetson-full`. Pass
+`JETSON_TARGET=sdk` to publish the no-AI image instead.
 
 ## RealSense
 
