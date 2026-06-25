@@ -4,15 +4,24 @@ on:
   release:
     types: [published]
 
+
 jobs:
-  push:
-    name: Push ${{ matrix.ros_distro }}
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.ros_distro }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    env:
+      REGISTRY_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk
     strategy:
       fail-fast: false
       matrix:
         ros_distro: [humble, jazzy, kilted]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
@@ -32,8 +41,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build locally (do NOT push yet)
-      - name: Build
+      - name: Build (load for verify)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -44,14 +52,13 @@ jobs:
           target: sdk
           load: true
           push: false
-          tags: nectar-sdk:${{ matrix.ros_distro }}-release
-          cache-from: type=gha,scope=${{ matrix.ros_distro }}-sdk
-          cache-to: type=gha,mode=max,scope=${{ matrix.ros_distro }}-sdk
+          tags: nectar-sdk:verify
+          cache-from: type=gha,scope=${{ matrix.ros_distro }}-${{ matrix.arch }}-sdk
+          cache-to: type=gha,mode=max,scope=${{ matrix.ros_distro }}-${{ matrix.arch }}-sdk
 
-      # Verify — if this fails, push never happens
       - name: Verify SDK
         run: |
-          docker run --rm nectar-sdk:${{ matrix.ros_distro }}-release bash -c "
+          docker run --rm nectar-sdk:verify bash -c "
             source /opt/ros/\$ROS_DISTRO/setup.bash
             source /home/ros2_ws/install/local_setup.bash 2>/dev/null
             /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify
@@ -59,18 +66,78 @@ jobs:
 
       - name: Verify RealSense
         run: |
-          docker run --rm nectar-sdk:${{ matrix.ros_distro }}-release bash -c "
+          docker run --rm nectar-sdk:verify bash -c "
             source /opt/ros/\$ROS_DISTRO/setup.bash
             source /home/ros2_ws/install/local_setup.bash 2>/dev/null
             /home/ros2_ws/src/nectar-sdk/scripts/setup.sh realsense-verify
           "
 
-      # Tag and push (only reached if verify passed)
-      - name: Push to Docker Hub
+      # Verified: publish this arch by digest (no tag yet; merge tags it).
+      # Cache hit from the step above makes this a fast push.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |
+            ROS_DISTRO=${{ matrix.ros_distro }}
+            INSTALL_REALSENSE=true
+          target: sdk
+          cache-from: type=gha,scope=${{ matrix.ros_distro }}-${{ matrix.arch }}-sdk
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
         run: |
-          docker tag nectar-sdk:${{ matrix.ros_distro }}-release \
-            ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
-          docker tag nectar-sdk:${{ matrix.ros_distro }}-release \
-            ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk:${{ matrix.ros_distro }}
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.ros_distro }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Manifest ${{ matrix.ros_distro }}
+    runs-on: ubuntu-24.04
+    needs: build
+    env:
+      REGISTRY_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy, kilted]
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.ros_distro }}-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Combine the per-arch digests into one manifest, tagged :<distro> and
+      # :<distro>-<release tag>.
+      - name: Create and push multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t "${REGISTRY_IMAGE}:${{ matrix.ros_distro }}" \
+            -t "${REGISTRY_IMAGE}:${{ matrix.ros_distro }}-${{ github.event.release.tag_name }}" \
+            $(printf "${REGISTRY_IMAGE}@sha256:%s " *)
+
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect "${REGISTRY_IMAGE}:${{ matrix.ros_distro }}"

@@ -10,6 +10,10 @@ on:
         required: false
         type: string
         default: "true"
+      runner:
+        required: false
+        type: string
+        default: "ubuntu-24.04"
     outputs:
       image_tag:
         description: "Local Docker image tag that was built and verified"
@@ -18,7 +22,7 @@ on:
 jobs:
   build_and_verify:
     name: Build & Verify (${{ inputs.ros_distro }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 120
     outputs:
       image_tag: ${{ steps.meta.outputs.tag }}
@@ -51,8 +55,8 @@ jobs:
           load: true
           push: false
           tags: ${{ steps.meta.outputs.tag }}
-          cache-from: type=gha,scope=${{ inputs.ros_distro }}-sdk
-          cache-to: type=gha,mode=max,scope=${{ inputs.ros_distro }}-sdk
+          cache-from: type=gha,scope=${{ inputs.ros_distro }}-${{ runner.arch }}-sdk
+          cache-to: type=gha,mode=max,scope=${{ inputs.ros_distro }}-${{ runner.arch }}-sdk
 
       - name: Verify SDK
         run: |
