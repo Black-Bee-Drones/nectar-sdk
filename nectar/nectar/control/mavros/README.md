@@ -157,12 +157,12 @@ MAVROS command services report [MAVLink MAV_RESULT](https://mavlink.io/en/messag
 
 ## Indoor Vision
 
-With MAVROS, the FCU's EKF3 receives external navigation through MAVROS' own vision plugin: an external pose source publishes to `/mavros/vision_pose/pose_cov` (or `/pose`), and MAVROS converts ENU→NED and sends [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) to the FCU. The transport only **subscribes** to the same topic to expose `vision_pose` for companion-side PID navigation.
+With MAVROS, the FCU's EKF (ArduPilot EKF3 / PX4 EKF2) receives external navigation through MAVROS' own vision plugin: an external pose source publishes to `/mavros/vision_pose/pose_cov` (or `/pose`), and MAVROS converts ENU→NED and sends [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) to the FCU. The transport only **subscribes** to the same topic to expose `vision_pose` for companion-side PID navigation.
 
-- **T265** ([vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)): `T265 VIO → /tf → vision_to_mavros (ENU alignment) → /mavros/vision_pose/pose`
-- **D435i** ([Isaac ROS vSLAM](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)): `D435i → isaac_ros_visual_slam → relay → /mavros/vision_pose/pose_cov`
+- **D435i + Isaac ROS Visual SLAM** (current): `D435i → isaac_ros_visual_slam → relay → /mavros/vision_pose/pose_cov`
+- **T265 + [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)** (legacy/fallback): `T265 VIO → /tf → vision_to_mavros (ENU alignment) → /mavros/vision_pose/pose`
 
-The EKF origin must be set indoors (see [EKF Origin](../ardupilot/README.md#ekf-origin-indoor-requirement)). The direct [MAVLink transport](../mavlink/README.md) replaces this MAVROS relay with a built-in `VisionPoseBridge`.
+Per-firmware FCU parameters (sources, rate, height source) and the EKF-origin step are documented in [Localization → FCU setup](../localization/README.md#fcu-setup) (ArduPilot EKF-origin detail: [EKF Origin](../ardupilot/README.md#ekf-origin-indoor-requirement)). The direct [MAVLink transport](../mavlink/README.md) replaces this MAVROS relay with a built-in `VisionPoseBridge`.
 
 ## References
 

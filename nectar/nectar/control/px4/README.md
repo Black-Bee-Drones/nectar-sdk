@@ -86,6 +86,10 @@ Unlike ArduPilot's single `GUIDED` mode, PX4 separates offboard control from the
 
 `Px4Drone.capabilities` is derived from the configured `pose_source` (see [`capabilities.py`](../capabilities.py)): `PID_NAV`, `LOCAL_SETPOINT`, `VELOCITY_BODY`/`WORLD`/`TAKEOFF`, `ACTUATOR`, `GRIPPER`, `PARAMS`, `NATIVE_RTL`, `OBSTACLE_AVOIDANCE`, `RANGEFINDER`, `DISTANCE_SENSORS`, plus `GPS_NAV`/`GLOBAL_SETPOINT` (outdoor) or `VISION_POSE` (indoor). PX4 declares `ACTUATOR` (`DO_SET_ACTUATOR`) and `GRIPPER` (`DO_GRIPPER`) for payloads, but not ArduPilot's per-channel PWM `SERVO` path (`do_servo`); see [Payload actuators](#payload-actuators--gripper).
 
+## Indoor / external vision (EKF2)
+
+For GPS-denied flight, `pose_source=PoseSource.VISION` makes the SDK read the FCU's fused local pose for companion-side PID navigation. The external pose itself is fed to the FCU by the separate [localization](../localization/README.md) bridge (`vision_pose.launch.py backend:=mavros|mavlink`), which sends `VISION_POSITION_ESTIMATE`. PX4's EKF2 fuses it once `EKF2_EV_CTRL` / `EKF2_HGT_REF` are set, GNSS is disabled (`EKF2_GPS_CTRL=0`), and the stream is 30–50 Hz (PX4 rejects rates that are too low — much stricter than ArduPilot's ≥4 Hz). The full parameter set, the ArduPilot equivalents, and current flight status are in [Localization → FCU setup](../localization/README.md#fcu-setup).
+
 ## Configuration
 
 ```python

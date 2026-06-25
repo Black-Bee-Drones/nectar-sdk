@@ -3,7 +3,8 @@
 ## Role
 
 External-navigation integration for GPS-denied (indoor) flight. Feeds a Visual
-SLAM pose to the FCU so EKF3 can estimate position without GPS.
+SLAM pose to the FCU so its EKF (ArduPilot EKF3 / PX4 EKF2) can estimate
+position without GPS.
 
 It lives under `control` because it bridges the VSLAM producer to the MAVROS and
 MAVLink transports. The pipeline is split into a **producer** (RealSense + Isaac
@@ -68,10 +69,82 @@ ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0
 
 ## FCU setup
 
-ArduPilot Non-GPS position estimation expects the vision feed at >= 4 Hz with
-EKF3 external-nav sources, e.g. `EK3_SRC1_POSXY=6` (ExternalNav),
-`EK3_SRC1_YAW=6`. See
-[ArduPilot non-GPS position estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html).
+The bridge only delivers the pose — the FCU's estimator still has to be told to
+fuse it, and **ArduPilot (EKF3) and PX4 (EKF2) use different parameters and a
+different minimum rate**. Both backends send MAVLink
+[`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE)
+(#102); the EKF fuses it once configured. With no GPS, the **EKF origin must be
+set** before position control engages.
+
+> Our indoor flights to date are on **ArduPilot 4.6.x / 4.8-dev**. The PX4 set
+> below is for our planned move to PX4 on Pixhawk: it is grounded in the PX4
+> docs and matches the reference pipeline (the same MAVROS relay) used by the
+> [VSLAM-UAV tutorial](https://www.andrewbernas.com/docs/tutorials/robots/vslam/setup)
+> on PX4 v1.15.4, but we have not yet flown it on our own hardware.
+
+### ArduPilot (EKF3)
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `VISO_TYPE` | `1` (MAVLink) | Enable the external-nav backend that consumes `VISION_POSITION_ESTIMATE` from a companion (the T265 path uses `2`, see [Hardware notes](#hardware-notes)) |
+| `EK3_SRC1_POSXY` | `6` (ExternalNav) | Horizontal position from VSLAM |
+| `EK3_SRC1_VELXY` | `6` or `0` | Horizontal velocity (cuVSLAM provides it) or none |
+| `EK3_SRC1_POSZ` | `6` (ExternalNav) | Height — see [Height source](#height-source) |
+| `EK3_SRC1_VELZ` | `6` or `0` | Vertical velocity or none |
+| `EK3_SRC1_YAW` | `6` (ExternalNav) | Yaw from VSLAM (with `COMPASS_USE=0`), or `1` to keep the compass |
+| `VISO_POS_X/Y/Z` | camera offset (m) | Camera position in the body frame |
+| `GPS1_TYPE` | `0` | Disable GPS indoors (renamed from `GPS_TYPE` in 4.5+) |
+
+Rate ≥ 4 Hz. Tuning: `VISO_POS_M_NSE`, `VISO_YAW_M_NSE`, `VISO_DELAY_MS`,
+`VISO_QUAL_MIN`. Set the origin via Mission Planner ("Set EKF Origin"),
+the `SET_GPS_GLOBAL_ORIGIN` message, or the `ahrs-set-origin.lua` script.
+Refs: [EKF source selection](https://ardupilot.org/copter/docs/common-ekf-sources.html),
+[Non-GPS position estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html),
+[`VISO_TYPE`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AP_VisualOdom/AP_VisualOdom.cpp)
+and [`EK3_SRC*`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AP_NavEKF/AP_NavEKF_Source.cpp)
+source.
+
+### PX4 (EKF2)
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `EKF2_EV_CTRL` | bitmask — bit0 h-pos, bit1 v-pos, bit2 3D vel, bit3 yaw (`15` = all) | Enable external-vision fusion. Released PX4 (≥1.14) has shipped this at `15`, so fusion auto-starts when data arrives — **verify on your firmware** |
+| `EKF2_HGT_REF` | `3` (Vision) | Height reference — see [Height source](#height-source) |
+| `EKF2_EV_DELAY` | ~`50` ms | EV delay relative to IMU; tune from logs |
+| `EKF2_EV_POS_X/Y/Z` | camera offset (m) | Camera position in the body frame |
+| `EKF2_GPS_CTRL` | `0` | Disable GNSS indoors |
+| `EKF2_MAG_TYPE` | `None` | Only if using vision yaw |
+
+Rate 30–50 Hz — **PX4 rejects external vision when the rate is too low** (much
+stricter than ArduPilot); cuVSLAM at ~90 Hz clears this. Tuning:
+`EKF2_EV_NOISE_MD`, `EKF2_EVP_NOISE`, `EKF2_EVA_NOISE`, `EKF2_EV_QMIN`. Auto and
+position modes from a purely local estimate need `SET_GPS_GLOBAL_ORIGIN`.
+Refs: [External position estimation](https://docs.px4.io/main/en/ros/external_position_estimation.html),
+[VIO](https://docs.px4.io/main/en/computer_vision/visual_inertial_odometry.html),
+[EKF2 tuning](https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf.html),
+[`params_external_vision.yaml`](https://github.com/PX4/PX4-Autopilot/blob/main/src/modules/ekf2/params_external_vision.yaml),
+[`EKF2_EV_CTRL` default (#24298)](https://github.com/PX4/PX4-Autopilot/issues/24298).
+
+### Height source
+
+We do not use the **barometer** indoors — it drifts near the ground and in prop
+wash. We pick POSZ between two sources and keep the rest of the set (POSXY /
+VELXY / YAW) on vision:
+
+- **Vision** (`EK3_SRC1_POSZ=6` / `EKF2_HGT_REF=Vision`): altitude is relative to
+  the VSLAM origin, **no terrain following** — the drone holds a constant height
+  when crossing platforms or obstacles in the arena. This is our default and has
+  been useful for missions with raised platforms.
+- **Downward rangefinder** (`EK3_SRC1_POSZ=2` / `EKF2_HGT_REF=Range` +
+  `EKF2_RNG_CTRL`): altitude **follows the terrain**. ArduPilot warns this is
+  "only appropriate ... where the floor is flat with no ground clutter"
+  ([EKF sources](https://ardupilot.org/copter/docs/common-ekf-sources.html)); PX4
+  notes "the local NED origin will move up and down with ground level"
+  ([EKF2 tuning](https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf.html)).
+  Over fixed obstacles the vehicle then climbs to compensate, so we mask the step
+  drops upstream with the
+  [`ObstacleMaskFilter`](../../sensors/README.md#obstaclemaskfilter) before the
+  FCU ever sees them.
 
 ## Backends
 
@@ -125,6 +198,27 @@ which are off by default to keep the Jetson light:
 ```bash
 nectar-vslam enable_visualization:=true
 ```
+
+## Hardware notes
+
+Current rig: Intel RealSense **D435i** + **Isaac ROS Visual SLAM (cuVSLAM)** on a
+Jetson Orin; pose output ~90 Hz. This is the producer the launch files target
+(`make isaac-run` to build/enter the Isaac container, then `nectar-vslam` to
+start the camera and SLAM; the bridge runs in a second terminal).
+
+Legacy / fallback: Intel RealSense **T265** +
+[`vision_to_mavros`](https://github.com/Black-Bee-Drones/vision_to_mavros) (our
+ROS 2 port of [thien94/vision_to_mavros](https://github.com/thien94/vision_to_mavros)),
+which aligns the T265 `/tf` to ENU and publishes `/mavros/vision_pose/pose`
+(`VISO_TYPE=2`). Black Bee flew the T265 in 2023 (3rd place indoor at IMAV 2023,
+our first indoor drone). We moved to the D435i + cuVSLAM after 2024: the T265 is
+discontinued and needs legacy `librealsense`/`realsense-ros`, is sensitive to
+vibration and to the environment, and a crash that cracked its lens cover left it
+tracking less reliably. The T265 path still works and remains a fallback. The
+companion-side setup we started from is LuckyBird's T265 series
+([part 1](https://discuss.ardupilot.org/t/integration-of-ardupilot-and-vio-tracking-camera-part-1-getting-started-with-the-intel-realsense-t265-on-rasberry-pi-3b/43162))
+and the ArduPilot [ROS VIO](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
+and [Intel T265](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html) pages.
 
 ## References
 

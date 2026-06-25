@@ -173,7 +173,7 @@ publisher.start()
 
 ### [Localization](nectar/nectar/control/localization/README.md)
 
-External-navigation integration for GPS-denied (indoor) flight. A producer (Intel RealSense + [Isaac ROS Visual SLAM](https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_visual_slam/isaac_ros_visual_slam/index.html)) runs in a dedicated Jetson container; a consumer bridge forwards the VSLAM pose to the FCU so EKF3 can estimate position without GPS. Producer and consumer share a `ROS_DOMAIN_ID` over host networking.
+External-navigation integration for GPS-denied (indoor) flight. A producer (Intel RealSense + [Isaac ROS Visual SLAM](https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_visual_slam/isaac_ros_visual_slam/index.html)) runs in a dedicated Jetson container; a consumer bridge forwards the VSLAM pose to the FCU so its EKF (ArduPilot EKF3 / PX4 EKF2) can estimate position without GPS. Producer and consumer share a `ROS_DOMAIN_ID` over host networking.
 
 - Producer launch (`isaac_vslam_realsense.launch.py`): RealSense stereo IR + IMU and Isaac ROS Visual SLAM
 - Consumer launch (`vision_pose.launch.py`): `backend:=mavros` republishes onto `/mavros/vision_pose/pose_cov`, or `backend:=mavlink` sends `VISION_POSITION_ESTIMATE` directly (no MAVROS)
