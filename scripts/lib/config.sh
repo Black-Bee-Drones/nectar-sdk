@@ -83,12 +83,12 @@ SYSTEM_PACKAGES=(
     libssl-dev libusb-1.0-0-dev
 )
 
-# ROS2 apt packages
+# ROS2 apt packages (core, distro-agnostic). MAVROS is NOT here: it is specific
+# to the MAVROS control backend and is installed on demand via `make drone-mavros`
+# (scripts/lib/drones.sh). Keep this list to what every install needs.
 ROS2_PACKAGES=(
     "ros-${ROS_DISTRO}-ros-base"
     "ros-${ROS_DISTRO}-rviz2"
-    "ros-${ROS_DISTRO}-mavros"
-    "ros-${ROS_DISTRO}-mavros-extras"
     "ros-${ROS_DISTRO}-tf-transformations"
     "ros-${ROS_DISTRO}-ament-cmake"
     "ros-${ROS_DISTRO}-vision-opencv"

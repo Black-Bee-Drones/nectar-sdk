@@ -149,6 +149,7 @@ cmd_docker_build() {
         [ -n "${TORCH_INDEX:-}" ] && jargs+=(--build-arg "TORCH_INDEX=${TORCH_INDEX}")
         jargs+=(--build-arg "INSTALL_REALSENSE=${INSTALL_REALSENSE:-false}")
         jargs+=(--build-arg "REALSENSE_CUDA=${REALSENSE_CUDA:-false}")
+        [ -n "${INSTALL_DRONE:-}" ] && jargs+=(--build-arg "INSTALL_DRONE=${INSTALL_DRONE}")
         [ -n "${LIBREALSENSE_VERSION:-}" ] && jargs+=(--build-arg "LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}")
         [ -n "${REALSENSE_ROS_TAG:-}" ]    && jargs+=(--build-arg "REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}")
         log_info "Jetson detected — building $jtag from Dockerfile.jetson (target=$target, realsense=${INSTALL_REALSENSE:-false}, realsense_cuda=${REALSENSE_CUDA:-false})"
@@ -185,6 +186,7 @@ cmd_docker_build() {
         --build-arg INSTALL_GAZEBO="${INSTALL_GAZEBO:-false}"
         --build-arg INSTALL_REALSENSE="${INSTALL_REALSENSE:-false}"
         --build-arg REALSENSE_CUDA="${REALSENSE_CUDA:-false}"
+        --build-arg INSTALL_DRONE="${INSTALL_DRONE:-}"
     )
     [ -n "${LIBREALSENSE_VERSION:-}" ] && build_args+=(--build-arg "LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}")
     [ -n "${REALSENSE_ROS_TAG:-}" ]    && build_args+=(--build-arg "REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}")

@@ -35,7 +35,9 @@ classDiagram
 
 ## Requirements
 
-A `mavros_node` must be bridging the FCU. The transport can launch it for you when `MavrosConfig.start_driver=True`:
+MAVROS is an opt-in dependency (it is not part of the core SDK install). Install it once with `make drone-mavros` (or `./scripts/setup.sh drone mavros`), which adds `ros-<distro>-mavros`/`-mavros-extras` and the GeographicLib datasets.
+
+A `mavros_node` must then be bridging the FCU. The transport can launch it for you when `MavrosConfig.start_driver=True`:
 
 ```
 ros2 launch mavros apm.launch fcu_url:=<connection_string>

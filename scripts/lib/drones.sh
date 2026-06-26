@@ -67,8 +67,9 @@ _drone_crazyflie() {
         return 1
     fi
 
-    # rowan: used by CrazyflieDrone full-state streaming.
-    _ensure_venv && uv pip install --python "$NECTAR_VENV/bin/python" "rowan>=1.3.0" \
+    # rowan: used by CrazyflieDrone full-state streaming. Pin numpy<2 alongside it
+    # so the venv stays cv_bridge-ABI compatible (cv_bridge links against numpy<2).
+    _ensure_venv && uv pip install --python "$NECTAR_VENV/bin/python" "rowan>=1.3.0" "numpy>=1.26,<2.0" \
         || log_warning "rowan install skipped"
 
     _crazyflie_udev
@@ -87,14 +88,17 @@ _drone_crazyflie() {
 # Crazyradio USB permissions: plugdev group + udev rules (Bitcraze vendor 1915).
 _crazyflie_udev() {
     log_info "Configuring Crazyradio USB permissions (udev)..."
-    getent group plugdev >/dev/null || SUDO groupadd plugdev
-    SUDO usermod -a -G plugdev "${USER:-root}"
+    getent group plugdev >/dev/null || SUDO groupadd plugdev || true
+    SUDO usermod -a -G plugdev "${USER:-root}" || true
     cat <<'EOF' | SUDO tee /etc/udev/rules.d/99-bitcraze.rules >/dev/null
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1915", ATTRS{idProduct}=="7777", MODE="0664", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1915", ATTRS{idProduct}=="0101", MODE="0664", GROUP="plugdev"
 EOF
-    SUDO udevadm control --reload-rules
-    SUDO udevadm trigger
+    # Reloading needs a running udevd (absent in containers/at image build time).
+    if command -v udevadm >/dev/null 2>&1; then
+        SUDO udevadm control --reload-rules 2>/dev/null || true
+        SUDO udevadm trigger 2>/dev/null || true
+    fi
     log_success "Crazyradio udev rules installed (log out/in for group change)"
 }
 

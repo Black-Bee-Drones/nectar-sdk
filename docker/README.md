@@ -6,7 +6,7 @@ x86_64 images (`Dockerfile`) are tagged by ROS distro (`nectar-sdk:<distro>`), e
 
 | Tag | Contents | PyTorch |
 |-----|----------|---------|
-| `:humble` | core + control + vision + interface + realsense + oakd | None |
+| `:humble` | core + control + vision + interface + realsense + oakd + mavros + crazyflie | None |
 | `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
 | `:humble-full-cpu` | All above + AI packages | CPU |
 | `:humble-full-cu124` | All above + AI packages | CUDA 12.4 |
@@ -151,6 +151,24 @@ This pushes three tags: `:jetson-full-<VERSION>`, `:jetson-full-jp6.2` (JetPack
 line — the image only runs on matching JetPack), and `:jetson-full`. Pass
 `JETSON_TARGET=sdk` to publish the no-AI image instead.
 
+## Control backends
+
+Control backends are opt-in via the `INSTALL_DRONE` build arg (a space-separated
+list of `make drone-<x>` targets). The core image ships MAVLink (`pymavlink`)
+only; the published images add `mavros` + `crazyflie`:
+
+```bash
+# published set (MAVROS + Crazyflie)
+INSTALL_DRONE="mavros crazyflie" make docker-build
+
+# MAVLink/pymavlink only (default)
+make docker-build
+```
+
+Bebop is not a default (source build, Humble-only); add it with
+`INSTALL_DRONE="mavros crazyflie bebop"`, or `make drone-bebop` at runtime.
+PX4 over MAVROS needs `mavros`; PX4 native uXRCE-DDS is part of the simulation install.
+
 ## RealSense
 
 RealSense support is opt-in (builds librealsense from source, adds ~15-20 min and ~500 MB).
@@ -203,8 +221,8 @@ make docker-build-t265
 ```
 
 This produces `nectar-sdk:humble-t265`. Internally it starts a container
-from `:humble`, installs librealsense v2.53.1 + realsense-ros 4.51.1 +
-vision_to_mavros, rebuilds the workspace, and commits the result.
+from `:humble`, installs librealsense v2.53.1 + realsense-ros 4.51.1,
+rebuilds the workspace, and commits the result.
 
 **Run** (plug in the T265 first):
 ```bash
@@ -226,8 +244,10 @@ realsense-viewer
 source /home/ros2_ws/install/setup.bash
 ros2 launch realsense2_camera rs_launch.py device_type:=t265
 
-# Full T265 + MAVROS pipeline (vision_to_mavros)
-ros2 launch vision_to_mavros t265_all_nodes_launch.py
+# Relay the camera pose to the FCU with the SDK vision-pose bridge (replaces the
+# external vision_to_mavros). Point input_topic at the T265 pose topic; see
+# nectar/nectar/control/localization/README.md.
+ros2 launch nectar vision_pose.launch.py backend:=mavros
 ```
 
 **Host-side udev rule** (optional, for consistent USB permissions):

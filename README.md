@@ -220,7 +220,7 @@ Pick the row that matches where you're starting from:
 | Have the SDK cloned | `make setup` (opens the setup menu) |
 | Want zero host setup | `make docker-build && make docker-run` (or `docker-build-full` for AI) |
 
-`make setup` (or `./scripts/setup.sh` with no args) opens an interactive menu — nothing installs until you choose. From it you can run a quick setup, pick Python modules, configure a drone driver, install system packages (skipped when already present), set up the ROS 2 environment, build, and verify. Python deps go into a shared [uv](https://github.com/astral-sh/uv)-managed workspace venv (`$WORKSPACE/.venv`) that every workspace project reuses ([details](docs/INSTALL.md#python-environment)). Full reference: **[Installation Guide](docs/INSTALL.md)**; all versions live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
+`make setup` (or `./scripts/setup.sh` with no args) opens an interactive menu — nothing installs until you choose. From it you can run a quick setup, pick Python modules, configure a drone driver, install system packages (skipped when already present), set up the ROS 2 environment, build, and verify. The core install does not pull control backends: MAVROS and the other drivers are opt-in (e.g. `make drone-mavros`), so you only install the protocol your vehicle uses. Python deps go into a shared [uv](https://github.com/astral-sh/uv)-managed workspace venv (`$WORKSPACE/.venv`) that every workspace project reuses ([details](docs/INSTALL.md#python-environment)). Full reference: the **[Installation Guide](docs/INSTALL.md)** and the tested **[compatibility matrix](docs/COMPATIBILITY.md)**; all versions live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
 
 Then add only what your mission needs:
 

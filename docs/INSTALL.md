@@ -197,7 +197,7 @@ A known-good `torch`/`torchvision` pair is pinned by default in [`scripts/lib/co
 
 ## RealSense
 
-Builds librealsense from source with optional CUDA, installs realsense-ros and vision_to_mavros:
+Builds librealsense from source with optional CUDA and installs realsense-ros:
 
 ```bash
 make realsense

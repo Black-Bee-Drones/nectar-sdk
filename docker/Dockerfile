@@ -41,7 +41,7 @@ RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
 RUN mkdir -p /etc/udev/rules.d && \
     cp /opt/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/99-realsense-libusb.rules 2>/dev/null || true
 
-# RealSense: build librealsense from source + realsense-ros + vision_to_mavros
+# RealSense: build librealsense from source + realsense-ros
 ARG INSTALL_REALSENSE=false
 ARG REALSENSE_CUDA=false
 ARG LIBREALSENSE_VERSION
@@ -56,6 +56,12 @@ RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
     "${NECTAR_VENV}/bin/python" -m pip install --no-cache-dir \
         numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
     fi
+
+# Control backends: space-separated list of `make drone-<x>` targets to install
+# (e.g. "mavros crazyflie"). Empty by default (core install ships MAVLink/pymavlink
+# only). Bebop is intentionally not a default (source build, Humble-only).
+ARG INSTALL_DRONE=""
+RUN if [ -n "$INSTALL_DRONE" ]; then for d in $INSTALL_DRONE; do make drone-$d; done; fi
 
 CMD ["/bin/bash"]
 

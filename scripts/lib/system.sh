@@ -37,7 +37,7 @@ cmd_system() {
         "${GUI_SYSTEM_PACKAGES[@]}"
 
     if [[ "$ros_present" == true ]]; then
-        log_info "Installing ROS2 extra packages (MAVROS, cv_bridge, etc.)..."
+        log_info "Installing ROS2 extra packages (rviz2, cv_bridge, etc.)..."
         SUDO apt-get install -y --no-install-recommends "${ROS2_PACKAGES[@]}"
     fi
 

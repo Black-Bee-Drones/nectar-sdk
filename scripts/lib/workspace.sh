@@ -144,13 +144,12 @@ cmd_verify() {
     _req "pkg: ${ROS2_PKG_NAME}"         'grep -qx "${ROS2_PKG_NAME}" <<<"$_pkgs"'
     _req "pkg: ${INTERFACES_PKG_NAME}"   'grep -qx "${INTERFACES_PKG_NAME}" <<<"$_pkgs"'
     _req "pkg: cv_bridge"                'grep -q "cv_bridge" <<<"$_pkgs"'
-    _req "pkg: mavros"                   'grep -q "mavros" <<<"$_pkgs"'
     _req "pkg: tf_transformations"       'grep -q "tf_transformations" <<<"$_pkgs"'
     _req "pkg: image_geometry"           'grep -q "image_geometry" <<<"$_pkgs"'
+    _opt "pkg: mavros"                   'grep -q "mavros" <<<"$_pkgs"'
     _opt "pkg: crazyflie_interfaces"     'grep -q "crazyflie_interfaces" <<<"$_pkgs"'
     _opt "pkg: bebop_driver"             'grep -q "bebop_driver" <<<"$_pkgs"'
     _opt "pkg: realsense2_camera"        'grep -q "realsense2_camera" <<<"$_pkgs"'
-    _opt "pkg: vision_to_mavros"         'grep -q "vision_to_mavros" <<<"$_pkgs"'
 
     # --- Core Python ---
     _group "Core Python" python
