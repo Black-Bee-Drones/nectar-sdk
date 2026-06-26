@@ -1,9 +1,9 @@
 # Thin wrapper around scripts/setup.sh.
 
 .PHONY: help setup system update ros2 geographiclib ros2-env rosdep-init \
-        drone-mavros drone-px4 drone-crazyflie drone-bebop drone-all \
+        drone-mavros drone-px4 drone-px4-dds drone-crazyflie drone-bebop drone-all \
         python python-control python-vision python-ai python-interface python-sensors \
-        install-all install-full pytorch \
+        python-all python-full install-all install-full pytorch \
         clone ros2-deps build build-pkg clean verify test \
         realsense realsense-verify \
         docker-build docker-build-full docker-build-t265 docker-run docker-exec \
@@ -11,7 +11,8 @@
         isaac-run isaac-stop vslam-viz \
         full-install \
         lint lint-fix format check \
-        sim-install sim-start sim-bridge sim-stop
+        sim-install sim-start sim-bridge sim-stop \
+        driver driver-mavros driver-px4 driver-px4-dds driver-bebop driver-crazyflie driver-stop
 
 SETUP := ./scripts/setup.sh
 
@@ -34,6 +35,7 @@ rosdep-init:        ; @$(SETUP) rosdep-init
 # Drone drivers
 drone-mavros:       ; @$(SETUP) drone mavros
 drone-px4:          ; @$(SETUP) drone px4
+drone-px4-dds:      ; @$(SETUP) drone px4-dds
 drone-crazyflie:    ; @$(SETUP) drone crazyflie
 drone-bebop:        ; @$(SETUP) drone bebop
 drone-all:          ; @$(SETUP) drone all
@@ -45,8 +47,10 @@ python-vision:      ; @$(SETUP) python vision
 python-ai:          ; @$(SETUP) python ai
 python-interface:   ; @$(SETUP) python interface
 python-sensors:     ; @$(SETUP) python sensors
-install-all:        ; @$(SETUP) python all
-install-full:       ; @$(SETUP) python full
+python-all:         ; @$(SETUP) python all
+python-full:        ; @$(SETUP) python full
+install-all:        ; @$(SETUP) python all     # alias of python-all (back-compat)
+install-full:       ; @$(SETUP) python full    # alias of python-full (back-compat)
 pytorch:            ; @$(SETUP) pytorch
 
 # Workspace
@@ -111,6 +115,20 @@ sim-install: ; @$(SETUP) sim-install --firmware $(FIRMWARE) $(ARGS)
 sim-start:   ; @$(SETUP) sim-start --firmware $(FIRMWARE) --env $(ENV) $(ARGS)
 sim-bridge:  ; @$(SETUP) sim-bridge --firmware $(FIRMWARE) --env $(ENV) --protocol $(PROTOCOL) $(ARGS)
 sim-stop:    ; @$(SETUP) sim-stop
+
+# Real-hardware drivers/bridges — the real-world counterpart of sim-bridge.
+# Starts the driver/bridge your mission script connects to (examples run with
+# start_driver=False). Connection overrides via env: FCU_URL / DEV / BAUD / PORT / IP.
+#   make driver DRONE=mavros ENV=outdoor FCU_URL=serial:///dev/ttyUSB0:921600
+#   make driver-px4-dds DEV=/dev/ttyUSB0 BAUD=921600     (or PORT=8888 for UDP)
+DRONE ?=
+driver:           ; @$(SETUP) driver $(DRONE) $(if $(DRONE),--env $(ENV)) $(ARGS)
+driver-mavros:    ; @$(SETUP) driver mavros --env $(ENV) $(ARGS)
+driver-px4:       ; @$(SETUP) driver px4 --env $(ENV) $(ARGS)
+driver-px4-dds:   ; @$(SETUP) driver px4-dds $(ARGS)
+driver-bebop:     ; @$(SETUP) driver bebop $(ARGS)
+driver-crazyflie: ; @$(SETUP) driver crazyflie $(ARGS)
+driver-stop:      ; @$(SETUP) driver-stop
 
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install

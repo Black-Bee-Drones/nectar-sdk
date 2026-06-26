@@ -7,13 +7,13 @@ ARG ROS_DISTRO
 ENV NON_INTERACTIVE=true
 ENV ROS2_WORKSPACE=/home/ros2_ws
 ENV ROS_DISTRO=${ROS_DISTRO}
+ENV NECTAR_VENV=/home/ros2_ws/.venv
+ENV PATH=/usr/local/bin:${NECTAR_VENV}/bin:$PATH
 
 COPY scripts/ /tmp/setup/scripts/
 
 RUN /tmp/setup/scripts/setup.sh system
 RUN /tmp/setup/scripts/setup.sh geographiclib
-RUN rm -f /usr/lib/python*/EXTERNALLY-MANAGED
-RUN python3 -m pip install --ignore-installed pip
 RUN rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/ros2_ws/src
@@ -24,13 +24,7 @@ FROM base AS sdk
 COPY . /home/ros2_ws/src/nectar-sdk
 WORKDIR /home/ros2_ws/src/nectar-sdk
 
-RUN --mount=type=cache,target=/root/.cache/pip make install-all
-# Python 3.12+ (Jazzy): system numpy 1.26.4 == pip numpy → dual install causes
-# RecursionError in sklearn/supervision. Remove the pip copy.
-# Python 3.10 (Humble): system numpy 1.21.5 is too old, pip copy must stay.
-RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
-    && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
-    || true
+RUN --mount=type=cache,target=/root/.cache/uv make install-all
 RUN make rosdep-init
 RUN make ros2-deps
 RUN make build
@@ -56,14 +50,11 @@ ENV REALSENSE_CUDA=${REALSENSE_CUDA}
 ENV LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}
 ENV REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}
 RUN if [ "$INSTALL_REALSENSE" = "true" ]; then make realsense; fi
-# After realsense build, stale scipy/numpy .so files from --ignore-installed
-# can conflict. Purge and reinstall cleanly.
+# After a from-source realsense build, re-pin numpy/scipy/sklearn inside the
+# venv so the SDK's expected versions win regardless of what the build pulled in.
 RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
-    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
-    /usr/local/lib/python*/dist-packages/numpy* \
-    /usr/lib/python3/dist-packages/scipy* \
-    /usr/lib/python3/dist-packages/numpy-*; \
-    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    "${NECTAR_VENV}/bin/python" -m pip install --no-cache-dir \
+        numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
     fi
 
 CMD ["/bin/bash"]
@@ -74,19 +65,12 @@ ARG TORCH_VARIANT=cpu
 ARG INSTALL_REALSENSE=false
 ENV TORCH_VARIANT=${TORCH_VARIANT}
 
-RUN --mount=type=cache,target=/root/.cache/pip make pytorch
-RUN --mount=type=cache,target=/root/.cache/pip make python-ai
-
-RUN python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" \
-    && rm -rf /usr/local/lib/python*/dist-packages/numpy /usr/local/lib/python*/dist-packages/numpy-* /usr/local/lib/python*/dist-packages/numpy.libs \
-    || true
+RUN --mount=type=cache,target=/root/.cache/uv make pytorch
+RUN --mount=type=cache,target=/root/.cache/uv make python-ai
 
 RUN if [ "${INSTALL_REALSENSE:-false}" = "true" ]; then \
-    rm -rf /usr/local/lib/python*/dist-packages/scipy* \
-    /usr/local/lib/python*/dist-packages/numpy* \
-    /usr/lib/python3/dist-packages/scipy* \
-    /usr/lib/python3/dist-packages/numpy-*; \
-    pip install --no-cache-dir numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    "${NECTAR_VENV}/bin/python" -m pip install --no-cache-dir \
+        numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
     fi
 
 CMD ["/bin/bash"]

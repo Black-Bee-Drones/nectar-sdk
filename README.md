@@ -211,22 +211,30 @@ Custom ROS 2 messages connecting vision output to control decisions:
 
 ## Installation
 
-```bash
-# From scratch (ROS 2, system deps, MAVROS, GeographicLib, clone, build)
-bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
+Pick the row that matches where you're starting from:
 
-# Existing ROS 2 workspace
-cd ~/ros2_ws/src && git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
-cd nectar-sdk && make setup
-```
+| Your starting point | Run |
+|---|---|
+| Fresh machine, no ROS 2 | `bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)` |
+| Have ROS 2, no SDK yet | `cd ~/ros2_ws/src && git clone git@github.com:Black-Bee-Drones/nectar-sdk.git && cd nectar-sdk && make setup` |
+| Have the SDK cloned | `make setup` (opens the setup menu) |
+| Want zero host setup | `make docker-build && make docker-run` (or `docker-build-full` for AI) |
 
-Install only what you need (modules, drone drivers, Docker, simulation, RealSense). Run `./scripts/setup.sh` with no arguments for a guided menu. See the **[Installation Guide](docs/INSTALL.md)** for the full reference; all versions and package lists live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
+`make setup` (or `./scripts/setup.sh` with no args) opens an interactive menu — nothing installs until you choose. From it you can run a quick setup, pick Python modules, configure a drone driver, install system packages (skipped when already present), set up the ROS 2 environment, build, and verify. Python deps go into a shared [uv](https://github.com/astral-sh/uv)-managed workspace venv (`$WORKSPACE/.venv`) that every workspace project reuses ([details](docs/INSTALL.md#python-environment)). Full reference: **[Installation Guide](docs/INSTALL.md)**; all versions live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
 
-```bash
-make python-control python-vision python-ai python-interface python-sensors  # by module
-make drone-mavros drone-crazyflie drone-bebop                                # by drone driver
-make docker-build docker-run                                                 # Docker (see docker/README.md)
-```
+Then add only what your mission needs:
+
+| Goal | Commands |
+|---|---|
+| ArduPilot / PX4 over direct MAVLink (simplest) | `make setup` (pick `control`) then `make drone-mavros` |
+| ArduPilot / PX4 over MAVROS | `make setup` (pick `control`) then `make drone-mavros` |
+| PX4 over uXRCE-DDS + object detection | `make setup` (pick `control ai`) then `make drone-px4-dds` |
+| Crazyflie / Bebop | `make drone-crazyflie` / `make drone-bebop` |
+| GUI app only | `make python-interface` |
+| A single module | `make python-vision` (or `python-control` / `python-ai` / `python-sensors`) |
+| Everything (AI + GPU) | `make python-full && make pytorch` |
+
+To **fly real hardware**, start the driver/bridge your mission connects to with `make driver DRONE=<type> ENV=<outdoor\|indoor>` (the real-world counterpart of `make sim-bridge`), then run a mission/example. See the **[Installation Guide](docs/INSTALL.md#choose-your-setup)** for worked examples (direct-MAVLink 2 m square, Crazyflie, PX4-DDS + detection, Docker).
 
 ## Architecture
 
@@ -375,7 +383,7 @@ detector = Detector("model.bin", framework="custom")
 
 | Document | Contents |
 |----------|----------|
-| [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, module install, PyTorch, Docker, drone drivers, troubleshooting |
+| [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, Python environment (uv venv), module install, PyTorch, Docker, drone drivers, troubleshooting |
 | [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, capabilities, submodule index |
 | [Vehicle Core](nectar/nectar/control/vehicle/README.md) | Firmware-agnostic core: bridge design, firmware hooks, navigation, frames, altitude, takeoff/land, GPS/EGM96, PID |
 | [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | ArduPilot specifics: GUIDED arming, `GUID_OPTIONS`/WPNAV, native RTL, parameters |

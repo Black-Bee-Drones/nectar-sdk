@@ -14,10 +14,13 @@ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-14}"
 # release-3.2 = Humble / JetPack 6.x, built via isaac_ros_common/run_dev.sh.
 ISAAC_ROS_VERSION="${ISAAC_ROS_VERSION:-release-3.2}"
 
-# PyTorch
+# PyTorch - Override with env vars; if you bump
+# TORCH_VERSION, set a matching TORCHVISION_VERSION too.
 TORCH_VARIANT="${TORCH_VARIANT:-auto}"
-TORCH_VERSION="${TORCH_VERSION:-}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
+TORCH_VERSION="${TORCH_VERSION:-2.9.1}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.24.1}"
+
+export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-600}"
 
 TORCH_CONSTRAINTS_FILE="/tmp/nectar-torch-constraints.txt"
 TORCH_INDEX_FILE="/tmp/nectar-torch-index.txt"
@@ -155,3 +158,8 @@ detect_workspace() {
 WORKSPACE_DIR="$(detect_workspace)"
 
 PKG_DIR="${PROJECT_DIR}/${ROS2_PKG_NAME}"
+
+# Shared workspace virtual environment. One venv per colcon
+# workspace, reused by the SDK and any sibling project (e.g. competition code).
+# Override with NECTAR_VENV=/custom/path; an already-active VIRTUAL_ENV wins.
+NECTAR_VENV="${NECTAR_VENV:-${VIRTUAL_ENV:-${WORKSPACE_DIR}/.venv}}"

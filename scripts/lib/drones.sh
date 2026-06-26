@@ -34,8 +34,15 @@ _drone_px4() {
     log_info "Connect to a PX4 FCU/SITL with:"
     log_info "  ros2 launch mavros px4.launch fcu_url:=udp://:14540@127.0.0.1:14580"
     log_info "For PX4 SITL + Gazebo, see: make sim-install FIRMWARE=px4 (scripts/simulation/install_px4.sh)"
-    log_info "For the native uXRCE-DDS path (drone 'px4_dds'): build px4_msgs + the"
-    log_info "  Micro XRCE-DDS Agent with: make sim-install FIRMWARE=px4 ARGS=--native"
+    log_info "For the native uXRCE-DDS path (drone 'px4_dds'), run: make drone-px4-dds"
+}
+
+# PX4 native uXRCE-DDS (drone 'px4_dds')
+_drone_px4_dds() {
+    log_section "INSTALLING PX4 NATIVE uXRCE-DDS (px4_msgs + agent)"
+    bash "${PROJECT_DIR}/scripts/simulation/install_px4_dds.sh"
+    _source_ros_ws
+    _drone_activation_hint
 }
 
 # Crazyswarm2 (Crazyflie 2.x). Prefer apt binaries; fall back to source build.
@@ -61,9 +68,8 @@ _drone_crazyflie() {
     fi
 
     # rowan: used by CrazyflieDrone full-state streaming.
-    local flags
-    flags=$(_pip_flags)
-    python3 -m pip install $flags "rowan>=1.3.0" || log_warning "rowan install skipped"
+    _ensure_venv && uv pip install --python "$NECTAR_VENV/bin/python" "rowan>=1.3.0" \
+        || log_warning "rowan install skipped"
 
     _crazyflie_udev
 
@@ -153,17 +159,18 @@ _bebop_patch_ffmpeg() {
 cmd_drone() {
     local kind="${1:-}"
     case "$kind" in
-        mavros)    _drone_mavros ;;
-        px4)       _drone_px4 ;;
-        crazyflie) _drone_crazyflie ;;
-        bebop)     _drone_bebop ;;
-        all)       _drone_mavros && _drone_crazyflie && _drone_bebop ;;
+        mavros)            _drone_mavros ;;
+        px4)               _drone_px4 ;;
+        px4-dds|px4_dds)   _drone_px4_dds ;;
+        crazyflie)         _drone_crazyflie ;;
+        bebop)             _drone_bebop ;;
+        all)               _drone_mavros && _drone_crazyflie && _drone_bebop ;;
         ""|list)
             echo "Usage: ./setup.sh drone <type>"
-            echo "  types: mavros, px4, crazyflie, bebop, all"
+            echo "  types: mavros, px4, px4-dds, crazyflie, bebop, all"
             ;;
         *)
-            log_error "Unknown drone type: $kind (expected mavros|px4|crazyflie|bebop|all)"
+            log_error "Unknown drone type: $kind (expected mavros|px4|px4-dds|crazyflie|bebop|all)"
             return 1
             ;;
     esac

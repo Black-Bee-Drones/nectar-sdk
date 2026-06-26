@@ -1,5 +1,90 @@
 # Installation Guide
 
+## Choose your setup
+
+Start from the row that matches your machine:
+
+| Starting point | Do this |
+|---|---|
+| Fresh machine, no ROS 2 | [From Scratch](#from-scratch-no-ros-2) — one bootstrap command installs ROS 2 + the SDK |
+| ROS 2 installed, SDK not cloned | clone into `~/ros2_ws/src`, then [`make setup`](#existing-ros-2-workspace) |
+| SDK cloned, nothing installed | `make setup` (opens the setup menu) |
+| Deps installed, just no venv yet | re-run `make python-all` (or your modules) — it creates `$WORKSPACE/.venv` |
+| Want zero host setup | [Docker](#docker): `make docker-build && make docker-run` |
+
+`make setup` (or `./scripts/setup.sh` with no args) opens an interactive menu — **nothing installs until you choose**. From it: a *Quick setup* (system deps + pick modules + build + verify), *Python modules*, *Drone driver* (mavros / px4 / px4-dds / crazyflie / bebop), *System packages* (skipped when already installed), *ROS 2 environment*, *Build*, *Verify*, *RealSense*. System packages are idempotent, and the MAVROS geoid datasets (GeographicLib) install only with the `mavros` driver — not on every run.
+
+### Then add what your mission needs
+
+| Goal | Commands |
+|---|---|
+| ArduPilot / PX4 over direct MAVLink (simplest) | `make setup` (pick `control`) then `make drone-mavros` |
+| ArduPilot / PX4 over MAVROS | `make setup` (pick `control`) then `make drone-mavros` |
+| PX4 over uXRCE-DDS + detection | `make setup` (pick `control ai`) then `make drone-px4-dds` |
+| Crazyflie / Bebop | `make drone-crazyflie` / `make drone-bebop` |
+| GUI app only | `make python-interface` |
+| Simulation (SITL + Gazebo) | [`make sim-install`](#simulation-gazebo--ardupilot--px4-sitl) |
+
+### Flying real hardware
+
+Examples run with `start_driver=False`, so the driver/bridge your mission connects to runs in its own terminal — started with `make driver` (the real-world counterpart of `make sim-bridge`). `make driver-stop` tears them all down. Connection overrides via env: `FCU_URL` / `DEV` / `BAUD` / `PORT` / `IP`.
+
+| Drone | Start the driver/bridge |
+|---|---|
+| `mavlink` / `px4_mavlink` (direct) | outdoor: nothing — the mission connects itself; indoor: `make driver DRONE=mavlink ENV=indoor` |
+| `mavros` / `px4` | `make driver DRONE=mavros FCU_URL=serial:///dev/ttyUSB0:921600` |
+| `px4-dds` | `make driver-px4-dds DEV=/dev/ttyUSB0 BAUD=921600` (or `PORT=8888` for UDP) |
+| `bebop` | `make driver-bebop IP=192.168.42.1` |
+| `crazyflie` | `make driver-crazyflie` |
+
+#### Worked example: ArduPilot/PX4 over direct MAVLink — a 2 m square
+
+Direct MAVLink is the simplest path: the mission opens the link itself, so **outdoor needs no separate bridge**.
+
+```bash
+make setup                 # guided — choose: control
+make drone-mavros          # MAVROS + GeographicLib (provides the mavlink deps + geoid)
+nectar-activate            # enter the SDK Python env
+
+# Outdoor (GPS): takeoff, fly a 2 m position square, land.
+python3 nectar/nectar/examples/control/basic.py \
+    --drone mavlink --mode position --side 2.0 --env outdoor \
+    --connection serial:///dev/ttyUSB0:921600
+
+# Indoor (GPS-denied): start the vision-pose bridge first, then fly the same square.
+make driver DRONE=mavlink ENV=indoor          # Terminal 1: VISION_POSITION_ESTIMATE -> FCU
+python3 nectar/nectar/examples/control/basic.py \
+    --drone mavlink --mode position --side 2.0 --env indoor    # Terminal 2
+```
+
+#### Worked example: Crazyflie — a 0.6 m square
+
+```bash
+make drone-crazyflie       # Crazyswarm2 + radio udev rules (set your URI in crazyflies.yaml)
+make driver-crazyflie      # Terminal 1: Crazyflie server
+nectar-activate            # Terminal 2:
+python3 nectar/nectar/examples/control/basic.py \
+    --drone crazyflie --mode position --height 0.5 --side 0.6
+```
+
+#### Worked example: PX4 (uXRCE-DDS) + an object detector
+
+```bash
+make setup                 # guided — choose: control ai   (installs PyTorch too)
+make drone-px4-dds         # px4_msgs + Micro XRCE-DDS Agent (real hardware; no SITL)
+make driver-px4-dds DEV=/dev/ttyUSB0 BAUD=921600   # Terminal 1: DDS bridge to the FCU
+nectar-activate            # Terminal 2:
+python3 nectar/nectar/examples/control/basic.py --drone px4_dds
+#   in code: from nectar.ai.detection import Detector; Detector("yolov8n.pt")
+```
+
+Prefer no host setup? Use the container image instead:
+
+```bash
+make docker-build-full     # SDK + PyTorch + AI
+make docker-run            # GPU/cameras/USB auto-wired
+```
+
 ## From Scratch (no ROS 2)
 
 A standalone bootstrap script installs everything on a fresh Ubuntu/Debian machine: system packages, ROS 2, MAVROS, GeographicLib, git/SSH, the SDK itself, Python dependencies, and builds the workspace.
@@ -16,9 +101,9 @@ For CI/Docker (non-interactive):
 NON_INTERACTIVE=true ROS2_WORKSPACE=~/ros2_ws bash scripts/bootstrap.sh
 ```
 
-### Interactive menu
+### Setup menu
 
-Run the setup script with no arguments for a guided menu where you can pick individual steps or customize the install:
+Running the setup script with no arguments opens the same interactive menu as `make setup` (configure modules, drivers, system packages, ROS env, build, verify — nothing runs until you pick):
 
 ```bash
 ./scripts/setup.sh
@@ -26,7 +111,7 @@ Run the setup script with no arguments for a guided menu where you can pick indi
 
 ## Existing ROS 2 Workspace
 
-Clone into your workspace and run a single command — it installs system dependencies, GeographicLib, Python packages, rosdep, and builds the SDK packages:
+Clone into your workspace and open the setup menu:
 
 ```bash
 cd ~/ros2_ws/src
@@ -35,13 +120,31 @@ cd nectar-sdk
 make setup
 ```
 
-This is equivalent to:
+The menu's **Quick setup** runs: `system` (idempotent) → `git-lfs` → **module selection** (`cmd_python` for the modules you pick; PyTorch first if you choose AI) → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`. GeographicLib is not part of this — it installs with the `mavros` driver. Non-interactively (`NON_INTERACTIVE=true`, e.g. CI) `make setup` skips the menu and runs Quick setup with `all`.
+
+## Python Environment
+
+Python dependencies install into a single shared virtual environment, managed by [uv](https://github.com/astral-sh/uv), at `$WORKSPACE/.venv` (e.g. `~/ros2_ws/.venv`). `uv` is installed automatically if missing.
+
+- **Created automatically** on the first `make python*` / `make setup`, with `--system-site-packages` so ROS 2 (`rclpy`, message bindings, `colcon`) stays visible inside it.
+- **Activation is opt-in.** The SDK's own commands (`make build`, `make verify`, `make python*`, `make pytorch`) use the venv internally, so they always work. For your interactive shell it is **not** force-activated — that keeps it out of the way of your other projects and workspaces. `make ros2-env` installs a `nectar-activate` command for when you want it.
+- **Reused by the whole workspace.** Every package under `src/` — the SDK and your own mission/competition code — shares this one venv, so you install once and `import nectar` from anywhere. No per-project venv needed.
+
+Enter it when you need it (e.g. to run `ros2 run nectar <node>` or your own scripts); the prompt then shows `(nectar)`:
 
 ```bash
-./scripts/setup.sh setup
+nectar-activate            # enter the SDK env (command added by `make ros2-env`)
+deactivate                 # leave it (shell built-in)
+uv pip install <package>   # add a package (fast); plain `pip install` also works
 ```
 
-Which runs: `system` → `git-lfs` → `geographiclib` → `python all` → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`.
+Prefer it always active? Add one line to `~/.bashrc`:
+
+```bash
+source ~/ros2_ws/.venv/bin/activate
+```
+
+Override the location with `NECTAR_VENV=/path` (an already-active `VIRTUAL_ENV` is respected). One caveat: always let the SDK create the venv (it pins it to the ROS `python3`); a manual `uv venv` may pick a newer Python without wheels for some deps (e.g. `mediapipe`).
 
 ## Install by Module
 
@@ -82,13 +185,15 @@ make drone-all         # all of the above
 
 ## PyTorch (required for AI module)
 
+Installed via uv's native PyTorch integration (`--torch-backend`), which detects your CUDA driver and pulls torch plus its `nvidia-*` CUDA wheels from the correct `download.pytorch.org` index:
+
 ```bash
-make pytorch                           # Auto-detect GPU
-./scripts/setup.sh pytorch cpu         # Force CPU
-./scripts/setup.sh pytorch cu124       # Force CUDA 12.4
+make pytorch                           # auto-detect GPU (CUDA 13 -> cu130; no GPU -> cpu)
+./scripts/setup.sh pytorch cpu         # force CPU
+./scripts/setup.sh pytorch cu128       # force a backend (cpu/cu118/cu126/cu128/cu130/...)
 ```
 
-See [PyTorch Get Started](https://pytorch.org/get-started/locally/) for other configurations.
+A known-good `torch`/`torchvision` pair is pinned by default in [`scripts/lib/config.sh`](../scripts/lib/config.sh) for reproducibility; override with `TORCH_VERSION` / `TORCHVISION_VERSION` (set both together). Large CUDA wheels on slow links can stall — the per-request timeout is raised to 600s (`UV_HTTP_TIMEOUT`); on very flaky networks also `export UV_CONCURRENT_DOWNLOADS=1`. See [PyTorch Get Started](https://pytorch.org/get-started/locally/) and the [uv PyTorch guide](https://docs.astral.sh/uv/guides/integration/pytorch/).
 
 ## RealSense
 
@@ -157,6 +262,22 @@ make sim-stop                                  # stop everything (both firmwares
 ```
 
 See the [Simulation guide](../nectar/simulation/README.md) for the full matrix, the vision pipeline, and the automated test suite.
+
+## Real-hardware drivers
+
+The real-world counterpart of `sim-bridge`: start the driver/bridge your mission connects to (examples run with `start_driver=False`), then run the mission in a second terminal. `make driver-stop` stops them all.
+
+```bash
+make driver DRONE=mavros ENV=outdoor FCU_URL=serial:///dev/ttyUSB0:921600   # ArduPilot/PX4 MAVROS
+make driver DRONE=px4    ENV=outdoor FCU_URL=udp://:14540@127.0.0.1:14580   # PX4 over MAVROS
+make driver-px4-dds DEV=/dev/ttyUSB0 BAUD=921600   # PX4 uXRCE-DDS agent (or PORT=8888 for UDP)
+make driver DRONE=mavlink ENV=indoor               # direct-MAVLink indoor vision-pose bridge
+make driver-bebop IP=192.168.42.1                  # Bebop driver
+make driver-crazyflie                              # Crazyflie server (Crazyswarm2)
+make driver-stop                                   # stop all drivers/bridges
+```
+
+Per-type shortcuts exist for each (`make driver-mavros`, `driver-px4`, ...). Connection overrides: `FCU_URL` (MAVROS / vision-pose), `DEV`/`BAUD` or `PORT` (px4-dds agent), `IP` (Bebop). Direct-MAVLink outdoor needs no bridge — the mission opens the link itself. See the [flying real hardware](#flying-real-hardware) worked examples above.
 
 ## System Setup (individual steps)
 

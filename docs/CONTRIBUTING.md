@@ -43,6 +43,10 @@ Git LFS automatically handles large files defined in `.gitattributes`. When you 
 git lfs pull
 ```
 
+### Python environment
+
+The SDK installs Python dependencies with [uv](https://github.com/astral-sh/uv) into a shared workspace venv (`$WORKSPACE/.venv`) that every package in the workspace reuses. See [docs/INSTALL.md](INSTALL.md#python-environment).
+
 ### Pre-commit Hooks
 
 Install [pre-commit](https://pre-commit.com/) hooks (one-time setup):
