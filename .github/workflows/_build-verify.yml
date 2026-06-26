@@ -66,6 +66,14 @@ jobs:
             /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify
           "
 
+      - name: Functional verification
+        run: |
+          docker run --rm ${{ steps.meta.outputs.tag }} bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify-functional
+          "
+
       - name: Verify RealSense
         if: inputs.install_realsense == 'true'
         run: |

@@ -82,7 +82,8 @@ show_help() {
     echo "  ./setup.sh build              Build entire workspace"
     echo "  ./setup.sh build-pkg          Build SDK packages only"
     echo "  ./setup.sh clean              Clean build artifacts"
-    echo "  ./setup.sh verify             Verify installation"
+    echo "  ./setup.sh verify             Verify installation (presence/imports)"
+    echo "  ./setup.sh verify-functional  Functional checks (real ops; self-skip w/o hw)"
     echo "  ./setup.sh test               Run tests"
     echo ""
     echo -e "${BLUE}Hardware:${NC}"
@@ -611,6 +612,7 @@ main() {
         build-pkg)          cmd_build_pkg ;;
         clean)              cmd_clean ;;
         verify)             cmd_verify "$@" ;;
+        verify-functional)  cmd_verify_functional "$@" ;;
         test)               cmd_test ;;
 
         # Hardware

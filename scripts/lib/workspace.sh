@@ -262,6 +262,14 @@ cmd_verify() {
     fi
 }
 
+cmd_verify_functional() {
+    cd "$WORKSPACE_DIR"
+    source "/opt/ros/${ROS_DISTRO}/setup.bash" 2>/dev/null || true
+    [ -f "${WORKSPACE_DIR}/install/local_setup.bash" ] && \
+        source "${WORKSPACE_DIR}/install/local_setup.bash" 2>/dev/null || true
+    python3 -m nectar.diagnostics "$@"
+}
+
 cmd_test() {
     log_section "RUNNING TESTS"
     cd "$WORKSPACE_DIR"

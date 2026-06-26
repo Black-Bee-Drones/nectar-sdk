@@ -1,83 +1,172 @@
 # Compatibility matrix
 
-What of the SDK is known to work on each ROS 2 distribution and platform. The SDK
-is modular: a core install pulls only ROS base + the SDK packages + core Python
-deps. Everything else (control backends, AI, RealSense, OAK-D, simulation) is an
-opt-in group, so an empty cell means "not part of that install", not "broken".
+What the Nectar SDK supports, and how far each part has been verified, across ROS 2
+distributions and platforms. The SDK is modular: a core install pulls ROS base, the
+SDK packages, and core Python deps; everything else (control backends, AI, RealSense,
+OAK-D, simulation) is an opt-in group. Each module table states how to install it.
 
-## Method
+This is a living document. Status reflects the most thorough check performed so far;
+cells advance as more setups are exercised (e.g. amd64 in CI, a Windows/WSL2 machine).
 
-Evidence is **build + verify**, not hardware-functional testing:
+## How to read it
 
-- Build the Docker image for the distro (`docker/Dockerfile`, or `Dockerfile.jetson` on Jetson).
-- Run `setup.sh verify` (imports, package presence, node executables) and, where RealSense is built, `setup.sh realsense-verify`.
+Two kinds of evidence back this matrix, produced by two commands:
 
-A cell states whether the dependency stack installs and imports and whether the
-SDK nodes are present, not that a camera streamed or a drone flew. Hardware
-behaviour is marked separately.
+- `make verify` (tier 1) — the image builds, packages are present, modules import, and
+  node executables are installed.
+- `make verify-functional` (tier 2) — a per-module harness that performs a *real
+  operation*: it detects a synthetic ArUco marker, runs a PID step response to
+  convergence, completes a MAVLink heartbeat handshake over a loopback, relays a VSLAM
+  pose to the FCU, opens the Qt window offscreen, runs a nano-model inference, etc.
+  Checks self-skip when a device, GPU, simulator, or optional dependency is absent, so
+  the same harness runs in Docker CI and on real hardware. Run a subset with
+  `make verify-functional MODULE="vision control"`.
 
-Legend:
+### Legend
 
-- `OK`  built and `verify` passed on this setup
-- `opt` optional add-on; installs on demand (apt or source build), not in the core/published image
-- `hw`  builds and imports, but exercising it needs the physical device/display
-- `n/a` not available for that distro/platform
-- `n/t` not tested here
+| Symbol | Meaning |
+|:---:|---|
+| `●` | **Functional** — a `verify-functional` check, a SITL run, or a hardware run exercised it (a real operation, not just an import). |
+| `◐` | **Build** — the image builds and `make verify` passes (package present, imports, nodes); the functional check has not been recorded on that distribution yet. |
+| `○` | **Not yet tested**. |
+| `—` | **Not applicable** (the feature or its dependency is not available there). |
+| `!` | **Known issue** — see [Notes](#notes). |
 
-Columns are the setups validated on this machine (aarch64). `amd64` is built and
-verified in CI (GitHub Actions) and is not re-run here. Versions are pinned per
-distro in [`scripts/lib/config.sh`](../scripts/lib/config.sh).
+ROS 2 distribution implies its Ubuntu base: **Humble** = 22.04, **Jazzy** / **Kilted** =
+24.04. The **Jetson** column is JetPack 6.x (L4T, arm64, CUDA), built from
+[`docker/Dockerfile.jetson`](../docker/Dockerfile.jetson) on a Humble base.
 
-## Matrix
+## Platforms
 
-| Feature | Humble | Jazzy | Kilted | Jetson (JetPack 6.2) |
+Base SDK (`nectar`, `nectar_interfaces`, core Python) — builds and `make verify`:
+
+| Platform | Humble | Jazzy | Kilted |
+|---|:---:|:---:|:---:|
+| Ubuntu amd64 (CI) | ◐ | ◐ | ◐ |
+| Ubuntu arm64 (CI) | ◐ | ◐ | ◐ |
+| Jetson JetPack 6.x (arm64) | ● | — | — |
+| Windows (WSL2 / Docker Desktop) | ○ | ○ | ○ |
+
+amd64 and arm64 are built and `verify`-checked in GitHub Actions
+([`_build-verify.yml`](../.github/workflows/_build-verify.yml)), which now also runs the
+functional harness; those cells advance to `●` as the runs are recorded. Windows is only
+targeted via WSL2 (Ubuntu) or the published Linux image under Docker Desktop; native
+Windows is not a target.
+
+## Core runtime
+
+Always installed. ROS 2 executor, custom messages, cv_bridge interop.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| rclpy executor + `nectar_interfaces` round-trip | ● | ◐ | ◐ | ● |
+| cv_bridge ↔ numpy (`<2.0` ABI) | ● | ◐ | ◐ | ● |
+
+## Vision
+
+Install: `make python-vision` (algorithms) / camera extras as needed.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| ArUco / color / line / distance (algorithms) | ● | ◐ | ◐ | ● |
+| ROS-topic camera (`CameraFactory`) | ● | ◐ | ◐ | ● |
+| USB / OpenCV camera | ◐ (1) | ◐ (1) | ◐ (1) | ◐ (1) |
+| RealSense D4xx (librealsense from source) | ● (2) | ◐ | ◐ | ● (2) |
+| OAK-D (`depthai`) | ● (3) | ◐ (3) | ◐ (3) | ● (3) |
+| MediaPipe hand / face | ◐ (4) | ◐ (4) | ◐ (4) | ◐ (4) |
+
+## Control
+
+Install: `make python-control`; backends are opt-in (`make drone-<x>`).
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| Vehicle core (PID, navigator, frame transforms) | ● | ◐ | ◐ | ● |
+| Direct MAVLink (`pymavlink`) transport | ● | ◐ | ◐ | ● |
+| MAVROS backend (ArduPilot / PX4) | ◐ (5) | ◐ (5) | ◐ (5) | ◐ (5) |
+| PX4 native uXRCE-DDS | ◐ (5) | ◐ (5) | ◐ (5) | ◐ (5) |
+| Crazyflie / Crazyswarm2 | ○ (6) | ○ (6) | ○ (6) | ○ (6) |
+| Bebop driver | ◐ (7) | — | — | — |
+
+## Localization (indoor / GPS-denied)
+
+Install: `make python-control`; Isaac container is Jetson-only.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| Vision-pose bridge — MAVROS backend | ● | ◐ | ◐ | ● |
+| Vision-pose bridge — MAVLink backend | ● | ◐ | ◐ | ● |
+| Isaac ROS Visual SLAM (producer) | — | — | — | ● (8) |
+
+## Sensors
+
+Install: `make python-sensors`.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| Obstacle-mask filter | ● | ◐ | ◐ | ● |
+| Rangefinder → MAVLink `DISTANCE_SENSOR` | ● | ◐ | ◐ | ● |
+| TF-Luna UART driver | ◐ (9) | ◐ (9) | ◐ (9) | ◐ (9) |
+
+## AI / detection
+
+Install: `make python-ai && make pytorch`.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| `nectar-ai` CLI | ● | ◐ | ◐ | ● |
+| Detection inference (YOLO / DETR / RF-DETR) | ● (10) | ◐ | ◐ | ● |
+| PyTorch CUDA (GPU tensor) | ○ (11) | ○ (11) | ○ (11) | ● |
+| Training / segmentation | ◐ | ◐ | ◐ | ◐ |
+
+## Interface
+
+Install: `make python-interface`.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| Qt6 / PySide6 GUI (offscreen construct) | ● | ◐ | ◐ | ● |
+| Full GUI on a display | ◐ (12) | ◐ (12) | ◐ (12) | ◐ (12) |
+
+## Simulation
+
+Install: `make sim-install`. Not part of any published image.
+
+| Feature | Humble | Jazzy | Kilted | Jetson |
+|---|:---:|:---:|:---:|:---:|
+| Gazebo + `ros_gz` bridge | ○ (13) | ○ (13) | ○ (13) | ○ (13) |
+| ArduPilot SITL flight | ○ (14) | ○ (14) | ○ (14) | — |
+| PX4 SITL flight | ○ (14) | ○ (14) | ○ (14) | — |
+
+## Pinned versions
+
+Per-distro versions live in [`scripts/lib/config.sh`](../scripts/lib/config.sh).
+
+| | Humble | Jazzy | Kilted | Jetson |
 |---|---|---|---|---|
-| SDK build (`nectar`, `nectar_interfaces`) | OK | OK | OK | OK |
-| Core Python (numpy, opencv, scipy, cv_bridge) | OK | OK | OK | OK |
-| Vision: ArUco / line / color (opencv-contrib) | OK | OK | OK | OK |
-| Vision: RealSense camera (librealsense from source) | OK | OK | OK | OK |
-| Vision: OAK-D camera (`depthai`) | hw | hw | hw | hw |
-| Control core (vehicle, factory, PID) | OK | OK | OK | OK |
-| Control: MAVROS backend (ArduPilot / PX4) | opt | opt | opt | opt |
-| Control: MAVLink backend (`pymavlink`) | OK | OK | OK | OK |
-| Control: PX4 native uXRCE-DDS | opt | opt | opt | opt |
-| Control: Crazyflie / Crazyswarm2 | opt | opt | opt | opt |
-| Control: Bebop driver (source) | opt | n/t | n/t | n/t |
-| Localization: Isaac ROS Visual SLAM | n/a | n/a | n/a | OK |
-| Sensors: rangefinder (serial -> MAVLink) | OK | OK | OK | OK |
-| Interface: Qt6 / PySide6 GUI | hw | hw | hw | hw |
-| AI: detection / segmentation / `nectar-ai` | n/t | n/t | n/t | OK |
-| Simulation: Gazebo + SITL | opt | opt | opt | n/a |
+| librealsense / realsense-ros | v2.55.1 / 4.55.1 | v2.56.5 / 4.56.4 | v2.57.6 / 4.57.2 | v2.55.1 / 4.55.1 (CUDA, RSUSB) |
+| Gazebo (`ros_gz`) | Harmonic (source) | Harmonic (binary) | Ionic (binary) | — |
+| PyTorch | uv `--torch-backend` (CPU/CUDA) | same | same | JetPack wheels (CUDA) |
 
-RealSense versions actually built and verified: Humble v2.55.1 / 4.55.1, Jazzy
-v2.56.5 / 4.56.4, Kilted v2.57.6 / 4.57.2, Jetson v2.55.1 / 4.55.1 (CUDA).
-Each `sdk` image above reported `verify` = 45 passed, 0 failed (Jetson `jetson-full`
-= 59 passed, including torch CUDA + GPU tensor).
+## Notes
 
-Notes:
+1. **USB / OpenCV camera**: driver builds and imports; exercising it needs a camera, so it is not run by the harness.
+2. **RealSense**: librealsense is built from source (RSUSB backend) at the pinned version; on Jetson it is built with CUDA (RSUSB is required for the D435i IMU on JetPack 6). The `RealSense device` check passes only with a camera attached; package-level state is covered by `make realsense-verify`.
+3. **OAK-D**: the `depthai` stack installs and a device enumerates; it has been exercised both natively and in Docker. The harness check needs an OAK-D attached to report `●`.
+4. **MediaPipe**: installs and imports; a functional hand/face run needs a sample image and is not part of the harness.
+5. **MAVROS / PX4-DDS**: the transport layer is covered (MAVLink handshake is functional); full flight is validated through SITL — see Simulation and `examples/simulation/sitl_test.py`. MAVROS and `px4_msgs` install on demand (`make drone-mavros` / `make drone-px4-dds`).
+6. **Crazyflie / Crazyswarm2**: opt-in (`make drone-crazyflie`). Run `make verify-functional crazyflie` after installing; a full sim flight needs `crazyflie_server` with its simulation backend.
+7. **Bebop**: source build, Humble-only (the upstream driver targets Humble); flown on a real Bebop 2 historically. Not available on Jazzy/Kilted/Jetson.
+8. **Isaac ROS Visual SLAM**: runs only in the Jetson Isaac container (`make isaac-run`, JetPack 6.x / Humble) — a separate image, not the SDK image. The SDK side is the vision-pose bridge above.
+9. **TF-Luna**: UART driver builds and imports; reading needs the sensor on a serial port. The filter and the rangefinder→MAVLink path are functionally verified without hardware.
+10. **Detection inference**: a `yolov8n` inference runs end to end (CUDA on Jetson). The first run fetches the model weights; offline runs self-skip.
+11. **PyTorch CUDA on amd64/arm64**: not yet exercised (no GPU runner in CI); CPU PyTorch on those arches is untested.
+12. **Full GUI on a display**: the window is constructed offscreen by the harness; a real display/X session is needed to drive it interactively.
+13. **Gazebo**: `ros_gz` packages are present where built; the harness steps a headless world only when `gz` is installed (`make sim-install`). Not yet recorded on any distribution.
+14. **SITL flight**: a full autonomous flight is the `examples/simulation/sitl_test.py` suite, which needs the two-terminal simulation running (`make sim-start` + `make sim-bridge`); it is not auto-run by the harness.
 
-- Control backends are opt-in. The core install ships MAVLink (`pymavlink`) only;
-  MAVROS, Crazyflie and Bebop install on demand (`make drone-mavros` /
-  `drone-crazyflie` / `drone-bebop`; PX4 over MAVROS needs `mavros`; PX4 native
-  uXRCE-DDS via `make sim-install FIRMWARE=px4 ARGS=--native`). The published
-  Docker images add `mavros` + `crazyflie` via the `INSTALL_DRONE` build arg;
-  Bebop is never a default (source build, Humble-only). Verified on a core
-  (no-backend) build: no `mavros` present and `verify` passes (mavros is an
-  optional warning, `nectar.control` still imports). RealSense no longer pulls
-  `mavros` (the SDK's `control.localization` replaces `vision_to_mavros`).
-- RealSense is built from source (RSUSB backend), versions pinned per distro; on
-  Jetson it is built with CUDA. RSUSB is required for the D435i IMU on JetPack 6.
-- Isaac ROS Visual SLAM runs only in the Jetson Isaac container (`make isaac-run`),
-  JetPack 6.2 / Humble. It is a separate image, not the SDK image.
-- `hw` rows (OAK-D, Qt GUI) install and import (`depthai`, `PySide6` present) but
-  need the device/display to exercise.
-- AI is verified on Jetson (`jetson-full`: torch CUDA + GPU tensor). The
-  Humble/Jazzy/Kilted images here use the `sdk` target (no AI), so the AI stack
-  was not exercised on generic arm64 (`n/t`); CPU-torch on amd64/arm64 is untested.
+## Not covered yet
 
-## Not covered
-
-- amd64: built and verified by CI on every push/release; not re-tested on this machine.
-- ROS 2 Lyrical (Ubuntu 26.04): not supported yet. At time of writing the `mavros`
-  deb is not published for Lyrical and the scientific-Python stack lacks Python 3.14
-  wheels. The ROS/C++ layer and Gazebo Jetty build; revisit when both land.
+- **Windows (WSL2 / Docker Desktop)**: not yet exercised.
+- **ROS 2 Lyrical (Ubuntu 26.04)**: not supported yet. At time of writing the `mavros` deb is not published for Lyrical and the scientific-Python stack lacks Python 3.14 wheels; the ROS/C++ layer and Gazebo build. Revisit when both land.
+- **amd64 functional**: the harness runs in CI on amd64 and arm64; results will replace the `◐` build cells as they are recorded.

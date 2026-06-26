@@ -4,7 +4,7 @@
         drone-mavros drone-px4 drone-px4-dds drone-crazyflie drone-bebop drone-all \
         python python-control python-vision python-ai python-interface python-sensors \
         python-all python-full install-all install-full pytorch \
-        clone ros2-deps build build-pkg clean verify test \
+        clone ros2-deps build build-pkg clean verify verify-functional test \
         realsense realsense-verify \
         docker-build docker-build-full docker-build-t265 docker-run docker-exec \
         docker-publish-jetson \
@@ -60,6 +60,8 @@ build:              ; @$(SETUP) build
 build-pkg:          ; @$(SETUP) build-pkg
 clean:              ; @$(SETUP) clean
 verify:             ; @$(SETUP) verify
+# Functional harness (tier 2). MODULE= runs a subset, e.g. MODULE="vision control".
+verify-functional:  ; @$(SETUP) verify-functional $(MODULE)
 test:               ; @$(SETUP) test
 
 # Hardware
