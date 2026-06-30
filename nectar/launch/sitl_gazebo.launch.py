@@ -53,6 +53,7 @@ def _launch_setup(context: LaunchContext) -> list:
     world_raw = LaunchConfiguration("world").perform(context)
     fcu_url = LaunchConfiguration("fcu_url").perform(context)
     use_mavros = LaunchConfiguration("mavros").perform(context).lower() in ("true", "1", "yes")
+    headless = LaunchConfiguration("headless").perform(context).lower() in ("true", "1", "yes")
 
     # Resolve world shorthand
     world_file = _WORLD_ALIASES.get(world_raw, world_raw)
@@ -94,8 +95,12 @@ def _launch_setup(context: LaunchContext) -> list:
     }
 
     # ── Gazebo Harmonic ─────────────────────────────────────────────────
+    # `-s` runs the server only (no GUI client) for headless CI / no display.
+    gz_cmd = ["gz", "sim", "-v4", "-r", world_file]
+    if headless:
+        gz_cmd.insert(2, "-s")
     gz_sim = ExecuteProcess(
-        cmd=["gz", "sim", "-v4", "-r", world_file],
+        cmd=gz_cmd,
         output="screen",
         additional_env=gz_env,
     )
@@ -233,6 +238,11 @@ def generate_launch_description():
                     "Start MAVROS (true) or only Gazebo physics (false) for "
                     "direct MAVLink control via MavlinkDrone"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "headless",
+                default_value="false",
+                description="Run Gazebo server-only (no GUI) for headless CI / no display",
             ),
             OpaqueFunction(function=_launch_setup),
         ]
