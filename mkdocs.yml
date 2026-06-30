@@ -1,0 +1,164 @@
+site_name: Nectar SDK
+site_url: https://black-bee-drones.github.io/nectar-sdk/
+site_description: >-
+  ROS 2 software development kit for autonomous aerial systems — unified
+  interfaces for flight control, computer vision, and object detection.
+site_author: Black Bee Drones
+copyright: Copyright &copy; Black Bee Drones — Apache-2.0
+
+repo_url: https://github.com/Black-Bee-Drones/nectar-sdk
+repo_name: Black-Bee-Drones/nectar-sdk
+
+extra_css:
+  - stylesheets/extra.css
+
+# You edit only: the module README.md files, docs/*.md, and the authored pages in
+# website/
+# Everything under build/ is generated — never edit it.
+docs_dir: build/docs
+site_dir: build/site
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: lucide/sun-moon
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: amber
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: amber
+      toggle:
+        icon: lucide/moon-star
+        name: Switch to system preference
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          # griffe parses the source statically (no imports), so heavy deps
+          # (torch, cv2, mediapipe, …) are never loaded when building the API.
+          paths: [nectar]
+          options:
+            docstring_style: numpy
+            docstring_section_style: table
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_if_no_docstring: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            filters: ["!^_"]
+            show_submodules: false
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      # GitHub-compatible heading slugs so anchors authored in the READMEs resolve
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  # Click-to-zoom for content images (only wraps Markdown images, not raw-HTML badges)
+  - zensical.extensions.glightbox:
+      auto_caption: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Quickstart: getting-started/quickstart.md
+      - Installation: project/installation.md
+      - Compatibility: project/compatibility.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+  - Modules:
+      - Control:
+          - Overview: modules/control/index.md
+          - Vehicle core: modules/control/vehicle.md
+          - ArduPilot: modules/control/ardupilot.md
+          - PX4: modules/control/px4.md
+          - MAVROS transport: modules/control/mavros.md
+          - MAVLink transport: modules/control/mavlink.md
+          - Localization (indoor VSLAM): modules/control/localization.md
+          - Obstacles: modules/control/obstacles.md
+          - PID: modules/control/pid.md
+          - Bebop: modules/control/bebop.md
+          - Crazyflie: modules/control/crazyflie.md
+      - Vision: modules/vision.md
+      - AI:
+          - Overview: modules/ai/index.md
+          - Detection: modules/ai/detection.md
+          - Segmentation: modules/ai/segmentation.md
+      - Sensors: modules/sensors.md
+      - Interface (GUI): modules/interface.md
+      - Simulation: modules/simulation.md
+      - Messages (nectar_interfaces): modules/interfaces.md
+      - Docker: modules/docker.md
+      - Utils: modules/utils.md
+  - Python API:
+      - Overview: api/index.md
+      - Runtime: api/runtime.md
+      - Control: api/control.md
+      - Vision: api/vision.md
+      - AI: api/ai.md
+      - Sensors: api/sensors.md
+      - Utils: api/utils.md
+  - Examples:
+      - Overview: modules/examples/index.md
+      - Control: modules/examples/control.md
+      - Vision: modules/examples/vision.md
+      - AI: modules/examples/ai.md
+      - Sensors: modules/examples/sensors.md
+  - Community:
+      - Contributing: project/contributing.md
+      - Releasing: project/releasing.md
+      - Security: project/security.md
+      - Code of Conduct: project/code-of-conduct.md

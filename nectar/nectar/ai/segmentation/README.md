@@ -1,8 +1,26 @@
 # Segmentation Module
 
-Instance segmentation API supporting Ultralytics YOLO, HuggingFace Transformers (MaskFormer), and RF-DETR Seg frameworks.
+Instance segmentation across Ultralytics YOLO, HuggingFace Transformers (MaskFormer), and
+RF-DETR Seg behind one `Segmentor` — load a model, call `segment`, and get typed masks. The
+same API covers training and evaluation, with dataset tooling and a `nectar-ai segment` CLI.
 
-## Architecture
+## At a glance
+
+```python
+from nectar.ai.segmentation import Segmentor
+
+segmentor = Segmentor("yolov8n-seg.pt")     # framework auto-detected from the model name
+segmentor.load()
+result = segmentor.segment(image)
+for seg in result:
+    print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
+```
+
+## Concepts
+
+`Segmentor` is a factory over three framework backends (`UltralyticsSegModel`,
+`TransformersSegModel`, `RFDETRSegModel`), all sharing `BaseSegmentationModel`, the same
+typed results, dataset handling, and evaluation:
 
 ```mermaid
 flowchart TB
@@ -69,30 +87,6 @@ flowchart TB
     Handlers -->|downloads| Converter
     UM -->|converts| Converter
     RM -->|converts| Converter
-```
-
-## Quick Start
-
-```python
-from nectar.ai.segmentation import Segmentor
-
-# Inference
-segmentor = Segmentor("yolov8n-seg.pt")
-segmentor.load()
-result = segmentor.segment(image)
-for seg in result:
-    print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
-
-# Training
-from nectar.ai.segmentation import SegTrainingConfig
-config = SegTrainingConfig(
-    dataset_path="/path/to/dataset/data.yaml",
-    epochs=50,
-    batch_size=16,
-    output_dir="outputs/my-run",
-    tensorboard=True,
-)
-result = segmentor.train(config)
 ```
 
 ## Segmentor

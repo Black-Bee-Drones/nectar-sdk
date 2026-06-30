@@ -192,7 +192,7 @@ python3 basic.py --drone px4_mavlink --connection udp:0.0.0.0:14540
 `make sim-start FIRMWARE=ardupilot ENV=outdoor`, with the same sensor topics, so
 missions are firmware-agnostic. Install once with `make sim-install FIRMWARE=px4`.
 See the
-[Simulation guide](../../../simulation/README.md#shared-world-architecture-one-source-of-truth)
+[Simulation guide](../../../simulation/README.md#shared-world-architecture)
 for the shared-world architecture.
 
 ## Usage

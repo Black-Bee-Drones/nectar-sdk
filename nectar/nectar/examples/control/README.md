@@ -1,7 +1,12 @@
 # Control Module Examples
 
-| File | Description | Key args |
-|------|-------------|------|
+Flight examples for every supported drone and transport, from a basic takeoff to an
+interactive navigation REPL. Run any script with `python3 <script>.py [flags]` (or
+`ros2 run nectar <script>.py -- [flags]`); they default to `start_driver=False`, so start
+the matching driver, bridge, or simulator first.
+
+| Script | What it does | Key flags |
+|--------|--------------|-----------|
 | `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone {mavros,mavlink,px4,px4_mavlink,px4_dds,bebop,crazyflie}` · `--env {outdoor,indoor}` · `--mode {velocity,hover,position}` · `--connection` (mavlink/px4_mavlink) · `--height --side --velocity --precision --hover-time --cf-name --backend` |
 | `sensors.py` | Monitor GPS/vision/local data | `--source gps\|vision` |
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |

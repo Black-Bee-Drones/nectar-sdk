@@ -1,8 +1,27 @@
 # Detection Module
 
-Object detection API supporting Ultralytics YOLO, HuggingFace Transformers, and RF-DETR frameworks.
+Object detection across Ultralytics YOLO, HuggingFace Transformers (DETR), and RF-DETR
+behind one `Detector` — load a model, call `detect`, and get typed results. The same API
+covers training, evaluation, and slicing inference, with dataset tooling and a `nectar-ai`
+CLI.
 
-## Architecture
+## At a glance
+
+```python
+from nectar.ai.detection import Detector
+
+detector = Detector("yolov8n.pt")     # framework auto-detected from the model name
+detector.load()
+result = detector.detect(image)
+for det in result:
+    print(f"{det.class_name}: {det.confidence:.2f}")
+```
+
+## Concepts
+
+`Detector` is a thin factory over three framework backends (`UltralyticsModel`,
+`TransformersModel`, `RFDETRModel`), all sharing `BaseDetectionModel` and the same typed
+results, slicing, post-processing, and evaluation:
 
 ```mermaid
 flowchart TB
@@ -76,32 +95,6 @@ flowchart TB
     PostProcess -->|uses| SV
     ML -->|uses| HFH
     Detector -->|uses| TB
-```
-
-## Quick Start
-
-```python
-from nectar.ai.detection import Detector
-
-# Inference
-detector = Detector("yolov8n.pt")
-detector.load()
-result = detector.detect(image)
-for det in result:
-    print(f"{det.class_name}: {det.confidence:.2f}")
-
-# Training
-from nectar.ai.detection import TrainingConfig
-config = TrainingConfig(
-    dataset_path="/path/to/dataset",
-    epochs=100,
-    batch_size=16,
-    output_dir="outputs/",
-    tensorboard=True,
-    push_to_hub=True,
-    hub_model_id="user/model-name",
-)
-result = detector.train(config)
 ```
 
 ## Detector
@@ -954,7 +947,19 @@ nectar-ai detect eval --model-path best.pt --framework ultralytics --dataset-pat
 
 ## Dataset Management
 
-The detection module provides dataset management utilities for format conversion, subset creation, stratification, augmentation, and analysis.
+Utilities for preparing detection datasets, each available as a Python class and as a
+`nectar-ai detect dataset <command>` subcommand:
+
+| Task | Python API | CLI |
+|------|-----------|-----|
+| Detect / convert format (COCO ↔ YOLO) | `FormatDetector`, `FormatConverter` | `convert` |
+| Balanced subset | `SubsetCreator` | `subset` |
+| Train/val/test split | `Stratifier` | `stratify` |
+| Augmentation | `AugmentationBuilder` | `augment` |
+| Analysis & stats | `DatasetAnalyzer` | `analyze` |
+| Download by source (VisDrone, Roboflow) | `DatasetHandlerRegistry` | `download` |
+| Merge datasets | `DatasetMerger` | `merge` |
+| Upload (HuggingFace / Roboflow) | `HuggingFaceDatasetUploader`, `RoboflowUploader` | `upload` |
 
 ### Format Detection and Conversion
 
@@ -1365,3 +1370,4 @@ detection/
     ├── device.py        # DeviceManager, get_device
     ├── huggingface.py   # HuggingFaceUploader
     └── tensorboard.py   # TensorBoardManager
+```

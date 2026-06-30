@@ -1,6 +1,21 @@
 # Crazyflie Control Module
 
-[Bitcraze Crazyflie 2.x](https://www.bitcraze.io/products/crazyflie-2-1/) drone control via [Crazyswarm2](https://imrclab.github.io/crazyswarm2/) for ROS 2.
+[Bitcraze Crazyflie 2.x](https://www.bitcraze.io/products/crazyflie-2-1/) drone control via [Crazyswarm2](https://imrclab.github.io/crazyswarm2/) for ROS 2 — the same `Drone` API as the FCU drones, over a Crazyswarm2 bridge instead of MAVROS.
+
+## At a glance
+
+```python
+import nectar
+from nectar.control import DroneFactory, CrazyflieConfig
+
+nectar.init()
+drone = DroneFactory.create("crazyflie", CrazyflieConfig(cf_name="cf231"))
+
+drone.takeoff(altitude=0.5)
+drone.move_to(x=0.5, y=0.0, z=0.0)   # POSITION via the onboard goTo planner
+drone.land()
+nectar.shutdown()
+```
 
 ## Capabilities
 

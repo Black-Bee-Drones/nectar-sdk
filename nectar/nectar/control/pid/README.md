@@ -1,8 +1,22 @@
 # PID Controller Module
 
-Configurable PID controller implementation with YAML-based tuning and multi-axis support for position control.
+Configurable PID controller with anti-windup, output clamping, and YAML-based tuning, plus
+a per-axis (`x`/`y`/`z`/`yaw`) variant for position control. Used by the navigator's PID
+methods, and usable standalone for any control loop.
 
-## Architecture
+## At a glance
+
+```python
+from nectar.control.pid import PIDController
+
+pid = PIDController(kp=1.0, ki=0.1, kd=0.05, setpoint=2.0)
+output = pid.update(current_value)   # control output, clamped to output_limits
+```
+
+## Concepts
+
+A `PIDController` is configured by a `PIDConfig` (loadable from YAML); `PositionPIDConfig`
+bundles one `PIDConfig` per axis for `x`/`y`/`z`/`yaw`.
 
 ```mermaid
 classDiagram

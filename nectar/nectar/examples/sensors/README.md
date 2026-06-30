@@ -1,7 +1,9 @@
 # Sensors Module Examples
 
-| File | Description |
-|------|-------------|
+Bench-test the companion-computer sensor pipelines before wiring them into a mission.
+
+| Script | What it does |
+|--------|--------------|
 | `rangefinder_example.py` | Bench-test the TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` pipeline (no ROS) |
 
 ### Arguments

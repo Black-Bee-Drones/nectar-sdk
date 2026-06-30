@@ -1,12 +1,11 @@
 # AI Examples
 
-Reference implementations for deep learning-based object detection.
+Reference implementations for deep learning-based object detection and segmentation,
+across every supported framework.
 
-## Overview
-
-| Example | Script | Description |
-|---------|--------|-------------|
-| **Detector Stream** | `detector_example.py` | Real-time object detection from camera stream with ROS2 integration |
+| Example | Script | What it does |
+|---------|--------|--------------|
+| **Detector Stream** | `detector_example.py` | Real-time object detection from a camera stream with ROS 2 integration |
 | **Batch Detector** | `batch_detector.py` | Offline processing of image directories or video files |
 | **Sequence Inference** | `sequence_inference.py` | Multi-model detection + segmentation over an image dir or video, annotated MP4 output |
 

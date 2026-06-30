@@ -2,6 +2,21 @@
 
 Parrot Bebop 2 control via the [`ros2_bebop_driver`](https://github.com/jeremyfix/ros2_bebop_driver) ROS 2 package, for velocity-based flight.
 
+## At a glance
+
+```python
+import nectar
+from nectar.control import DroneFactory, BebopConfig
+
+nectar.init()
+drone = DroneFactory.create("bebop", BebopConfig())
+
+drone.takeoff()                              # fixed preset height (altitude arg ignored)
+drone.move_velocity(vx=0.3, duration=2.0)    # body-frame, normalized [-1, 1]
+drone.land()
+nectar.shutdown()
+```
+
 ## Capabilities
 
 `BebopDrone.capabilities` declares `VELOCITY_BODY` (body-frame `move_velocity` via `cmd_vel`) and `NATIVE_RTL` (`navigate_home`). It does **not** support position control, GPS, vision pose, parameters, or companion-side navigation. Query with `drone.supports(Capability.VELOCITY_BODY)`.

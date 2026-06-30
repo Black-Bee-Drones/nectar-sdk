@@ -1,6 +1,19 @@
 # Obstacle Detection Module
 
-Event-based obstacle detection with strategy pattern for avoidance behaviors.
+Event-based obstacle detection with a strategy pattern for avoidance behaviors. A detector
+reports obstacles, a strategy decides how to react, and the `ObstacleManager` runs them as
+part of navigation — attach one to any drone with `add_obstacle_detector`.
+
+## At a glance
+
+```python
+from nectar.control import DepthObstacleDetector, strategies
+
+drone.add_obstacle_detector("depth", DepthObstacleDetector(), strategies.PauseStrategy())
+drone.enable_all_obstacle_detectors()
+
+drone.move_to(x=10.0, y=0.0, z=0.0)   # pauses while an obstacle is detected ahead
+```
 
 ## Architecture
 
@@ -323,12 +336,6 @@ flowchart TD
 
     CalcDist --> Return([Return ObstacleInfo<br/>detected=True, direction, distance])
     NoObstacle --> ReturnFalse([Return ObstacleInfo<br/>detected=False])
-
-    style Start fill:#e1f5ff
-    style Return fill:#d4edda
-    style ReturnFalse fill:#f8d7da
-    style DBSCAN fill:#fff3cd
-    style Direction fill:#cce5ff
 ```
 
 ### BaseObstacleDetector
@@ -380,11 +387,6 @@ flowchart TD
 
     CheckDist -->|No| Nav
     CheckDist -->|Yes| Done([Target Reached])
-
-    style Pause fill:#ffe6e6
-    style DisableZ fill:#fff4e6
-    style ExecuteSeq fill:#e6f3ff
-    style Done fill:#d4edda
 ```
 
 ### Strategies Summary

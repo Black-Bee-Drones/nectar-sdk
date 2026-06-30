@@ -1,8 +1,22 @@
 # Vision Module
 
-Camera abstraction layer and image processing algorithms for ROS2. Provides unified interface for multiple camera backends and computer vision pipelines.
+Camera abstraction layer and image-processing algorithms for ROS 2. One `CameraFactory`
+opens any supported camera behind a common interface, an `ImageHandler` turns it into a
+callback-driven stream, and a set of algorithms (ArUco, color, line, distance, MediaPipe)
+run on the frames.
 
-## Documentation Index
+## At a glance
+
+```python
+from nectar.vision.camera import ImageHandler
+
+# Run a callback on every frame -- webcam, realsense, oakd, a ROS topic, or a file
+ImageHandler("webcam", image_processing_callback=lambda frame: print(frame.shape)).run()
+```
+
+Need a single frame instead of a stream? `CameraFactory.from_source("webcam").get_frame()`.
+
+## Module map
 
 - **README.md**: This file - Module architecture, API reference, and usage
 - **camera/**: Camera drivers and abstraction layer
@@ -16,7 +30,12 @@ Camera abstraction layer and image processing algorithms for ROS2. Provides unif
 - **nodes/**: ROS2 nodes for common vision tasks
 - **utils/**: Utility functions for image-based calculations
 
-## Architecture
+## Concepts
+
+Cameras are created by `CameraFactory` and all implement `AbstractCam` (`start` /
+`get_frame` / `close`); depth-capable cameras add `DepthCam` (`get_depth_frame` /
+`get_distance`). `ImageHandler` wraps any camera in a timer-driven ROS 2 node and calls
+your processing callback on each frame. The full class hierarchy:
 
 ```mermaid
 classDiagram

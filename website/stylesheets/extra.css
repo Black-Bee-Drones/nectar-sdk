@@ -1,0 +1,20 @@
+/* Black Bee Drones brand: near-black primary, amber accent. */
+:root {
+  --md-primary-fg-color:        #14161a;
+  --md-primary-fg-color--light: #2b2f36;
+  --md-primary-fg-color--dark:  #0a0c0f;
+  --md-accent-fg-color:         #f5a623;
+  --md-accent-fg-color--transparent: rgba(245, 166, 35, 0.10);
+}
+
+/* Light scheme: amber-brown links keep contrast on white. */
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #b9770a;
+}
+
+/* Dark scheme: amber links and accents pop on the slate background. */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #14161a;
+  --md-accent-fg-color:  #f5a623;
+  --md-typeset-a-color:  #f5b545;
+}

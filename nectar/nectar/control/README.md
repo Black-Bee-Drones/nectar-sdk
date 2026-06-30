@@ -19,7 +19,29 @@ Protocol-based drone control for ROS 2. `DroneFactory` builds a drone by key beh
 | [bebop/](bebop/README.md) | Parrot Bebop 2 (`BebopDrone`) |
 | [crazyflie/](crazyflie/README.md) | Bitcraze Crazyflie (`CrazyflieDrone`) |
 
-## Architecture
+## At a glance
+
+```python
+import nectar
+from nectar.control import DroneFactory, MavrosConfig, PoseSource
+
+nectar.init()
+drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS))
+
+drone.takeoff(altitude=2.0)
+drone.move_to(x=5.0, y=0.0, z=0.0, precision=0.3)   # same calls on every backend
+drone.land()
+nectar.shutdown()
+```
+
+Pick a backend by key — `mavros`, `mavlink`, `px4`, `px4_mavlink`, `px4_dds`, `bebop`,
+`crazyflie` — with its matching config; the flight calls stay the same.
+
+## Concepts
+
+ArduPilot and PX4 share one firmware-agnostic core (`VehicleDrone`) and reach the FCU
+through interchangeable transports (MAVROS, direct MAVLink, PX4 uXRCE-DDS); Bebop and
+Crazyflie implement the `Drone` protocol directly.
 
 ```mermaid
 classDiagram
@@ -435,22 +457,6 @@ DroneError
 ```
 
 ## Usage Examples
-
-### Basic Flight
-
-```python
-import nectar
-from nectar.control import DroneFactory, MavrosConfig, PoseSource
-
-nectar.init()
-config = MavrosConfig(pose_source=PoseSource.VISION)
-drone = DroneFactory.create("mavros", config)
-
-drone.takeoff(altitude=1.5)
-drone.move_to(x=2.0, y=1.0, z=0.0, precision=0.2)
-drone.rtl(land=True)
-nectar.shutdown()
-```
 
 ### GPS Waypoint Mission
 

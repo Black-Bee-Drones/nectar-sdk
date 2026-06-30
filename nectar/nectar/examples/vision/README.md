@@ -1,11 +1,9 @@
 # Vision Examples
 
-Working examples for vision module camera drivers and image processing.
+Working examples for the vision module's camera drivers and image processing.
 
-## Overview
-
-| Example | Script | Description |
-|---------|--------|-------------|
+| Example | Script | What it does |
+|---------|--------|--------------|
 | **Camera Capture** | `camera_example.py` | Multi-camera support with configuration options |
 | **Depth Visualization** | `depth_example.py` | RGB-D camera depth measurement and colormap display |
 | **T265 Tracking** | `t265_example.py` | RealSense T265 pose/odometry (direct SDK or ROS) |

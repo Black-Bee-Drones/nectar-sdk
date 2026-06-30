@@ -1,0 +1,46 @@
+# Examples
+
+Runnable scripts that live next to the code in `nectar/nectar/examples/`, grouped by the
+module they exercise. Each one is small, self-contained, and meant to be read as much as
+run — start here to see how the modules are used and combined in practice.
+
+| Group | What it covers |
+|-------|----------------|
+| [Control](control.md) | Takeoff/land, velocity and position flight, navigation test suites, interactive REPL, PID, servo/PWM, obstacle-aware navigation |
+| [Vision](vision.md) | Camera drivers, depth measurement, T265 tracking, optical flow, dataset photo collection |
+| [AI](ai.md) | Real-time detection stream, batch image/video processing, multi-model detection + segmentation |
+| [Sensors](sensors.md) | TF-Luna rangefinder → MAVLink bridge bench test |
+
+## How to run
+
+Every example uses `argparse`, so run it directly or through ROS 2:
+
+```bash
+python3 nectar/nectar/examples/<group>/<script>.py [flags]
+ros2 run nectar <script>.py -- [flags]          # ROS 2 entry point
+```
+
+Control examples default to `start_driver=False` — start the driver/bridge (or the
+simulator) the mission connects to first, in its own terminal. See the
+[Quickstart](../../getting-started/quickstart.md) for the simulation and hardware flow.
+
+## How they combine
+
+Examples mirror the SDK's modularity: each module works on its own, and they share one
+runtime (`nectar.init()`), so missions compose them freely. The AI
+[`detector_example.py`](ai.md) is the clearest illustration — it feeds the vision module's
+`ImageHandler` stream straight into an `ai` `Detector`:
+
+```python
+import nectar
+from nectar.ai.detection import Detector
+from nectar.vision.camera import ImageHandler
+
+nectar.init()
+detector = Detector("yolov8n.pt"); detector.load()
+ImageHandler("webcam", image_processing_callback=lambda f: detector.detect(f)).run()
+nectar.spin()
+```
+
+The same pattern extends to control: run a detector while a `Drone` flies a mission, all
+under the one executor.
