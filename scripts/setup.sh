@@ -83,8 +83,12 @@ show_help() {
     echo "  ./setup.sh build-pkg          Build SDK packages only"
     echo "  ./setup.sh clean              Clean build artifacts"
     echo "  ./setup.sh verify             Verify installation (presence/imports)"
-    echo "  ./setup.sh verify-functional  Functional checks (real ops; self-skip w/o hw)"
-    echo "  ./setup.sh test               Run tests"
+    echo "  ./setup.sh verify-functional  Functional regression tests (pytest; self-skip w/o hw)"
+    echo "  ./setup.sh verify-hardware    Hardware-gated tests (opt-in; needs devices attached)"
+    echo "  ./setup.sh verify-sitl        SITL flight tests in a headless sim (opt-in; needs sim stack)"
+    echo "  ./setup.sh doctor             Environment report (ROS, modules, devices, CUDA)"
+    echo "  ./setup.sh test               Run colcon test (functional suite + lint)"
+    echo "  ./setup.sh ci-local           Build+verify each ROS distro image locally (DISTROS=, FULL=1)"
     echo ""
     echo -e "${BLUE}Hardware:${NC}"
     echo "  ./setup.sh realsense          Install Intel RealSense D435i"
@@ -151,6 +155,7 @@ cmd_docker_build() {
         jargs+=(--build-arg "INSTALL_REALSENSE=${INSTALL_REALSENSE:-false}")
         jargs+=(--build-arg "REALSENSE_CUDA=${REALSENSE_CUDA:-false}")
         [ -n "${INSTALL_DRONE:-}" ] && jargs+=(--build-arg "INSTALL_DRONE=${INSTALL_DRONE}")
+        [ -n "${INSTALL_SIM:-}" ] && jargs+=(--build-arg "INSTALL_SIM=${INSTALL_SIM}")
         [ -n "${LIBREALSENSE_VERSION:-}" ] && jargs+=(--build-arg "LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}")
         [ -n "${REALSENSE_ROS_TAG:-}" ]    && jargs+=(--build-arg "REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}")
         log_info "Jetson detected — building $jtag from Dockerfile.jetson (target=$target, realsense=${INSTALL_REALSENSE:-false}, realsense_cuda=${REALSENSE_CUDA:-false})"
@@ -189,6 +194,7 @@ cmd_docker_build() {
         --build-arg REALSENSE_CUDA="${REALSENSE_CUDA:-false}"
         --build-arg INSTALL_DRONE="${INSTALL_DRONE:-}"
     )
+    [ -n "${INSTALL_SIM:-}" ] && build_args+=(--build-arg "INSTALL_SIM=${INSTALL_SIM}")
     [ -n "${LIBREALSENSE_VERSION:-}" ] && build_args+=(--build-arg "LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}")
     [ -n "${REALSENSE_ROS_TAG:-}" ]    && build_args+=(--build-arg "REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}")
 
@@ -613,7 +619,11 @@ main() {
         clean)              cmd_clean ;;
         verify)             cmd_verify "$@" ;;
         verify-functional)  cmd_verify_functional "$@" ;;
+        verify-hardware)    cmd_verify_hardware "$@" ;;
+        verify-sitl)        cmd_verify_sitl "$@" ;;
+        doctor)             cmd_doctor "$@" ;;
         test)               cmd_test ;;
+        ci-local)           cmd_ci_local "$@" ;;
 
         # Hardware
         realsense)          cmd_realsense ;;

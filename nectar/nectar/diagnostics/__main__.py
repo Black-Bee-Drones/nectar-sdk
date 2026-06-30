@@ -1,7 +1,7 @@
-"""Entry point: ``python3 -m nectar.diagnostics``."""
+"""Entry point: ``python3 -m nectar.diagnostics`` runs the environment doctor."""
 
 import sys
 
-from nectar.diagnostics.runner import main
+from nectar.diagnostics.doctor import main
 
 sys.exit(main())

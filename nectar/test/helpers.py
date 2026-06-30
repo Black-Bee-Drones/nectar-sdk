@@ -1,8 +1,12 @@
-"""Shared utilities for the functional diagnostics checks.
+"""Shared utilities for the functional test suite.
 
-Imports are kept lazy (inside functions) so modules that do not touch ROS,
-pymavlink or Qt pay nothing for them, and so an environment variable like
+Imports of ROS, pymavlink and Qt are kept lazy (inside functions/classes) so a
+test that does not touch them pays nothing, and so an environment variable like
 ``QT_QPA_PLATFORM`` can be set before the first heavy import.
+
+This module is plain Python (no pytest), so it is importable both from the
+fixtures in ``conftest.py`` and directly from the test modules. ``test/`` is put
+on ``sys.path`` by ``conftest.py`` so the import resolves on any pytest version.
 """
 
 from __future__ import annotations
@@ -23,18 +27,15 @@ def free_udp_port() -> int:
         sock.close()
 
 
-# --- ROS 2 -----------------------------------------------------------------
-
-
 def ensure_ros() -> None:
-    """Start the SDK runtime executor (idempotent). Callbacks spin in the background."""
+    """Start the SDK runtime executor (idempotent); callbacks spin in the background."""
     import nectar
 
     if not nectar.is_initialized():
         nectar.init()
 
 
-def make_node(prefix: str = "nectar_diag"):
+def make_node(prefix: str = "nectar_test"):
     """Create a node and register it with the running SDK executor."""
     import rclpy
 
@@ -58,8 +59,8 @@ def publish_until(
 ) -> bool:
     """Republish ``msg`` until ``done`` is set or ``timeout`` elapses.
 
-    Repeated publishing absorbs DDS discovery latency between a fresh
-    publisher and subscriber.
+    Repeated publishing absorbs DDS discovery latency between a fresh publisher
+    and subscriber.
     """
     period = 1.0 / rate_hz
     deadline = time.monotonic() + timeout
@@ -68,9 +69,6 @@ def publish_until(
         if done.wait(period):
             return True
     return done.is_set()
-
-
-# --- MAVLink loopback ------------------------------------------------------
 
 
 class FakeFcu:
@@ -83,8 +81,10 @@ class FakeFcu:
     """
 
     def __init__(self, port: int, *, system: int = 1, component: int = 1) -> None:
+        """Open the loopback endpoint and prepare (but do not start) the TX/RX threads."""
         from pymavlink import mavutil
 
+        self.port = port
         self._mavutil = mavutil
         self._mav = mavutil.mavlink_connection(
             f"udpout:127.0.0.1:{port}",
@@ -98,6 +98,7 @@ class FakeFcu:
         self._rx_thread = threading.Thread(target=self._rx_loop, name="fakefcu-rx", daemon=True)
 
     def start(self) -> "FakeFcu":
+        """Start the heartbeat TX and capture RX threads; returns self for chaining."""
         self._tx_thread.start()
         self._rx_thread.start()
         return self
@@ -135,6 +136,7 @@ class FakeFcu:
         return None
 
     def stop(self) -> None:
+        """Stop the TX/RX threads and close the underlying connection."""
         self._stop.set()
         try:
             self._mav.close()
@@ -153,24 +155,3 @@ def mavlink_connection_to(port: int, *, heartbeat_timeout: float = 5.0):
     conn = MavlinkConnection(heartbeat_timeout=heartbeat_timeout)
     conn.connect(f"udpin:127.0.0.1:{port}")
     return conn
-
-
-def ros_package_present(name: str) -> bool:
-    """True if a ROS 2 package is discoverable via the ament index."""
-    try:
-        from ament_index_python.packages import get_package_prefix
-
-        get_package_prefix(name)
-        return True
-    except Exception:
-        return False
-
-
-def require_module(name: str, hint: str = "") -> None:
-    """Skip the current check (don't fail) when an optional dependency is absent."""
-    import importlib.util
-
-    if importlib.util.find_spec(name) is None:
-        from nectar.diagnostics.runner import Skip
-
-        raise Skip(hint or f"{name} not installed")

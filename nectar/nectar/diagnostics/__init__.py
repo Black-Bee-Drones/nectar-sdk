@@ -1,26 +1,15 @@
-"""Functional verification harness for the Nectar SDK.
+"""Nectar SDK environment doctor.
 
-Run with ``python3 -m nectar.diagnostics`` (all modules) or
-``python3 -m nectar.diagnostics vision control`` (a subset). See
-:mod:`nectar.diagnostics.runner` for the design.
+A read-only report of the current machine's ROS 2 environment, installed SDK
+modules and optional dependencies, and available hardware/acceleration. Run with
+``python3 -m nectar.diagnostics`` or ``make doctor``.
+
+For a pass/fail check of the install, use ``make verify``; for functional
+regression tests (real operations on synthetic inputs / loopbacks), the suite
+lives under ``nectar/test/`` and runs via ``make verify-functional`` or
+``colcon test``.
 """
 
-from nectar.diagnostics.runner import (
-    Check,
-    Fail,
-    ModuleSpec,
-    Result,
-    Skip,
-    available_modules,
-    run,
-)
+from nectar.diagnostics.doctor import main
 
-__all__ = [
-    "Check",
-    "Fail",
-    "ModuleSpec",
-    "Result",
-    "Skip",
-    "available_modules",
-    "run",
-]
+__all__ = ["main"]

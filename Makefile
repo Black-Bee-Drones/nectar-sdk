@@ -3,8 +3,8 @@
 .PHONY: help setup system update ros2 geographiclib ros2-env rosdep-init \
         drone-mavros drone-px4 drone-px4-dds drone-crazyflie drone-bebop drone-all \
         python python-control python-vision python-ai python-interface python-sensors \
-        python-all python-full install-all install-full pytorch \
-        clone ros2-deps build build-pkg clean verify verify-functional test \
+        python-all python-full python-dev install-all install-full pytorch \
+        clone ros2-deps build build-pkg clean verify verify-functional verify-hardware verify-sitl doctor test ci-local \
         realsense realsense-verify \
         docker-build docker-build-full docker-build-t265 docker-run docker-exec \
         docker-publish-jetson \
@@ -49,6 +49,8 @@ python-interface:   ; @$(SETUP) python interface
 python-sensors:     ; @$(SETUP) python sensors
 python-all:         ; @$(SETUP) python all
 python-full:        ; @$(SETUP) python full
+# Test/dev tooling (pytest, pytest-timeout) for the functional suite.
+python-dev:         ; @$(SETUP) python dev
 install-all:        ; @$(SETUP) python all     # alias of python-all (back-compat)
 install-full:       ; @$(SETUP) python full    # alias of python-full (back-compat)
 pytorch:            ; @$(SETUP) pytorch
@@ -60,9 +62,25 @@ build:              ; @$(SETUP) build
 build-pkg:          ; @$(SETUP) build-pkg
 clean:              ; @$(SETUP) clean
 verify:             ; @$(SETUP) verify
-# Functional harness (tier 2). MODULE= runs a subset, e.g. MODULE="vision control".
+# Functional regression tests (tier 2, pytest). MODULE= runs a subset (mapped to
+# pytest markers), e.g. MODULE="vision control".
 verify-functional:  ; @$(SETUP) verify-functional $(MODULE)
+# Hardware-gated tests (opt-in; run on a rig with cameras/rangefinder attached).
+verify-hardware:    ; @$(SETUP) verify-hardware
+# SITL/integration flight tests in a headless sim (tier 3, pytest, opt-in; heavy).
+# Default runs the full matrix; subset with FIRMWARE= (ardupilot|px4|crazyflie)
+# and/or PROTOCOL= (mavros|mavlink|dds), e.g. `make verify-sitl FIRMWARE=px4 PROTOCOL=dds`.
+# Only command-line FIRMWARE/PROTOCOL narrow it (the sim defaults below do not).
+verify-sitl: ; @FW=""; [ "$(origin FIRMWARE)" = "command line" ] && FW="$(FIRMWARE)"; PR=""; [ "$(origin PROTOCOL)" = "command line" ] && PR="$(PROTOCOL)"; FIRMWARE="$$FW" PROTOCOL="$$PR" JUNIT_XML="$(JUNIT_XML)" $(SETUP) verify-sitl
+# Read-only environment report (ROS env, installed modules, live devices, CUDA).
+doctor:             ; @$(SETUP) doctor
 test:               ; @$(SETUP) test
+# Local cross-distro CI: build the SDK image per ROS distro from local source and
+# run verify + verify-functional in each. Flags: DISTROS, FULL, REALSENSE, DRONES, KEEP.
+#   make ci-local                       # humble jazzy kilted
+#   make ci-local DISTROS=jazzy
+#   make ci-local DISTROS="humble kilted" FULL=1
+ci-local: ; @DISTROS="$(DISTROS)" TARGET="$(TARGET)" FULL="$(FULL)" REALSENSE="$(REALSENSE)" DRONES="$(DRONES)" KEEP="$(KEEP)" PRUNE_CACHE="$(PRUNE_CACHE)" $(SETUP) ci-local
 
 # Hardware
 realsense:          ; @$(SETUP) realsense
@@ -134,3 +152,16 @@ driver-stop:      ; @$(SETUP) driver-stop
 
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install
+
+# Documentation site (Zensical). Edit website/ (authored pages), the module
+# READMEs, and docs/*.md; everything generated is assembled under build/.
+#   make docs-install   create .venv-docs and install the doc toolchain
+#   make docs-sync      assemble build/docs/ from website/ + READMEs + docs/*.md
+#   make docs           sync, then compile the HTML into build/site/
+#   make docs-serve     sync, then live preview at http://localhost:8000
+.PHONY: docs-install docs-sync docs docs-serve
+DOCS_VENV := .venv-docs
+docs-install: ; @uv venv $(DOCS_VENV) && uv pip install --python $(DOCS_VENV)/bin/python -r scripts/docs/requirements.txt
+docs-sync:    ; @$(DOCS_VENV)/bin/python scripts/docs/sync_readmes.py
+docs:         ; @$(MAKE) docs-sync && $(DOCS_VENV)/bin/zensical build --clean
+docs-serve:   ; @$(MAKE) docs-sync && $(DOCS_VENV)/bin/zensical serve
