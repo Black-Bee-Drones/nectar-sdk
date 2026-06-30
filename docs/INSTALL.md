@@ -295,9 +295,11 @@ Per-type shortcuts exist for each (`make driver-mavros`, `driver-px4`, ...). Con
 ```bash
 make build              # Build entire workspace
 make build-pkg          # Build SDK packages only
-make verify             # Check installation
+make verify             # Check installation (presence/imports)
+make doctor             # Environment report (ROS, modules, devices, CUDA)
 make clean              # Remove build artifacts
-make test               # Run tests
+make verify-functional  # Functional regression tests (pytest; MODULE="vision control")
+make test               # colcon test (functional suite + cmake/xml lint)
 ```
 
 ## Docker

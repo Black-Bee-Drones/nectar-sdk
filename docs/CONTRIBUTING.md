@@ -159,9 +159,9 @@ Then open a Pull Request via GitHub using our [PR template](../.github/PULL_REQU
 
 **README conventions** (gold standard: [`control/mavros/README.md`](../nectar/nectar/control/mavros/README.md)):
 
-- **Structure**: Role/intro → one Mermaid diagram → tables (topics/services/params/args) → References. Keep prose tight and technical.
+- **Structure (progressive disclosure)**: lead with a one-line purpose, then an **At a glance** runnable snippet (the common case), then **Concepts** (short prose + one mid-level diagram), then task-oriented **Usage**, then a **Reference** section for exhaustive tables (topics/services/params/types). Usage comes before the detailed class diagram, never after a wall of it. Keep prose tight and technical — no buzzwords, no repetition.
 - **Single source of truth**: document shared logic once and link to it; do not restate the same thing in two READMEs. shared flight logic lives in [`vehicle/README.md`](../nectar/nectar/control/vehicle/README.md) (ArduPilot specifics in [`ardupilot/README.md`](../nectar/nectar/control/ardupilot/README.md)); indoor VSLAM in [`localization/README.md`](../nectar/nectar/control/localization/README.md); install in [`docs/INSTALL.md`](INSTALL.md); Docker in [`docker/README.md`](../docker/README.md); simulation in [`simulation/README.md`](../nectar/simulation/README.md). The root README and parent module READMEs link, they don't duplicate.
-- **One diagram per README**: put the detailed class diagram in the module README; keep the root README's diagram high-level.
+- **One diagram per README, theme-safe**: one class/architecture Mermaid diagram per page, placed in a **Concepts** section *after* the at-a-glance usage (never as the first thing on the page), and keep the root README's diagram high-level. Do **not** set explicit Mermaid colors (`fill:`, `style ... fill`, `classDef ... fill`) — they break in dark mode; rely on the default theme. (Avoid wrapping Mermaid in `<details>`/collapsibles — the fenced block does not render inside raw-HTML blocks in this toolchain.)
 - **Stay grounded**: every command, flag, topic, and class name must match the code. Prefer real argparse flags / parameter names over invented ones.
 - **When you add a module**: sync the root README (Features, Documentation table, directory tree) and the parent module's index, and add it to the Module Structure list below.
 
@@ -202,9 +202,100 @@ def move_to(
 
 ### Testing
 
-- Ensure existing tests pass before submitting
-- Add tests for new functionality when possible
-- Test with actual hardware when modifying drone control code
+The functional suite lives in [`nectar/test/`](../nectar/test) (it is **not**
+installed with the package) and is plain `pytest`:
+
+- `nectar/test/functional/` — one `test_<module>.py` per SDK module. Each test
+  performs a *real operation* on synthetic inputs or a loopback. Tests
+  self-skip (never fail) when an optional dependency is absent, via
+  `pytest.importorskip(...)`.
+- `nectar/test/hardware/` — device-gated checks (RealSense, OAK-D, TF-Luna),
+  marked `hardware` and **deselected by default**.
+- `nectar/test/conftest.py` + `nectar/test/helpers.py` — fixtures (`ros_node`,
+  `fake_fcu`, `qt_app`) and the loopback FCU.
+
+Run it:
+
+```bash
+make verify-functional                      # all modules (hardware/gpu deselected)
+make verify-functional MODULE="vision control"   # subset -> pytest -m "vision or control"
+make test                                   # colcon test: the suite + cmake/xml lint
+make verify-hardware                         # opt in to device checks on the rig
+# (equivalently, from the package dir: cd nectar && pytest test/hardware -m hardware)
+```
+
+Guidelines:
+
+- **Add a test for new functionality.** Put it in the matching
+  `test/functional/test_<module>.py`, tag the module with `pytestmark =
+  pytest.mark.<module>`, and gate anything that needs a device/GPU/sim/network
+  with the `hardware` / `gpu` / `sim` / `network` markers (registered in
+  `pyproject.toml`). Assert with plain `assert`; skip with `pytest.skip(...)` /
+  `pytest.importorskip(...)` — never fail for a missing optional dependency.
+- **Lint/format with ruff** (the single source of truth — `make lint` /
+  `make format`, also enforced by pre-commit). `make verify-functional` self-skips
+  cleanly, so a green run on your machine reflects what your install can actually do.
+- **Test with actual hardware** when modifying drone control code, and run the
+  relevant `make verify-functional` markers before submitting.
+- `make doctor` prints a read-only report of the current environment and devices —
+  handy when a test skips and you want to know why.
+
+#### Local CI (cross-distro)
+
+The checks run at increasing fidelity:
+
+- **Lint** — `make check` (ruff via pre-commit).
+- **Host suite** (richest; all installed deps incl. AI/Qt/CUDA) — `make verify`,
+  `make verify-functional`, `make verify-hardware` on your dev machine.
+- **Cross-distro in Docker** — `make ci-local` builds the SDK image from the
+  *local* source for each ROS distro and runs `verify` + `verify-functional` in
+  each, mirroring [`.github/workflows/_build-verify.yml`](../.github/workflows/_build-verify.yml).
+  It prints one pass/fail summary and writes a JUnit report per distro to
+  `ci-local-results/`. amd64 only (arm64 is covered on a Jetson; Windows via WSL2
+  later). It builds one image at a time and removes it afterwards to bound disk.
+
+  ```bash
+  make ci-local                                  # humble jazzy kilted (sdk stage)
+  make ci-local DISTROS=jazzy                     # one distro
+  make ci-local DISTROS="humble kilted" FULL=1    # include torch/AI (sdk-full; heavy)
+  make ci-local REALSENSE=1                        # also build librealsense + realsense-verify
+  ```
+
+  Disk: full image builds are large. Docker's data-root must have several GB free
+  (each `sdk` image is ~4-5 GB, `sdk-full` ~10 GB); the runner aborts a build below
+  `MIN_FREE_GB` (default 8). Reclaim with `docker system prune` / remove old images.
+
+#### SITL / integration flights (Tier 3)
+
+The suite in [`nectar/test/sitl/`](../nectar/test/sitl) flies a real smoke mission
+in a **headless** simulator for each firmware + protocol (connect -> takeoff ->
+move -> land), validating the vehicle core and the firmware/protocol link
+end to end. The `sim_session` fixture owns the sim lifecycle (reusing
+`make sim-start` / `sim-bridge` / `sim-stop`), so a single command replaces the
+manual two-terminal orchestration.
+
+```bash
+make verify-sitl                          # full matrix (needs the sim stack: make sim-install)
+make verify-sitl FIRMWARE=px4 PROTOCOL=dds  # one entry (FIRMWARE -> marker, PROTOCOL -> -k)
+```
+
+Matrix: `ardupilot` (mavros, mavlink), `px4` (mavros, mavlink, dds), `crazyflie`
+(Crazyswarm2 sim). Bebop is hardware-only (no simulator). The tier is marked
+`sitl` and **deselected by default**.
+
+Run it where the sim stack is installed (`make sim-install`): your dev machine or
+the Jetson, and as a pre-release gate. It is **not** in CI — building the
+simulators (ArduPilot + PX4 + Gazebo, all from source) takes ~45-70 min and there
+is no apt binary to shortcut it, so it is not worth a per-PR or scheduled job. The
+same `make verify-sitl` command runs unchanged on amd64 and arm64. (Crazyflie
+self-skips unless the Crazyswarm2 `crazyflie_sim` backend is built from source.)
+
+To add a firmware/protocol: add a `SimSpec` to
+[`nectar/test/sitl/sim_helpers.py`](../nectar/test/sitl/sim_helpers.py) (its
+`start_cmds`, drone type, config preset, and flight envelope); the parametrized
+`test_smoke_flight` and the markers pick it up automatically. The deeper
+ArduPilot navigation suite stays in
+[`examples/simulation/sitl_test.py`](../nectar/nectar/examples/simulation/sitl_test.py).
 
 ### Module Structure
 
