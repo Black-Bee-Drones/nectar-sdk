@@ -63,6 +63,19 @@ RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
 ARG INSTALL_DRONE=""
 RUN if [ -n "$INSTALL_DRONE" ]; then for d in $INSTALL_DRONE; do make drone-$d; done; fi
 
+# Simulation stack (opt-in): "ardupilot" | "px4" | "all" (see docker/README.md).
+# ArduPilot's prereqs refuse root, so install_sitl.sh re-runs as AP_BUILD_USER;
+# the built tree is symlinked to ~/ardupilot for the (root) runtime.
+ARG INSTALL_SIM=""
+ARG AP_BUILD_USER=nectar
+ENV AP_BUILD_USER=${AP_BUILD_USER}
+RUN if [ -n "$INSTALL_SIM" ]; then \
+        make sim-install FIRMWARE="$INSTALL_SIM" && \
+        if echo "$INSTALL_SIM" | grep -qwE 'ardupilot|all'; then \
+            ln -sfn "/home/${AP_BUILD_USER}/ardupilot" /root/ardupilot; \
+        fi; \
+    fi
+
 CMD ["/bin/bash"]
 
 FROM sdk AS sdk-full

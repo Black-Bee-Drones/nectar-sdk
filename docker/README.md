@@ -407,6 +407,29 @@ Per-distro Gazebo versions:
 | Jazzy | Harmonic | binary | native support |
 | Kilted | Ionic | binary | native support |
 
+### SITL (flight in simulation)
+
+`INSTALL_SIM` builds the autopilot SITL stack (`ardupilot`, `px4`, or `all`) into
+the image — heavy, since the autopilots build from source (~1-2 h cold). To
+actually fly you also need the matching control backend (`INSTALL_DRONE`):
+
+```bash
+# ArduPilot SITL image (MAVROS + direct MAVLink)
+INSTALL_SIM=ardupilot INSTALL_DRONE=mavros make docker-build
+```
+
+Run the flight suite headless (no GPU needed — uses Mesa software GL):
+
+```bash
+docker run --rm --shm-size=1g -e LIBGL_ALWAYS_SOFTWARE=1 nectar-sdk:<distro> \
+  bash -lc 'source /opt/ros/$ROS_DISTRO/setup.bash; \
+            source /home/ros2_ws/install/local_setup.bash; \
+            make verify-sitl FIRMWARE=ardupilot'
+```
+
+PX4 needs no mavros (use `INSTALL_SIM=px4`; for uXRCE-DDS add `INSTALL_DRONE=px4-dds`).
+On a host you don't need an image at all — `make sim-install` then `make verify-sitl`.
+
 ## Dependency strategy
 
 PyTorch is **not** listed in `pyproject.toml` dependencies. This is intentional:
