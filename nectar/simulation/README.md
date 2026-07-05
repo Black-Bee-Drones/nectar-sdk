@@ -42,8 +42,6 @@ flowchart LR
     MAVROS --> SDK
 ```
 
-
-
 ## Two Environments
 
 ### Outdoor (GPS)
@@ -63,14 +61,12 @@ flowchart LR
 
 ## Simulated Sensors
 
-
 | Real sensor             | Gazebo sensor        | Topic (ROS 2)                                                              | Notes                                             |
 | ----------------------- | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------- |
 | RealSense D435i (front) | `rgbd_camera`        | `/front_camera/image`, `/front_camera/depth_image`, `/front_camera/points` | 640x480, RGB + depth + point cloud                |
 | Arducam (down)          | `camera`             | `/down_camera`                                                             | 640x480 RGB, downward-facing                      |
 | TFLuna lidar (down)     | SITL simulated sonar | `/mavros/rangefinder/rangefinder`                                          | `RNGFND1_TYPE=1`, ground distance from physics    |
 | TFLuna lidar (down)     | `gpu_lidar`          | `/lidar/range`                                                             | Direct LaserScan via Gazebo, 1-sample rangefinder |
-
 
 The table above is the ArduPilot world. On both firmwares the SDK reads the
 downward rangefinder from `/mavros/rangefinder/rangefinder`: ArduPilot derives it
@@ -89,19 +85,25 @@ Both world SDFs include built-in GUI plugins (no extra windows needed):
 
 ## Installation
 
+**ArduPilot** — clones `~/ardupilot` + builds ArduCopter SITL, then installs Gazebo Harmonic + ArduPilotPlugin + ros_gz_bridge:
+
 ```bash
-# ArduPilot: clones ~/ardupilot + builds ArduCopter SITL, then installs
-# Gazebo Harmonic + ArduPilotPlugin + ros_gz_bridge.
 make sim-install FIRMWARE=ardupilot
-
-# PX4: clones ~/PX4-Autopilot + builds px4_sitl + Gazebo, and symlinks the
-# Nectar shared assets (x500_nectar, outdoor_field_scenery, outdoor_field_px4)
-# into the PX4 tree. Add ARGS=--native for the uXRCE-DDS path.
-make sim-install FIRMWARE=px4
-
-# Both: make sim-install FIRMWARE=all
-source ~/.bashrc
 ```
+
+**PX4** — clones `~/PX4-Autopilot` + builds px4_sitl + Gazebo, and symlinks the Nectar shared assets (`x500_nectar`, `outdoor_field_scenery`, `outdoor_field_px4`) into the PX4 tree. Add `ARGS=--native` for the uXRCE-DDS path:
+
+```bash
+make sim-install FIRMWARE=px4
+```
+
+**Both**:
+
+```bash
+make sim-install FIRMWARE=all
+```
+
+Then reload your shell: `source ~/.bashrc`.
 
 ## Usage
 
@@ -119,7 +121,6 @@ MAVROS). `ENV` must match between the two terminals.
 - `ENV` = `outdoor` | `indoor`
 - `PROTOCOL` = `mavros` | `mavlink` (direct pymavlink). For PX4, `dds` selects the native uXRCE-DDS agent.
 
-
 | Scenario                          | Terminal 1                                      | Terminal 2                                                        | Mission config                                       |
 | --------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
 | ArduPilot outdoor, MAVROS         | `make sim-start FIRMWARE=ardupilot ENV=outdoor` | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor`                  | `MavrosDrone` / `SITL_GAZEBO_CONFIG`                 |
@@ -130,7 +131,6 @@ MAVROS). `ENV` must match between the two terminals.
 | PX4 outdoor, direct MAVLink       | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=mavlink`       | `Px4MavlinkDrone` / `PX4_MAVLINK_SITL_GAZEBO_CONFIG` |
 | PX4 outdoor, uXRCE-DDS            | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds`           | `Px4DdsDrone` / `PX4_DDS_SITL_CONFIG`                |
 | PX4 indoor (VIO)                  | `make sim-start FIRMWARE=px4 ENV=indoor`        | `make sim-bridge FIRMWARE=px4 ENV=indoor`                         | `Px4MavrosDrone` / `PX4_SITL_VISION_CONFIG`          |
-
 
 - **ArduPilot**: Terminal 1 runs the SITL physics; Terminal 2 launches the Gazebo world + `ros_gz_bridge` + (unless `PROTOCOL=mavlink`) MAVROS. `mavros` uses SERIAL0 (tcp `5760`); direct MAVLink connects a `MavlinkDrone` on SERIAL1 (tcp `5762`), which `start_sitl.sh` always exposes.
 - **Connection strings differ by transport**: MAVROS uses a URL (`tcp://host:port`, `udp://...`); the direct-MAVLink `MavlinkDrone` (pymavlink) uses a bare string (`tcp:127.0.0.1:5762`, `udp:host:port`, or a serial path like `/dev/ttyUSB0`). The `tcp://` URL form is also accepted for `MavlinkDrone` and normalized.
@@ -168,25 +168,14 @@ One stop for both firmwares: kills arducopter, PX4 (px4_sitl/bin/px4), MicroXRCE
 
 ### Verify sensors
 
-```bash
-# State
-ros2 topic echo /mavros/state --once
-
-# GPS (outdoor)
-ros2 topic echo /mavros/global_position/global --once --qos-reliability best_effort
-
-# Vision pose (indoor)
-ros2 topic echo /mavros/vision_pose/pose_cov --once
-
-# Rangefinder
-ros2 topic echo /mavros/rangefinder/rangefinder --once
-
-# Front camera
-ros2 topic echo /front_camera/image --once
-
-# Depth
-ros2 topic echo /front_camera/depth_image --once
-```
+| Check | Command |
+|-------|---------|
+| State | `ros2 topic echo /mavros/state --once` |
+| GPS (outdoor) | `ros2 topic echo /mavros/global_position/global --once --qos-reliability best_effort` |
+| Vision pose (indoor) | `ros2 topic echo /mavros/vision_pose/pose_cov --once` |
+| Rangefinder | `ros2 topic echo /mavros/rangefinder/rangefinder --once` |
+| Front camera | `ros2 topic echo /front_camera/image --once` |
+| Depth | `ros2 topic echo /front_camera/depth_image --once` |
 
 ### Multi-orientation rangefinders
 
@@ -200,15 +189,22 @@ below its minimum range, while the sonar reports vehicle height above terrain
 reliably. ArduPilot emits one `DISTANCE_SENSOR` per instance, accessible through
 `drone.distance_sensors` and `drone.get_distance(orientation)`.
 
+**Terminal 1 — SITL with the three rangefinders**:
+
 ```bash
-# Terminal 1: SITL with the three rangefinders
 ./scripts/simulation/start_sitl.sh --gazebo \
     --params nectar/simulation/params/rangefinder_test.parm
+```
 
-# Terminal 2: Gazebo (and MAVROS) with the test world
+**Terminal 2 — Gazebo (and MAVROS) with the test world**:
+
+```bash
 ros2 launch nectar sitl_gazebo.launch.py world:=rangefinder_test.sdf
+```
 
-# Terminal 3: inspect the readings (MAVROS topics)
+**Terminal 3 — inspect the readings** (MAVROS topics):
+
+```bash
 ros2 topic echo /mavros/rangefinder/rangefinder --once
 ros2 topic echo /mavros/distance_sensor/rangefinder/front --once
 ```
@@ -223,7 +219,6 @@ The MAVROS path relies on the `distance_sensor` plugin entries in
 ## Configuration Presets
 
 Defined in `nectar/control/config.py`:
-
 
 | Preset                       | Transport | Port  | PoseSource | Lidar | Use case                                                                            |
 | ---------------------------- | --------- | ----- | ---------- | ----- | ----------------------------------------------------------------------------------- |
@@ -242,25 +237,37 @@ Defined in `nectar/control/config.py`:
 | `PX4_MAVLINK_SITL_VISION_CONFIG` | px4_mavlink | 14540 | VISION     | No    | PX4 SITL + Gazebo indoor, direct pymavlink (VISION_POSITION_ESTIMATE)            |
 | `PX4_DDS_SITL_CONFIG`            | px4_dds     | 8888  | GPS        | Yes   | PX4 SITL native uXRCE-DDS (MicroXRCEAgent on 8888), outdoor                      |
 
-
 ```python
 from nectar.control import (
     DroneFactory,
     SITL_GAZEBO_CONFIG,
     MAVLINK_SITL_GAZEBO_CONFIG,
     PX4_SITL_GAZEBO_CONFIG,
+    PX4_MAVLINK_SITL_GAZEBO_CONFIG,
 )
+```
 
-# Outdoor over MAVROS (port 5760)
+**Outdoor over MAVROS** (port 5760):
+
+```python
 drone = DroneFactory.create("mavros", SITL_GAZEBO_CONFIG)
+```
 
-# Outdoor over direct MAVLink (port 5762, sim-bridge ... PROTOCOL=mavlink)
+**Outdoor over direct MAVLink** (port 5762, `sim-bridge ... PROTOCOL=mavlink`):
+
+```python
 drone = DroneFactory.create("mavlink", MAVLINK_SITL_GAZEBO_CONFIG)
+```
 
-# PX4 over MAVROS (offboard udp 14540, sim-start/sim-bridge FIRMWARE=px4 ENV=outdoor)
+**PX4 over MAVROS** (offboard UDP 14540, `sim-start`/`sim-bridge FIRMWARE=px4 ENV=outdoor`):
+
+```python
 drone = DroneFactory.create("px4", PX4_SITL_GAZEBO_CONFIG)
+```
 
-# PX4 over direct pymavlink (offboard udp 14540, sim-bridge ... PROTOCOL=mavlink)
+**PX4 over direct pymavlink** (offboard UDP 14540, `sim-bridge ... PROTOCOL=mavlink`):
+
+```python
 drone = DroneFactory.create("px4_mavlink", PX4_MAVLINK_SITL_GAZEBO_CONFIG)
 ```
 
@@ -293,7 +300,6 @@ Flags: `--mavlink` (direct pymavlink on tcp 5762), `--px4` (PX4 over MAVROS, off
 
 ### Test groups
 
-
 | Group             | Tests                                                                                                | Description                            |
 | ----------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `vel`             | vel_fwd, vel_lat, vel_up, vel_yaw, vel_takeoff, vel_world, vel_world_north, vel_world_rotated, brake | Velocity in BODY/WORLD/TAKEOFF frames  |
@@ -309,13 +315,11 @@ Flags: `--mavlink` (direct pymavlink on tcp 5762), `--px4` (PX4 over MAVROS, off
 | `compound`        | sequential, takeoff_ref                                                                              | Multi-step sequences                   |
 | `square`          | sq_pid, sq_pid_takeoff, sq_pid_local, sq_setpoint, sq_setpoint_global, sq_wpnav                      | 3m square patterns                     |
 
-
 Pre-flight tests (`sensors`, `heading_enu`) run without takeoff. GPS-only tests (skipped with `--indoor`): `heading_enu`, `setpoint_global`, `setpoint_global_yaw`, `sq_setpoint_global`, `rtl_ardupilot`.
 
 ## ArduPilot Parameters
 
 ### gazebo.parm (loaded for all Gazebo sessions)
-
 
 | Parameter         | Value | Purpose                                |
 | ----------------- | ----- | -------------------------------------- |
@@ -326,9 +330,7 @@ Pre-flight tests (`sensors`, `heading_enu`) run without takeoff. GPS-only tests 
 | `RNGFND1_MAX`     | 40    | Max range (m)                          |
 | `RNGFND1_MIN`     | 0.10  | Min range (m)                          |
 
-
 ### indoor.parm (loaded additionally for indoor)
-
 
 | Parameter        | Value  | Purpose                           |
 | ---------------- | ------ | --------------------------------- |
@@ -339,7 +341,6 @@ Pre-flight tests (`sensors`, `heading_enu`) run without takeoff. GPS-only tests 
 | `EK3_SRC1_YAW`   | 6      | ExternalNav for yaw               |
 | `VISO_TYPE`      | 1      | Enable visual odometry input      |
 | `ARMING_CHECK`   | 388598 | Disable GPS-related arming checks |
-
 
 ## Indoor Vision Pose Pipeline
 
@@ -355,50 +356,26 @@ flowchart LR
     GzPose --> Bridge --> VPB --> Topic --> VPN --> FCU
 ```
 
-
-
 The `gz_vision_source.py` node replaces the real RealSense D435i + Isaac ROS VSLAM pipeline. It selects the `iris` model pose from the Gazebo ground-truth `TFMessage` and publishes `PoseWithCovarianceStamped` on the same canonical topic Isaac ROS Visual SLAM uses, `/visual_slam/tracking/vo_pose_covariance`. The downstream delivery is then identical to real hardware: `vision_pose_node` (backend `mavros`) relays it to `/mavros/vision_pose/pose_cov`, or `MavlinkDrone`'s `VisionPoseBridge` (backend `mavlink`) forwards it as `VISION_POSITION_ESTIMATE`.
 
 **Frame-name fallback**: it first matches the transform whose `child_frame_id` equals the model name. On ROS 2 Jazzy the `ros_gz_bridge` `Pose_V → TFMessage` conversion strips the frame ids, leaving `child_frame_id` empty. When all names are empty the node falls back to the transform at `model_index` (default `0`, the iris model root) and logs a one-time warning, so the indoor pipeline publishes reliably on Jazzy.
 
-## File Structure
+## Layout
 
-```
-simulation/
-├── README.md                 # This file
-├── params/                   # ArduPilot SITL parameter files
-│   ├── gazebo.parm           # Rangefinder params (all Gazebo sessions)
-│   ├── indoor.parm           # No-GPS + EKF3 ExternalNav params
-│   └── rangefinder_test.parm # RNGFND2/3 front/back for the test world (down stays analog)
-├── config/                   # MAVROS profiles for the bridge
-│   ├── apm_config_sitl.yaml / apm_pluginlists_sitl.yaml   # ArduPilot MAVROS
-│   └── px4_config_sitl.yaml / px4_pluginlists_sitl.yaml   # PX4 MAVROS
-├── models/
-│   ├── iris_with_rangefinders/  # ArduPilot iris + ArduPilotPlugin + down/front/back lidar
-│   ├── x500_nectar/             # PX4 x500 + matched Nectar sensor suite
-│   └── outdoor_field_scenery/   # Shared outdoor scenery
-└── worlds/
-    ├── outdoor_field.sdf     # ArduPilot open field + obstacles + GPS
-    ├── outdoor_field_px4.sdf # PX4 outdoor field (x500_nectar spawn)
-    ├── indoor_room.sdf       # 20x20x12m room + obstacles + no GPS
-    └── rangefinder_test.sdf  # iris between two walls for distance-sensor checks
+Simulation assets (`nectar/simulation/`):
 
-scripts/simulation/
-├── install_sitl.sh           # Clone and build ArduPilot SITL
-├── install_gazebo.sh         # Install Gazebo + ArduPilotPlugin + ros_gz from source
-├── install_px4.sh            # Clone/build PX4 SITL (+ px4_msgs/agent with --native)
-├── start_sitl.sh             # Start arducopter binary (--gazebo, --indoor flags)
-├── start_px4.sh              # Start PX4 SITL + Gazebo (--model, --world, --autostart)
-└── gz_vision_source.py       # Gazebo ground-truth → canonical VSLAM pose topic
+- `params/` — ArduPilot SITL parameter files: `gazebo.parm` (rangefinders), `indoor.parm` (no-GPS + EKF3 ExternalNav), `rangefinder_test.parm` (RNGFND2/3 for the test world)
+- `config/` — MAVROS bridge profiles: `apm_config_sitl.yaml` / `apm_pluginlists_sitl.yaml` (ArduPilot), `px4_config_sitl.yaml` / `px4_pluginlists_sitl.yaml` (PX4)
+- `models/` — `iris_with_rangefinders` (ArduPilot), `x500_nectar` (PX4), `outdoor_field_scenery` (shared)
+- `worlds/` — `outdoor_field.sdf`, `outdoor_field_px4.sdf`, `indoor_room.sdf` (20x20x12 m, no GPS), `rangefinder_test.sdf`
 
-nectar/launch/
-├── sitl.launch.py            # MAVROS-only launch (headless ArduPilot SITL)
-├── sitl_gazebo.launch.py     # ArduPilot Gazebo + ros_gz_bridge (+ MAVROS unless mavros:=false)
-└── px4_sitl.launch.py        # PX4 bridge: MAVROS (+ gz_bridge / vision relay)
+Install and start scripts (`scripts/simulation/`): `install_sitl.sh`, `install_gazebo.sh`,
+`install_px4.sh`, `start_sitl.sh`, `start_px4.sh`, and `gz_vision_source.py` (Gazebo ground-truth
+to canonical VSLAM pose topic).
 
-nectar/nectar/examples/simulation/
-└── sitl_test.py                # Navigation test suite (--mavlink / --px4 / --indoor / --fresh)
-```
+Launch files (`nectar/launch/`): `sitl.launch.py` (MAVROS-only), `sitl_gazebo.launch.py`
+(ArduPilot Gazebo + `ros_gz_bridge`), `px4_sitl.launch.py` (PX4 bridge). The navigation test suite
+is `examples/simulation/sitl_test.py`.
 
 ## References
 

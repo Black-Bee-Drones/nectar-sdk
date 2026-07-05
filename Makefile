@@ -155,13 +155,14 @@ full-install:       ; @$(SETUP) full-install
 
 # Documentation site (Zensical). Edit website/ (authored pages), the module
 # READMEs, and docs/*.md; everything generated is assembled under build/.
-#   make docs-install   create .venv-docs and install the doc toolchain
+# Mermaid diagrams are rendered natively by Zensical (client-side, theme-aware).
+#   make docs-install   create .venv-docs and install the Python doc toolchain
 #   make docs-sync      assemble build/docs/ from website/ + READMEs + docs/*.md
 #   make docs           sync, then compile the HTML into build/site/
 #   make docs-serve     sync, then live preview at http://localhost:8000
 .PHONY: docs-install docs-sync docs docs-serve
 DOCS_VENV := .venv-docs
-docs-install: ; @uv venv $(DOCS_VENV) && uv pip install --python $(DOCS_VENV)/bin/python -r scripts/docs/requirements.txt
+docs-install: ; @[ -d $(DOCS_VENV) ] || uv venv $(DOCS_VENV); uv pip install --python $(DOCS_VENV)/bin/python -r scripts/docs/requirements.txt
 docs-sync:    ; @$(DOCS_VENV)/bin/python scripts/docs/sync_readmes.py
 docs:         ; @$(MAKE) docs-sync && $(DOCS_VENV)/bin/zensical build --clean
 docs-serve:   ; @$(MAKE) docs-sync && $(DOCS_VENV)/bin/zensical serve

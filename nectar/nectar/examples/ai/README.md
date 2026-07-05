@@ -25,29 +25,14 @@ Camera stream detection using `Detector` + `ImageHandler`.
 
 ### Usage
 
-```bash
-# Default (webcam + YOLO with auto GPU detection)
-python3 detector_example.py
+| Case | Command |
+|------|---------|
+| Default (webcam + YOLO, auto GPU) | `python3 detector_example.py` |
+| Explicit framework (DETR) | `python3 detector_example.py --model facebook/detr-resnet-50 --framework transformers` |
+| Custom YOLO from HuggingFace | `python3 detector_example.py --model "blackbeedrones/cbr-25-base:yolov11n.pt"` |
+| Local model, headless, republish as ROS topic | `python3 detector_example.py --model /path/to/model.pt --no-show --publish --topic /inference/compressed` |
 
-# Explicit framework
-python3 detector_example.py --model facebook/detr-resnet-50 --framework transformers
-
-# Custom YOLO model from HuggingFace
-python3 detector_example.py --model "blackbeedrones/cbr-25-base:yolov11n.pt"
-
-# Private HuggingFace model (env var or flag)
-export HF_TOKEN="hf_your_token_here" && python3 detector_example.py
-python3 detector_example.py --hf-token hf_your_token_here
-
-# Local model file, headless, republish annotated frames as a ROS topic
-python3 detector_example.py --model /path/to/model.pt --no-show --publish --topic /inference/compressed
-
-# Device selection
-python3 detector_example.py --device cuda   # GPU
-python3 detector_example.py --device cpu    # CPU
-python3 detector_example.py --device 0      # specific GPU
-python3 detector_example.py --device auto   # auto-detect (default)
-```
+Private HuggingFace models: pass `--hf-token hf_...` or set `export HF_TOKEN=hf_...`. Select the compute device with `--device {auto,cpu,cuda,0,1}` (default `auto`).
 
 ### Arguments
 
@@ -75,6 +60,7 @@ python3 detector_example.py --device auto   # auto-detect (default)
 ### Statistics Overlay
 
 The stream displays real-time statistics:
+
 - **Framework**: Detection framework being used
 - **FPS**: Frames per second (based on inference time)
 - **Detections**: Current frame detection count
@@ -88,38 +74,36 @@ Standalone script for offline processing of image sequences or video files.
 
 ### Usage
 
+**Image directory or video file** (framework auto-detected; `--input` takes either):
+
 ```bash
-# Process image directory (auto-detect framework)
 python3 batch_detector.py \
     --input /path/to/images \
     --output-dir ./results
+```
 
-# Process video file
-python3 batch_detector.py \
-    --input /path/to/video.mp4 \
-    --output-dir ./results
+**Explicit framework** (`ultralytics`, `transformers`, or `rfdetr`):
 
-# Explicit framework specification
-python3 batch_detector.py \
-    --input /path/to/images \
-    --model-source yolov8n.pt \
-    --framework ultralytics \
-    --output-dir ./results
-
-# Transformers DETR model
+```bash
 python3 batch_detector.py \
     --input /path/to/images \
     --model-source facebook/detr-resnet-50 \
     --framework transformers \
     --output-dir ./results
+```
 
-# HuggingFace model
+**HuggingFace model**
+
+```bash
 python3 batch_detector.py \
     --input /path/to/images \
     --model-source "blackbeedrones/cbr-25-base:yolov11n.pt" \
     --output-dir ./results
+```
 
-# Full options
+**Full options**
+
+```bash
 python3 batch_detector.py \
     --input /path/to/video.mp4 \
     --output-dir ./results \
@@ -163,6 +147,7 @@ output-dir/
 ### Video Processing
 
 For video input, the batch detector:
+
 1. Extracts all frames to temporary directory
 2. Processes each frame with the selected model
 3. Reconstructs video at original FPS
@@ -174,11 +159,15 @@ For video input, the batch detector:
 
 Runs one or more models (detection and/or segmentation) over an image directory or video and writes an annotated MP4 (plus per-frame JPGs). Suffix a model with `@detection` / `@segmentation` to override task auto-detection.
 
-```bash
-# Single detection model over an image folder
-python3 sequence_inference.py --input ./frames --output-dir ./out --models yolov8n.pt
+**Single detection model over an image folder**
 
-# Detection + segmentation, per-class confidence, custom palette
+```bash
+python3 sequence_inference.py --input ./frames --output-dir ./out --models yolov8n.pt
+```
+
+**Detection + segmentation, per-class confidence, custom palette**
+
+```bash
 python3 sequence_inference.py --input clip.mp4 --output-dir ./out \
     --models cbr.pt@detection seg.pt@segmentation \
     --conf 0.25 --class-conf "rose=0.47,sphere=0.70" --palette contrast

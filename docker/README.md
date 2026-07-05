@@ -56,6 +56,7 @@ make docker-exec        # extra terminal in running container
 ```
 
 `docker-run` automatically:
+
 - Detects available images (shows menu if multiple)
 - Adds `--gpus all` when NVIDIA GPU detected
 - Mounts local project into the container (live code editing)
@@ -67,6 +68,7 @@ instantly inside the container (via `--symlink-install`). For C++ or
 message changes, run `colcon build` inside the container.
 
 To run with only the baked-in code (no local mount):
+
 ```bash
 DOCKER_NO_MOUNT=true make docker-run
 ```
@@ -76,6 +78,7 @@ DOCKER_NO_MOUNT=true make docker-run
 **Note:** Windows users cannot use `make` commands or the bash `setup.sh` script. Use the PowerShell helper script instead.
 
 **PowerShell:**
+
 ```powershell
 .\docker\run_docker_win.ps1 build humble              # Build SDK image
 .\docker\run_docker_win.ps1 build jazzy full-cpu      # Build full image with CPU PyTorch
@@ -84,6 +87,7 @@ DOCKER_NO_MOUNT=true make docker-run
 ```
 
 The script supports:
+
 - ROS 2 distros: `humble`, `jazzy`, `kilted`
 - Build variants: `full-cpu`, `full-cu124` (for full builds)
 - Automatic GPU detection (requires Docker Desktop with NVIDIA Container Toolkit)
@@ -105,6 +109,7 @@ GPU passthrough is added automatically at run time: `--gpus all` on x86_64 when 
 See [Docker GPU docs](https://docs.docker.com/desktop/features/gpu/) for setup.
 
 You can also install CUDA torch inside a running CPU container:
+
 ```bash
 ./scripts/setup.sh pytorch cu124
 ./scripts/setup.sh python ai
@@ -157,11 +162,15 @@ Control backends are opt-in via the `INSTALL_DRONE` build arg (a space-separated
 list of `make drone-<x>` targets). The core image ships MAVLink (`pymavlink`)
 only; the published images add `mavros` + `crazyflie`:
 
-```bash
-# published set (MAVROS + Crazyflie)
-INSTALL_DRONE="mavros crazyflie" make docker-build
+**Published set** (MAVROS + Crazyflie):
 
-# MAVLink/pymavlink only (default)
+```bash
+INSTALL_DRONE="mavros crazyflie" make docker-build
+```
+
+**MAVLink/pymavlink only** (default):
+
+```bash
 make docker-build
 ```
 
@@ -174,14 +183,21 @@ PX4 over MAVROS needs `mavros`; PX4 native uXRCE-DDS is part of the simulation i
 RealSense support is opt-in (builds librealsense from source, adds ~15-20 min and ~500 MB).
 It is installed in the `sdk` stage, so both the base (`:<distro>`) and full (`:<distro>-full-*`) images include it.
 
+**SDK with RealSense** (no AI):
+
 ```bash
-# SDK with RealSense (no AI)
 INSTALL_REALSENSE=true make docker-build
+```
 
-# Full with RealSense + AI + GPU
+**Full with RealSense + AI + GPU**:
+
+```bash
 INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
+```
 
-# With CUDA-accelerated librealsense
+**With CUDA-accelerated librealsense**:
+
+```bash
 INSTALL_REALSENSE=true REALSENSE_CUDA=true TORCH_VARIANT=cu124 make docker-build-full
 ```
 
@@ -195,6 +211,7 @@ Versions are auto-selected per ROS distro (`scripts/lib/config.sh`):
 | Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | [v2.57.6](https://github.com/realsenseai/librealsense/releases/tag/v2.57.6) | D435, D435i, D455 |
 
 Override versions for specific needs:
+
 ```bash
 # T265 tracking camera (Humble only, last supported versions)
 LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 \
@@ -209,13 +226,15 @@ runtime device access (following the
 
 The Intel RealSense T265 is discontinued. The last supporting versions are
 **librealsense v2.53.1** and **realsense-ros 4.51.1** (Humble only).
-Those versions list kernel support for 4.x/5.x, but the build uses
-`FORCE_RSUSB_BACKEND=true` (libusb user-space), so **any host kernel works**
-including 6.x. Docker provides a clean isolated environment with the
-correct library versions without conflicting with newer librealsense on the
-host.
+
+??? note "Why Docker for the T265"
+    Those versions list kernel support for 4.x/5.x, but the build uses
+    `FORCE_RSUSB_BACKEND=true` (libusb user-space), so any host kernel works including 6.x.
+    Docker provides a clean isolated environment with the correct library versions without
+    conflicting with newer librealsense on the host.
 
 **Build** (requires `:humble` base image — built automatically if missing):
+
 ```bash
 make docker-build-t265
 ```
@@ -225,6 +244,7 @@ from `:humble`, installs librealsense v2.53.1 + realsense-ros 4.51.1,
 rebuilds the workspace, and commits the result.
 
 **Run** (plug in the T265 first):
+
 ```bash
 make docker-run   # select the humble-t265 image from the menu
 ```
@@ -233,6 +253,7 @@ The `docker-run` command already passes `--privileged`, `--device=/dev/bus/usb`,
 and X11 forwarding, which is sufficient for USB camera access and GUI tools.
 
 **Test inside the container:**
+
 ```bash
 # Check if the T265 is detected
 rs-enumerate-devices
@@ -251,14 +272,16 @@ ros2 launch nectar vision_pose.launch.py backend:=mavros
 ```
 
 **Host-side udev rule** (optional, for consistent USB permissions):
+
 ```bash
 # Copy the rules file to the host
 sudo cp docker/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-> **Note:** If `realsense-viewer` fails with OpenGL errors, set
-> `LIBGL_ALWAYS_SOFTWARE=1` inside the container for software rendering.
+!!! note
+    If `realsense-viewer` fails with OpenGL errors, set `LIBGL_ALWAYS_SOFTWARE=1` inside the
+    container for software rendering.
 
 ## Isaac ROS Visual SLAM (Jetson)
 
@@ -277,44 +300,51 @@ key `ros2_humble.realsense.nectar` bottom-up: the prebuilt NVCR base →
 librealsense `v2.55.1` built from source with the **RSUSB/libuvc backend** +
 realsense-ros `4.51.1-isaac`) → `nectar`
 ([`Dockerfile.nectar`](isaac_vslam/Dockerfile.nectar): Visual SLAM + the
-`nectar-vslam` helper). The RSUSB backend is **required for the D435i IMU on
-JetPack 6**, which removed the `hiddraw` kernel support that the apt
-`realsense2-camera` build relies on (otherwise: `No HID info provided, IMU is
-disabled`). **First build compiles librealsense (~40-50 min on Orin Nano); later runs
-are cached.** Do not apt-install `realsense2-camera` in `Dockerfile.nectar` — it
-would pull the broken kernel-HID build over the source one.
+`nectar-vslam` helper). `run_dev.sh` supplies all device/GPU/X11/Jetson config
+(`--privileged`, `--runtime nvidia`, tegra mounts, `-e ROS_DOMAIN_ID`); the wrapper adds
+`-v /dev/bus/usb:/dev/bus/usb` so the RealSense stays visible across USB re-enumerations.
 
-`run_dev.sh` supplies all device/GPU/X11/Jetson config (`--privileged`,
-`--runtime nvidia`, tegra mounts, `-e ROS_DOMAIN_ID`). The wrapper additionally
-bind-mounts `-v /dev/bus/usb:/dev/bus/usb` so the RealSense is visible (the RSUSB
-librealsense backend reaches the camera and IMU over libusb). With `--privileged`
-alone the container's `/dev` is a static snapshot taken at creation, so the
-camera's nodes — (re)created on USB enumeration/reset after the container starts
-— never appear; the directory bind mount is a live view of the host that
-survives re-enumerations. **Do not mount all of `/dev` (`-v /dev:/dev`):** it
-shadows the GPU device nodes `--runtime nvidia` injects, and since `run_dev.sh`
-runs cuVSLAM as the non-root `admin` user, the CUDA memory-pool init then fails
-with `cudaErrorNotSupported` / `setCUDAMemoryPoolSize Error: GXF_FAILURE` and the
-visual_slam container aborts (works as root, fails as `admin`).
+!!! note "First build takes ~40-50 min on an Orin Nano"
+    It compiles librealsense from source; later runs are cached.
+
+??? note "Why the RSUSB backend (do not apt-install `realsense2-camera`)"
+    The RSUSB backend is required for the D435i IMU on JetPack 6, which removed the `hiddraw`
+    kernel support the apt `realsense2-camera` build relies on (otherwise `No HID info
+    provided, IMU is disabled`). Apt-installing `realsense2-camera` in `Dockerfile.nectar`
+    would pull that broken kernel-HID build over the source one.
+
+??? warning "Device mounts: bind `/dev/bus/usb`, never all of `/dev`"
+    With `--privileged` alone the container's `/dev` is a static snapshot taken at creation,
+    so the camera's nodes — recreated on USB enumeration/reset after the container starts —
+    never appear; the `/dev/bus/usb` bind mount is a live view of the host that survives
+    re-enumerations. Do not mount all of `/dev` (`-v /dev:/dev`): it shadows the GPU device
+    nodes `--runtime nvidia` injects, and since `run_dev.sh` runs cuVSLAM as the non-root
+    `admin` user, the CUDA memory-pool init then fails with `cudaErrorNotSupported` /
+    `setCUDAMemoryPoolSize Error: GXF_FAILURE` (works as root, fails as `admin`).
+
+**Start (or enter) the Isaac container** — clone + build (if needed) + enter:
 
 ```bash
-# Producer (Isaac container) - clone + build (if needed) + enter
 make isaac-run        # or: ./docker/isaac_vslam/run_docker.sh
+```
 
-# inside the container, start the producer with the baked helper:
+**Inside the container, start the producer** with the baked helper:
+
+```bash
 nectar-vslam          # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
 ```
 
-Run **only one** cuVSLAM/Isaac container at a time. The container uses `--ipc=host`
-+ `--pid=host`, so if cuVSLAM crashes, the dead GXF process leaves a robust
-mutex in shared memory that aborts the next launch with `cudaErrorNotSupported`
-/ `setCUDAMemoryPoolSize Error` and a `pthread ... ESRCH` assertion. Recover by
-removing the container (which `run_dev.sh` would otherwise re-attach to):
+!!! warning "Run only one cuVSLAM container at a time"
+    The container uses `--ipc=host` and `--pid=host`, so if cuVSLAM crashes the dead GXF
+    process leaves a robust mutex in shared memory that aborts the next launch with
+    `cudaErrorNotSupported` / `setCUDAMemoryPoolSize Error` and a `pthread ... ESRCH`
+    assertion. Recover by removing the container (which `run_dev.sh` would otherwise
+    re-attach to):
 
-```bash
-make isaac-stop       # docker rm -f the nectar (and old isaac) containers
-make isaac-run        # fresh container; cuVSLAM initializes cleanly
-```
+    ```bash
+    make isaac-stop       # docker rm -f the nectar (and old isaac) containers
+    make isaac-run        # fresh container; cuVSLAM initializes cleanly
+    ```
 
 Consumer side (SDK image or host), same `ROS_DOMAIN_ID`:
 
@@ -343,8 +373,8 @@ confirm this for older architectures in
 A GTX 16-series (Turing) or earlier card cannot run the Visual SLAM node. The
 container image still **builds and launches** on such hardware (useful to validate
 the SDK's Docker wiring), but the cuVSLAM node itself will not run -- test the
-localization pipeline via the indoor Gazebo sim instead (see
-[simulation/README.md](../nectar/simulation/README.md)), which exercises the same
+localization pipeline via the indoor Gazebo sim instead (see the
+[Simulation module](../nectar/simulation/README.md)), which exercises the same
 bridges and topics with no cuVSLAM/Jetson required.
 
 ### Version and ROS distro
@@ -388,14 +418,21 @@ Gazebo simulation support is opt-in. Installs Gazebo, the `ros_gz` bridge, and t
 ArduPilot Gazebo plugin. The correct Gazebo version and install method are selected
 automatically per ROS distro (`scripts/lib/config.sh`).
 
+**SDK with Gazebo** (no AI):
+
 ```bash
-# SDK with Gazebo (no AI)
 INSTALL_GAZEBO=true make docker-build
+```
 
-# Different ROS distro
+**Different ROS distro**:
+
+```bash
 INSTALL_GAZEBO=true ROS_DISTRO=jazzy make docker-build
+```
 
-# Combined with RealSense + AI + GPU
+**Combined with RealSense + AI + GPU**:
+
+```bash
 INSTALL_GAZEBO=true INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
 ```
 

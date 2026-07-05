@@ -21,26 +21,5 @@ ros2 run nectar <script>.py -- [flags]          # ROS 2 entry point
 ```
 
 Control examples default to `start_driver=False` — start the driver/bridge (or the
-simulator) the mission connects to first, in its own terminal. See the
-[Quickstart](../../getting-started/quickstart.md) for the simulation and hardware flow.
-
-## How they combine
-
-Examples mirror the SDK's modularity: each module works on its own, and they share one
-runtime (`nectar.init()`), so missions compose them freely. The AI
-[`detector_example.py`](ai.md) is the clearest illustration — it feeds the vision module's
-`ImageHandler` stream straight into an `ai` `Detector`:
-
-```python
-import nectar
-from nectar.ai.detection import Detector
-from nectar.vision.camera import ImageHandler
-
-nectar.init()
-detector = Detector("yolov8n.pt"); detector.load()
-ImageHandler("webcam", image_processing_callback=lambda f: detector.detect(f)).run()
-nectar.spin()
-```
-
-The same pattern extends to control: run a detector while a `Drone` flies a mission, all
-under the one executor.
+simulator) the mission connects to first, in its own terminal. See
+[Fly a drone](../../get-started/control.md) for the simulation and hardware flow.

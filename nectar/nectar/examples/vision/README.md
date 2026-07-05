@@ -18,23 +18,11 @@ Camera capture using `ImageHandler` with configurable backends.
 
 ### Usage
 
+Run with the default webcam, or pass any `--camera-type` from [Supported Camera Types](#supported-camera-types); add `--no-show` to run headless.
+
 ```bash
-# Webcam (default)
 python3 camera_example.py
-
-# Specific camera type
-python3 camera_example.py --camera-type webcam
 python3 camera_example.py --camera-type realsense
-python3 camera_example.py --camera-type oakd
-python3 camera_example.py --camera-type c920
-python3 camera_example.py --camera-type imx219
-
-# RealSense via ROS topics, or a plain ROS image topic
-python3 camera_example.py --camera-type realsense_ros
-python3 camera_example.py --camera-type ros
-
-# Disable display window
-python3 camera_example.py --camera-type webcam --no-show
 ```
 
 ### Arguments
@@ -64,16 +52,11 @@ Demonstrates depth camera usage with interactive distance measurement.
 
 ### Usage
 
-```bash
-# RealSense with pyrealsense2 (direct SDK)
-python3 depth_example.py --camera realsense
-
-# RealSense via ROS topics
-python3 depth_example.py --camera realsense_ros
-
-# OAK-D
-python3 depth_example.py --camera oakd
-```
+| Source | Command |
+|--------|---------|
+| RealSense (direct pyrealsense2 SDK) | `python3 depth_example.py --camera realsense` |
+| RealSense via ROS topics | `python3 depth_example.py --camera realsense_ros` |
+| OAK-D | `python3 depth_example.py --camera oakd` |
 
 ### Features
 
@@ -95,10 +78,11 @@ python3 depth_example.py --camera oakd
 
 RealSense T265 tracking camera pose/odometry, either through the direct SDK or via ROS topics.
 
+Runs in direct-SDK mode by default; see the arguments below for ROS mode and the depth toggle.
+
 ```bash
-python3 t265_example.py --mode direct     # pyrealsense2 (default)
-python3 t265_example.py --mode ros        # subscribe to ROS odometry/pose topics
-python3 t265_example.py --no-depth        # skip the fisheye depth path
+python3 t265_example.py
+python3 t265_example.py --mode ros
 ```
 
 | Flag | Default | Description |
@@ -112,13 +96,13 @@ python3 t265_example.py --no-depth        # skip the fisheye depth path
 
 Sparse (Lucas-Kanade) or dense (Farneback) optical flow. With `--focal`/`--altitude` it also decodes angular rate (rad/s) and horizontal velocity (m/s), like the ArduPilot OPTICAL_FLOW pipeline.
 
-```bash
-python3 optical_flow_example.py                                   # webcam, Farneback
-python3 optical_flow_example.py --source realsense --method lucas_kanade
-python3 optical_flow_example.py --source /camera/image_raw       # any ROS image topic
-python3 optical_flow_example.py --focal 500 --altitude 1.5       # decode rad/s + m/s
-python3 optical_flow_example.py --no-show                        # headless
-```
+| Case | Command |
+|------|---------|
+| Webcam, dense Farneback (default) | `python3 optical_flow_example.py` |
+| RealSense, sparse Lucas-Kanade | `python3 optical_flow_example.py --source realsense --method lucas_kanade` |
+| Any ROS image topic | `python3 optical_flow_example.py --source /camera/image_raw` |
+| Decode angular rate + horizontal velocity | `python3 optical_flow_example.py --focal 500 --altitude 1.5` |
+| Headless | `python3 optical_flow_example.py --no-show` |
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -136,22 +120,13 @@ Captures frames at a configurable interval and saves them to an organized direct
 
 ### Usage
 
-```bash
-# Default (webcam, 1 photo/sec, timestamped run folder)
-python3 collect_photos.py
-
-# Custom output directory and interval (2 photos/sec)
-python3 collect_photos.py --output-dir hook_photos --capture-interval 0.5
-
-# Named run for a specific flight session
-python3 collect_photos.py --output-dir hook_photos --run-name flight_01_low_alt
-
-# RealSense camera with preview window
-python3 collect_photos.py --camera-type realsense --show
-
-# High-res webcam, PNG format, max 500 photos
-python3 collect_photos.py --width 1920 --height 1080 --image-format png --max-photos 500
-```
+| Case | Command |
+|------|---------|
+| Default (webcam, 1 photo/s, timestamped folder) | `python3 collect_photos.py` |
+| Custom output dir and interval (2 photos/s) | `python3 collect_photos.py --output-dir hook_photos --capture-interval 0.5` |
+| Named run for a flight session | `python3 collect_photos.py --output-dir hook_photos --run-name flight_01_low_alt` |
+| RealSense with preview window | `python3 collect_photos.py --camera-type realsense --show` |
+| High-res webcam, PNG, max 500 photos | `python3 collect_photos.py --width 1920 --height 1080 --image-format png --max-photos 500` |
 
 ### Arguments
 
@@ -194,6 +169,7 @@ ValueError: Unknown camera source type: xyz
 ```
 
 Check registered camera types:
+
 ```python
 from nectar.vision.camera import CameraFactory
 # Registered: webcam, opencv, realsense, oakd, c920, imx219, ros, file
@@ -206,6 +182,7 @@ RuntimeError: pyrealsense2 is not installed
 ```
 
 Install librealsense:
+
 ```bash
 # See scripts/install_realsense.sh
 # Or use ROS topic mode (realsense_ros)
@@ -218,6 +195,7 @@ ModuleNotFoundError: No module named 'depthai'
 ```
 
 Install DepthAI:
+
 ```bash
 pip install depthai
 ```
@@ -225,6 +203,7 @@ pip install depthai
 ### Low FPS / Frame Drops
 
 Adjust buffer and threading settings:
+
 ```python
 config = OpenCVConfig(
     buffer_size=2,    # Increase if dropping frames
@@ -239,6 +218,7 @@ cv2.error: The function is not implemented
 ```
 
 OpenCV headless build. Options:
+
 - Install `opencv-python` instead of `opencv-python-headless`
 - Disable display: `show_result=None`
 

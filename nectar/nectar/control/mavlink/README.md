@@ -95,7 +95,7 @@ The single-RX-reader rule is what lets a `RangefinderPublisher` and a `VisionPos
 
 ### `VisionPoseBridge`
 
-[`vision_bridge.py`](vision_bridge.py) — indoor external-navigation feed. With MAVROS gone, the FCU's EKF3 still needs an external position source. When `pose_source=VISION`, `PymavlinkTransport.start()` constructs and starts this bridge automatically: it subscribes to `MavlinkConfig.vision_pose_topic` and forwards **each received sample** to the FCU as [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) (ArduPilot [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html) wants ≥ 4 Hz). It also exposes the same pose as `vision_pose` so companion-side PID navigation works. This is the MAVLink-side equivalent of the MAVROS `MavrosVisionRelay`; the end-to-end indoor pipeline (Isaac VSLAM producer, both backends, FCU setup) is documented in [control/localization/README.md](../localization/README.md).
+[`vision_bridge.py`](vision_bridge.py) — indoor external-navigation feed. With MAVROS gone, the FCU's EKF3 still needs an external position source. When `pose_source=VISION`, `PymavlinkTransport.start()` constructs and starts this bridge automatically: it subscribes to `MavlinkConfig.vision_pose_topic` and forwards **each received sample** to the FCU as [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) (ArduPilot [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html) wants ≥ 4 Hz). It also exposes the same pose as `vision_pose` so companion-side PID navigation works. This is the MAVLink-side equivalent of the MAVROS `MavrosVisionRelay`; the end-to-end indoor pipeline (Isaac VSLAM producer, both backends, FCU setup) is documented in [Localization](../localization/README.md).
 
 **Which topic to point at** (`vision_pose_topic`):
 
@@ -104,14 +104,17 @@ The single-RX-reader rule is what lets a `RangefinderPublisher` and a `VisionPos
 | Real hardware | the VSLAM output, `/visual_slam/tracking/vo_pose_covariance` (default) | The bridge *is* the relay; subscribe directly to the estimator, no MAVROS involved. |
 | Gazebo sim (indoor) | `/visual_slam/tracking/vo_pose_covariance` | `gz_vision_source` publishes Gazebo ground-truth pose on the same canonical topic, so the sim path matches real hardware. The `MAVLINK_SITL_VISION_CONFIG` preset sets this. |
 
-The forwarding rate equals the subscription rate — the bridge does not resample. `MavlinkConfig.vision_rate_hz` exists but is **not currently wired** into the bridge; do not rely on it to throttle or pad the feed.
+The forwarding rate equals the subscription rate — the bridge does not resample.
+
+> **Warning:** `MavlinkConfig.vision_rate_hz` exists but is **not currently wired** into the bridge; do not rely on it to throttle or pad the feed.
 
 ## Quick start
+
+**Outdoor / SITL over TCP**:
 
 ```python
 from nectar.control import DroneFactory, MavlinkConfig, PoseSource
 
-# Outdoor / SITL over TCP
 config = MavlinkConfig(connection_string="tcp:127.0.0.1:5760", expect_lidar=False)
 drone = DroneFactory.create("mavlink", config)
 
@@ -120,14 +123,16 @@ drone.move_to(x=2.0, y=1.0, z=0.0, precision=0.2)
 drone.rtl(land=True)
 ```
 
+**Real hardware over serial** (Jetson ↔ Pixhawk):
+
 ```python
-# Real hardware over serial (Jetson <-> Pixhawk)
 config = MavlinkConfig(connection_string="/dev/ttyTHS1", baud=921600)
 drone = DroneFactory.create("mavlink", config)
 ```
 
+**Indoor, vision-based** (`VisionPoseBridge` feeds the EKF automatically):
+
 ```python
-# Indoor, vision-based: VisionPoseBridge feeds the EKF automatically
 config = MavlinkConfig(
     pose_source=PoseSource.VISION,
     connection_string="/dev/ttyUSB0",

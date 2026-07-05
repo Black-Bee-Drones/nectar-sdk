@@ -2,7 +2,7 @@
 
 ArduPilot firmware specialization of the shared [vehicle core](../vehicle/README.md). `ArduPilotDrone` ([`drone.py`](drone.py)) adds ArduPilot's flight semantics — GUIDED-mode arming, the `GUID_OPTIONS`/`WPNAV` setpoint configuration, and native `RTL`-mode return-to-launch — on top of [`VehicleDrone`](../vehicle/drone.py); the transport-agnostic navigation, takeoff/land detection, GPS math, and PID control are inherited from the core. `MavrosDrone` and `MavlinkDrone` are the **same vehicle reached over two different transports** ([mavros](../mavros/README.md), [mavlink](../mavlink/README.md)).
 
-> This page documents only ArduPilot specifics. The shared navigation methods, reference frames, altitude sources, takeoff/land detection, GPS/EGM96 handling, and PID configuration — which apply to every vehicle — are in the [vehicle core README](../vehicle/README.md). PX4 specifics are in [px4/README.md](../px4/README.md).
+> This page documents only ArduPilot specifics. The shared navigation methods, reference frames, altitude sources, takeoff/land detection, GPS/EGM96 handling, and PID configuration — which apply to every vehicle — are in the [vehicle core README](../vehicle/README.md). PX4 specifics are in [PX4](../px4/README.md).
 
 ## Architecture
 
@@ -109,7 +109,7 @@ ArduPilot v4.6.3 [`WPNAV_*` parameters](https://ardupilot.org/copter/docs/parame
 
 The SDK also sets `PSC_JERK_XY` (4.6.3) / `PSC_JERK_NE` (4.8+) — position controller horizontal jerk, default 5.0 m/s³ — via `SetpointNavConfig.psc_jerk`. This controls AC_PosControl response speed in SubMode::Pos; SITL typically needs higher values (e.g. 50) for usable response.
 
-**Runtime effect of `set_param` per sub-mode**: in SubMode::WP, all `WPNAV_*` are re-read on each new target (`wp_nav->set_wp_destination()`). In SubMode::Pos, speed/accel limits are set once at submode entry — use `set_speed()` for dynamic changes. The SDK's `_prepare_position_setpoint()` leverages WPNav's re-read to update `WPNAV_RADIUS` from the `precision` argument on each `POSITION`/`POSITION_GLOBAL` call when WPNav is enabled and `apply_setpoint_params=True`.
+**Runtime effect of `set_param` per sub-mode**: in SubMode::WP, all `WPNAV_*` are re-read on each new target (`wp_nav->set_wp_destination()`). In SubMode::Pos, speed/accel limits are set once at submode entry — use `set_speed()` for dynamic changes. The SDK's `_prepare_position_setpoint()` uses WPNav's re-read to update `WPNAV_RADIUS` from the `precision` argument on each `POSITION`/`POSITION_GLOBAL` call when WPNav is enabled and `apply_setpoint_params=True`.
 
 ### Speed Control at Runtime
 
@@ -126,7 +126,7 @@ By contrast, `set_param("WPNAV_SPEED", value)` only takes effect on the next tar
 
 ## RTL
 
-`rtl()` defaults to `RTLMethod.NAVIGATE` (the shared SDK PID path to home — see [vehicle/README.md](../vehicle/README.md#rtl)). `RTLMethod.NATIVE` uses ArduPilot's own `RTL` flight mode:
+`rtl()` defaults to `RTLMethod.NAVIGATE` (the shared SDK PID path to home — see [Vehicle core](../vehicle/README.md#rtl)). `RTLMethod.NATIVE` uses ArduPilot's own `RTL` flight mode:
 
 ```python
 drone.rtl(method=RTLMethod.NATIVE)   # ArduPilot RTL mode, auto-land
@@ -151,6 +151,7 @@ Version-dependent parameters (WPNAV/PSC, RTL) are written with the v4.6.3 name f
 `SetpointNavConfig` controls GUIDED-mode behavior for `NavigationMethod.POSITION` / `POSITION_GLOBAL`: the position-controller sub-mode (AC_PosControl vs AC_WPNav) and the WPNAV/PSC parameters.
 
 **Lifecycle**:
+
 1. **On init**: `_load_setpoint_config()` loads from `setpoint_config_file`, else the bundled `setpoint_indoor.yaml` / `setpoint_outdoor.yaml` by `is_indoor`. Always loaded for SDK-side logic (e.g. `use_wpnav` checks).
 2. **On arm** (only if `apply_setpoint_params=True`): `_apply_setpoint_config()` pushes `GUID_OPTIONS` and the `WPNAV_*` / `PSC_JERK_*` parameters to the FCU via `set_param()`, logging each result.
 3. **On `move_to` / `move_to_gps` with a POSITION method** (only if `apply_setpoint_params=True` and `use_wpnav`): `_prepare_position_setpoint()` syncs `WPNAV_RADIUS` with `precision`.
@@ -173,23 +174,31 @@ Version-dependent parameters (WPNAV/PSC, RTL) are written with the v4.6.3 name f
 
 `guid_options` is the [`GUID_OPTIONS`](https://ardupilot.org/copter/docs/ac2_guidedmode.html#guided-mode-options) bitmask; `use_wpnav` is `True` when bit 6 is set. Common values: `1` (arm from TX), `64` (WPNav only), `65` (arm from TX + WPNav). The SDK speed defaults are intentionally conservative versus ArduPilot's factory values to avoid aggressive motion.
 
+**Push to the FCU**:
+
 ```python
-drone.set_setpoint_config({"guid_options": 65, "speed": 0.5, "radius": 0.1})  # push to FCU
-drone.set_setpoint_config({"speed": 0.5}, apply=False)                         # SDK-side only
+drone.set_setpoint_config({"guid_options": 65, "speed": 0.5, "radius": 0.1})
+```
+
+**Update the SDK-side config only** (`apply=False`):
+
+```python
+drone.set_setpoint_config({"speed": 0.5}, apply=False)
 ```
 
 ## PID Configuration
 
-ArduPilot loads its `PositionPIDConfig` from [`config/`](config) (`position_indoor.yaml` / `position_outdoor.yaml`, plus the `position_sim_*.yaml` SITL presets) — the loading lifecycle and runtime overrides are shared and documented in the [vehicle core README](../vehicle/README.md#pid-configuration). Controller internals (gains, output clamps, integral handling) are in [`pid/README.md`](../pid/README.md).
+ArduPilot loads its `PositionPIDConfig` from the [bundled presets](config) (`position_indoor.yaml` / `position_outdoor.yaml`, plus the `position_sim_*.yaml` SITL presets) — the loading lifecycle and runtime overrides are shared and documented in the [vehicle core README](../vehicle/README.md#pid-configuration). Controller internals (gains, output clamps, integral handling) are in the [PID module](../pid/README.md).
 
 ## Transports
 
-- [`mavros/`](../mavros/README.md) — `MavrosTransport`: subscriptions → telemetry, service clients → commands, publishers → setpoints. Requires a running `mavros_node`.
-- [`mavlink/`](../mavlink/README.md) — `PymavlinkTransport`: owns the FCU link, RX timer decode, direct `mav.*_send`, built-in vision bridge.
+- [MAVROS transport](../mavros/README.md) — `MavrosTransport`: subscriptions → telemetry, service clients → commands, publishers → setpoints. Requires a running `mavros_node`.
+- [Direct MAVLink transport](../mavlink/README.md) — `PymavlinkTransport`: owns the FCU link, RX timer decode, direct `mav.*_send`, built-in vision bridge.
 
 ## References
 
 ### MAVLink & ArduPilot
+
 - [MAVLink Basics](https://ardupilot.org/dev/docs/mavlink-basics.html) · [MAVLink common messages](https://mavlink.io/en/messages/common.html) · [MAV_FRAME](https://mavlink.io/en/messages/common.html#MAV_FRAME)
 - [ArduPilot Copter Documentation](https://ardupilot.org/copter/) · [Flight Modes](https://ardupilot.org/copter/docs/flight-modes.html) · [GUIDED Mode](https://ardupilot.org/copter/docs/ac2_guidedmode.html)
 - [GUIDED Mode Commands](https://ardupilot.org/dev/docs/copter-commands-in-guided-mode.html) · [PosControl and Navigation Overview](https://ardupilot.org/dev/docs/code-overview-copter-poscontrol-and-navigation.html)
@@ -198,9 +207,11 @@ ArduPilot loads its `PositionPIDConfig` from [`config/`](config) (`position_indo
 - [Get/Set Parameters](https://ardupilot.org/dev/docs/mavlink-get-set-params.html) · [Set/Get flight mode](https://ardupilot.org/dev/docs/mavlink-get-set-flightmode.html)
 
 ### ArduPilot Source
+
 - [`mode_guided.cpp`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/mode_guided.cpp) — GUIDED sub-modes, `pva_control_start()`, `set_pos_NED_m()`
 - [`AC_WPNav.cpp`](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/libraries/AC_WPNav/AC_WPNav.cpp) · [`AC_PosControl.h`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AC_AttitudeControl/AC_PosControl.h) · [`GCS_MAVLink_Copter.cpp`](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/GCS_MAVLink_Copter.cpp)
 
 ### Vision & Indoor Navigation
+
 - [VIO Tracking Camera](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html) · [ROS VIO Setup](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html) · [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html)
 - Shared navigation, frames, altitude, GPS/EGM96: [vehicle core README](../vehicle/README.md)

@@ -8,32 +8,9 @@ OAK-D, simulation) is an opt-in group. Each module table states how to install i
 This is a living document. Status reflects the most thorough check performed so far;
 cells advance as more setups are exercised (e.g. arm64 CI functional, a Windows/WSL2 machine).
 
-## How to read it
+## Legend
 
-Two kinds of evidence back this matrix, produced by two commands:
-
-- `make verify` (tier 1) — the image builds, packages are present, modules import, and
-  node executables are installed. (`make doctor` gives the same machine a read-only
-  environment/device/CUDA report.)
-- `make verify-functional` (tier 2) — the **pytest** functional suite under
-  [`nectar/test/`](../nectar/test) (also run by `colcon test`). Each test performs a
-  *real operation*: it detects a synthetic ArUco marker, runs a PID step response to
-  convergence, completes a MAVLink heartbeat handshake over a loopback, relays a VSLAM
-  pose to the FCU, opens the Qt window offscreen, runs a nano-model inference, etc.
-  Tests self-skip when a device, GPU, simulator, or optional dependency is absent, so
-  the same suite runs in Docker CI and on real hardware. Run a subset with
-  `make verify-functional MODULE="vision control"` (mapped to pytest markers);
-  hardware-/GPU-gated tests are opt-in (`make verify-hardware`). CI runs the suite
-  across distros/arches; the cells below are updated by hand from those results, and
-  you can reproduce the per-distro runs locally with `make ci-local`.
-- `make verify-sitl` (tier 3) — the **SITL/integration** suite under
-  [`nectar/test/sitl/`](../nectar/test/sitl): a real headless flight (connect, takeoff,
-  move, land) per firmware/protocol (ArduPilot/PX4 over MAVROS, MAVLink, uXRCE-DDS;
-  Crazyflie sim). Opt-in; run where the sim stack is installed (`make sim-install`) —
-  a dev machine, the Jetson, or a pre-release gate — not in CI (the from-source
-  simulators take ~45-70 min to build). It backs the Simulation / MAVROS / PX4-DDS rows.
-
-### Legend
+Each cell's symbol reflects the deepest verification tier reached (see [How it's verified](#how-its-verified)). Rows with a footnote marker carry a caveat at the bottom of the page.
 
 | Symbol | Meaning |
 |:---:|---|
@@ -41,7 +18,6 @@ Two kinds of evidence back this matrix, produced by two commands:
 | `◐` | **Build** — the image builds and `make verify` passes (package present, imports, nodes); the functional check has not been recorded on that distribution yet. |
 | `○` | **Not yet tested**. |
 | `—` | **Not applicable** (the feature or its dependency is not available there). |
-| `!` | **Known issue** — see [Notes](#notes). |
 
 ROS 2 distribution implies its Ubuntu base: **Humble** = 22.04, **Jazzy** / **Kilted** =
 24.04. The **Jetson** column is JetPack 6.x (L4T, arm64, CUDA), built from
@@ -82,10 +58,10 @@ Install: `make python-vision` (algorithms) / camera extras as needed.
 |---|:---:|:---:|:---:|:---:|
 | ArUco / color / line / distance (algorithms) | ● | ● | ● | ● |
 | ROS-topic camera (`CameraFactory`) | ● | ● | ● | ● |
-| USB / OpenCV camera | ◐ (1) | ◐ (1) | ◐ (1) | ◐ (1) |
-| RealSense D4xx (librealsense from source) | ● (2) | ◐ | ◐ | ● (2) |
-| OAK-D (`depthai`) | ● (3) | ◐ (3) | ◐ (3) | ● (3) |
-| MediaPipe hand / face | ◐ (4) | ◐ (4) | ◐ (4) | ◐ (4) |
+| USB / OpenCV camera[^usb] | ◐ | ◐ | ◐ | ◐ |
+| RealSense D4xx (librealsense from source)[^realsense] | ● | ◐ | ◐ | ● |
+| OAK-D (`depthai`)[^oakd] | ● | ◐ | ◐ | ● |
+| MediaPipe hand / face[^mediapipe] | ◐ | ◐ | ◐ | ◐ |
 
 ## Control
 
@@ -95,10 +71,10 @@ Install: `make python-control`; backends are opt-in (`make drone-<x>`).
 |---|:---:|:---:|:---:|:---:|
 | Vehicle core (PID, navigator, frame transforms) | ● | ● | ● | ● |
 | Direct MAVLink (`pymavlink`) transport | ● | ● | ● | ● |
-| MAVROS backend (ArduPilot / PX4) | ◐ (5) | ● (5) | ◐ (5) | ◐ (5) |
-| PX4 native uXRCE-DDS | ◐ (5) | ● (5) | ◐ (5) | ◐ (5) |
-| Crazyflie / Crazyswarm2 | ○ (6) | ○ (6) | ○ (6) | ○ (6) |
-| Bebop driver | ◐ (7) | — | — | — |
+| MAVROS backend (ArduPilot / PX4)[^mavros] | ◐ | ● | ◐ | ◐ |
+| PX4 native uXRCE-DDS[^mavros] | ◐ | ● | ◐ | ◐ |
+| Crazyflie / Crazyswarm2[^crazyflie] | ○ | ○ | ○ | ○ |
+| Bebop driver[^bebop] | ◐ | — | — | — |
 
 ## Localization (indoor / GPS-denied)
 
@@ -108,7 +84,7 @@ Install: `make python-control`; Isaac container is Jetson-only.
 |---|:---:|:---:|:---:|:---:|
 | Vision-pose bridge — MAVROS backend | ● | ● | ● | ● |
 | Vision-pose bridge — MAVLink backend | ● | ● | ● | ● |
-| Isaac ROS Visual SLAM (producer) | — | — | — | ● (8) |
+| Isaac ROS Visual SLAM (producer)[^isaac] | — | — | — | ● |
 
 ## Sensors
 
@@ -118,7 +94,7 @@ Install: `make python-sensors`.
 |---|:---:|:---:|:---:|:---:|
 | Obstacle-mask filter | ● | ● | ● | ● |
 | Rangefinder → MAVLink `DISTANCE_SENSOR` | ● | ● | ● | ● |
-| TF-Luna UART driver | ◐ (9) | ◐ (9) | ◐ (9) | ◐ (9) |
+| TF-Luna UART driver[^tfluna] | ◐ | ◐ | ◐ | ◐ |
 
 ## AI / detection
 
@@ -127,8 +103,8 @@ Install: `make python-ai && make pytorch`.
 | Feature | Humble | Jazzy | Kilted | Jetson |
 |---|:---:|:---:|:---:|:---:|
 | `nectar-ai` CLI | ● | ● | ● | ● |
-| Detection inference (YOLO / DETR / RF-DETR) | ● (10) | ● | ◐ | ● |
-| PyTorch CUDA (GPU tensor) | ○ (11) | ● (11) | ○ (11) | ● |
+| Detection inference (YOLO / DETR / RF-DETR)[^detect] | ● | ● | ◐ | ● |
+| PyTorch CUDA (GPU tensor)[^torchcuda] | ○ | ● | ○ | ● |
 | Training / segmentation | ◐ | ◐ | ◐ | ◐ |
 
 ## Interface
@@ -138,7 +114,7 @@ Install: `make python-interface`.
 | Feature | Humble | Jazzy | Kilted | Jetson |
 |---|:---:|:---:|:---:|:---:|
 | Qt6 / PySide6 GUI (offscreen construct) | ● | ● | ● | ● |
-| Full GUI on a display | ◐ (12) | ◐ (12) | ◐ (12) | ◐ (12) |
+| Full GUI on a display[^gui] | ◐ | ◐ | ◐ | ◐ |
 
 ## Simulation
 
@@ -146,9 +122,9 @@ Install: `make sim-install`. Not part of any published image.
 
 | Feature | Humble | Jazzy | Kilted | Jetson |
 |---|:---:|:---:|:---:|:---:|
-| Gazebo + `ros_gz` bridge | ○ (13) | ● (13) | ○ (13) | ○ (13) |
-| ArduPilot SITL flight | ○ (14) | ● (14) | ○ (14) | — |
-| PX4 SITL flight | ○ (14) | ● (14) | ○ (14) | — |
+| Gazebo + `ros_gz` bridge[^gazebo] | ○ | ● | ○ | ○ |
+| ArduPilot SITL flight[^sitl] | ○ | ● | ○ | — |
+| PX4 SITL flight[^sitl] | ○ | ● | ○ | — |
 
 ## Pinned versions
 
@@ -160,25 +136,32 @@ Per-distro versions live in [`scripts/lib/config.sh`](../scripts/lib/config.sh).
 | Gazebo (`ros_gz`) | Harmonic (source) | Harmonic (binary) | Ionic (binary) | — |
 | PyTorch | uv `--torch-backend` (CPU/CUDA) | same | same | JetPack wheels (CUDA) |
 
-## Notes
+## How it's verified
 
-1. **USB / OpenCV camera**: driver builds and imports; exercising it needs a camera, so it is not run by the harness.
-2. **RealSense**: librealsense is built from source (RSUSB backend) at the pinned version; on Jetson it is built with CUDA (RSUSB is required for the D435i IMU on JetPack 6). The `RealSense device` check passes only with a camera attached; package-level state is covered by `make realsense-verify`.
-3. **OAK-D**: the `depthai` stack installs and a device enumerates; it has been exercised both natively and in Docker. The harness check needs an OAK-D attached to report `●`.
-4. **MediaPipe**: installs and imports; a functional hand/face run needs a sample image and is not part of the harness.
-5. **MAVROS / PX4-DDS**: the transport layer is covered (MAVLink handshake is functional). Full SITL flights are verified on Jazzy/amd64: ArduPilot-over-MAVROS (`sitl_test.py`: sensors, takeoff, PID nav, RTL ~0.1 m, land) and PX4 over both MAVROS and native uXRCE-DDS (`basic.py`: takeoff, hover, AUTO.LAND). MAVROS and `px4_msgs` install on demand (`make drone-mavros` / `make drone-px4-dds`).
-6. **Crazyflie / Crazyswarm2**: opt-in (`make drone-crazyflie`). The factory/config wiring is covered by the `control` marker (`make verify-functional control`); a full sim flight needs `crazyflie_server` with its simulation backend and is run manually.
-7. **Bebop**: source build, Humble-only (the upstream driver targets Humble); flown on a real Bebop 2 historically. Not available on Jazzy/Kilted/Jetson.
-8. **Isaac ROS Visual SLAM**: runs only in the Jetson Isaac container (`make isaac-run`, JetPack 6.x / Humble) — a separate image, not the SDK image. The SDK side is the vision-pose bridge above.
-9. **TF-Luna**: UART driver builds and imports; reading needs the sensor on a serial port. The filter and the rangefinder→MAVLink path are functionally verified without hardware.
-10. **Detection inference**: a `yolov8n` inference runs end to end (CUDA on Jetson, and on a local Jazzy/amd64 GPU). The first run fetches the model weights; offline runs self-skip.
-11. **PyTorch CUDA**: exercised on Jazzy/amd64 with a local GPU (GTX 1650); CI has no GPU runner, and Humble/Kilted amd64 are not yet exercised on a GPU.
-12. **Full GUI on a display**: the window is constructed offscreen by the harness; a real display/X session is needed to drive it interactively.
-13. **Gazebo**: `ros_gz` packages are present where built; the harness steps a headless world only when `gz` is installed (`make sim-install`). Recorded on Jazzy/amd64 (headless step passes); other distros not yet.
-14. **SITL flight**: a full autonomous flight is the `examples/simulation/sitl_test.py` suite (and `examples/control/basic.py` for PX4), which needs the two-terminal simulation running (`make sim-start` + `make sim-bridge`); it is not auto-run by the harness. Recorded on Jazzy/amd64 for ArduPilot (PID nav, RTL) and PX4 over MAVROS + uXRCE-DDS (takeoff, hover, land).
+Three commands back this matrix; a cell's symbol reflects the deepest tier reached. CI runs tiers 1-2 across distros/arches and the cells above are updated by hand from those results.
+
+| Tier | Command | What it proves |
+|------|---------|----------------|
+| 1 — Build | `make verify` | The image builds, packages are present, modules import, and node executables are installed. (`make doctor` gives a read-only environment/device/CUDA report.) |
+| 2 — Functional | `make verify-functional` | The **pytest** suite under [`nectar/test/`](../nectar/test) (also run by `colcon test`). Each test performs a *real operation* — detect a synthetic ArUco marker, run a PID step response, complete a MAVLink handshake over loopback, relay a VSLAM pose, open the Qt window offscreen, run a nano-model inference. Tests self-skip when a device/GPU/sim/dependency is absent. Subset with `MODULE="vision control"`; hardware/GPU tests opt in via `make verify-hardware`; reproduce per-distro with `make ci-local`. |
+| 3 — SITL / integration | `make verify-sitl` | The suite under [`nectar/test/sitl/`](../nectar/test/sitl): a real headless flight (connect, takeoff, move, land) per firmware/protocol (ArduPilot/PX4 over MAVROS, MAVLink, uXRCE-DDS; Crazyflie sim). Opt-in; run where the sim stack is installed (`make sim-install`), not in CI (from-source simulators take ~45-70 min). Backs the Simulation / MAVROS / PX4-DDS rows. |
 
 ## Not covered yet
 
 - **Windows (WSL2 / Docker Desktop)**: not yet exercised.
 - **ROS 2 Lyrical (Ubuntu 26.04)**: not supported yet. At time of writing the `mavros` deb is not published for Lyrical and the scientific-Python stack lacks Python 3.14 wheels; the ROS/C++ layer and Gazebo build. Revisit when both land.
-- **arm64 functional (CI)**: amd64 functional is recorded across the three distros (above), and Humble/arm64 via the Jetson; the generic arm64 CI runner's functional results are not yet recorded.
+
+[^usb]: **USB / OpenCV camera**: driver builds and imports; exercising it needs a camera, so it is not run by the harness.
+[^realsense]: **RealSense** (Humble, Jetson): librealsense is built from source (RSUSB backend) at the pinned version; on Jetson it is built with CUDA (RSUSB is required for the D435i IMU on JetPack 6). The `RealSense device` check passes only with a camera attached; package-level state is covered by `make realsense-verify`.
+[^oakd]: **OAK-D**: the `depthai` stack installs and a device enumerates; it has been exercised both natively and in Docker. The harness check needs an OAK-D attached to report `●`.
+[^mediapipe]: **MediaPipe**: installs and imports; a functional hand/face run needs a sample image and is not part of the harness.
+[^mavros]: **MAVROS / PX4-DDS**: the transport layer is covered (MAVLink handshake is functional). Full SITL flights are verified on Jazzy/amd64: ArduPilot-over-MAVROS (`sitl_test.py`: sensors, takeoff, PID nav, RTL ~0.1 m, land) and PX4 over both MAVROS and native uXRCE-DDS (`basic.py`: takeoff, hover, AUTO.LAND). MAVROS and `px4_msgs` install on demand (`make drone-mavros` / `make drone-px4-dds`).
+[^crazyflie]: **Crazyflie / Crazyswarm2**: opt-in (`make drone-crazyflie`). The factory/config wiring is covered by the `control` marker (`make verify-functional control`); a full sim flight needs `crazyflie_server` with its simulation backend and is run manually.
+[^bebop]: **Bebop**: source build, Humble-only (the upstream driver targets Humble); flown on a real Bebop 2 historically. Not available on Jazzy/Kilted/Jetson.
+[^isaac]: **Isaac ROS Visual SLAM**: runs only in the Jetson Isaac container (`make isaac-run`, JetPack 6.x / Humble) — a separate image, not the SDK image. The SDK side is the vision-pose bridge above.
+[^tfluna]: **TF-Luna**: UART driver builds and imports; reading needs the sensor on a serial port. The filter and the rangefinder→MAVLink path are functionally verified without hardware.
+[^detect]: **Detection inference** (Humble): a `yolov8n` inference runs end to end (CUDA on Jetson, and on a local Jazzy/amd64 GPU). The first run fetches the model weights; offline runs self-skip.
+[^torchcuda]: **PyTorch CUDA**: exercised on Jazzy/amd64 with a local GPU (GTX 1650); CI has no GPU runner, and Humble/Kilted amd64 are not yet exercised on a GPU.
+[^gui]: **Full GUI on a display**: the window is constructed offscreen by the harness; a real display/X session is needed to drive it interactively.
+[^gazebo]: **Gazebo**: `ros_gz` packages are present where built; the harness steps a headless world only when `gz` is installed (`make sim-install`). Recorded on Jazzy/amd64 (headless step passes); other distros not yet.
+[^sitl]: **SITL flight**: a full autonomous flight is the `examples/simulation/sitl_test.py` suite (and `examples/control/basic.py` for PX4), which needs the two-terminal simulation running (`make sim-start` + `make sim-bridge`); it is not auto-run by the harness. Recorded on Jazzy/amd64 for ArduPilot (PID nav, RTL) and PX4 over MAVROS + uXRCE-DDS (takeoff, hover, land).

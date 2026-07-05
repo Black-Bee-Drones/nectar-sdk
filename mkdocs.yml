@@ -9,10 +9,35 @@ copyright: Copyright &copy; Black Bee Drones — Apache-2.0
 repo_url: https://github.com/Black-Bee-Drones/nectar-sdk
 repo_name: Black-Bee-Drones/nectar-sdk
 
+extra:
+  social:
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/blackbeedrones/
+      name: Black Bee Drones on LinkedIn
+    - icon: fontawesome/brands/instagram
+      link: https://www.instagram.com/blackbeedrones/
+      name: Black Bee Drones on Instagram
+    - icon: fontawesome/brands/github
+      link: https://github.com/Black-Bee-Drones
+      name: Black Bee Drones on GitHub
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/u/blackbeedrones
+      name: Black Bee Drones on Docker Hub
+    - icon: simple/huggingface
+      link: https://huggingface.co/blackbeedrones
+      name: Black Bee Drones on Hugging Face
+
 extra_css:
   - stylesheets/extra.css
 
-# You edit only: the module README.md files, docs/*.md, and the authored pages in
+# mermaid.mjs registers the ELK layout engine for the native Mermaid runtime;
+# diagram-zoom.js adds fullscreen pan/zoom to the rendered diagrams.
+extra_javascript:
+  - javascripts/mermaid.mjs
+  - javascripts/diagram-zoom.js
+  - javascripts/showcase.js
+
+# edit only: the module README.md files, docs/*.md, and the authored pages in
 # website/
 # Everything under build/ is generated — never edit it.
 docs_dir: build/docs
@@ -21,10 +46,16 @@ site_dir: build/site
 theme:
   name: material
   language: en
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Montserrat
   features:
     - navigation.tabs
-    - navigation.sections
     - navigation.indexes
+    - navigation.path
     - navigation.top
     - navigation.footer
     - content.code.copy
@@ -34,24 +65,20 @@ theme:
     - search.suggest
     - toc.follow
   palette:
-    - media: "(prefers-color-scheme)"
-      toggle:
-        icon: lucide/sun-moon
-        name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: black
       accent: amber
       toggle:
-        icon: lucide/sun
+        icon: material/toggle-switch-off-outline
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: black
       accent: amber
       toggle:
-        icon: lucide/moon-star
-        name: Switch to system preference
+        icon: material/toggle-switch
+        name: Switch to light mode
 
 plugins:
   - search
@@ -94,6 +121,9 @@ markdown_extensions:
         kwds:
           case: lower
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:zensical.extensions.emoji.twemoji
+      emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.highlight:
@@ -113,10 +143,19 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - Quickstart: getting-started/quickstart.md
-      - Installation: project/installation.md
-      - Compatibility: project/compatibility.md
+  - Get started:
+      - Overview: get-started/index.md
+      - Fly a drone: get-started/control.md
+      - See with a camera: get-started/vision.md
+      - Detect & segment: get-started/ai.md
+  - Setup:
+      - Installation: setup/index.md
+      - Drone drivers: setup/drivers.md
+      - Simulation: setup/simulation.md
+      - RealSense & indoor: setup/realsense.md
+      - Docker: setup/docker.md
+      - Configuration: setup/configuration.md
+      - Compatibility: setup/compatibility.md
   - Concepts:
       - Architecture: concepts/architecture.md
   - Modules:
@@ -132,7 +171,11 @@ nav:
           - PID: modules/control/pid.md
           - Bebop: modules/control/bebop.md
           - Crazyflie: modules/control/crazyflie.md
-      - Vision: modules/vision.md
+      - Vision:
+          - Overview: modules/vision/index.md
+          - Cameras: modules/vision/camera.md
+          - Algorithms: modules/vision/algorithms.md
+          - ROS 2 nodes: modules/vision/nodes.md
       - AI:
           - Overview: modules/ai/index.md
           - Detection: modules/ai/detection.md
@@ -141,24 +184,32 @@ nav:
       - Interface (GUI): modules/interface.md
       - Simulation: modules/simulation.md
       - Messages (nectar_interfaces): modules/interfaces.md
-      - Docker: modules/docker.md
       - Utils: modules/utils.md
-  - Python API:
-      - Overview: api/index.md
-      - Runtime: api/runtime.md
-      - Control: api/control.md
-      - Vision: api/vision.md
-      - AI: api/ai.md
-      - Sensors: api/sensors.md
-      - Utils: api/utils.md
   - Examples:
       - Overview: modules/examples/index.md
       - Control: modules/examples/control.md
       - Vision: modules/examples/vision.md
       - AI: modules/examples/ai.md
       - Sensors: modules/examples/sensors.md
-  - Community:
+  - Development:
+      - Python API:
+          - Overview: api/index.md
+          - Runtime: api/runtime.md
+          - Control: api/control.md
+          - Vision: api/vision.md
+          - AI: api/ai.md
+          - Sensors: api/sensors.md
+          - Utils: api/utils.md
+      - Commands & Makefile: development/commands.md
       - Contributing: project/contributing.md
       - Releasing: project/releasing.md
-      - Security: project/security.md
+  - Projects:
+      - Overview: projects/index.md
+      - IMAV 2025: projects/imav-2025.md
+      - CBR 2025: projects/cbr-2025.md
+      - IMAV 2023 (indoor): projects/imav-2023.md
+      - SAE 2026: projects/sae-2026.md
+  - Community:
+      - Overview: community/index.md
       - Code of Conduct: project/code-of-conduct.md
+      - Security: project/security.md

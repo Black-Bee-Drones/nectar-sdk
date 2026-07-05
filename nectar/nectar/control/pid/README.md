@@ -99,6 +99,7 @@ control_output = pid.update(current_value: float) -> float
 ```
 
 **Algorithm**:
+
 ```
 1. Calculate error: e(t) = setpoint - current_value
 2. Proportional term: P = kp × e(t)
@@ -244,16 +245,21 @@ while True:
 
 ### Configuration Loading
 
-**Automatic** (based on pose source):
+**Automatic** — the config picks a preset by `is_indoor`:
+
+| Mode | Preset loaded |
+|------|---------------|
+| Indoor (vision) | `ardupilot/config/position_indoor.yaml` |
+| Outdoor (GPS) | `ardupilot/config/position_outdoor.yaml` |
+| SITL | `position_sim_indoor.yaml` / `position_sim_outdoor.yaml` |
+
 ```python
-# Indoor mode loads: ardupilot/config/position_indoor.yaml
-# Outdoor mode loads: ardupilot/config/position_outdoor.yaml
-# SITL presets use the position_sim_indoor.yaml / position_sim_outdoor.yaml variants.
 config = MavrosConfig(pose_source=PoseSource.VISION)
 drone = DroneFactory.create("mavros", config)
 ```
 
 **Explicit**:
+
 ```python
 config = MavrosConfig(
     pose_source=PoseSource.VISION,
@@ -262,6 +268,7 @@ config = MavrosConfig(
 ```
 
 **Runtime**:
+
 ```python
 drone.set_pid_config("/path/to/config.yaml")
 drone.set_pid_config(config_dict)
@@ -277,8 +284,8 @@ Controls response magnitude.
 - **Higher kp**: Faster response, potential overshoot
 - **Lower kp**: Slower response, more stable
 
-**Indoor**: 0.3-0.6 (vision pose is accurate)
-**Outdoor**: 0.6-1.0 (GPS noise requires higher gain)
+- **Indoor**: 0.3-0.6 (vision pose is accurate)
+- **Outdoor**: 0.6-1.0 (GPS noise requires higher gain)
 
 ### Integral Gain (ki)
 
@@ -287,8 +294,8 @@ Eliminates steady-state error.
 - **Higher ki**: Faster error elimination, potential instability
 - **Lower ki**: Slower convergence, more stable
 
-**Typical**: 0.0-0.1 (often not needed for position control)
-**Yaw**: 0.05-0.15 (helps with compass drift)
+- **Typical**: 0.0-0.1 (often not needed for position control)
+- **Yaw**: 0.05-0.15 (helps with compass drift)
 
 ### Derivative Gain (kd)
 
@@ -303,16 +310,16 @@ Dampens oscillations and overshoot.
 
 Velocity command limits (m/s for position, rad/s for yaw).
 
-**Indoor**: ±0.4-0.6 m/s (safe in constrained space)
-**Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)
-**Vertical**: ±0.15-0.8 m/s (asymmetric: slower ascent)
+- **Indoor**: ±0.4-0.6 m/s (safe in constrained space)
+- **Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)
+- **Vertical**: ±0.15-0.8 m/s (asymmetric: slower ascent)
 
 ### Integral Limits
 
 Anti-windup protection.
 
-**Typical**: 10-20% of output limits
-**Purpose**: Prevent integral term from accumulating during saturation
+- **Typical**: 10-20% of output limits
+- **Purpose**: prevent the integral term from accumulating during saturation
 
 ## Default Configurations
 
@@ -342,6 +349,7 @@ yaw:
 ```
 
 **Rationale**:
+
 - Lower velocities for safety indoors
 - Asymmetric Z limits (slower ascent to avoid ceiling collisions)
 - Yaw integral term compensates for vision pose drift
@@ -372,6 +380,7 @@ yaw:
 ```
 
 **Rationale**:
+
 - Higher gains compensate for GPS latency and noise
 - Larger velocity limits for faster waypoint transitions
 - Symmetric Z limits (open outdoor environment)

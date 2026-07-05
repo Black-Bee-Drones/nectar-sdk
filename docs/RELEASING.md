@@ -17,6 +17,7 @@ vMAJOR.MINOR.PATCH
 Releases can have a code name associated with the version. The git tag is always `vX.Y.Z` (machine-readable). The GitHub release title includes the code name (human-readable).
 
 Examples:
+
 - `v0.2.0 "Tadini"` — team captain
 - `v1.0.0 "CBR 2026"` — competition name
 - `v1.1.0 "Mangalarga"` — internal code name
@@ -64,6 +65,7 @@ Images are pushed to [Docker Hub](https://hub.docker.com/r/blackbeedrones/nectar
 | `:<distro>-vX.Y.Z` | `humble-v0.2.0` | Specific release |
 
 Pull and run:
+
 ```bash
 docker pull blackbeedrones/nectar-sdk:humble
 docker run -it --rm --net=host blackbeedrones/nectar-sdk:humble

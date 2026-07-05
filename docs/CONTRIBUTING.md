@@ -1,14 +1,10 @@
-# Contributing to Nectar SDK 🐝
+# Contributing to Nectar SDK
 
-Thank you for your interest in contributing! This guide will help you get started.
+Discuss significant changes via [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues)
+or [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) before implementing,
+and read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
 
-## Before You Start
-
-Please discuss significant changes via [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) or [Discussions](https://github.com/Black-Bee-Drones/nectar-sdk/discussions) before implementation.
-
-Read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
-
-## Issues and Feature Requests 🐛
+## Issues and Feature Requests
 
 ### Reporting Bugs
 
@@ -39,13 +35,14 @@ cd nectar-sdk
 Git LFS automatically handles large files defined in `.gitattributes`. When you add images, videos, or other large files, they're automatically tracked by LFS.
 
 **Note:** If you cloned before Git LFS was set up, you may need to pull LFS files:
+
 ```bash
 git lfs pull
 ```
 
 ### Python environment
 
-The SDK installs Python dependencies with [uv](https://github.com/astral-sh/uv) into a shared workspace venv (`$WORKSPACE/.venv`) that every package in the workspace reuses. See [docs/INSTALL.md](INSTALL.md#python-environment).
+The SDK installs Python dependencies with [uv](https://github.com/astral-sh/uv) into a shared workspace venv (`$WORKSPACE/.venv`) that every package in the workspace reuses. See the [installation guide](setup/index.md#python-environment).
 
 ### Pre-commit Hooks
 
@@ -68,6 +65,7 @@ make check
 ```
 
 This validates **all files** (Python, Markdown, YAML, shell scripts) for:
+
 - Trailing whitespace and missing end-of-file newlines
 - Python lint errors (unused imports, undefined names)
 - Import sorting
@@ -84,7 +82,7 @@ make format      # Python format only (ruff format)
 
 Use `make lint` / `make format` during development for fast feedback on Python files. Use `make check` before pushing to ensure CI will pass.
 
-## Pull Request Process 🔄
+## Pull Request Process
 
 ### 1. Fork and Clone
 
@@ -104,6 +102,7 @@ git checkout -b fix/bug-description
 ```
 
 **Branch Naming**:
+
 - `feat/` - New features
 - `fix/` - Bug fixes
 - `docs/` - Documentation only
@@ -131,6 +130,7 @@ git commit -m "docs(readme): update installation instructions"
 ```
 
 **Types**:
+
 | Type | Description |
 |------|-------------|
 | `feat` | New feature |
@@ -149,7 +149,7 @@ git push origin feat/your-feature-name
 
 Then open a Pull Request via GitHub using our [PR template](../.github/PULL_REQUEST_TEMPLATE.md).
 
-## Code Guidelines 📝
+## Code Guidelines
 
 ### Documentation
 
@@ -160,12 +160,16 @@ Then open a Pull Request via GitHub using our [PR template](../.github/PULL_REQU
 **README conventions** (gold standard: [`control/mavros/README.md`](../nectar/nectar/control/mavros/README.md)):
 
 - **Structure (progressive disclosure)**: lead with a one-line purpose, then an **At a glance** runnable snippet (the common case), then **Concepts** (short prose + one mid-level diagram), then task-oriented **Usage**, then a **Reference** section for exhaustive tables (topics/services/params/types). Usage comes before the detailed class diagram, never after a wall of it. Keep prose tight and technical — no buzzwords, no repetition.
-- **Single source of truth**: document shared logic once and link to it; do not restate the same thing in two READMEs. shared flight logic lives in [`vehicle/README.md`](../nectar/nectar/control/vehicle/README.md) (ArduPilot specifics in [`ardupilot/README.md`](../nectar/nectar/control/ardupilot/README.md)); indoor VSLAM in [`localization/README.md`](../nectar/nectar/control/localization/README.md); install in [`docs/INSTALL.md`](INSTALL.md); Docker in [`docker/README.md`](../docker/README.md); simulation in [`simulation/README.md`](../nectar/simulation/README.md). The root README and parent module READMEs link, they don't duplicate.
-- **One diagram per README, theme-safe**: one class/architecture Mermaid diagram per page, placed in a **Concepts** section *after* the at-a-glance usage (never as the first thing on the page), and keep the root README's diagram high-level. Do **not** set explicit Mermaid colors (`fill:`, `style ... fill`, `classDef ... fill`) — they break in dark mode; rely on the default theme. (Avoid wrapping Mermaid in `<details>`/collapsibles — the fenced block does not render inside raw-HTML blocks in this toolchain.)
+- **Single source of truth**: document shared logic once and link to it; do not restate the same thing in two READMEs. shared flight logic lives in [Vehicle core](../nectar/nectar/control/vehicle/README.md) (ArduPilot specifics in [ArduPilot](../nectar/nectar/control/ardupilot/README.md)); indoor VSLAM in [Localization](../nectar/nectar/control/localization/README.md); install in [Setup guide](setup/index.md); Docker in [Docker guide](../docker/README.md); simulation in [Simulation](../nectar/simulation/README.md). The root README and parent module READMEs link, they don't duplicate.
+- **Diagrams (Mermaid, rendered natively by Zensical)**: keep one diagram per README, in a **Concepts** section *after* the at-a-glance usage (never the first thing on the page). Zensical renders Mermaid client-side and adapts fonts/colors to the active light/dark scheme, and every diagram is click-to-zoom/pan (see `website/javascripts/`). For the **technical** diagrams (class, sequence, state) rely on the theme — do **not** set colors, so they stay legible in both schemes. Reserve colors for the high-level **architecture/overview** diagram, where a curated `classDef` palette (mid-tone `fill:` with an explicit text `color:`) aids comprehension and reads on both schemes. Use the **ELK** layout (`config: { layout: elk }` in the diagram frontmatter) only for dense flowcharts on the **site** — GitHub's Mermaid has no ELK, so never put `layout: elk` in a README that must also render on GitHub. Avoid wrapping Mermaid in `<details>`/collapsibles (the fence does not render inside raw-HTML blocks). Git graphs render but are unthemed and weak on mobile — use sparingly.
+- **Renders in the strict parser**: the docs site uses Python-Markdown, which is stricter than GitHub. Put a blank line before every list, table, and fenced code block (rules `MD022`/`MD031`/`MD032`/`MD058`, enforced by `markdownlint-cli2` in pre-commit and CI). Markdown that passes the linter renders on both the site and GitHub; the reverse is not guaranteed. Preview locally with `make docs-serve`.
+- **Tabs and admonitions are site-only**: content tabs (`=== "..."`) and `!!!`/`???` admonitions render only on the docs site, not on GitHub. Use them on the authored `website/` pages and the site-first guides under `docs/` (setup, Docker), where they carry the reader's choice (backend, camera, OS) end to end. Module and example READMEs are shown on GitHub too, so there present alternatives as separate **bold-labeled fenced blocks** (not tabs) and use plain blockquotes (`> **Warning:** ...`) for notes. A fence that uses `#` comments as case/variant headers should become bold-labeled blocks (or a table) in a README, and a tab group on a site page.
+- **Human link text**: never use a path as the visible link text (`[vehicle/README.md](...)`, `[control/px4/config](...)`). Write a human title (`[Vehicle core](...)`, `[PX4 config](...)`). Inline source-file pointers (`([`sequencer.py`](sequencer.py))`) are fine. Symbol → generated-API links belong on `website/` pages only (a README link to `api/*.md` is not dual-render-safe).
 - **Stay grounded**: every command, flag, topic, and class name must match the code. Prefer real argparse flags / parameter names over invented ones.
-- **When you add a module**: sync the root README (Features, Documentation table, directory tree) and the parent module's index, and add it to the Module Structure list below.
+- **When you add a module**: sync the root README (Features, Documentation table, directory tree) and the parent module's index, and follow [Adding a component](#adding-a-component) below.
 
 **Docstring Example**:
+
 ```python
 def move_to(
     self,
@@ -297,7 +301,7 @@ To add a firmware/protocol: add a `SimSpec` to
 ArduPilot navigation suite stays in
 [`examples/simulation/sitl_test.py`](../nectar/nectar/examples/simulation/sitl_test.py).
 
-### Module Structure
+### Adding a component
 
 When adding new components:
 
@@ -327,15 +331,10 @@ python -c "import sys, nectar.control; assert 'torch' not in sys.modules and 'me
 
 If you add a new heavy dependency or re-export, route it through `_LAZY_ATTRS` (or a function-local import) so the public import path stays light.
 
-## Review Process 👀
+## Review Process
 
-After submission:
-
-1. Maintainers review code and provide feedback
-2. Address requested changes
-3. Once approved, PR is merged
-
-Be patient and responsive to feedback. Thank you for contributing!
+Maintainers review the code and provide feedback; address the requested changes and, once
+approved, the PR is merged.
 
 ## Questions?
 

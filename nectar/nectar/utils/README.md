@@ -122,7 +122,7 @@ grid = GPSCalculate.generate_point_grid(vertices, grid_shape=(10, 10))
 
 `PositionUtils.get_body_distance()` uses `Geodesic.WGS84.Inverse` ([Karney 2013](https://doi.org/10.1007/s00190-012-0578-z)) for GPS distance and bearing. Haversine (spherical, R=6371km) remains in `GPSCalculate` for general use.
 
-Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. Full benchmark: [`scripts/experiments/benchmark_geodesic_vs_haversine.py`](../../../scripts/experiments/benchmark_geodesic_vs_haversine.py)
+Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. See the [full benchmark script](../../../scripts/experiments/benchmark_geodesic_vs_haversine.py).
 
 **Distance error** (against exact known distances):
 
@@ -213,17 +213,21 @@ vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
 ### Supported Message Types
 
 **PositionUtils.get_body_distance()**:
+
 - `target`: `PositionTarget` (local) or `GeoPoseStamped` (GPS)
 - `current`: `PoseStamped` or `PoseWithCovarianceStamped` (local) or `NavSatFix` (GPS)
 
 **PositionUtils.get_yaw_from_pose()**:
+
 - `PoseStamped`, `PoseWithCovarianceStamped`, `GeoPoseStamped`, or `PositionTarget`
 
 **PositionUtils.compute_yaw_error()**:
+
 - `target_yaw`, `current_yaw`: floats in radians
 - `threshold`: optional deadband in radians (errors below this return 0.0)
 
 **PositionUtils.convert_position_to_target()**:
+
 - `PoseStamped` / `PoseWithCovarianceStamped` → `PositionTarget` (local)
 - `NavSatFix` → `GeoPoseStamped` (GPS, requires heading)
 

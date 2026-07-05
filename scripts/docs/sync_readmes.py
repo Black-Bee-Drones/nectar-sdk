@@ -14,11 +14,22 @@ ASSETS_OUT = "assets/_generated"  # under DOCS
 GH_BLOB = "https://github.com/Black-Bee-Drones/nectar-sdk/blob/main"
 GH_TREE = "https://github.com/Black-Bee-Drones/nectar-sdk/tree/main"
 
+# Mermaid diagrams are rendered natively by Zensical (client-side, theme-aware), so the
+# ```mermaid fences pass through unchanged — no pre-rendering here.
+
 # source (relative to repo root) -> output (relative to the assembled docs dir)
 MANIFEST: dict[str, str] = {
+    # Setup (split installation guide)
+    "docs/setup/index.md": "setup/index.md",
+    "docs/setup/drivers.md": "setup/drivers.md",
+    "docs/setup/simulation.md": "setup/simulation.md",
+    "docs/setup/realsense.md": "setup/realsense.md",
+    "docs/setup/configuration.md": "setup/configuration.md",
+    "docs/COMPATIBILITY.md": "setup/compatibility.md",
+    "docker/README.md": "setup/docker.md",
+    # Development
+    "docs/development/commands.md": "development/commands.md",
     # Project docs
-    "docs/INSTALL.md": "project/installation.md",
-    "docs/COMPATIBILITY.md": "project/compatibility.md",
     "docs/CONTRIBUTING.md": "project/contributing.md",
     "docs/RELEASING.md": "project/releasing.md",
     "docs/SECURITY.md": "project/security.md",
@@ -36,7 +47,10 @@ MANIFEST: dict[str, str] = {
     "nectar/nectar/control/bebop/README.md": "modules/control/bebop.md",
     "nectar/nectar/control/crazyflie/README.md": "modules/control/crazyflie.md",
     # Vision / AI / sensors / interface / utils
-    "nectar/nectar/vision/README.md": "modules/vision.md",
+    "nectar/nectar/vision/README.md": "modules/vision/index.md",
+    "nectar/nectar/vision/camera/README.md": "modules/vision/camera.md",
+    "nectar/nectar/vision/algorithms/README.md": "modules/vision/algorithms.md",
+    "nectar/nectar/vision/nodes/README.md": "modules/vision/nodes.md",
     "nectar/nectar/ai/README.md": "modules/ai/index.md",
     "nectar/nectar/ai/detection/README.md": "modules/ai/detection.md",
     "nectar/nectar/ai/segmentation/README.md": "modules/ai/segmentation.md",
@@ -48,10 +62,9 @@ MANIFEST: dict[str, str] = {
     "nectar/nectar/examples/vision/README.md": "modules/examples/vision.md",
     "nectar/nectar/examples/ai/README.md": "modules/examples/ai.md",
     "nectar/nectar/examples/sensors/README.md": "modules/examples/sensors.md",
-    # Simulation / interfaces / docker
+    # Simulation / interfaces
     "nectar/simulation/README.md": "modules/simulation.md",
     "nectar_interfaces/README.md": "modules/interfaces.md",
-    "docker/README.md": "modules/docker.md",
 }
 
 LINK_RE = re.compile(r'(!?)\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)\s*(?:"[^"]*")?\)')
@@ -128,8 +141,7 @@ def main() -> None:
 
     rel = DOCS.relative_to(REPO).as_posix()
     print(
-        f"assembled {len(MANIFEST)} generated + authored pages into {rel}/ "
-        f"({len(copied)} asset(s))"
+        f"assembled {len(MANIFEST)} generated + authored pages into {rel}/ ({len(copied)} asset(s))"
     )
 
 

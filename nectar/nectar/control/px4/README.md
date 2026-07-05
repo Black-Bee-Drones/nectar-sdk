@@ -125,7 +125,7 @@ PX4's analog of ArduPilot's WPNAV parameters is the multicopter position-control
 | `yaw_rate` | `MPC_YAWRAUTO_MAX` | Auto yaw rate (deg/s) |
 | `takeoff_speed` | `MPC_TKO_SPEED` | Takeoff climb speed |
 
-These govern the **POSITION / POSITION_GLOBAL** setpoint paths and the PX4 offboard takeoff climb. The default **PID / PID_EKF** path is unaffected — there the SDK computes velocity and the ceiling is the per-axis PID output clamp (see [vehicle/README.md](../vehicle/README.md#pid-configuration)), identical to ArduPilot.
+These govern the **POSITION / POSITION_GLOBAL** setpoint paths and the PX4 offboard takeoff climb. The default **PID / PID_EKF** path is unaffected — there the SDK computes velocity and the ceiling is the per-axis PID output clamp (see [Vehicle core](../vehicle/README.md#pid-configuration)), identical to ArduPilot.
 
 Set via config (`apply_setpoint_params=True` pushes the params to the FCU on `arm()`) or at runtime; `set_speed` changes a single axis live:
 
@@ -139,7 +139,9 @@ drone.set_setpoint_config({"speed": 3.0, "accel": 2.5})  # push MPC_* to the FCU
 drone.set_speed(2.0, "horizontal")                        # live: MPC_XY_CRUISE/VEL_MAX
 ```
 
-Bundled presets live in [`config/`](config) (`setpoint_outdoor.yaml`, `setpoint_indoor.yaml`, and the `setpoint_sim_*` SITL variants). **Limitation:** the native uXRCE-DDS backend (`px4_dds`) cannot set parameters, so `apply_setpoint_params` / `set_setpoint_config` / `set_speed` are no-ops there — use the MAVROS or direct-MAVLink backend, or set the `MPC_*` params in QGC.
+Bundled presets live in the [`config/` directory](config) (`setpoint_outdoor.yaml`, `setpoint_indoor.yaml`, and the `setpoint_sim_*` SITL variants).
+
+> **Limitation:** the native uXRCE-DDS backend (`px4_dds`) cannot set parameters, so `apply_setpoint_params` / `set_setpoint_config` / `set_speed` are no-ops there — use the MAVROS or direct-MAVLink backend, or set the `MPC_*` params in QGC.
 
 ## Payload actuators / gripper
 
@@ -166,16 +168,21 @@ For PX4 SITL the offboard MAVLink API is on UDP 14540 (`udp://:14540@127.0.0.1:1
 
 PX4 SITL with Gazebo (PX4 starts Gazebo itself), via the unified simulation CLI:
 
+**Terminal 1 — PX4 SITL + Gazebo** (shared Nectar outdoor world + `x500_nectar`, offboard on UDP 14540; matched sensors `/front_camera/*`, `/down_camera`, and the downward lidar on `/mavros/rangefinder/rangefinder`):
+
 ```bash
-# Terminal 1: PX4 SITL + Gazebo (shared Nectar outdoor world + x500_nectar),
-# offboard on udp 14540. Matched sensors: /front_camera/*, /down_camera, and
-# the downward lidar on /mavros/rangefinder/rangefinder.
 make sim-start FIRMWARE=px4 ENV=outdoor
+```
 
-# Terminal 2: MAVROS + camera bridges
+**Terminal 2 — MAVROS + camera bridges**:
+
+```bash
 make sim-bridge FIRMWARE=px4 ENV=outdoor
+```
 
-# Run a script (MAVROS backend)
+**Run a script** (MAVROS backend):
+
+```bash
 python3 basic.py --drone px4
 ```
 
@@ -229,9 +236,21 @@ make sim-install FIRMWARE=px4 ARGS=--native
 
 Usage — 3 terminals (PX4 SITL starts the uXRCE-DDS client itself):
 
+**Terminal 1 — PX4 SITL + Gazebo**:
+
 ```bash
-make sim-start  FIRMWARE=px4 ENV=outdoor                 # T1: PX4 SITL + Gazebo
-make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds     # T2: MicroXRCEAgent udp4 -p 8888
+make sim-start FIRMWARE=px4 ENV=outdoor
+```
+
+**Terminal 2 — uXRCE-DDS agent** (`MicroXRCEAgent udp4 -p 8888`):
+
+```bash
+make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds
+```
+
+**Run a script**:
+
+```bash
 python3 nectar/nectar/examples/control/basic.py --drone px4_dds --env outdoor
 ```
 
@@ -253,4 +272,4 @@ Notes / limitations:
 - [Flight Modes (Multicopter)](https://docs.px4.io/main/en/flight_modes_mc/) · [Basic Flying (MC)](https://docs.px4.io/main/en/flying/basic_flying_mc.html)
 - [ROS 2 User Guide](https://docs.px4.io/main/en/ros2/) · [ROS 2 Offboard Control](https://docs.px4.io/main/en/ros2/offboard_control.html)
 - [PX4 Simulation](https://docs.px4.io/main/en/simulation/) · [Gazebo Simulation](https://docs.px4.io/main/en/sim_gazebo_gz/)
-- Shared flight logic: [`vehicle/README.md`](../vehicle/README.md) · MAVROS plumbing: [`mavros/README.md`](../mavros/README.md)
+- Shared flight logic: [Vehicle core](../vehicle/README.md) · MAVROS plumbing: [MAVROS transport](../mavros/README.md)

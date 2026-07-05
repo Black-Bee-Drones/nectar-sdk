@@ -1,6 +1,6 @@
 # MAVROS Transport
 
-`MavrosTransport` connects the shared [vehicle core](../vehicle/README.md) to a running [`mavros_node`](https://github.com/mavlink/mavros). It backs the same vehicle over MAVROS for both firmwares (`MavrosDrone` for ArduPilot, `Px4MavrosDrone` for PX4) — the firmware-agnostic flight, navigation, takeoff/land, GPS, RTL, and PID behavior is **shared and documented in [`vehicle/README.md`](../vehicle/README.md)** (ArduPilot setpoint/parameter specifics in [`ardupilot/README.md`](../ardupilot/README.md)).
+`MavrosTransport` connects the shared [vehicle core](../vehicle/README.md) to a running [`mavros_node`](https://github.com/mavlink/mavros). It backs the same vehicle over MAVROS for both firmwares (`MavrosDrone` for ArduPilot, `Px4MavrosDrone` for PX4) — the firmware-agnostic flight, navigation, takeoff/land, GPS, RTL, and PID behavior is **shared and documented in the [vehicle core](../vehicle/README.md)** (ArduPilot setpoint/parameter specifics in [ArduPilot](../ardupilot/README.md)).
 
 > For the public `Drone` API, navigation methods, references, altitude sources, takeoff/land detection, and PID configuration, see the [vehicle core README](../vehicle/README.md).
 
@@ -172,4 +172,4 @@ Per-firmware FCU parameters (sources, rate, height source) and the EKF-origin st
 - [SET_POSITION_TARGET_LOCAL_NED](https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED) · [MAV_RESULT](https://mavlink.io/en/messages/common.html#MAV_RESULT) · [VISION_POSITION_ESTIMATE](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE)
 - [ROS 2 Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html) · [ROS 2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
 - [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros) · [Isaac ROS cuVSLAM with RealSense](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)
-- Shared flight logic: [`vehicle/README.md`](../vehicle/README.md) · ArduPilot specifics: [`ardupilot/README.md`](../ardupilot/README.md)
+- Shared flight logic: [Vehicle core](../vehicle/README.md) · ArduPilot specifics: [ArduPilot](../ardupilot/README.md)

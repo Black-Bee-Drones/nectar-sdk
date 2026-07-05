@@ -46,7 +46,7 @@ flowchart LR
 
 ## Run
 
-Both sides must share `ROS_DOMAIN_ID` (default `14`, see `scripts/lib/config.sh`).
+> **Prerequisite:** both sides must share `ROS_DOMAIN_ID` (default `14`, see `scripts/lib/config.sh`).
 
 1. Producer (Isaac container). One self-contained command clones `isaac_ros_common`
    (`release-3.2`), pulls the prebuilt NVCR base, builds the Nectar layer, and
@@ -60,14 +60,21 @@ nectar-vslam            # = ros2 launch nectar/launch/isaac_vslam_realsense.laun
 
 2. Consumer (SDK container or host), pick the transport you fly with:
 
+**MAVROS transport**:
+
 ```bash
-# MAVROS transport
 ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
+```
 
-# direct pymavlink transport (no MAVROS)
+**Direct pymavlink transport** (no MAVROS):
+
+```bash
 ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14551
+```
 
-# native uXRCE-DDS (PX4 only; needs a running MicroXRCEAgent + px4_msgs)
+**Native uXRCE-DDS** (PX4 only; needs a running `MicroXRCEAgent` + `px4_msgs`):
+
+```bash
 ros2 launch nectar vision_pose.launch.py backend:=dds
 ```
 
@@ -196,11 +203,16 @@ window does not fill with the whole trajectory. `vslam_rviz.launch.py` runs a
 `*_windowed` topics, which the light profile subscribes to. Set `window_seconds`
 to `0` for full history.
 
+**Laptop (nectar built)**:
+
 ```bash
-# Laptop (nectar built)
 ros2 launch nectar vslam_rviz.launch.py profile:=light            # or profile:=full
 ros2 launch nectar vslam_rviz.launch.py window_seconds:=30        # longer buffer
-# Laptop (repo only, no build) — run the relay too, else the light paths are empty:
+```
+
+**Laptop (repo only, no build)** — run the relay too, else the light paths are empty:
+
+```bash
 ros2 run nectar path_window_node.py    # if built; otherwise: python3 .../nodes/path_window_node.py
 rviz2 -d src/nectar-sdk/nectar/nectar/control/localization/rviz/vslam_light.rviz
 ```

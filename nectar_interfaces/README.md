@@ -196,26 +196,15 @@ auto aruco_pub = node->create_publisher<nectar_interfaces::msg::ArucoTransforms>
     "/aruco/pose_estimate", 10);
 ```
 
-## Package Structure
+## Package layout
 
-```
-nectar_interfaces/
-├── CMakeLists.txt          # Build configuration
-├── package.xml             # Package manifest
-├── LICENSE                 # Apache-2.0
-├── README.md               # This file
-└── msg/
-    ├── ArucoTransforms.msg # ArUco pose message
-    ├── LineInfo.msg        # Line detection message
-    └── PhotoInfo.msg       # Photo metadata message
-```
-
----
+Message definitions live in `msg/`: `ArucoTransforms.msg`, `LineInfo.msg`, and `PhotoInfo.msg`.
+The package builds them with the standard `CMakeLists.txt` / `package.xml` pair.
 
 ## Related Modules
 
 - [Vision Module](../nectar/nectar/vision/README.md) - Camera drivers and detection algorithms that publish these messages
-- [Vision Nodes](../nectar/nectar/vision/nodes/) - ROS2 nodes using these interfaces
+- [Vision Nodes](../nectar/nectar/vision/nodes/README.md) - ROS 2 nodes using these interfaces
 
 ## References
 

@@ -1,20 +1,500 @@
-/* Black Bee Drones brand: near-black primary, amber accent. */
+/* Bebas Neue drives the display headings; Montserrat (theme.font.text) is the body. */
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap");
+
 :root {
-  --md-primary-fg-color:        #14161a;
-  --md-primary-fg-color--light: #2b2f36;
-  --md-primary-fg-color--dark:  #0a0c0f;
-  --md-accent-fg-color:         #f5a623;
-  --md-accent-fg-color--transparent: rgba(245, 166, 35, 0.10);
+  --md-primary-fg-color: #252827;
+  --md-primary-fg-color--light: #3a3e3c;
+  --md-primary-fg-color--dark: #1c1e1d;
+  --md-accent-fg-color: #fdce01;
+  --md-accent-fg-color--transparent: rgba(253, 206, 1, 0.10);
 }
 
-/* Light scheme: amber-brown links keep contrast on white. */
+/* Condensed all-caps display type for the site title and top headings; smaller
+   headings and body copy stay Montserrat for readability. */
+.md-header__title,
+.md-typeset h1,
+.md-typeset h2 {
+  font-family: "Bebas Neue", var(--md-text-font, sans-serif);
+  letter-spacing: 0.01em;
+}
+
+/* Light scheme: darker brand-amber links keep WCAG contrast on white (pure
+   #fdce01 is reserved for buttons/hover/toggle, not body text on white). Code
+   blocks, chips, and cards use a soft neutral tint of the brand gray #909c98
+   (kept off yellow so the accent stays reserved for interactive elements). */
 [data-md-color-scheme="default"] {
-  --md-typeset-a-color: #b9770a;
+  --md-typeset-a-color: #a67c00;
+  --md-code-bg-color: #f2f3f3;
 }
 
-/* Dark scheme: amber links and accents pop on the slate background. */
+/* Dark scheme: brand-dark surfaces (slightly darker than the #252827 header) with
+   brand-yellow links and accents. */
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #14161a;
-  --md-accent-fg-color:  #f5a623;
-  --md-typeset-a-color:  #f5b545;
+  --md-primary-fg-color: #252827;
+  --md-accent-fg-color: #fdce01;
+  --md-typeset-a-color: #fdce01;
+  --md-default-bg-color: #1c1e1d;
+  --md-code-bg-color: #252827;
+}
+
+/* Mermaid diagrams (rendered natively by Zensical) get a click-to-zoom affordance;
+   see website/javascripts/diagram-zoom.js. The SVG is in a closed shadow root, so the
+   overlay scales the host element itself. */
+.md-typeset .mermaid.diagram-zoomable {
+  cursor: zoom-in;
+}
+
+.diagram-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+  background: rgba(10, 12, 15, 0.92);
+}
+
+.diagram-overlay.is-open {
+  display: block;
+}
+
+body.diagram-overlay-open {
+  overflow: hidden;
+}
+
+.diagram-overlay__stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.diagram-overlay__stage .mermaid {
+  cursor: grab;
+  display: inline-block;
+  /* shrink to the diagram so fit-to-screen measures the SVG */
+  transform-origin: center center;
+  max-width: none;
+  will-change: transform;
+}
+
+.diagram-overlay__stage .mermaid:active {
+  cursor: grabbing;
+}
+
+.diagram-overlay__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+  z-index: 2;
+  padding: 0.2rem 0.5rem;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: #fff;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.diagram-overlay__hint {
+  position: absolute;
+  bottom: 0.9rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  color: #cfd3d8;
+  font-size: 0.75rem;
+}
+
+
+
+/* Chip rows: project metadata + "runs on". Real-link replacements for badges. */
+.md-typeset .nectar-meta ul,
+.md-typeset .nectar-supported ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+  padding: 0;
+  list-style: none;
+}
+.nectar-meta li,
+.nectar-supported li {
+  margin: 0 !important;
+}
+.nectar-meta a,
+.nectar-supported a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 2rem;
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.nectar-meta a:hover,
+.nectar-supported a:hover {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+.nectar-meta a .twemoji,
+.nectar-supported a .twemoji {
+  height: 1.05em;
+  width: 1.05em;
+}
+/* Small muted label that precedes the "runs on" chips. */
+.nectar-supported {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+}
+.nectar-supported > .nectar-supported__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-default-fg-color--lighter);
+}
+
+/* Marquee carousel: full-frame competition/mission runs, one at a time. */
+.nectar-carousel {
+  position: relative;
+  margin: 1.2rem 0 1.8rem;
+}
+.nectar-carousel__track {
+  display: flex;
+  gap: 0.9rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  padding-bottom: 0.3rem;
+}
+.nectar-carousel__track::-webkit-scrollbar {
+  display: none;
+}
+.nectar-tile {
+  position: relative;
+  margin: 0;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  aspect-ratio: 16 / 9;
+  display: block;
+}
+.nectar-carousel .nectar-tile {
+  scroll-snap-align: start;
+  flex: 0 0 min(100%, 760px);
+  cursor: zoom-in;
+}
+/* Marquee slides share one height; landscape fills the width, portrait is
+   sized to the video (see the --portrait rules below). */
+.nectar-carousel--marquee .nectar-tile {
+  aspect-ratio: auto;
+  height: clamp(300px, 44vw, 420px);
+}
+
+/* Landscape clips (default): video fills the 16:9 stage, caption overlays. */
+.nectar-tile__media {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+.nectar-tile__media video,
+.nectar-tile__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.nectar-tile .nectar-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 1.6rem 0.8rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+}
+.nectar-tile .nectar-cap a {
+  color: #fff;
+  text-decoration: none;
+}
+.nectar-tile .nectar-cap .cap-sub {
+  display: block;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: #cfd3d8;
+}
+
+/* Portrait (phone) clips: compact card sized to the video, transparent frame
+   (no border/background), with the caption overlaid like the landscape slides. */
+.nectar-carousel .nectar-tile--portrait {
+  flex: 0 0 auto;
+  width: auto;
+  background: transparent;
+  border: none;
+}
+.nectar-tile--portrait .nectar-tile__media {
+  position: relative;
+  inset: auto;
+  height: 100%;
+  background: transparent;
+}
+.nectar-tile--portrait .nectar-tile__media video {
+  width: auto;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 0.6rem;
+}
+.nectar-carousel__btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.9;
+}
+.nectar-carousel__btn:hover {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+.nectar-carousel__btn--prev {
+  left: 0.4rem;
+}
+.nectar-carousel__btn--next {
+  right: 0.4rem;
+}
+
+/* Feature grid: one module card = clip (or icon) + title + description + link. */
+.nectar-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0 1.6rem;
+}
+.nectar-feature {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: var(--md-code-bg-color);
+}
+.nectar-feature__media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  cursor: zoom-in;
+}
+.nectar-feature__media video,
+.nectar-feature__media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.nectar-feature__media--icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  color: var(--md-default-fg-color--lighter);
+  background: linear-gradient(135deg, var(--md-code-bg-color), var(--md-default-bg-color));
+}
+.nectar-feature__media--icon .twemoji,
+.nectar-feature__media--icon svg {
+  width: 3rem;
+  height: 3rem;
+}
+.nectar-feature__body {
+  padding: 0.7rem 0.9rem 1rem;
+}
+.md-typeset .nectar-feature__body h3 {
+  margin: 0.1rem 0 0.3rem;
+  font-size: 0.92rem;
+}
+.nectar-feature__body p {
+  margin: 0 0 0.5rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--md-default-fg-color--light);
+}
+.nectar-feature__body a {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+/* Standalone captioned media (a demo clip or screenshot) inside a guide page body. */
+.nectar-shot {
+  margin: 1.4rem auto;
+  max-width: 640px;
+}
+.nectar-shot__media {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+.nectar-shot__media[data-src] {
+  cursor: zoom-in;
+}
+.nectar-shot__media video,
+.nectar-shot__media img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.md-typeset .nectar-shot figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--md-default-fg-color--light);
+  text-align: center;
+}
+
+/* Video lightbox: click a clip to watch it larger, with controls. */
+.nectar-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 3vh 3vw;
+  background: rgba(10, 12, 15, 0.92);
+}
+.nectar-lightbox.is-open {
+  display: flex;
+}
+body.nectar-lightbox-open {
+  overflow: hidden;
+}
+.nectar-lightbox video {
+  max-width: 100%;
+  max-height: 94vh;
+  border-radius: 0.5rem;
+  background: #000;
+}
+.nectar-lightbox__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: #fff;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Acknowledgments: dependencies grouped into small category cards. Groups are
+   top-level blocks laid out inline (a wrapping flex parent would nest md_in_html,
+   which conflicts with the glightbox + toc processing). */
+.nectar-ack__group {
+  display: inline-block;
+  vertical-align: top;
+  width: min(100%, 240px);
+  margin: 0 0.6rem 0.6rem 0;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+}
+.nectar-ack__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-default-fg-color--lighter);
+}
+.md-typeset .nectar-ack__group ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nectar-ack__group li {
+  margin: 0 !important;
+}
+.nectar-ack__group a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.22rem 0.6rem;
+  font-size: 0.7rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 2rem;
+  text-decoration: none;
+  color: var(--md-default-fg-color--light);
+}
+.nectar-ack__group a:hover {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+.nectar-ack__group a .twemoji,
+.nectar-ack__group a img.nectar-logo {
+  width: auto;
+  height: 1.05em;
+  max-width: 8em;
+  display: block;
+  flex: 0 0 auto;
+}
+.nectar-meta a .twemoji > svg,
+.nectar-supported a .twemoji > svg,
+.nectar-ack__group a .twemoji > svg {
+  display: block;
+}
+/* Standardized chip logos: gray at rest, brand color on hover/focus. Icon-font
+   marks follow `color` (brand hex via inline --b); image logos need `filter`. */
+.nectar-ack__group a img.nectar-logo {
+  filter: grayscale(1);
+  opacity: 0.9;
+  border-radius: 3px;
+  transition: filter 0.15s, opacity 0.15s;
+}
+.nectar-ack__group a.b-logo:hover img.nectar-logo,
+.nectar-ack__group a.b-logo:focus-visible img.nectar-logo {
+  filter: none;
+  opacity: 1;
+}
+.md-typeset .nectar-meta a.cb:hover,
+.md-typeset .nectar-meta a.cb:focus-visible,
+.md-typeset .nectar-supported a.cb:hover,
+.md-typeset .nectar-supported a.cb:focus-visible,
+.md-typeset .nectar-ack__group a.cb:hover,
+.md-typeset .nectar-ack__group a.cb:focus-visible {
+  color: var(--b);
+  border-color: var(--b);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nectar-carousel__track {
+    scroll-behavior: auto;
+  }
 }

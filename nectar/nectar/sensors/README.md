@@ -166,6 +166,7 @@ stateDiagram-v2
 ```
 
 Algorithm:
+
 - Maintain a rolling average over the last `avg_window` readings while not masking.
 - Enter the masked state when `raw < baseline - max_change_m`. Snapshot `pre_baseline` and `entry_raw`.
 - For the first `estimate_lock_s` after entry (default 0.2 s): refine `entry_raw` whenever a smaller raw arrives, so the deepest beam reading is captured as the obstacle is fully crossed. After this window, the height is frozen.
@@ -185,20 +186,28 @@ t=5.1s   exit sphere column     raw=3.20  masked=3.20  state=Passthrough
 
 While refining at constant altitude the masked output stays at `pre_baseline` because `raw + (pre_baseline - entry_raw)` collapses to `pre_baseline` whenever `entry_raw` is updated to the current raw. Once the height locks, the masked stream tracks any drone descent linearly, so the FCU's `EK3_SRC1_POSZ=Rangefinder` setup behaves correctly throughout the mission without any prior knowledge of obstacle dimensions.
 
+**Auto-detect** (recommended — height learned from each crossing):
+
 ```python
 from nectar.sensors import ObstacleMaskFilter
 
-# Auto-detect (recommended): height learned from each crossing.
 f = ObstacleMaskFilter(
     max_change_m=0.30,       # entry/exit hysteresis (also caps physically reachable descent rate)
     avg_window=10,           # samples for the entry baseline
     estimate_lock_s=0.2,     # how long to refine the height after entry
     timeout_s=5.0,           # force-reset if stuck masked too long
 )
+```
 
-# Fixed height override (e.g. for SITL or known fixtures).
+**Fixed-height override** (e.g. for SITL or known fixtures):
+
+```python
 f_fixed = ObstacleMaskFilter(obstacle_height_m=1.7)
+```
 
+Then read filtered samples and state:
+
+```python
 filtered = f.process(raw)    # float (current sample masked or passed through)
 f.is_masking                 # bool
 f.estimated_height_m         # float | None (current estimate while masking)
@@ -247,19 +256,26 @@ conn.close()
 
 ROS2 entry point in [`nodes/rangefinder_node.py`](nodes/rangefinder_node.py). Declares every knob as a ROS parameter so per-mission tuning lives in the launch file rather than in mission code.
 
+**Raw passthrough** (no filter):
+
 ```bash
-# Raw passthrough (no filter)
 ros2 run nectar rangefinder_node.py --ros-args \
     -p serial_port:=/dev/ttyUSB0 \
     -p mavlink_url:=udp:127.0.0.1:14551
+```
 
-# Auto-detect (Hook mission and similar): no obstacle_height_m needed
+**Auto-detect** (Hook mission and similar; no `obstacle_height_m` needed):
+
+```bash
 ros2 run nectar rangefinder_node.py --ros-args \
     -p serial_port:=/dev/ttyUSB0 \
     -p mavlink_url:=udp:127.0.0.1:14551 \
     -p filter:=obstacle_mask
+```
 
-# Fixed-height override (SITL, known fixtures)
+**Fixed-height override** (SITL, known fixtures):
+
+```bash
 ros2 run nectar rangefinder_node.py --ros-args \
     -p serial_port:=/dev/ttyUSB0 \
     -p mavlink_url:=udp:127.0.0.1:14551 \
@@ -317,7 +333,7 @@ ros2 topic echo /mavros/rangefinder/rangefinder
 
 Drop a known-height object under the sensor while echoing the topic. The reading should jump by the masked offset and recover when the object is removed.
 
-Standalone (no ROS): see [`examples/sensors/rangefinder_example.py`](../examples/sensors/rangefinder_example.py).
+Standalone (no ROS): see the [standalone rangefinder example](../examples/sensors/rangefinder_example.py).
 
 ## Known limitations of the auto-detect mode
 

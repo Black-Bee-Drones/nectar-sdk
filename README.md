@@ -22,7 +22,6 @@ ROS 2 software development kit for autonomous aerial systems. Provides unified i
 
 </div>
 
-
 ## Table of Contents
 
 - [Features](#features)
@@ -59,17 +58,10 @@ Protocol-based drone interface with factory instantiation. `DroneFactory` create
 
 ```python
 import nectar
-from nectar.control import DroneFactory, MavrosConfig, MavlinkConfig, Px4MavrosConfig, BebopConfig, PoseSource
+from nectar.control import DroneFactory, MavrosConfig, PoseSource
 
 nectar.init()
-
-# Same interface, different platforms / transports
 drone = DroneFactory.create("mavros", MavrosConfig(pose_source=PoseSource.GPS))
-# drone = DroneFactory.create("mavlink", MavlinkConfig())       # ArduPilot direct pymavlink, no MAVROS
-# drone = DroneFactory.create("px4", Px4MavrosConfig())          # PX4 over MAVROS (OFFBOARD)
-# drone = DroneFactory.create("px4_mavlink", Px4MavlinkConfig()) # PX4 direct pymavlink, no MAVROS
-# drone = DroneFactory.create("px4_dds", Px4DdsConfig())         # PX4 native uXRCE-DDS
-# drone = DroneFactory.create("bebop", BebopConfig())
 
 drone.takeoff(altitude=2.0)
 drone.move_to(x=5.0, y=0.0, z=0.0, precision=0.3)
@@ -77,6 +69,18 @@ drone.move_to_gps(lat=-22.413, lon=-45.449, alt=15.0)
 drone.land()
 nectar.shutdown()
 ```
+
+The same flight calls drive every backend — change only the factory key and its config:
+
+| Key | Config | Vehicle / transport |
+|-----|--------|---------------------|
+| `mavros` | `MavrosConfig` | ArduPilot over MAVROS |
+| `mavlink` | `MavlinkConfig` | ArduPilot over direct MAVLink (no MAVROS) |
+| `px4` | `Px4MavrosConfig` | PX4 over MAVROS (OFFBOARD) |
+| `px4_mavlink` | `Px4MavlinkConfig` | PX4 over direct MAVLink (no MAVROS) |
+| `px4_dds` | `Px4DdsConfig` | PX4 over native uXRCE-DDS |
+| `bebop` | `BebopConfig` | Parrot Bebop 2 |
+| `crazyflie` | `CrazyflieConfig` | Bitcraze Crazyflie |
 
 [Control overview](nectar/nectar/control/README.md) · [Vehicle core](nectar/nectar/control/vehicle/README.md) · [ArduPilot](nectar/nectar/control/ardupilot/README.md) · [PX4](nectar/nectar/control/px4/README.md) · [MAVROS](nectar/nectar/control/mavros/README.md) · [MAVLink](nectar/nectar/control/mavlink/README.md) · [Localization](nectar/nectar/control/localization/README.md) · [Obstacles](nectar/nectar/control/obstacles/README.md) · [PID](nectar/nectar/control/pid/README.md) · [Bebop](nectar/nectar/control/bebop/README.md) · [Crazyflie](nectar/nectar/control/crazyflie/README.md)
 
@@ -114,7 +118,7 @@ handler.run()
 nectar.spin()
 ```
 
-[Vision overview](nectar/nectar/vision/README.md) — camera classes, algorithm API, node parameters, calibration, module structure
+[Vision overview](nectar/nectar/vision/README.md) · [Cameras](nectar/nectar/vision/camera/README.md) · [Algorithms](nectar/nectar/vision/algorithms/README.md) · [ROS 2 nodes](nectar/nectar/vision/nodes/README.md)
 
 ### [AI / Detection](nectar/nectar/ai/README.md)
 
@@ -220,7 +224,7 @@ Pick the row that matches where you're starting from:
 | Have the SDK cloned | `make setup` (opens the setup menu) |
 | Want zero host setup | `make docker-build && make docker-run` (or `docker-build-full` for AI) |
 
-`make setup` (or `./scripts/setup.sh` with no args) opens an interactive menu — nothing installs until you choose. From it you can run a quick setup, pick Python modules, configure a drone driver, install system packages (skipped when already present), set up the ROS 2 environment, build, and verify. The core install does not pull control backends: MAVROS and the other drivers are opt-in (e.g. `make drone-mavros`), so you only install the protocol your vehicle uses. Python deps go into a shared [uv](https://github.com/astral-sh/uv)-managed workspace venv (`$WORKSPACE/.venv`) that every workspace project reuses ([details](docs/INSTALL.md#python-environment)). Full reference: the **[Installation Guide](docs/INSTALL.md)** and the tested **[compatibility matrix](docs/COMPATIBILITY.md)**; all versions live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
+`make setup` (or `./scripts/setup.sh` with no args) opens an interactive menu — nothing installs until you choose. From it you can run a quick setup, pick Python modules, configure a drone driver, install system packages (skipped when already present), set up the ROS 2 environment, build, and verify. The core install does not pull control backends: MAVROS and the other drivers are opt-in (e.g. `make drone-mavros`), so you only install the protocol your vehicle uses. Python deps go into a shared [uv](https://github.com/astral-sh/uv)-managed workspace venv (`$WORKSPACE/.venv`) that every workspace project reuses ([details](docs/setup/index.md#python-environment)). Full reference: the **[Installation Guide](docs/setup/index.md)** and the tested **[compatibility matrix](docs/COMPATIBILITY.md)**; all versions live in [`scripts/lib/config.sh`](scripts/lib/config.sh).
 
 Then add only what your mission needs:
 
@@ -234,7 +238,7 @@ Then add only what your mission needs:
 | A single module | `make python-vision` (or `python-control` / `python-ai` / `python-sensors`) |
 | Everything (AI + GPU) | `make python-full && make pytorch` |
 
-To **fly real hardware**, start the driver/bridge your mission connects to with `make driver DRONE=<type> ENV=<outdoor\|indoor>` (the real-world counterpart of `make sim-bridge`), then run a mission/example. See the **[Installation Guide](docs/INSTALL.md#choose-your-setup)** for worked examples (direct-MAVLink 2 m square, Crazyflie, PX4-DDS + detection, Docker).
+To **fly real hardware**, start the driver/bridge your mission connects to with `make driver DRONE=<type> ENV=<outdoor\|indoor>` (the real-world counterpart of `make sim-bridge`), then run a mission/example. See the **[Drone drivers guide](docs/setup/drivers.md)** for worked examples (direct-MAVLink 2 m square, Crazyflie, PX4-DDS + detection).
 
 ## Architecture
 
@@ -383,7 +387,7 @@ detector = Detector("model.bin", framework="custom")
 
 | Document | Contents |
 |----------|----------|
-| [Installation Guide](docs/INSTALL.md) | Bootstrap, workspace setup, Python environment (uv venv), module install, PyTorch, Docker, drone drivers, troubleshooting |
+| [Installation Guide](docs/setup/index.md) | Bootstrap, workspace setup, Python environment (uv venv), module install, PyTorch, build & verify, troubleshooting |
 | [Control Module](nectar/nectar/control/README.md) | Drone protocol, factory, configuration, capabilities, submodule index |
 | [Vehicle Core](nectar/nectar/control/vehicle/README.md) | Firmware-agnostic core: bridge design, firmware hooks, navigation, frames, altitude, takeoff/land, GPS/EGM96, PID |
 | [ArduPilot Vehicle Core](nectar/nectar/control/ardupilot/README.md) | ArduPilot specifics: GUIDED arming, `GUID_OPTIONS`/WPNAV, native RTL, parameters |
@@ -502,7 +506,7 @@ nectar-sdk/
 
 ## Contributing
 
-We welcome contributions. Please see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for development setup, code style (PEP 8, NumPy docstrings, type hints), documentation conventions, and the PR process.
+We welcome contributions. Please see the [Contributing guide](docs/CONTRIBUTING.md) for development setup, code style (PEP 8, NumPy docstrings, type hints), documentation conventions, and the PR process.
 
 1. Check [GitHub Issues](https://github.com/Black-Bee-Drones/nectar-sdk/issues) for existing discussions
 2. Follow [Conventional Commits](https://www.conventionalcommits.org) for commit messages
