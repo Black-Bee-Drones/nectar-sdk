@@ -15,6 +15,7 @@ class PIDController:
         setpoint: float = 0.0,
         output_limits: tuple[float, float] = (-1.0, 1.0),
         integral_limits: tuple[float, float] = (-1.0, 1.0),
+        output_deadband: float = 0.0,
     ):
         """
         Initialize PID controller.
@@ -33,6 +34,10 @@ class PIDController:
             Min and max output values (min, max).
         integral_limits : tuple[float, float]
             Min and max integral term values for anti-windup (min, max).
+        output_deadband : float, default 0.0
+            Symmetric deadband applied to the final output. Suppresses
+            sub-noise commands that would otherwise be sent to the
+            actuator and cause hover micro-jitter. Set to 0 to disable.
         """
         self.kp = kp
         self.ki = ki
@@ -40,6 +45,7 @@ class PIDController:
         self.setpoint = setpoint
         self.output_limits = output_limits
         self.integral_limits = integral_limits
+        self.output_deadband = output_deadband
 
         # Internal state
         self._integral = 0.0
@@ -93,6 +99,8 @@ class PIDController:
         # total output
         self.output = self._proportional + self._integral + self._derivative
         self.output = max(min(self.output, self.output_limits[1]), self.output_limits[0])
+        if abs(self.output) < self.output_deadband:
+            self.output = 0.0
 
         # Store state for next iteration
         self._last_error = error

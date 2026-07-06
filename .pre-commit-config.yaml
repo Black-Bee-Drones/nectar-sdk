@@ -9,6 +9,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        args: [--unsafe]  # mkdocs.yml uses !!python/... tags (pymdownx slugify)
       - id: check-added-large-files
       - id: check-merge-conflict
 
@@ -18,4 +19,15 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
+        exclude: '\.ipynb$'
       - id: ruff-format
+        exclude: '\.ipynb$'
+
+  # --- Markdown linting (markdownlint-cli2) ---
+  # Enforces the blank-line rules the strict docs parser needs (lists/tables/fences)
+  # so Markdown that renders on GitHub also renders on the docs site.
+  # Config: .markdownlint-cli2.jsonc. pre-commit manages the Node env in isolation.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.18.1
+    hooks:
+      - id: markdownlint-cli2

@@ -1,0 +1,618 @@
+<?xml version="1.0" ?>
+<!--
+  Nectar SDK — Indoor room world for Gazebo Harmonic.
+
+  20x20x12m enclosed room for indoor flight testing.
+  Layout: drone spawns at x=-5 (open area). Obstacle course with
+  boxes, cylinders, and a fly-through gate in the x=5..9 zone.
+  Clear space x=-10..+4 (14m) for navigation tests.
+
+  NO GPS / NO NavSat — use with ArduPilot SITL + indoor.parm (EKF3
+  ExternalNav) and gz_vision_source.py to feed ground-truth pose.
+
+  Uses PosePublishing plugin to export model poses on a Gazebo topic,
+  which ros_gz_bridge forwards to ROS 2 for the vision pose source.
+
+  Usage:
+    gz sim -v4 -r indoor_room.sdf
+-->
+<sdf version="1.9">
+  <world name="indoor_room">
+
+    <!-- Physics -->
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Plugins (NO NavSat — indoor, no GPS) -->
+    <plugin filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-imu-system"
+      name="gz::sim::systems::Imu"/>
+
+    <!-- Publish model poses (ground-truth for vision pose bridge) -->
+    <plugin filename="gz-sim-pose-publisher-system"
+      name="gz::sim::systems::PosePublisher">
+      <publish_model_pose>true</publish_model_pose>
+      <publish_nested_model_pose>false</publish_nested_model_pose>
+      <update_frequency>30</update_frequency>
+    </plugin>
+
+    <!-- ── GUI — camera feeds + topic echo inside Gazebo window ──── -->
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.2 0.2 0.2</background_color>
+        <camera_pose>-5 0 8 0 0.8 0</camera_pose>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <gz-gui>
+          <property key="state" type="string">floating</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">145</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>false</start_paused>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>false</iterations>
+      </plugin>
+      <!-- Camera feeds — start collapsed, expand to view -->
+      <plugin filename="ImageDisplay" name="Front Camera RGB">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/front_camera/image</topic>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Front Camera Depth">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/front_camera/depth_image</topic>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Down Camera">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/down_camera</topic>
+      </plugin>
+      <!-- Topic echo — select any Gazebo topic to view live data -->
+      <plugin filename="TopicEcho" name="Topic Echo">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+      </plugin>
+    </gui>
+
+    <!-- Indoor lighting (4 lights to cover 20x20m room) -->
+    <light type="point" name="ceiling_light_1">
+      <pose>-5 -5 11.5 0 0 0</pose>
+      <diffuse>1.0 1.0 1.0 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.5</constant>
+        <linear>0.02</linear>
+        <quadratic>0.003</quadratic>
+      </attenuation>
+    </light>
+    <light type="point" name="ceiling_light_2">
+      <pose>-5 5 11.5 0 0 0</pose>
+      <diffuse>1.0 1.0 1.0 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.5</constant>
+        <linear>0.02</linear>
+        <quadratic>0.003</quadratic>
+      </attenuation>
+    </light>
+    <light type="point" name="ceiling_light_3">
+      <pose>5 -5 11.5 0 0 0</pose>
+      <diffuse>1.0 1.0 1.0 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.5</constant>
+        <linear>0.02</linear>
+        <quadratic>0.003</quadratic>
+      </attenuation>
+    </light>
+    <light type="point" name="ceiling_light_4">
+      <pose>5 5 11.5 0 0 0</pose>
+      <diffuse>1.0 1.0 1.0 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.5</constant>
+        <linear>0.02</linear>
+        <quadratic>0.003</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- ── Room structure (20x20x12m) ─────────────────────────── -->
+
+    <!-- Floor -->
+    <model name="floor">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20 20 0.1</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20 20 0.1</size></box></geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 -0.05 0 0 0</pose>
+      </link>
+    </model>
+
+    <!-- Walls -->
+    <model name="wall_north">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20 0.2 12</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20 0.2 12</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.75 1</ambient>
+            <diffuse>0.8 0.8 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <pose>0 10.1 6 0 0 0</pose>
+    </model>
+
+    <model name="wall_south">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20 0.2 12</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20 0.2 12</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.75 1</ambient>
+            <diffuse>0.8 0.8 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <pose>0 -10.1 6 0 0 0</pose>
+    </model>
+
+    <model name="wall_east">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2 20 12</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 20 12</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.75 1</ambient>
+            <diffuse>0.8 0.8 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <pose>10.1 0 6 0 0 0</pose>
+    </model>
+
+    <model name="wall_west">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2 20 12</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 20 12</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.75 1</ambient>
+            <diffuse>0.8 0.8 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <pose>-10.1 0 6 0 0 0</pose>
+    </model>
+
+    <!-- Ceiling -->
+    <model name="ceiling">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20 20 0.1</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20 20 0.1</size></box></geometry>
+          <material>
+            <ambient>0.9 0.9 0.9 1</ambient>
+            <diffuse>0.9 0.9 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <pose>0 0 12.05 0 0 0</pose>
+    </model>
+
+    <!-- ── Obstacle zone (positive-X half, x=5..9) ─────────────── -->
+    <!-- Drone spawns at x=-5. Open area x=-10..+4 for tests. -->
+
+    <!-- Gate — two posts + crossbar, ~1.5m wide, ~1.5m high at x=5 -->
+    <model name="gate_left_post">
+      <static>true</static>
+      <pose>5 -0.85 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 0.15 1.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 0.15 1.5</size></box></geometry>
+          <material>
+            <ambient>0.9 0.6 0.0 1</ambient>
+            <diffuse>1.0 0.7 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="gate_right_post">
+      <static>true</static>
+      <pose>5 0.85 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 0.15 1.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 0.15 1.5</size></box></geometry>
+          <material>
+            <ambient>0.9 0.6 0.0 1</ambient>
+            <diffuse>1.0 0.7 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="gate_crossbar">
+      <static>true</static>
+      <pose>5 0 1.55 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 1.85 0.1</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 1.85 0.1</size></box></geometry>
+          <material>
+            <ambient>0.9 0.6 0.0 1</ambient>
+            <diffuse>1.0 0.7 0.0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Obstacle boxes -->
+    <model name="obstacle_box_1">
+      <static>true</static>
+      <pose>7 -3 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.6 0.6 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.6 0.6 1.0</size></box></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.9 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="obstacle_box_2">
+      <static>true</static>
+      <pose>8 2 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0 0.5 0.8</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0 0.5 0.8</size></box></geometry>
+          <material>
+            <ambient>0.2 0.7 0.2 1</ambient>
+            <diffuse>0.2 0.8 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="obstacle_box_3">
+      <static>true</static>
+      <pose>6 4 0.35 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.8 0.8 0.7</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.8 0.8 0.7</size></box></geometry>
+          <material>
+            <ambient>0.7 0.2 0.5 1</ambient>
+            <diffuse>0.8 0.3 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Obstacle cylinders -->
+    <model name="obstacle_cylinder_1">
+      <static>true</static>
+      <pose>9 -1 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>2.0</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>2.0</length></cylinder></geometry>
+          <material>
+            <ambient>0.2 0.2 0.8 1</ambient>
+            <diffuse>0.2 0.2 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="obstacle_cylinder_2">
+      <static>true</static>
+      <pose>7 5 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+          <material>
+            <ambient>0.7 0.5 0.1 1</ambient>
+            <diffuse>0.8 0.6 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="obstacle_cylinder_3">
+      <static>true</static>
+      <pose>8 -6 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+          <material>
+            <ambient>0.5 0.1 0.7 1</ambient>
+            <diffuse>0.6 0.1 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── Drone ────────────────────────────────────────────────── -->
+
+    <!-- Iris quadcopter with gimbal (ardupilot_gazebo model) -->
+    <!-- Spawns at x=-5: 5m from west wall, 10m from obstacle zone at x=5+ -->
+    <include>
+      <uri>model://iris_with_gimbal</uri>
+      <name>iris</name>
+      <pose degrees="true">-5 0 0.195 0 0 0</pose>
+    </include>
+
+    <!-- Front RGBD camera (simulates RealSense D435i) -->
+    <model name="front_camera">
+      <static>false</static>
+      <pose relative_to="iris::iris_with_standoffs::base_link">0.18 0 -0.02 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.07</mass>
+          <inertia>
+            <ixx>1e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1e-5</iyy><iyz>0</iyz>
+            <izz>1e-5</izz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry><box><size>0.025 0.09 0.025</size></box></geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+        <sensor name="front_rgbd" type="rgbd_camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>/front_camera</topic>
+          <camera>
+            <horizontal_fov>1.5184</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>10.0</far>
+            </clip>
+            <depth_camera>
+              <clip>
+                <near>0.1</near>
+                <far>10.0</far>
+              </clip>
+            </depth_camera>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+    <joint name="front_camera_joint" type="fixed">
+      <parent>iris::iris_with_standoffs::base_link</parent>
+      <child>front_camera::link</child>
+    </joint>
+
+    <!-- Downward RGB camera (simulates Arducam) -->
+    <model name="down_camera">
+      <static>false</static>
+      <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.04 0 1.5708 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.03</mass>
+          <inertia>
+            <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1e-6</iyy><iyz>0</iyz>
+            <izz>1e-6</izz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry><box><size>0.02 0.02 0.015</size></box></geometry>
+          <material>
+            <ambient>0.2 0.2 0.2 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+        <sensor name="down_rgb" type="camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>/down_camera</topic>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>50.0</far>
+            </clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+    <joint name="down_camera_joint" type="fixed">
+      <parent>iris::iris_with_standoffs::base_link</parent>
+      <child>down_camera::link</child>
+    </joint>
+
+    <!-- Downward lidar rangefinder -->
+    <model name="lidar_rangefinder">
+      <static>false</static>
+      <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.05 0 1.5708 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.03</mass>
+          <inertia>
+            <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1e-6</iyy><iyz>0</iyz>
+            <izz>1e-6</izz>
+          </inertia>
+        </inertial>
+        <sensor name="lidar_rangefinder" type="gpu_lidar">
+          <always_on>true</always_on>
+          <update_rate>50</update_rate>
+          <topic>/lidar/range</topic>
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>1</samples>
+                <resolution>1</resolution>
+                <min_angle>0</min_angle>
+                <max_angle>0</max_angle>
+              </horizontal>
+            </scan>
+            <range>
+              <min>0.1</min>
+              <max>40.0</max>
+              <resolution>0.01</resolution>
+            </range>
+          </ray>
+        </sensor>
+      </link>
+    </model>
+    <joint name="lidar_joint" type="fixed">
+      <parent>iris::iris_with_standoffs::base_link</parent>
+      <child>lidar_rangefinder::link</child>
+    </joint>
+
+  </world>
+</sdf>

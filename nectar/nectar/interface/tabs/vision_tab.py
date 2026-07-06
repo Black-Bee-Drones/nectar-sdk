@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 if TYPE_CHECKING:
     pass
 import json
+import logging
 import os
 import time
 
@@ -12,6 +13,7 @@ from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -34,6 +36,8 @@ from nectar.interface.widgets import (
     DualVideoDisplay,
     LabeledSlider,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ColorCalibrationManager:
@@ -305,6 +309,7 @@ class CameraInitWorker(QObject):
     def camera(self):
         return self._camera
 
+    @Slot()
     def run(self) -> None:
         try:
             camera_type = self._config.get("type", "webcam")
@@ -334,7 +339,11 @@ class CameraInitWorker(QObject):
             use_ros = self._config.get("use_ros_topics", False)
 
             if use_ros:
-                from nectar.vision.camera import QoSReliability, ROSDepthCam, ROSDepthConfig
+                from nectar.vision.camera import (
+                    QoSReliability,
+                    ROSDepthCam,
+                    ROSDepthConfig,
+                )
 
                 color_topic = self._config.get("color_topic", "/camera/color/image_raw")
                 color_compressed = self._config.get("color_compressed", True)
@@ -372,6 +381,27 @@ class CameraInitWorker(QObject):
                 )
                 return RealsenseCam(config)
 
+        elif camera_type == "t265":
+            from nectar.vision.camera import T265Cam, T265Config
+
+            use_ros = self._config.get("use_ros_topics", False)
+            config = T265Config(
+                enable_depth=self._config.get("enable_depth", True),
+                enable_pose=self._config.get("enable_pose", True),
+                stereo_fov_deg=self._config.get("stereo_fov_deg", 90.0),
+                stereo_height_px=self._config.get("stereo_height_px", 300),
+                uniqueness_ratio=self._config.get("uniqueness_ratio", 10),
+                speckle_window_size=self._config.get("speckle_window_size", 100),
+                speckle_range=self._config.get("speckle_range", 32),
+                smoothness_window=self._config.get("smoothness_window", 5),
+                max_depth_m=self._config.get("max_depth_m", 3.0),
+                use_ros_topics=use_ros,
+                fisheye1_topic=self._config.get("fisheye1_topic", "/camera/fisheye1/image_raw"),
+                fisheye2_topic=self._config.get("fisheye2_topic", "/camera/fisheye2/image_raw"),
+                pose_topic=self._config.get("pose_topic", "/camera/pose/sample"),
+            )
+            return T265Cam(config, node=self._node if use_ros else None)
+
         elif camera_type == "oakd":
             from nectar.vision.camera import OakdCam, OakDConfig
 
@@ -382,7 +412,12 @@ class CameraInitWorker(QObject):
             return OakdCam(config)
 
         elif camera_type == "ros":
-            from nectar.vision.camera import QoSDurability, QoSReliability, ROSCam, ROSConfig
+            from nectar.vision.camera import (
+                QoSDurability,
+                QoSReliability,
+                ROSCam,
+                ROSConfig,
+            )
 
             reliability_str = self._config.get("reliability", "Best Effort")
             if reliability_str == "Reliable":
@@ -407,6 +442,37 @@ class CameraInitWorker(QObject):
             if self._node is None:
                 raise ValueError("ROS camera requires a ROS node")
             return ROSCam(self._node, config)
+
+        elif camera_type == "ros_depth":
+            from nectar.vision.camera import QoSReliability, ROSDepthCam, ROSDepthConfig
+
+            reliability_str = self._config.get("reliability", "Best Effort")
+            if reliability_str == "Reliable":
+                reliability = QoSReliability.RELIABLE
+            else:
+                reliability = QoSReliability.BEST_EFFORT
+
+            color_topic = self._config.get("topic", "/front_camera/image")
+            color_compressed = self._config.get("compressed", False)
+            if color_compressed and not color_topic.endswith("/compressed"):
+                color_topic = color_topic + "/compressed"
+
+            depth_topic = self._config.get("depth_topic", "/front_camera/depth_image")
+            depth_compressed = self._config.get("depth_compressed", False)
+            if depth_compressed and not depth_topic.endswith("/compressedDepth"):
+                depth_topic = depth_topic + "/compressedDepth"
+
+            config = ROSDepthConfig(
+                topic=color_topic,
+                compressed=color_compressed,
+                depth_topic=depth_topic,
+                depth_compressed=depth_compressed,
+                enable_depth=True,
+                reliability=reliability,
+            )
+            if self._node is None:
+                raise ValueError("ROS depth camera requires a ROS node")
+            return ROSDepthCam(self._node, config)
 
         elif camera_type == "file":
             from nectar.vision.camera import FileImageCam, FileImageConfig
@@ -441,6 +507,35 @@ class CameraInitWorker(QObject):
             return CameraFactory.from_source(camera_type)
 
 
+class DetectionWorker(QObject):
+    """Runs AI object detection off the GUI thread.
+
+    The vision frame loop hands the latest frame here when idle and keeps
+    drawing the most recent result, so multi-tens-of-ms inference never blocks
+    the GUI. The detector reference is set via :meth:`set_detector`.
+    """
+
+    result_ready = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._detector = None
+
+    def set_detector(self, detector) -> None:
+        self._detector = detector
+
+    @Slot(object, float, float)
+    def detect(self, frame, conf: float, iou: float) -> None:
+        detector = self._detector
+        if detector is None or not getattr(detector, "is_loaded", False):
+            self.result_ready.emit(None)
+            return
+        try:
+            self.result_ready.emit(detector.detect(frame, conf=conf, iou=iou))
+        except Exception:
+            self.result_ready.emit(None)
+
+
 class VisionTab(QWidget):
     """
     Vision processing tab with camera controls and filters.
@@ -464,6 +559,10 @@ class VisionTab(QWidget):
         "AdaptiveHoughLinesP",
     ]
 
+    # Hands the latest frame to the detection worker (queued, cross-thread) so
+    # AI inference never runs on the GUI thread.
+    _detect_requested = Signal(object, float, float)
+
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._node = node
@@ -485,10 +584,13 @@ class VisionTab(QWidget):
 
         self._color_manager = ColorCalibrationManager()
 
-        # AI Detection state
+        # AI Detection state (inference runs on a worker thread; see DetectionWorker)
         self._ai_detector = None
         self._detection_enabled = False
         self._last_detection_result = None
+        self._detection_busy = False
+        self._detection_thread: Optional[QThread] = None
+        self._detection_worker: Optional[DetectionWorker] = None
 
         # Depth estimation state
         self._depth_enabled = False
@@ -498,8 +600,15 @@ class VisionTab(QWidget):
         self._current_distance: Optional[float] = None
         self._current_depth_frame: Optional[np.ndarray] = None
         self._depth_colormap = cv2.COLORMAP_PLASMA
+
+        # T265 display mode
+        self._t265_display_mode = "Left Fisheye"
         self._depth_min_m = 0.1
         self._depth_max_m = 5.0
+
+        # Optical flow demo state
+        self._flow_estimator = None
+        self._flow_method: str = "farneback"
 
         self._setup_ui()
         self._setup_timers()
@@ -542,6 +651,7 @@ class VisionTab(QWidget):
         layout.addWidget(self._create_transform_section())
         layout.addWidget(self._create_morphology_section())
         layout.addWidget(self._create_effects_section())
+        layout.addWidget(self._create_optical_flow_demo_section())
         layout.addWidget(self._create_detection_section())
         layout.addWidget(self._create_aruco_section())
         layout.addStretch()
@@ -615,12 +725,11 @@ class VisionTab(QWidget):
         # Enable depth checkbox
         self._depth_enable_cb = QCheckBox("Enable Depth Mode")
         self._depth_enable_cb.setToolTip(
-            "Enable depth capture (RealSense/OAK-D only). Requires camera restart."
+            "Enable depth capture (RealSense D4xx/T265/OAK-D). Requires camera restart."
         )
         self._depth_enable_cb.stateChanged.connect(self._on_depth_enabled_changed)
 
-        # Info label about depth
-        depth_info = QLabel("Supports: RealSense, OAK-D")
+        depth_info = QLabel("Supports: RealSense D4xx, T265 (stereo), OAK-D")
         depth_info.setProperty("muted", True)
 
         # Show depth map checkbox
@@ -988,6 +1097,151 @@ class VisionTab(QWidget):
 
         return section
 
+    def _create_optical_flow_demo_section(self) -> CollapsibleSection:
+        """
+        Optical flow demo with sparse / dense backends and velocity decode.
+
+        Mirrors the model used by onboard flow sensors (MTF-01, PMW3901)
+        and the ArduPilot EKF. See ``drone/3-optical-flow.md`` for the
+        derivation and ``nectar.vision.algorithms.flow`` for the
+        underlying estimator.
+        """
+        section = CollapsibleSection("Optical Flow")
+
+        self._flow_demo_cb = QCheckBox("Enable Optical Flow")
+        self._flow_demo_cb.setToolTip(
+            "Compute optical flow on each frame. Mirrors the MTF-01 + "
+            "ArduPilot EKF pipeline: pixel flow -> rad/s -> m/s."
+        )
+        self._flow_demo_cb.stateChanged.connect(
+            lambda: self._toggle_filter("optical_flow_demo", self._flow_demo_cb.isChecked())
+        )
+
+        method_layout = QHBoxLayout()
+        method_layout.setSpacing(6)
+        method_lbl = QLabel("Method:")
+        method_lbl.setProperty("secondary", True)
+        self._flow_method_combo = QComboBox()
+        self._flow_method_combo.addItems(["Farneback (dense)", "Lucas-Kanade (sparse)"])
+        self._flow_method_combo.currentTextChanged.connect(self._on_flow_method_changed)
+        method_layout.addWidget(method_lbl)
+        method_layout.addWidget(self._flow_method_combo, 1)
+
+        focal_layout = QHBoxLayout()
+        focal_layout.setSpacing(6)
+        focal_lbl = QLabel("Focal (px):")
+        focal_lbl.setProperty("secondary", True)
+        focal_lbl.setToolTip(
+            "Camera focal length in pixels. Use 0 to skip rad/s and m/s "
+            "decoding. For a calibrated camera, this is fx from the "
+            "intrinsic matrix K."
+        )
+        self._flow_focal_spin = QDoubleSpinBox()
+        self._flow_focal_spin.setRange(0.0, 10000.0)
+        self._flow_focal_spin.setDecimals(1)
+        self._flow_focal_spin.setSingleStep(10.0)
+        self._flow_focal_spin.setValue(500.0)
+        focal_layout.addWidget(focal_lbl)
+        focal_layout.addWidget(self._flow_focal_spin, 1)
+
+        alt_layout = QHBoxLayout()
+        alt_layout.setSpacing(6)
+        alt_lbl = QLabel("Altitude (m):")
+        alt_lbl.setProperty("secondary", True)
+        alt_lbl.setToolTip(
+            "Height above the imaged surface in meters. Use 0 to skip "
+            "m/s decoding (rad/s still shown). On a real drone this is "
+            "the lidar reading."
+        )
+        self._flow_altitude_spin = QDoubleSpinBox()
+        self._flow_altitude_spin.setRange(0.0, 50.0)
+        self._flow_altitude_spin.setDecimals(2)
+        self._flow_altitude_spin.setSingleStep(0.1)
+        self._flow_altitude_spin.setValue(0.0)
+        alt_layout.addWidget(alt_lbl)
+        alt_layout.addWidget(self._flow_altitude_spin, 1)
+
+        ds_layout = QHBoxLayout()
+        ds_layout.setSpacing(6)
+        ds_lbl = QLabel("Downsample:")
+        ds_lbl.setProperty("secondary", True)
+        ds_tip = (
+            "Process the frame at a smaller resolution internally to save "
+            "CPU/GPU. 2x means the estimator sees half the width and half "
+            "the height (1/4 of the pixels), so it runs ~4x faster but "
+            "with coarser spatial resolution. 4x means 1/16 of the pixels. "
+            "The overlay you see is always rescaled back to the camera's "
+            "native resolution. Use 1x on a desktop, 2x or 4x on Jetson."
+        )
+        ds_lbl.setToolTip(ds_tip)
+        self._flow_downsample_combo = QComboBox()
+        self._flow_downsample_combo.addItems(["1x", "2x", "4x"])
+        self._flow_downsample_combo.setToolTip(ds_tip)
+        self._flow_downsample_combo.currentTextChanged.connect(
+            lambda _: setattr(self, "_flow_estimator", None)
+        )
+        ds_layout.addWidget(ds_lbl)
+        ds_layout.addWidget(self._flow_downsample_combo, 1)
+
+        info_label = QLabel("Numeric readouts are drawn on the video.")
+        info_label.setProperty("muted", True)
+        info_label.setWordWrap(True)
+
+        self._flow_reset_btn = QPushButton("Reset")
+        self._flow_reset_btn.clicked.connect(self._on_flow_reset)
+
+        section.add_widget(self._flow_demo_cb)
+        section.add_layout(method_layout)
+        section.add_layout(focal_layout)
+        section.add_layout(alt_layout)
+        section.add_layout(ds_layout)
+        section.add_widget(info_label)
+        section.add_widget(self._flow_reset_btn)
+
+        return section
+
+    @Slot(str)
+    def _on_flow_method_changed(self, label: str) -> None:
+        self._flow_method = "lucas_kanade" if label.startswith("Lucas") else "farneback"
+        # Rebuild on next frame to pick up the new method.
+        self._flow_estimator = None
+
+    @Slot()
+    def _on_flow_reset(self) -> None:
+        if self._flow_estimator is not None:
+            self._flow_estimator.reset()
+
+    def _ensure_flow_estimator(self) -> None:
+        if self._flow_estimator is not None:
+            return
+        from nectar.vision.algorithms.flow import (
+            OpticalFlowConfig,
+            OpticalFlowEstimator,
+        )
+
+        divisor = {"1x": 1, "2x": 2, "4x": 4}.get(self._flow_downsample_combo.currentText(), 1)
+        resize = None
+        if divisor > 1 and self._current_frame is not None:
+            h, w = self._current_frame.shape[:2]
+            resize = (max(64, w // divisor), max(48, h // divisor))
+
+        cfg = OpticalFlowConfig(method=self._flow_method, resize_to=resize)
+        self._flow_estimator = OpticalFlowEstimator(cfg)
+
+    def _apply_optical_flow_demo(self, frame: np.ndarray) -> np.ndarray:
+        self._ensure_flow_estimator()
+        focal = float(self._flow_focal_spin.value())
+        altitude = float(self._flow_altitude_spin.value())
+
+        result = self._flow_estimator.process(
+            frame,
+            focal_px=focal if focal > 0.0 else None,
+            altitude_m=altitude if altitude > 0.0 else None,
+        )
+        if result is None:
+            return frame
+        return result.visualization
+
     def _create_detection_section(self) -> CollapsibleSection:
         section = CollapsibleSection("AI Detection")
 
@@ -1034,6 +1288,9 @@ class VisionTab(QWidget):
     def _on_detector_ready(self, detector) -> None:
         """Handle detector loaded event."""
         self._ai_detector = detector
+        self._setup_detection_worker()
+        self._detection_worker.set_detector(detector)
+        self._detection_busy = False
         self._object_detect_cb.setEnabled(True)
         self._object_detect_cb.setChecked(True)
         self._detection_enabled = True
@@ -1045,6 +1302,35 @@ class VisionTab(QWidget):
         self._detection_enabled = False
         self._object_detect_cb.setChecked(False)
         self._last_detection_result = None
+        if self._detection_worker is not None:
+            self._detection_worker.set_detector(None)
+        self._detection_busy = False
+
+    def _setup_detection_worker(self) -> None:
+        """Lazily create the off-thread detection worker (idempotent)."""
+        if self._detection_worker is not None:
+            return
+        self._detection_thread = QThread()
+        self._detection_worker = DetectionWorker()
+        self._detection_worker.moveToThread(self._detection_thread)
+        self._detection_worker.result_ready.connect(self._on_detection_result)
+        # Cross-thread (auto -> queued): runs detect() on the worker thread.
+        self._detect_requested.connect(self._detection_worker.detect)
+        self._detection_thread.start()
+
+    @Slot(object)
+    def _on_detection_result(self, result) -> None:
+        """Receive an inference result from the worker (runs on the GUI thread)."""
+        self._detection_busy = False
+        if result is None:
+            return
+        self._last_detection_result = result
+        class_counts: Dict[str, int] = {}
+        for det in result:
+            name = det.class_name or f"class_{det.class_id}"
+            class_counts[name] = class_counts.get(name, 0) + 1
+        inference_ms = result.inference_time * 1000
+        self._detection_panel.update_stats(len(result), inference_ms, class_counts)
 
     def _create_aruco_section(self) -> CollapsibleSection:
         section = CollapsibleSection("ArUco Markers")
@@ -1294,6 +1580,48 @@ class VisionTab(QWidget):
 
         return isinstance(self._camera, DepthCam)
 
+    def _is_t265_camera(self) -> bool:
+        """Check if current camera is a T265."""
+        if self._camera is None:
+            return False
+        from nectar.vision.camera.drivers.t265_cam import T265Cam
+
+        return isinstance(self._camera, T265Cam)
+
+    def _effective_t265_mode(self) -> str:
+        """Return effective T265 display mode, forcing rectified when measuring depth."""
+        if self._measure_distance and self._depth_enabled:
+            return "Rectified"
+        return self._t265_display_mode
+
+    def _get_t265_display_frame(self) -> Optional[np.ndarray]:
+        """Select T265 display frame based on mode.
+
+        Forces rectified view when measuring depth so click coordinates
+        match the stereo depth output (same projection geometry).
+        """
+        mode = self._effective_t265_mode()
+
+        if mode == "Right Fisheye":
+            pair = self._camera.get_stereo_frames()
+            if pair is None:
+                return None
+            return cv2.cvtColor(pair[1], cv2.COLOR_GRAY2BGR)
+        elif mode == "Both Fisheye":
+            pair = self._camera.get_stereo_frames()
+            if pair is None:
+                return None
+            left_bgr = cv2.cvtColor(pair[0], cv2.COLOR_GRAY2BGR)
+            right_bgr = cv2.cvtColor(pair[1], cv2.COLOR_GRAY2BGR)
+            return np.hstack((left_bgr, right_bgr))
+        elif mode == "Rectified":
+            rect = self._camera.get_rectified_frames()
+            if rect is None:
+                return self._camera.get_frame()
+            return cv2.cvtColor(rect[0], cv2.COLOR_GRAY2BGR)
+        else:
+            return self._camera.get_frame()
+
     def _get_depth_frame(self) -> Optional[np.ndarray]:
         """Get depth frame from camera if available."""
         if not self._is_depth_camera():
@@ -1308,6 +1636,9 @@ class VisionTab(QWidget):
         if not self._is_depth_camera():
             return None
         try:
+            if self._is_t265_camera():
+                return self._camera.get_distance(u, v)
+
             from nectar.vision.camera import ROSDepthCam
 
             if isinstance(self._camera, ROSDepthCam) and self._current_frame is not None:
@@ -1362,7 +1693,12 @@ class VisionTab(QWidget):
 
     @Slot()
     def _start_camera(self) -> None:
+        if self._camera_thread and self._camera_thread.isRunning():
+            return
         config = self._camera_config.get_config()
+
+        if config.get("type") == "t265":
+            self._t265_display_mode = config.get("display_mode", "Left Fisheye")
 
         self._start_btn.setEnabled(False)
         self._camera_config.setEnabled(False)
@@ -1433,6 +1769,7 @@ class VisionTab(QWidget):
         self._stop_btn.setEnabled(False)
         self._camera_config.setEnabled(True)
         self._prev_gray = None
+        self._flow_estimator = None
 
         # Reset depth state
         self._current_depth_frame = None
@@ -1461,7 +1798,10 @@ class VisionTab(QWidget):
             return
 
         try:
-            frame = self._camera.get_frame()
+            if self._is_t265_camera():
+                frame = self._get_t265_display_frame()
+            else:
+                frame = self._camera.get_frame()
             if frame is None:
                 return
 
@@ -1517,7 +1857,9 @@ class VisionTab(QWidget):
                         dh, dw = depth_vis.shape[:2]
                         from nectar.vision.camera import ROSDepthCam
 
-                        if isinstance(self._camera, ROSDepthCam):
+                        if self._is_t265_camera() and self._effective_t265_mode() == "Rectified":
+                            scaled_u, scaled_v = u, v
+                        elif isinstance(self._camera, ROSDepthCam) or self._is_t265_camera():
                             scaled_u = int(u * dw / w) if w > 0 else u
                             scaled_v = int(v * dh / h) if h > 0 else v
                         else:
@@ -1526,6 +1868,38 @@ class VisionTab(QWidget):
                         if 0 <= scaled_u < dw and 0 <= scaled_v < dh:
                             cv2.circle(depth_vis, (scaled_u, scaled_v), 8, (255, 255, 255), 2)
                             cv2.circle(depth_vis, (scaled_u, scaled_v), 3, (255, 255, 255), -1)
+
+            # T265 pose overlay
+            pose_str = ""
+            if self._is_t265_camera():
+                try:
+                    pose = self._camera.get_pose()
+                    t = pose.translation
+                    conf = pose.tracker_confidence
+                    pose_str = f" | Pose: ({t[0]:+.2f}, {t[1]:+.2f}, {t[2]:+.2f}) conf={conf}"
+                    cv2.putText(
+                        rgb_frame,
+                        f"pos: ({t[0]:+.2f}, {t[1]:+.2f}, {t[2]:+.2f})",
+                        (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),
+                        1,
+                        cv2.LINE_AA,
+                    )
+                    v = pose.velocity
+                    cv2.putText(
+                        rgb_frame,
+                        f"conf: {conf}  vel: ({v[0]:+.2f}, {v[1]:+.2f}, {v[2]:+.2f})",
+                        (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),
+                        1,
+                        cv2.LINE_AA,
+                    )
+                except Exception:
+                    pass
 
             # Update FPS counter
             self._fps_counter += 1
@@ -1537,7 +1911,9 @@ class VisionTab(QWidget):
 
             h, w = rgb_frame.shape[:2]
             depth_str = " | Depth: ON" if self._depth_enabled and self._is_depth_camera() else ""
-            self._info_label.setText(f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}")
+            self._info_label.setText(
+                f"FPS: {self._fps:.1f} | Resolution: {w}x{h}{depth_str}{pose_str}"
+            )
 
             # Display RGB frame (always)
             self._video_display.display_rgb(rgb_frame)
@@ -1663,6 +2039,9 @@ class VisionTab(QWidget):
                 frame = self._cv_utils.optical_flow(self._prev_gray, curr_gray, frame)
             self._prev_gray = curr_gray
 
+        if "optical_flow_demo" in self._filter_params:
+            frame = self._apply_optical_flow_demo(frame)
+
         # AI Object Detection
         if self._detection_enabled and self._ai_detector is not None:
             frame = self._apply_object_detection(frame)
@@ -1681,7 +2060,11 @@ class VisionTab(QWidget):
 
     def _apply_object_detection(self, frame: np.ndarray) -> np.ndarray:
         """
-        Run AI object detection on frame and draw results.
+        Request async detection on ``frame`` and overlay the latest result.
+
+        Inference runs on :class:`DetectionWorker` (off the GUI thread); this
+        hands off a frame copy when the worker is idle and draws the most recent
+        detections, so the frame loop never blocks on inference.
 
         Parameters
         ----------
@@ -1691,20 +2074,25 @@ class VisionTab(QWidget):
         Returns
         -------
         np.ndarray
-            Frame with detection annotations.
+            Frame with the most recent detection annotations.
         """
         if self._ai_detector is None or not self._ai_detector.is_loaded:
             return frame
 
-        try:
-            # Run detection
-            conf = self._detection_panel.conf_threshold
-            iou = self._detection_panel.iou_threshold
-            result = self._ai_detector.detect(frame, conf=conf, iou=iou)
-            self._last_detection_result = result
+        # Hand the latest frame to the worker when idle; inference runs
+        # off-thread and the result arrives via _on_detection_result.
+        if self._detection_worker is not None and not self._detection_busy:
+            self._detection_busy = True
+            self._detect_requested.emit(
+                frame.copy(),
+                self._detection_panel.conf_threshold,
+                self._detection_panel.iou_threshold,
+            )
 
-            # Draw detections on frame
-            if len(result) > 0:
+        # Overlay the most recent result (cheap), so detections render every frame.
+        result = self._last_detection_result
+        if result is not None and len(result) > 0:
+            try:
                 frame = self._ai_detector.draw_detections(
                     frame,
                     result,
@@ -1712,19 +2100,8 @@ class VisionTab(QWidget):
                     show_confidence=self._detection_panel.show_confidence,
                     show_class=self._detection_panel.show_labels,
                 )
-
-            # Update stats in panel
-            class_counts = {}
-            for det in result:
-                name = det.class_name or f"class_{det.class_id}"
-                class_counts[name] = class_counts.get(name, 0) + 1
-
-            inference_ms = result.inference_time * 1000
-            self._detection_panel.update_stats(len(result), inference_ms, class_counts)
-
-        except Exception as e:
-            # Log error but don't crash the frame loop
-            self._info_label.setText(f"Detection error: {str(e)[:30]}")
+            except Exception:
+                pass
 
         return frame
 
@@ -1733,6 +2110,10 @@ class VisionTab(QWidget):
 
     def cleanup(self) -> None:
         self._frame_timer.stop()
+
+        if self._detection_thread and self._detection_thread.isRunning():
+            self._detection_thread.quit()
+            self._detection_thread.wait(1000)
 
         if self._camera_thread and self._camera_thread.isRunning():
             self._camera_thread.quit()
@@ -1914,34 +2295,48 @@ class OpenCVUtils:
 
     def detect_hands(self, frame: np.ndarray) -> np.ndarray:
         if self._hand_tracker is None:
+            if getattr(self, "_hand_init_failed", False):
+                return frame
             try:
                 from nectar.vision import HandTracker, HandTrackerConfig
 
                 config = HandTrackerConfig(num_hands=2, running_mode="IMAGE")
                 self._hand_tracker = HandTracker(config)
                 self._hand_tracker.start()
-            except (ImportError, RuntimeError):
+            except Exception as e:
+                self._hand_init_failed = True
+                logger.error("HandTracker init failed: %s", e, exc_info=True)
                 return frame
 
         try:
             return self._hand_tracker.detect(frame, draw=True)
-        except RuntimeError:
+        except Exception as e:
+            if not getattr(self, "_hand_detect_warned", False):
+                self._hand_detect_warned = True
+                logger.error("HandTracker.detect failed: %s", e, exc_info=True)
             return frame
 
     def detect_faces(self, frame: np.ndarray) -> np.ndarray:
         if self._face_tracker is None:
+            if getattr(self, "_face_init_failed", False):
+                return frame
             try:
                 from nectar.vision import FaceMeshTracker, FaceMeshTrackerConfig
 
                 config = FaceMeshTrackerConfig(num_faces=1, running_mode="IMAGE")
                 self._face_tracker = FaceMeshTracker(config)
                 self._face_tracker.start()
-            except (ImportError, RuntimeError):
+            except Exception as e:
+                self._face_init_failed = True
+                logger.error("FaceMeshTracker init failed: %s", e, exc_info=True)
                 return frame
 
         try:
             return self._face_tracker.detect(frame, draw=True)
-        except RuntimeError:
+        except Exception as e:
+            if not getattr(self, "_face_detect_warned", False):
+                self._face_detect_warned = True
+                logger.error("FaceMeshTracker.detect failed: %s", e, exc_info=True)
             return frame
 
     def detect_aruco_markers(self, frame: np.ndarray, dict_type: str) -> np.ndarray:

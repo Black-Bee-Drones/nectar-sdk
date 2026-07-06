@@ -1,0 +1,42 @@
+# RealSense + Isaac ROS Visual SLAM parameters
+/camera/camera:
+  ros__parameters:
+    enable_infra1: true
+    enable_infra2: true
+    enable_color: false
+    enable_depth: false
+    enable_gyro: true
+    enable_accel: true
+    gyro_fps: 200
+    accel_fps: 200
+    unite_imu_method: 2
+    enable_sync: false
+    tf_publish_rate: 0.0
+    depth_module:
+      emitter_enabled: 0
+      profile: "640x360x90"
+
+/visual_slam_node:
+  ros__parameters:
+    enable_image_denoising: true
+    rectified_images: true
+    enable_imu_fusion: true
+    gyro_noise_density: 0.000244
+    gyro_random_walk: 0.000019393
+    accel_noise_density: 0.001862
+    accel_random_walk: 0.003
+    calibration_frequency: 200.0
+    image_jitter_threshold_ms: 22.0
+    imu_jitter_threshold_ms: 10.0
+    base_frame: "camera_link"
+    imu_frame: "camera_gyro_optical_frame"
+    enable_slam_visualization: false
+    enable_landmarks_view: false
+    enable_observations_view: false
+    verbosity: 0
+    enable_debug_mode: false
+    enable_ground_constraint_in_odometry: false
+    enable_ground_constraint_in_slam: false
+    camera_optical_frames:
+      - "camera_infra1_optical_frame"
+      - "camera_infra2_optical_frame"

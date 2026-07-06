@@ -1,0 +1,12 @@
+/**:
+  ros__parameters:
+    plugin_denylist:
+      # Legacy ArduPilot-style RANGEFINDER plugin. PX4 sends DISTANCE_SENSOR
+      # instead (handled by the distance_sensor plugin), so deny this one to
+      # keep /mavros/rangefinder/rangefinder single-sourced.
+      - rangefinder
+      # The SDK drives PX4 via setpoint_raw; it never consumes
+      # /mavros/guided_target/*. PX4 streams POSITION_TARGET_GLOBAL_INT without
+      # giving MAVROS a local origin, so this plugin spams
+      # "PositionTargetGlobal failed because no origin". Deny it to keep logs clean.
+      - guided_target

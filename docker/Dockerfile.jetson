@@ -1,27 +1,42 @@
+# syntax=docker/dockerfile:1
 # =============================================================================
-# Jetson Orin Nano Dockerfile (ARM64 / L4T)
+# Jetson Orin Nano Dockerfile (ARM64 / JetPack 6.x / L4T r36.4)
 #
 # Targets:
-#   sdk       Everything except AI/torch
-#   sdk-full  + PyTorch (Jetson CUDA build) + AI packages
+#   sdk       control + vision + interface + sensors (no AI/torch)
+#   sdk-full  + PyTorch (Jetson CUDA wheels) + AI packages
 #
-# Base image: dusty-nv/ros:humble-desktop-l4t-r36.4.0
-# See: https://github.com/dusty-nv/jetson-containers
-#
-# Build:
-#   docker build --target sdk -t nectar-sdk:jetson -f docker/Dockerfile.jetson .
+# Build on the Jetson (auto-detected by `make docker-build` / `docker-build-full`):
+#   make docker-build        # -> nectar-sdk:jetson
+#   make docker-build-full   # -> nectar-sdk:jetson-full
+#   INSTALL_REALSENSE=true REALSENSE_CUDA=true make docker-build-full   # + RealSense
+# Equivalent explicit form:
+#   docker build --target sdk      -t nectar-sdk:jetson      -f docker/Dockerfile.jetson .
 #   docker build --target sdk-full -t nectar-sdk:jetson-full -f docker/Dockerfile.jetson .
+#
+# r36.4.0 is the published tag and is compatible with r36.4.3/.4 BSP.
 # =============================================================================
-
-FROM dusty-nv/ros:humble-desktop-l4t-r36.4.0 AS base
+ARG L4T_TAG=r36.4.0
+FROM nvcr.io/nvidia/l4t-jetpack:${L4T_TAG} AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV NON_INTERACTIVE=true
 ENV ROS2_WORKSPACE=/home/ros2_ws
+ENV ROS_DISTRO=humble
+ENV NECTAR_VENV=/home/ros2_ws/.venv
+ENV PATH=/usr/local/bin:${NECTAR_VENV}/bin:$PATH
 
 COPY scripts/ /tmp/setup/scripts/
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl gnupg2 ca-certificates lsb-release && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/ros2.list
+
 RUN /tmp/setup/scripts/setup.sh system
+RUN /tmp/setup/scripts/setup.sh ros2
 RUN /tmp/setup/scripts/setup.sh geographiclib
 RUN apt-get remove -y python3-sympy 2>/dev/null || true
 RUN python3 -m pip install --upgrade pip
@@ -36,28 +51,89 @@ FROM base AS sdk
 COPY . /home/ros2_ws/src/nectar-sdk
 WORKDIR /home/ros2_ws/src/nectar-sdk
 
-RUN make install-all
+RUN --mount=type=cache,target=/root/.cache/uv make install-all
 RUN make rosdep-init
 RUN make ros2-deps
 RUN make build
 
+# RealSense: udev rules + hotplug for runtime device access
+COPY docker/realsense/ /opt/realsense/
+RUN chmod +x /opt/realsense/hotplug-realsense.sh 2>/dev/null || true
+RUN mkdir -p /etc/udev/rules.d && \
+    cp /opt/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/99-realsense-libusb.rules 2>/dev/null || true
+
+# RealSense: build librealsense from source (RSUSB backend, CUDA) + realsense-ros.
+ARG INSTALL_REALSENSE=false
+ARG REALSENSE_CUDA=false
+ARG LIBREALSENSE_VERSION
+ARG REALSENSE_ROS_TAG
+ENV REALSENSE_CUDA=${REALSENSE_CUDA}
+ENV LIBREALSENSE_VERSION=${LIBREALSENSE_VERSION}
+ENV REALSENSE_ROS_TAG=${REALSENSE_ROS_TAG}
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then make realsense; fi
+# After a from-source realsense build, re-pin numpy/scipy/sklearn in the venv.
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    "${NECTAR_VENV}/bin/python" -m pip install --no-cache-dir \
+        numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
+
+# Control backends: space-separated `make drone-<x>` list (e.g. "mavros crazyflie").
+# Empty by default; core ships MAVLink/pymavlink only.
+ARG INSTALL_DRONE=""
+RUN if [ -n "$INSTALL_DRONE" ]; then for d in $INSTALL_DRONE; do make drone-$d; done; fi
+
 CMD ["/bin/bash"]
 
 # =============================================================================
-# sdk-full: sdk + PyTorch (Jetson CUDA) + AI packages
-# Uses the Jetson-specific PyTorch wheels from jetson-containers.
-# PyTorch is typically pre-installed in dusty-nv images. If not:
-#   pip install torch torchvision --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/pytorch/
+# sdk-full: sdk + PyTorch (Jetson CUDA wheels) + AI packages.
+# Jetson torch is not on PyPI; it comes from the Jetson AI Lab index, built for
+# JetPack 6 / CUDA 12.6 and tagged 'linux_aarch64'. PyPI publishes
+# torch==<same version> with a 'manylinux_*_aarch64' tag that pip PREFERS (more
+# specific platform tag), which would override the Jetson wheel and drag in a
+# full set of CUDA-13 nvidia-* wheels that don't belong on this CUDA-12.6 image
+# (several GB of unused, mismatched runtime). Pinning version + extra-index-url
+# is NOT enough — the version exists on both indexes. So we download the Jetson
+# wheels and install them as explicit wheel FILES, which become pinned direct
+# requirements: the AI extras then resolve torch/torchvision to these wheels and
+# never consider PyPI's torch.
+# Ref: https://pypi.jetson-ai-lab.io/jp6/cu126
 # =============================================================================
 FROM sdk AS sdk-full
 
-# Jetson base images usually ship PyTorch pre-installed.
-# If not present, install from NVIDIA Jetson PyTorch index.
-RUN python3 -c "import torch" 2>/dev/null \
-    || pip install --no-cache-dir \
-    torch torchvision \
-    --index-url https://developer.download.nvidia.com/compute/redist/jp/v60/pytorch/
+ARG TORCH_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126
 
-RUN make python-ai
+# Jetson torch/torchvision are fetched as explicit wheel FILES from the Jetson
+# AI Lab index (uv has no `pip download`, so the system pip handles the fetch).
+# They are then installed into the venv as direct, pinned requirements so the
+# AI extras resolve torch/torchvision to these wheels and never pull PyPI's.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    mkdir -p /opt/torch-wheels && \
+    pip download torch torchvision --no-deps --index-url "${TORCH_INDEX}" -d /opt/torch-wheels
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    cd nectar && uv pip install --python "${NECTAR_VENV}/bin/python" --reinstall-package torch --reinstall-package torchvision \
+        /opt/torch-wheels/torch-*.whl /opt/torch-wheels/torchvision-*.whl \
+        -e ".[ai]"
+
+RUN apt-get update && apt-get install -y --no-install-recommends libopenblas0 && \
+    rm -rf /var/lib/apt/lists/*
+
+# cuDSS pinned to the wheel matching JetPack 6.2 (0.6.0); --no-deps is REQUIRED:
+# its dependency nvidia-cublas-cu12 (CUDA 12.9) would shadow the base image's
+# system cuBLAS 12.6 via ldconfig and break cuBLAS init (CUBLAS_STATUS_ALLOC_FAILED).
+# Both torch and cuDSS instead use the base's /usr/local/cuda cuBLAS. The cuDSS
+# lib dir (inside the venv site-packages) is registered with the dynamic linker
+# so torch can load libcudss.so.0.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python "${NECTAR_VENV}/bin/python" nvidia-cudss-cu12==0.6.0.5 --no-deps --index-url "${TORCH_INDEX}" && \
+    echo "$("${NECTAR_VENV}/bin/python" -c 'import site; print(site.getsitepackages()[0])')/nvidia/cu12/lib" \
+        > /etc/ld.so.conf.d/nvidia-cudss.conf && \
+    ldconfig
+
+ARG INSTALL_REALSENSE=false
+RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
+    "${NECTAR_VENV}/bin/python" -m pip install --no-cache-dir \
+        numpy==1.26.4 scipy==1.14.1 scikit-learn==1.7.2; \
+    fi
 
 CMD ["/bin/bash"]

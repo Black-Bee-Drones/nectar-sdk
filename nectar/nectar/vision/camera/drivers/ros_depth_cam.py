@@ -1,4 +1,5 @@
 import threading
+import uuid
 from typing import Optional
 
 import numpy as np
@@ -8,6 +9,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from sensor_msgs.msg import CompressedImage as RosCompressedImage
 from sensor_msgs.msg import Image as RosImage
 
+from nectar import runtime as nectar_runtime
 from nectar.vision.camera.abstract import DepthCam
 from nectar.vision.camera.config import (
     QoSDurability,
@@ -64,13 +66,27 @@ class ROSDepthCam(DepthCam):
     - Topic paths must be explicit (include /compressed or /compressedDepth).
     """
 
-    def __init__(self, node: Node, config: ROSDepthConfig) -> None:
+    def __init__(
+        self,
+        node: Optional[Node] = None,
+        config: Optional[ROSDepthConfig] = None,
+    ) -> None:
+        if config is None:
+            raise ValueError("ROSDepthCam requires a ROSDepthConfig")
         super().__init__(name=config.name)
-        self._node = node
+        self._owns_node = node is None
+        if node is None:
+            self._node = Node(
+                f"nectar_ros_depth_cam_{uuid.uuid4().hex[:8]}",
+                start_parameter_services=False,
+            )
+            nectar_runtime.add_node(self._node)
+        else:
+            self._node = node
         self._config = config
         self._bridge = CvBridge()
 
-        self._color_cam = ROSCam(node, config)
+        self._color_cam = ROSCam(self._node, config)
 
         self._depth: Optional[np.ndarray] = None
         self._depth_sub = None
@@ -315,3 +331,10 @@ class ROSDepthCam(DepthCam):
 
         self._is_running = False
         self._depth_event.set()
+        if self._owns_node:
+            nectar_runtime.remove_node(self._node)
+            try:
+                self._node.destroy_node()
+            except Exception:
+                pass
+            self._owns_node = False

@@ -1,15 +1,19 @@
+import threading
+import time
+import uuid
 from abc import ABC, abstractmethod
 from typing import Callable, List, Optional, Union
 
-import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.client import Client
-from rclpy.duration import Duration
+from rclpy.executors import Executor
 from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.qos import QoSProfile
 from rclpy.subscription import Subscription
 
+from nectar import runtime as nectar_runtime
+from nectar.control.capabilities import Capability
 from nectar.control.config import DroneConfig
 from nectar.control.exceptions import (
     CapabilityNotSupportedError,
@@ -21,9 +25,10 @@ from nectar.control.protocols import ObstacleDetector
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
+from nectar.utils.log import ERR, OK
 from nectar.utils.process import ProcessUtils
 
 
@@ -31,18 +36,32 @@ class BaseDrone(ABC):
     """
     Abstract base class for drone implementations.
 
+    Each drone owns its own ROS 2 ``Node``, which is registered with the
+    SDK-wide executor at construction time (see :mod:`nectar.runtime`).
+    Callers may pass an explicit ``executor`` to share an existing one
+    (e.g. the GUI's or Yasmin's). All blocking methods rely on that
+    executor to spin in the background.
+
     Parameters
     ----------
     config : DroneConfig
         Drone configuration dataclass.
-    node : Node
-        ROS2 node for communication.
-
+    executor : Executor, optional
+        Executor to register this drone's node with. Defaults to the
+        shared SDK executor from :func:`nectar.runtime.get_executor`.
     """
 
-    def __init__(self, config: DroneConfig, node: Node) -> None:
+    def __init__(
+        self,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
         self._config = config
-        self._node = node
+        nectar_runtime.ensure_context()
+        self._node = Node(
+            f"nectar_{self._sanitize(config.name)}_{uuid.uuid4().hex[:8]}",
+            start_parameter_services=False,
+        )
         self._connected = False
         self._subscribers: List[Subscription] = []
         self._publishers: List[Publisher] = []
@@ -51,8 +70,19 @@ class BaseDrone(ABC):
         self._driver_running = False
         self._obstacle_manager = ObstacleManager()
 
+        if executor is not None:
+            executor.add_node(self._node)
+            self._executor: Optional[Executor] = executor
+        else:
+            nectar_runtime.add_node(self._node)
+            self._executor = None
+
         if config.start_driver:
             self._init_driver()
+
+    @staticmethod
+    def _sanitize(name: str) -> str:
+        return "".join(c if c.isalnum() else "_" for c in name).strip("_") or "drone"
 
     @property
     def config(self) -> DroneConfig:
@@ -119,6 +149,28 @@ class BaseDrone(ABC):
     def obstacle_manager(self) -> ObstacleManager:
         """Obstacle detection manager for this drone instance."""
         return self._obstacle_manager
+
+    @property
+    def capabilities(self) -> "frozenset[Capability]":
+        """Set of features this drone supports.
+
+        Override in subclasses to declare the supported :class:`Capability`
+        set. The base implementation declares none.
+        """
+        return frozenset()
+
+    def supports(self, capability: Capability) -> bool:
+        """Return whether this drone declares ``capability``."""
+        return capability in self.capabilities
+
+    def _require(self, capability: Capability) -> None:
+        """Raise :class:`CapabilityNotSupportedError` if ``capability`` is absent.
+
+        Single enforcement path for capability-gated operations, so the declared
+        capability set is the source of truth rather than scattered ad-hoc checks.
+        """
+        if capability not in self.capabilities:
+            raise CapabilityNotSupportedError(capability.name, self._config.name)
 
     def add_obstacle_detector(
         self,
@@ -304,7 +356,7 @@ class BaseDrone(ABC):
             Execution time. If None, command is continuous.
         reference : MoveReference (enum), default=BODY
             - BODY: relative to current orientation
-            - WORLD: relative to world frame (NED frame)
+            - WORLD: absolute world frame (ENU directions)
             - TAKEOFF: relative to takeoff position
         """
         pass
@@ -319,7 +371,7 @@ class BaseDrone(ABC):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
@@ -355,7 +407,7 @@ class BaseDrone(ABC):
         reference : MoveReference (enum), default=BODY
             Reference frame for movement:
             - BODY: relative to current orientation
-            - WORLD: relative to world frame (NED frame)
+            - WORLD: absolute world frame (ENU directions)
             - TAKEOFF: relative to takeoff position
 
         timeout : Optional[float], default=60.0
@@ -364,10 +416,12 @@ class BaseDrone(ABC):
         precision : float, default=0.2
             Arrival threshold in meters.
 
-        strategy : NavigationStrategy (enum), default=PID
+        method : NavigationMethod (enum), default=POSITION
             Navigation algorithm:
-            - PID: velocity-based control with feedback loop
-            - SETPOINT: direct position setpoint publishing
+            - POSITION: onboard position controller (FCU setpoint / goTo)
+            - POSITION_GLOBAL: onboard GPS position controller (outdoor only)
+            - PID: companion-side velocity PID with raw sensors
+            - PID_EKF: companion-side velocity PID with EKF-fused position
 
         altitude_source : AltitudeSource (enum), default=AUTO
             Altitude sensor source for PID navigation:
@@ -388,6 +442,8 @@ class BaseDrone(ABC):
             If reference=TAKEOFF but takeoff position not set.
         SensorNotAvailableError
             If altitude_source=LIDAR but lidar is not available.
+        CapabilityNotSupportedError
+            If the requested method is not supported by this drone.
         """
         pass
 
@@ -399,7 +455,7 @@ class BaseDrone(ABC):
         heading: Optional[float] = None,
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.PID,
     ) -> bool:
         """
         Navigate to GPS coordinates.
@@ -418,7 +474,7 @@ class BaseDrone(ABC):
             Maximum navigation time in seconds.
         precision : float, default=0.5
             Arrival threshold in meters.
-        strategy : NavigationStrategy, default=PID
+        method : NavigationMethod, default=PID
             Navigation algorithm.
 
         Returns
@@ -453,7 +509,7 @@ class BaseDrone(ABC):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NAVIGATE,
         land: bool = True,
     ) -> bool:
         """
@@ -464,9 +520,11 @@ class BaseDrone(ABC):
         altitude : float, optional
             Transit altitude in meters. None uses current altitude.
         precision : float, default=0.2
-            Arrival threshold for PID strategy in meters.
-        strategy : RTLStrategy, default=PID
-            RTL algorithm (PID navigates to takeoff, ARDUPILOT triggers FCU RTL mode).
+            Arrival threshold in meters (used by NAVIGATE method).
+        method : RTLMethod, default=NAVIGATE
+            RTL algorithm:
+            - NAVIGATE: SDK navigates to takeoff position using position control.
+            - NATIVE: drone's built-in RTL mode (ArduPilot RTL, Bebop navigate_home).
         land : bool, default=True
             Execute landing after reaching home.
 
@@ -708,30 +766,118 @@ class BaseDrone(ABC):
         self._clients.append(client)
         return client
 
-    def delay(self, seconds: float) -> None:
+    def _call_service(
+        self,
+        client: Client,
+        request,
+        success_msg: str = "",
+        fail_msg: str = "",
+        sync: bool = True,
+        timeout: float = 10.0,
+        validator: Optional[Callable] = None,
+    ):
         """
-        Delay with ROS spinning.
-
-        Maintains ROS communication during delay with spin_once.
+        Call a ROS 2 service. Blocks on the future when ``sync=True``;
+        relies on the SDK executor spinning in the background.
 
         Parameters
         ----------
-        seconds : float
-            Delay duration in seconds.
-        """
-        duration = Duration(seconds=seconds)
-        start_time = self._node.get_clock().now()
+        client : Client
+            ROS 2 service client.
+        request : SrvTypeRequest
+            Service request message.
+        success_msg, fail_msg : str
+            Optional log messages on success / failure.
+        sync : bool, default=True
+            Block until the future completes when True; fire-and-forget when False.
+        timeout : float, default=10.0
+            Combined timeout for service availability and the response.
+        validator : callable, optional
+            ``(response, service_name) -> bool``. Raises or returns False to mark failure.
 
-        while (self._node.get_clock().now() - start_time) < duration:
-            rclpy.spin_once(self._node, timeout_sec=0.1)
+        Returns
+        -------
+        Any or None
+            Response object when ``sync=True``, otherwise ``None``.
+
+        Raises
+        ------
+        TimeoutError
+            If the service is not available within ``timeout``.
+        """
+        deadline = time.monotonic() + timeout
+        if not client.wait_for_service(timeout_sec=timeout):
+            msg = f"Service {client.srv_name} not available after {timeout}s"
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg} - {msg}")
+            raise TimeoutError(msg)
+
+        future = client.call_async(request)
+
+        if not sync:
+            future.add_done_callback(
+                self._make_service_callback(client.srv_name, success_msg, fail_msg, validator)
+            )
+            return None
+
+        done = threading.Event()
+        future.add_done_callback(lambda _f: done.set())
+        remaining = max(0.0, deadline - time.monotonic())
+        if not done.wait(timeout=remaining):
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg}: timeout waiting for response")
+            return None
+
+        try:
+            result = future.result()
+        except Exception as e:
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
+            return None
+
+        if result is None:
+            if fail_msg:
+                self._node.get_logger().error(f"{ERR} {fail_msg}")
+            return None
+
+        if validator:
+            validator(result, client.srv_name)
+        if success_msg:
+            self._node.get_logger().info(f"{OK} {success_msg}")
+        return result
+
+    def _make_service_callback(
+        self,
+        service_name: str,
+        success_msg: str,
+        fail_msg: str,
+        validator: Optional[Callable],
+    ) -> Callable:
+        def _handle(fut):
+            try:
+                result = fut.result()
+            except Exception as e:
+                if fail_msg:
+                    self._node.get_logger().error(f"{ERR} {fail_msg}: {e}")
+                return
+            if result is None:
+                if fail_msg:
+                    self._node.get_logger().error(f"{ERR} {fail_msg}")
+                return
+            if validator:
+                validator(result, service_name)
+            if success_msg:
+                self._node.get_logger().info(f"{OK} {success_msg}")
+
+        return _handle
+
+    def delay(self, seconds: float) -> None:
+        """Sleep for ``seconds``. SDK executor keeps spinning in the background."""
+        if seconds > 0.0:
+            time.sleep(seconds)
 
     def cleanup(self) -> None:
-        """
-        Cleanup all ROS2 resources.
-
-        Destroys all subscribers, publishers, clients, and obstacle detectors.
-        Called automatically on object deletion.
-        """
+        """Destroy all ROS resources and unregister the drone's node."""
         self._obstacle_manager.cleanup()
 
         for sub in self._subscribers:
@@ -744,7 +890,21 @@ class BaseDrone(ABC):
         self._subscribers.clear()
         self._publishers.clear()
         self._clients.clear()
-        self._node.get_logger().debug("Drone resources cleaned up")
+
+        if self._executor is None:
+            nectar_runtime.remove_node(self._node)
+        else:
+            try:
+                self._executor.remove_node(self._node)
+            except Exception:
+                pass
+        try:
+            self._node.destroy_node()
+        except Exception:
+            pass
 
     def __del__(self) -> None:
-        self.cleanup()
+        try:
+            self.cleanup()
+        except Exception:
+            pass

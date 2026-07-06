@@ -1,0 +1,23 @@
+# Nectar SDK — Indoor SITL parameters (no GPS)
+#
+# Configures EKF3 to use ExternalNav (vision) instead of GPS.
+# Loaded via: start_sitl.sh --indoor (appended to --defaults comma-separated list)
+#
+# The gz_vision_source.py node publishes Gazebo ground-truth pose on the canonical
+# VSLAM topic; vision_pose_node (mavros) or MavlinkDrone's VisionPoseBridge
+# (mavlink) feeds it to ArduPilot as VISION_POSITION_ESTIMATE.
+
+# Disable GPS (GPS1_TYPE replaces legacy GPS_TYPE in newer ArduPilot)
+GPS1_TYPE       0
+
+# EKF3 source — ExternalNav for position, velocity, and yaw
+EK3_SRC1_POSXY  6
+EK3_SRC1_VELXY  6
+EK3_SRC1_POSZ   1
+EK3_SRC1_YAW    6
+
+# Enable visual odometry input
+VISO_TYPE       1
+
+# Relax arming checks (disable GPS-related checks)
+ARMING_CHECK    388598

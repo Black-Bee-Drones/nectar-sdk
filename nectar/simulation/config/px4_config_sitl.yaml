@@ -1,0 +1,21 @@
+# MAVROS plugin configuration for PX4 SITL (Nectar shared simulation).
+#
+# PX4 streams the simulated downward lidar (the gpu_lidar on x500_nectar, fused
+# by PX4's gz bridge into a distance_sensor) as a MAVLink DISTANCE_SENSOR. This
+# maps it to /mavros/rangefinder/rangefinder (sensor_msgs/Range) — the SAME
+# rangefinder source the SDK reads for ArduPilot, so drone.rangefinder /
+# lidar_available behave identically across firmwares.
+#
+# Everything else uses MAVROS' PX4 defaults (no full apm-style config needed).
+
+# distance_sensor — publish the FCU's downward DISTANCE_SENSOR (id 0) to ROS.
+/**/distance_sensor:
+  ros__parameters:
+    config: |
+      rangefinder/rangefinder:
+        id: 0
+        frame_id: "lidar"
+        # orientation: sent by FCU (downward / PITCH_270)
+        field_of_view: 0.0
+        send_tf: false
+        sensor_position: {x: 0.0, y: 0.0, z: -0.1}

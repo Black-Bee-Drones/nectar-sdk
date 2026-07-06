@@ -1,13 +1,13 @@
 # AI Examples
 
-Reference implementations for deep learning-based object detection.
+Reference implementations for deep learning-based object detection and segmentation,
+across every supported framework.
 
-## Overview
-
-| Example | Script | Description |
-|---------|--------|-------------|
-| **Detector Stream** | `detector_example.py` | Real-time object detection from camera stream with ROS2 integration |
+| Example | Script | What it does |
+|---------|--------|--------------|
+| **Detector Stream** | `detector_example.py` | Real-time object detection from a camera stream with ROS 2 integration |
 | **Batch Detector** | `batch_detector.py` | Offline processing of image directories or video files |
+| **Sequence Inference** | `sequence_inference.py` | Multi-model detection + segmentation over an image dir or video, annotated MP4 output |
 
 ## Supported Frameworks
 
@@ -15,7 +15,7 @@ Reference implementations for deep learning-based object detection.
 |-----------|--------|---------|
 | **Ultralytics** | YOLOv8, YOLOv10, YOLO11 | `yolov8n.pt`, `yolov11n.pt` |
 | **Transformers** | DETR, Conditional DETR | `facebook/detr-resnet-50` |
-| **RF-DETR** | RF-DETR variants | `rfdetr-base` |
+| **RF-DETR** | RF-DETR Nano/Small/Medium/Large | `rfdetr-medium` |
 
 ---
 
@@ -25,51 +25,29 @@ Camera stream detection using `Detector` + `ImageHandler`.
 
 ### Usage
 
-```bash
-# Default (webcam + YOLO with auto GPU detection)
-ros2 run nectar detector_example
+| Case | Command |
+|------|---------|
+| Default (webcam + YOLO, auto GPU) | `python3 detector_example.py` |
+| Explicit framework (DETR) | `python3 detector_example.py --model facebook/detr-resnet-50 --framework transformers` |
+| Custom YOLO from HuggingFace | `python3 detector_example.py --model "blackbeedrones/cbr-25-base:yolov11n.pt"` |
+| Local model, headless, republish as ROS topic | `python3 detector_example.py --model /path/to/model.pt --no-show --publish --topic /inference/compressed` |
 
-# Explicit framework specification
-ros2 run nectar detector_example --ros-args \
-    -p model_source:="facebook/detr-resnet-50" \
-    -p framework:="transformers"
+Private HuggingFace models: pass `--hf-token hf_...` or set `export HF_TOKEN=hf_...`. Select the compute device with `--device {auto,cpu,cuda,0,1}` (default `auto`).
 
-# Custom YOLO model from HuggingFace
-ros2 run nectar detector_example --ros-args \
-    -p model_source:="blackbeedrones/cbr-25-base:yolov11n.pt"
+### Arguments
 
-# Private HuggingFace model (with token)
-export HF_TOKEN="hf_your_token_here"
-ros2 run nectar detector_example
-
-# Or pass token as parameter
-ros2 run nectar detector_example --ros-args -p hf_token:="hf_your_token_here"
-
-# Local model file
-ros2 run nectar detector_example --ros-args -p model_source:="/path/to/model.pt"
-
-# Device selection
-ros2 run nectar detector_example --ros-args -p device:="cuda"   # Force GPU
-ros2 run nectar detector_example --ros-args -p device:="cpu"    # Force CPU
-ros2 run nectar detector_example --ros-args -p device:="0"      # Specific GPU
-ros2 run nectar detector_example --ros-args -p device:="auto"   # Auto-detect (default)
-```
-
-### Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model_source` | string | `yolov8n.pt` | Model path or HuggingFace repo |
-| `framework` | string | "" | Explicit framework: `ultralytics`, `transformers`, `rfdetr` (empty = auto-detect) |
-| `confidence` | float | 0.25 | Detection confidence threshold |
-| `camera_source` | string | webcam | Camera source identifier |
-| `show_result` | bool | true | Display detection window |
-| `annotator_type` | string | color | Annotation style: `box`, `round_box`, `color` |
-| `show_labels` | bool | true | Show class labels |
-| `show_confidence` | bool | true | Show confidence scores |
-| `show_class` | bool | true | Show class names |
-| `device` | string | auto | Device: `auto`, `cpu`, `cuda`, `0`, `1` |
-| `hf_token` | string | "" | HuggingFace API token |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `yolov8n.pt` | Model path or HuggingFace repo |
+| `--framework` | "" | Explicit framework: `ultralytics`, `transformers`, `rfdetr` (empty = auto-detect) |
+| `--confidence` | `0.25` | Detection confidence threshold |
+| `--camera-source` | `webcam` | Camera source identifier |
+| `--no-show` | off | Disable the detection window (default shows it) |
+| `--annotator-type` | `color` | Annotation style: `box`, `round_box`, `color` |
+| `--show-labels` / `--show-confidence` / `--show-class` | on | Toggle overlay fields |
+| `--device` | `auto` | Device: `auto`, `cpu`, `cuda`, `0`, `1` |
+| `--hf-token` | "" | HuggingFace API token (or `HF_TOKEN` env var) |
+| `--publish` / `--topic` / `--jpeg-quality` | off / `/inference/compressed` / `80` | Republish annotated frames as a compressed image topic |
 
 ### Annotation Styles
 
@@ -82,6 +60,7 @@ ros2 run nectar detector_example --ros-args -p device:="auto"   # Auto-detect (d
 ### Statistics Overlay
 
 The stream displays real-time statistics:
+
 - **Framework**: Detection framework being used
 - **FPS**: Frames per second (based on inference time)
 - **Detections**: Current frame detection count
@@ -95,38 +74,36 @@ Standalone script for offline processing of image sequences or video files.
 
 ### Usage
 
+**Image directory or video file** (framework auto-detected; `--input` takes either):
+
 ```bash
-# Process image directory (auto-detect framework)
 python3 batch_detector.py \
     --input /path/to/images \
     --output-dir ./results
+```
 
-# Process video file
-python3 batch_detector.py \
-    --input /path/to/video.mp4 \
-    --output-dir ./results
+**Explicit framework** (`ultralytics`, `transformers`, or `rfdetr`):
 
-# Explicit framework specification
-python3 batch_detector.py \
-    --input /path/to/images \
-    --model-source yolov8n.pt \
-    --framework ultralytics \
-    --output-dir ./results
-
-# Transformers DETR model
+```bash
 python3 batch_detector.py \
     --input /path/to/images \
     --model-source facebook/detr-resnet-50 \
     --framework transformers \
     --output-dir ./results
+```
 
-# HuggingFace model
+**HuggingFace model**
+
+```bash
 python3 batch_detector.py \
     --input /path/to/images \
     --model-source "blackbeedrones/cbr-25-base:yolov11n.pt" \
     --output-dir ./results
+```
 
-# Full options
+**Full options**
+
+```bash
 python3 batch_detector.py \
     --input /path/to/video.mp4 \
     --output-dir ./results \
@@ -170,7 +147,43 @@ output-dir/
 ### Video Processing
 
 For video input, the batch detector:
+
 1. Extracts all frames to temporary directory
 2. Processes each frame with the selected model
 3. Reconstructs video at original FPS
 4. Saves individual annotated frames
+
+---
+
+## Sequence Inference
+
+Runs one or more models (detection and/or segmentation) over an image directory or video and writes an annotated MP4 (plus per-frame JPGs). Suffix a model with `@detection` / `@segmentation` to override task auto-detection.
+
+**Single detection model over an image folder**
+
+```bash
+python3 sequence_inference.py --input ./frames --output-dir ./out --models yolov8n.pt
+```
+
+**Detection + segmentation, per-class confidence, custom palette**
+
+```bash
+python3 sequence_inference.py --input clip.mp4 --output-dir ./out \
+    --models cbr.pt@detection seg.pt@segmentation \
+    --conf 0.25 --class-conf "rose=0.47,sphere=0.70" --palette contrast
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input` | required | Image directory or video file |
+| `--output-dir` | required | Output root directory |
+| `--models` | required | One or more model sources (`@detection`/`@segmentation` suffix optional) |
+| `--conf` | `0.25` | Default/fallback confidence threshold |
+| `--class-conf` | none | Per-class confidence overrides, e.g. `rose=0.47,sphere=0.70` |
+| `--iou` | `0.5` | IoU threshold (segmentation NMS) |
+| `--device` | `auto` | Compute device |
+| `--fps` | `15.0` | Output FPS for image-directory inputs |
+| `--no-save-frames` | off | Keep only the MP4 |
+| `--hf-token` | `HF_TOKEN` | HuggingFace token |
+
+Annotation styling: `--palette`, `--colors`, `--box-thickness`, `--text-scale`, `--mask-opacity`, `--no-mask-outline` (see `--help`).

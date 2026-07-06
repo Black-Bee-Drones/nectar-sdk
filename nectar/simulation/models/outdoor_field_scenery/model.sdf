@@ -1,0 +1,111 @@
+<?xml version="1.0" ?>
+<!--
+  Nectar SDK — shared outdoor mission scenery.
+
+  Static gate + obstacle field, extracted from outdoor_field.sdf so the exact
+  same scenery is reused by both firmwares (ArduPilot and PX4). One static model
+  with one link per structure; poses match the original world coordinates.
+-->
+<sdf version="1.9">
+  <model name="outdoor_field_scenery">
+    <static>true</static>
+
+    <!-- Gate — two posts + crossbar, ~1.5m wide, ~2m high -->
+    <link name="gate_left_post">
+      <pose>13 -0.85 1.0 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.15 0.15 2.0</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.15 0.15 2.0</size></box></geometry>
+        <material>
+          <ambient>0.9 0.6 0.0 1</ambient>
+          <diffuse>1.0 0.7 0.0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="gate_right_post">
+      <pose>13 0.85 1.0 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.15 0.15 2.0</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.15 0.15 2.0</size></box></geometry>
+        <material>
+          <ambient>0.9 0.6 0.0 1</ambient>
+          <diffuse>1.0 0.7 0.0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="gate_crossbar">
+      <pose>13 0 2.05 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.15 1.85 0.1</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.15 1.85 0.1</size></box></geometry>
+        <material>
+          <ambient>0.9 0.6 0.0 1</ambient>
+          <diffuse>1.0 0.7 0.0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- Obstacle boxes -->
+    <link name="obstacle_box_1">
+      <pose>16 -3 0.75 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+        <material>
+          <ambient>0.8 0.2 0.2 1</ambient>
+          <diffuse>0.9 0.2 0.2 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="obstacle_box_2">
+      <pose>15 4 0.5 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>1.0 0.6 1.0</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>1.0 0.6 1.0</size></box></geometry>
+        <material>
+          <ambient>0.2 0.7 0.2 1</ambient>
+          <diffuse>0.2 0.8 0.2 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- Obstacle cylinders -->
+    <link name="obstacle_cylinder_1">
+      <pose>18 1 1.0 0 0 0</pose>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.35</radius><length>2.0</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.35</radius><length>2.0</length></cylinder></geometry>
+        <material>
+          <ambient>0.2 0.2 0.8 1</ambient>
+          <diffuse>0.2 0.2 0.9 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    <link name="obstacle_cylinder_2">
+      <pose>14 -5 0.75 0 0 0</pose>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.3</radius><length>1.5</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.3</radius><length>1.5</length></cylinder></geometry>
+        <material>
+          <ambient>0.7 0.5 0.1 1</ambient>
+          <diffuse>0.8 0.6 0.1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+  </model>
+</sdf>

@@ -2,8 +2,6 @@
 Detection module for object detection training, evaluation, and inference.
 
 Unified interface for object detection across multiple frameworks
-(Ultralytics YOLO, HuggingFace Transformers DETR, RF-DETR) with
-comprehensive training, evaluation, and post-processing capabilities.
 
 Examples
 --------
@@ -32,9 +30,9 @@ Examples
 >>> result = detector.train(config)
 """
 
-from nectar.ai.detection.core.base import BaseDetectionModel
+from importlib import import_module
+from typing import TYPE_CHECKING
 
-# Configuration classes
 from nectar.ai.detection.core.configs import (
     EvaluationConfig,
     EvaluationMetrics,
@@ -42,8 +40,6 @@ from nectar.ai.detection.core.configs import (
     TrainingMetrics,
     TrainingResult,
 )
-
-# Exceptions
 from nectar.ai.detection.core.exceptions import (
     ConfigurationError,
     DatasetError,
@@ -57,22 +53,6 @@ from nectar.ai.detection.core.exceptions import (
     SlicingError,
     TrainingError,
 )
-
-# Protocols and base classes
-from nectar.ai.detection.core.protocols import (
-    DetectorProtocol,
-    MergingStrategy,
-    TrainableProtocol,
-)
-
-# Registry and factory
-from nectar.ai.detection.core.registry import (
-    DetectorFactory,
-    ModelRegistry,
-    registry,
-)
-
-# Core types and data classes
 from nectar.ai.detection.core.types import (
     BatchImageType,
     Detection,
@@ -83,42 +63,78 @@ from nectar.ai.detection.core.types import (
 )
 from nectar.ai.detection.detector import Detector, Framework
 
-# Evaluation
-from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
+_LAZY_ATTRS = {
+    "BaseDetectionModel": "nectar.ai.detection.core.base",
+    # Models (heavy: pull torch, ultralytics, transformers, rfdetr)
+    "ModelLoader": "nectar.ai.detection.models.model_loader",
+    "UltralyticsModel": "nectar.ai.detection.models.ultralytics",
+    "TransformersModel": "nectar.ai.detection.models.transformers",
+    "RFDETRModel": "nectar.ai.detection.models.rfdetr",
+    "CocoDetectionDataset": "nectar.ai.detection.models.dataset",
+    "load_detection_dataset": "nectar.ai.detection.models.dataset",
+    # Evaluation (heavy: pulls matplotlib, supervision)
+    "ObjectDetectionEvaluator": "nectar.ai.detection.evaluation",
+    # Post-processing (light, but kept lazy for symmetry)
+    "BaseMergingStrategy": "nectar.ai.detection.postprocess",
+    "NMSStrategy": "nectar.ai.detection.postprocess",
+    "SoftNMSStrategy": "nectar.ai.detection.postprocess",
+    "WBFStrategy": "nectar.ai.detection.postprocess",
+    "NMMStrategy": "nectar.ai.detection.postprocess",
+    "PerClassConfidenceFilter": "nectar.ai.detection.postprocess",
+    # Slicing (pulls supervision)
+    "SlicingConfig": "nectar.ai.detection.slicing",
+    "SlicingStrategy": "nectar.ai.detection.slicing",
+    "SlicingInference": "nectar.ai.detection.slicing",
+    # Utilities
+    "HuggingFaceUploader": "nectar.ai.detection.utils.huggingface",
+    "get_device": "nectar.ai.detection.utils.device",
+    "DeviceManager": "nectar.ai.detection.utils.device",
+}
 
-# Model implementations
-from nectar.ai.detection.models import (
-    CocoDetectionDataset,
-    ModelLoader,
-    RFDETRModel,
-    TransformersModel,
-    UltralyticsModel,
-    load_detection_dataset,
-)
 
-# Post-processing
-from nectar.ai.detection.postprocess import (
-    NMMStrategy,
-    NMSStrategy,
-    SoftNMSStrategy,
-    WBFStrategy,
-)
+def __getattr__(name: str):
+    target = _LAZY_ATTRS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(target), name)
+    globals()[name] = value
+    return value
 
-# Slicing inference
-from nectar.ai.detection.slicing import (
-    SlicingConfig,
-    SlicingInference,
-    SlicingStrategy,
-)
 
-# Utilities
-from nectar.ai.detection.utils import (
-    DatasetConverter,
-    DatasetMerger,
-    DeviceManager,
-    HuggingFaceUploader,
-    get_device,
-)
+def __dir__():
+    return sorted({*globals(), *_LAZY_ATTRS})
+
+
+if TYPE_CHECKING:
+    from nectar.ai.detection.core.base import BaseDetectionModel
+    from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
+    from nectar.ai.detection.models import (
+        CocoDetectionDataset,
+        ModelLoader,
+        RFDETRModel,
+        TransformersModel,
+        UltralyticsModel,
+        load_detection_dataset,
+    )
+    from nectar.ai.detection.postprocess import (
+        BaseMergingStrategy,
+        NMMStrategy,
+        NMSStrategy,
+        PerClassConfidenceFilter,
+        SoftNMSStrategy,
+        WBFStrategy,
+    )
+    from nectar.ai.detection.slicing import (
+        SlicingConfig,
+        SlicingInference,
+        SlicingStrategy,
+    )
+    from nectar.ai.detection.utils import (
+        DeviceManager,
+        HuggingFaceUploader,
+        get_device,
+    )
+
 
 __all__ = [
     # Simple API
@@ -137,16 +153,8 @@ __all__ = [
     "TrainingMetrics",
     "EvaluationMetrics",
     "TrainingResult",
-    # Protocols
-    "DetectorProtocol",
-    "TrainableProtocol",
-    "MergingStrategy",
     # Base
     "BaseDetectionModel",
-    # Registry
-    "ModelRegistry",
-    "DetectorFactory",
-    "registry",
     # Exceptions
     "DetectionError",
     "ModelNotLoadedError",
@@ -173,14 +181,14 @@ __all__ = [
     # Evaluation
     "ObjectDetectionEvaluator",
     # Post-processing
+    "BaseMergingStrategy",
     "NMSStrategy",
     "SoftNMSStrategy",
     "WBFStrategy",
     "NMMStrategy",
+    "PerClassConfidenceFilter",
     # Utilities
     "HuggingFaceUploader",
     "get_device",
     "DeviceManager",
-    "DatasetConverter",
-    "DatasetMerger",
 ]

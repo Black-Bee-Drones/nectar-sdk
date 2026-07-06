@@ -1,30 +1,17 @@
 """
 Core data types for object detection.
-
-This module defines the fundamental data structures used throughout
-the detection module for representing detections, predictions, and inputs.
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 
-try:
-    import torch
-except ImportError:
-    torch = None
-
-try:
+if TYPE_CHECKING:
     import supervision as sv
-except ImportError:
-    sv = None
-
-try:
+    import torch
     from PIL import Image
-except ImportError:
-    Image = None
 
 
 ImageType = Union[str, Path, np.ndarray, "torch.Tensor", "Image.Image"]
@@ -288,8 +275,12 @@ class DetectionResult:
         ImportError
             If supervision is not installed.
         """
-        if sv is None:
-            raise ImportError("supervision is required. Install with: pip install supervision")
+        try:
+            import supervision as sv
+        except ImportError as e:
+            raise ImportError(
+                "supervision is required. Install with: pip install supervision"
+            ) from e
 
         if not self.detections:
             return sv.Detections.empty()
@@ -404,13 +395,18 @@ class DetectionInput:
     conf_threshold: float = 0.5
     iou_threshold: float = 0.5
     device: Optional[str] = None
+    imgsz: Optional[int] = None
 
     @property
     def is_batch(self) -> bool:
         """bool: Check if input contains a batch of images."""
         if isinstance(self.image, (list, tuple)):
             return True
-        if torch is not None and isinstance(self.image, torch.Tensor):
+        try:
+            import torch
+        except ImportError:
+            return False
+        if isinstance(self.image, torch.Tensor):
             return self.image.dim() == 4
         return False
 

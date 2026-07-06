@@ -1,0 +1,45 @@
+data:
+  dataset_path: data/visdrone
+  dataset_format: coco
+
+train:
+  framework: rfdetr
+  model: rfdetr-nano
+  epochs: 10
+  batch_size: 10
+  learning_rate: 1e-4
+  lr_encoder: 1e-5
+  output_dir: outputs/visdrone-rfdetr-nano
+  device: cuda
+  seed: 42
+  push_to_hub: true
+  hub_model_id: blackbeedrones/visdrone-rfdetr-nano
+  tensorboard: true
+  start_tensorboard: true
+  tensorboard_port: 6006
+  mixed_precision: fp16
+  gradient_accumulation_steps: 1
+  resolution: 384
+  multi_scale: true
+  use_ema: true
+  gradient_checkpoint: true
+  drop_mode: standard
+  drop_path: 0.0
+  drop_schedule: constant
+  dropout: 0.1
+  freeze_encoder: false
+  layer_norm: true
+  rms_norm: false
+  lr_scheduler_type: cosine
+  warmup_epochs: 1
+  warmup_momentum: 0.8
+  max_grad_norm: 1.0
+  early_stopping_patience: 3
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 10
+  device: cuda

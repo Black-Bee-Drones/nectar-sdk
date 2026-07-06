@@ -2,18 +2,19 @@ from typing import Optional
 
 from geometry_msgs.msg import Twist, Vector3
 from rclpy.duration import Duration
-from rclpy.node import Node
+from rclpy.executors import Executor
 from std_msgs.msg import Bool, Empty, UInt8
 
 from nectar.control.base import BaseDrone
-from nectar.control.config import BebopConfig, DroneConfig
+from nectar.control.capabilities import Capability
+from nectar.control.config import BebopConfig, DroneConfig, require_config
 from nectar.control.exceptions import CapabilityNotSupportedError
 from nectar.control.factory import DroneFactory
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
 from nectar.utils.process import ProcessUtils
 
@@ -26,35 +27,37 @@ class BebopDrone(BaseDrone):
     ----------
     config : BebopConfig
         Bebop-specific configuration.
-    node : Node
-        ROS2 node for communication.
+    executor : Executor, optional
+        ROS 2 executor to register this drone's node with. Defaults to
+        the shared :mod:`nectar.runtime` executor.
     """
 
-    def __init__(self, config: BebopConfig, node: Node) -> None:
-        super().__init__(config, node)
+    def __init__(
+        self,
+        config: BebopConfig,
+        executor: Optional[Executor] = None,
+    ) -> None:
+        super().__init__(config, executor)
         self._setup_publishers()
         self._node.get_logger().info("BebopDrone initialized")
 
     @classmethod
-    def from_config(cls, config: DroneConfig, node: Node) -> "BebopDrone":
-        """
-        Factory method for DroneFactory registration.
+    def from_config(
+        cls,
+        config: DroneConfig,
+        executor: Optional[Executor] = None,
+    ) -> "BebopDrone":
+        """Factory entry point for :class:`DroneFactory`."""
+        return cls(require_config(config, BebopConfig), executor)
 
-        Parameters
-        ----------
-        config : DroneConfig
-            Configuration (converted to BebopConfig if needed).
-        node : Node
-            ROS2 node.
+    @property
+    def capabilities(self) -> "frozenset[Capability]":
+        """Movement and control features supported by the Bebop.
 
-        Returns
-        -------
-        BebopDrone
-            Configured drone instance.
+        Body-frame velocity (``cmd_vel``) and autopilot-native return-to-home.
+        No position control, parameters, GPS, or companion navigation.
         """
-        if not isinstance(config, BebopConfig):
-            config = BebopConfig()
-        return cls(config, node)
+        return frozenset({Capability.VELOCITY_BODY, Capability.NATIVE_RTL})
 
     def _setup_publishers(self) -> None:
         config: BebopConfig = self._config
@@ -105,9 +108,9 @@ class BebopDrone(BaseDrone):
         Returns
         -------
         bool
-            True if driver is running.
+            True if the bebop_driver node is running.
         """
-        self._connected = self._driver_running
+        self._connected = self.check_driver_status()
         return self._connected
 
     def disconnect(self) -> None:
@@ -236,7 +239,7 @@ class BebopDrone(BaseDrone):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         raise CapabilityNotSupportedError("Position control", "Bebop")
@@ -250,9 +253,11 @@ class BebopDrone(BaseDrone):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NATIVE,
         land: bool = True,
     ) -> bool:
+        if method == RTLMethod.NAVIGATE:
+            raise CapabilityNotSupportedError("NAVIGATE RTL", "Bebop")
         self._navigate_home_pub.publish(Empty())
         self._node.get_logger().info("Navigate home (RTL)")
         if land:

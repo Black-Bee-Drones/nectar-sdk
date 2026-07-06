@@ -3,12 +3,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-import matplotlib
 import numpy as np
 import yaml
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 from nectar.vision.algorithms.distance.models import (
     ModelType,
@@ -269,6 +265,11 @@ class ModelCalibrator:
         """
         if not self.results:
             raise ValueError("No models fitted. Call fit_all() first.")
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         colors = plt.cm.tab10(np.linspace(0, 1, len(self.results)))

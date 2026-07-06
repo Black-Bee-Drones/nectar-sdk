@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nectar SDK — PX4 x500 with the Nectar sensor suite.
+
+  Built the same way as PX4's x500_depth/x500_lidar_down: merge the stock x500
+  (keeps PX4 motor model, IMU/baro/mag/GPS and the gz<->PX4 bridge intact) and
+  bolt on the Nectar sensors via fixed joints to base_link. The cameras flow to
+  ROS via ros_gz_bridge; the lidar flows through PX4 (DISTANCE_SENSOR over
+  MAVLink) so the SDK sees the same rangefinder source as ArduPilot:
+
+    front_rgbd  rgbd_camera  -> /front_camera (image, depth_image, points)   [ros_gz_bridge]
+    down_rgb    camera       -> /down_camera                                 [ros_gz_bridge]
+    lidar       gpu_lidar    -> PX4 distance_sensor -> /mavros/rangefinder/rangefinder
+-->
+<sdf version="1.9">
+  <model name="x500_nectar">
+    <include merge="true">
+      <uri>model://x500</uri>
+    </include>
+
+    <!-- ── Front RGBD camera (simulates RealSense D435i) ────────── -->
+    <link name="front_camera_link">
+      <pose relative_to="base_link">0.15 0 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.07</mass>
+        <inertia>
+          <ixx>1e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>1e-5</iyy><iyz>0</iyz>
+          <izz>1e-5</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry><box><size>0.025 0.09 0.025</size></box></geometry>
+        <material>
+          <ambient>0.5 0.5 0.5 1</ambient>
+          <diffuse>0.6 0.6 0.6 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="front_rgbd" type="rgbd_camera">
+        <always_on>true</always_on>
+        <update_rate>15</update_rate>
+        <topic>/front_camera</topic>
+        <camera>
+          <horizontal_fov>1.5184</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>10.0</far>
+          </clip>
+          <depth_camera>
+            <clip>
+              <near>0.1</near>
+              <far>10.0</far>
+            </clip>
+          </depth_camera>
+        </camera>
+      </sensor>
+    </link>
+    <joint name="front_camera_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>front_camera_link</child>
+    </joint>
+
+    <!-- ── Downward RGB camera (simulates Arducam) ─────────────── -->
+    <link name="down_camera_link">
+      <pose relative_to="base_link">0 0 -0.05 0 1.5708 0</pose>
+      <inertial>
+        <mass>0.03</mass>
+        <inertia>
+          <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>1e-6</iyy><iyz>0</iyz>
+          <izz>1e-6</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry><box><size>0.02 0.02 0.015</size></box></geometry>
+        <material>
+          <ambient>0.2 0.2 0.2 1</ambient>
+          <diffuse>0.3 0.3 0.3 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="down_rgb" type="camera">
+        <always_on>true</always_on>
+        <update_rate>15</update_rate>
+        <topic>/down_camera</topic>
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>50.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </link>
+    <joint name="down_camera_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>down_camera_link</child>
+    </joint>
+
+    <!-- ── Downward lidar rangefinder ───────────────────────────────
+         Wired the PX4 way (mirrors x500_lidar_down): link "lidar_sensor_link",
+         sensor "lidar" (gpu_lidar), and NO custom <topic> so it publishes the
+         default gz path PX4's gz_bridge subscribes to
+         (/world/<w>/model/<m>/link/lidar_sensor_link/sensor/lidar/scan).
+         PX4 (SIM_GZ_EN_LIDAR=1 by default) fuses it as a downward
+         distance_sensor and streams MAVLink DISTANCE_SENSOR, which MAVROS
+         republishes as /mavros/rangefinder/rangefinder — the same rangefinder
+         source the SDK already reads for ArduPilot. -->
+    <link name="lidar_sensor_link">
+      <pose relative_to="base_link">0 0 -0.05 0 1.57 0</pose>
+      <inertial>
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>1e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>1e-5</iyy><iyz>0</iyz>
+          <izz>1e-5</izz>
+        </inertia>
+      </inertial>
+      <sensor name="lidar" type="gpu_lidar">
+        <gz_frame_id>lidar_sensor_link</gz_frame_id>
+        <pose>0 0 0 3.14 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>50</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.1</min>
+            <max>40.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+      </sensor>
+    </link>
+    <joint name="lidar_sensor_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>lidar_sensor_link</child>
+    </joint>
+
+  </model>
+</sdf>

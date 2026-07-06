@@ -1,0 +1,356 @@
+<?xml version="1.0" ?>
+<!--
+  Nectar SDK — Outdoor field world for Gazebo Harmonic.
+
+  Uses the iris_with_gimbal model from ardupilot_gazebo with added front
+  RGBD camera (simulates D435i), downward RGB camera, and lidar rangefinder.
+
+  GPS enabled via NavSat plugin.  Default SITL coordinates (Canberra).
+
+  Usage:
+    gz sim -v4 -r outdoor_field.sdf
+-->
+<sdf version="1.9">
+  <world name="outdoor_field">
+
+    <!-- Physics -->
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Plugins -->
+    <plugin filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-imu-system"
+      name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-navsat-system"
+      name="gz::sim::systems::NavSat"/>
+
+    <scene>
+      <ambient>1.0 1.0 1.0</ambient>
+      <background>0.8 0.8 0.8</background>
+      <sky></sky>
+    </scene>
+
+    <!-- ── GUI — camera feeds + topic echo inside Gazebo window ──── -->
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+        <camera_pose>-5 0 8 0 0.8 0</camera_pose>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <gz-gui>
+          <property key="state" type="string">floating</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">145</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>false</start_paused>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>false</iterations>
+      </plugin>
+      <!-- Camera feeds — start collapsed, expand to view -->
+      <plugin filename="ImageDisplay" name="Front Camera RGB">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/front_camera/image</topic>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Front Camera Depth">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/front_camera/depth_image</topic>
+      </plugin>
+      <plugin filename="ImageDisplay" name="Down Camera">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+        <topic>/down_camera</topic>
+      </plugin>
+      <!-- Topic echo — select any Gazebo topic to view live data -->
+      <plugin filename="TopicEcho" name="Topic Echo">
+        <gz-gui>
+          <property type="string" key="state">docked_collapsed</property>
+        </gz-gui>
+      </plugin>
+    </gui>
+
+    <!-- GPS origin — matches ArduPilot SITL default (Canberra) -->
+    <spherical_coordinates>
+      <latitude_deg>-35.363262</latitude_deg>
+      <longitude_deg>149.165237</longitude_deg>
+      <elevation>584</elevation>
+      <heading_deg>0</heading_deg>
+      <surface_model>EARTH_WGS84</surface_model>
+    </spherical_coordinates>
+
+    <!-- Sunlight -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.8 0.8 0.8 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.3 1</ambient>
+            <diffuse>0.3 0.5 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── Obstacle zone (centered around x=15, clear of takeoff) ── -->
+    <!-- Shared scenery (gate + obstacle field) — also used by the PX4 world -->
+    <include>
+      <uri>model://outdoor_field_scenery</uri>
+    </include>
+
+    <!-- Iris quadcopter with gimbal (ardupilot_gazebo model) -->
+    <include>
+      <uri>model://iris_with_gimbal</uri>
+      <name>iris</name>
+      <pose degrees="true">0 0 0.195 0 0 0</pose>
+    </include>
+
+    <!-- ── Front RGBD camera (simulates RealSense D435i) ────────── -->
+    <model name="front_camera">
+      <static>false</static>
+      <pose relative_to="iris::iris_with_standoffs::base_link">0.18 0 -0.02 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.07</mass>
+          <inertia>
+            <ixx>1e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1e-5</iyy><iyz>0</iyz>
+            <izz>1e-5</izz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry><box><size>0.025 0.09 0.025</size></box></geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+        <sensor name="front_rgbd" type="rgbd_camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>/front_camera</topic>
+          <camera>
+            <horizontal_fov>1.5184</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>10.0</far>
+            </clip>
+            <depth_camera>
+              <clip>
+                <near>0.1</near>
+                <far>10.0</far>
+              </clip>
+            </depth_camera>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+    <joint name="front_camera_joint" type="fixed">
+      <parent>iris::iris_with_standoffs::base_link</parent>
+      <child>front_camera::link</child>
+    </joint>
+
+    <!-- ── Downward RGB camera (simulates Arducam) ─────────────── -->
+    <model name="down_camera">
+      <static>false</static>
+      <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.04 0 1.5708 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.03</mass>
+          <inertia>
+            <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1e-6</iyy><iyz>0</iyz>
+            <izz>1e-6</izz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry><box><size>0.02 0.02 0.015</size></box></geometry>
+          <material>
+            <ambient>0.2 0.2 0.2 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+        <sensor name="down_rgb" type="camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>/down_camera</topic>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>50.0</far>
+            </clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+    <joint name="down_camera_joint" type="fixed">
+      <parent>iris::iris_with_standoffs::base_link</parent>
+      <child>down_camera::link</child>
+    </joint>
+
+    <!-- ── Downward lidar rangefinder ───────────────────────────── -->
+    <model name="lidar_rangefinder">
+      <static>false</static>
+      <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.05 0 1.5708 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.03</mass>
+          <inertia>
+            <ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1e-6</iyy><iyz>0</iyz>
+            <izz>1e-6</izz>
+          </inertia>
+        </inertial>
+        <sensor name="lidar_rangefinder" type="gpu_lidar">
+          <always_on>true</always_on>
+          <update_rate>50</update_rate>
+          <topic>/lidar/range</topic>
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>1</samples>
+                <resolution>1</resolution>
+                <min_angle>0</min_angle>
+                <max_angle>0</max_angle>
+              </horizontal>
+            </scan>
+            <range>
+              <min>0.1</min>
+              <max>40.0</max>
+              <resolution>0.01</resolution>
+            </range>
+          </ray>
+        </sensor>
+      </link>
+    </model>
+    <joint name="lidar_joint" type="fixed">
+      <parent>iris::iris_with_standoffs::base_link</parent>
+      <child>lidar_rangefinder::link</child>
+    </joint>
+
+  </world>
+</sdf>

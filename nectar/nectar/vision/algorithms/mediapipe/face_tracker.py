@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -5,19 +7,25 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.vision import (
-    FaceLandmarksConnections,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_styles as mp_styles,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_utils as mp_drawing,
-)
+
+try:
+    import mediapipe as mp
+    from mediapipe.framework.formats import landmark_pb2
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+
+    MEDIAPIPE_AVAILABLE = True
+except (ImportError, TypeError) as e:
+    import warnings
+
+    _mediapipe_error = e
+    warnings.warn(f"mediapipe not available (FaceMesh disabled): {e}", stacklevel=1)
+    mp = None
+    landmark_pb2 = None
+    python = None
+    vision = None
+    MEDIAPIPE_AVAILABLE = False
 
 
 class FaceLandmarkRegion:
@@ -320,17 +328,32 @@ class FaceMeshTracker:
     )
 
     def __init__(self, config: Optional[FaceMeshTrackerConfig] = None):
+        if not MEDIAPIPE_AVAILABLE:
+            raise ImportError(
+                f"mediapipe is required for FaceMeshTracker. "
+                f"Install with: pip install nectar-sdk[vision] "
+                f"(cause: {_mediapipe_error})"
+            )
+
         self._config = config or FaceMeshTrackerConfig()
         self._detector: Optional[vision.FaceLandmarker] = None
         self._detection_result: Optional[vision.FaceLandmarkerResult] = None
         self._is_running = False
 
-        # Drawing connections
-        self._face_tesselation = FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
-        self._face_contours = FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS
+        self._mp_face_mesh = mp.solutions.face_mesh
+        self._mp_drawing = mp.solutions.drawing_utils
+        self._mp_drawing_styles = mp.solutions.drawing_styles
+        self._face_tesselation = self._mp_face_mesh.FACEMESH_TESSELATION
+        self._face_contours = (
+            self._mp_face_mesh.FACEMESH_CONTOURS
+            | self._mp_face_mesh.FACEMESH_LEFT_EYE
+            | self._mp_face_mesh.FACEMESH_RIGHT_EYE
+            | self._mp_face_mesh.FACEMESH_LEFT_EYEBROW
+            | self._mp_face_mesh.FACEMESH_RIGHT_EYEBROW
+            | self._mp_face_mesh.FACEMESH_LIPS
+        )
         self._face_irises = (
-            FaceLandmarksConnections.FACE_LANDMARKS_LEFT_IRIS
-            + FaceLandmarksConnections.FACE_LANDMARKS_RIGHT_IRIS
+            self._mp_face_mesh.FACEMESH_LEFT_IRIS | self._mp_face_mesh.FACEMESH_RIGHT_IRIS
         )
 
     def __enter__(self) -> "FaceMeshTracker":
@@ -461,31 +484,40 @@ class FaceMeshTracker:
             return image
 
         for face_landmarks in self._detection_result.face_landmarks:
+            # Convert to protobuf format for drawing (MediaPipe 0.10.18)
+            face_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+            face_landmarks_proto.landmark.extend(
+                [
+                    landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
+                    for landmark in face_landmarks
+                ]
+            )
+
             if draw_tesselation:
-                mp_drawing.draw_landmarks(
+                self._mp_drawing.draw_landmarks(
                     image=image,
-                    landmark_list=face_landmarks,
+                    landmark_list=face_landmarks_proto,
                     connections=self._face_tesselation,
                     landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_styles.get_default_face_mesh_tesselation_style(),
+                    connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_tesselation_style(),
                 )
 
             if draw_contours:
-                mp_drawing.draw_landmarks(
+                self._mp_drawing.draw_landmarks(
                     image=image,
-                    landmark_list=face_landmarks,
+                    landmark_list=face_landmarks_proto,
                     connections=self._face_contours,
                     landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_styles.get_default_face_mesh_contours_style(),
+                    connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_contours_style(),
                 )
 
             if draw_irises:
-                mp_drawing.draw_landmarks(
+                self._mp_drawing.draw_landmarks(
                     image=image,
-                    landmark_list=face_landmarks,
+                    landmark_list=face_landmarks_proto,
                     connections=self._face_irises,
                     landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_styles.get_default_face_mesh_iris_connections_style(),
+                    connection_drawing_spec=self._mp_drawing_styles.get_default_face_mesh_iris_connections_style(),
                 )
 
         return image

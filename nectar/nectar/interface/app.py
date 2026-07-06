@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+
+# mediapipe must be imported before QApplication is created.
+# QApplication loads a native protobuf runtime that corrupts the descriptor
+# pool, causing mediapipe's proto files to fail with:
+#   "Invalid default '0.5' for field ... of type 2"
+try:
+    import mediapipe  # noqa: F401
+except ImportError:
+    pass
+
 import pathlib
 import signal
 import sys

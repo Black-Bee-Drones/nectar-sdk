@@ -1,0 +1,222 @@
+site_name: Nectar SDK
+site_url: https://black-bee-drones.github.io/nectar-sdk/
+site_description: >-
+  ROS 2 software development kit for autonomous aerial systems — unified
+  interfaces for flight control, computer vision, and object detection.
+site_author: Black Bee Drones
+copyright: Copyright &copy; Black Bee Drones — Apache-2.0
+
+repo_url: https://github.com/Black-Bee-Drones/nectar-sdk
+repo_name: Black-Bee-Drones/nectar-sdk
+
+extra:
+  social:
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/blackbeedrones/
+      name: Black Bee Drones on LinkedIn
+    - icon: fontawesome/brands/instagram
+      link: https://www.instagram.com/blackbeedrones/
+      name: Black Bee Drones on Instagram
+    - icon: fontawesome/brands/github
+      link: https://github.com/Black-Bee-Drones
+      name: Black Bee Drones on GitHub
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/u/blackbeedrones
+      name: Black Bee Drones on Docker Hub
+    - icon: simple/huggingface
+      link: https://huggingface.co/blackbeedrones
+      name: Black Bee Drones on Hugging Face
+
+extra_css:
+  - stylesheets/extra.css
+
+# mermaid.mjs registers the ELK layout engine for the native Mermaid runtime;
+# diagram-zoom.js adds fullscreen pan/zoom to the rendered diagrams.
+extra_javascript:
+  - javascripts/mermaid.mjs
+  - javascripts/diagram-zoom.js
+  - javascripts/showcase.js
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+# edit only: the module README.md files, docs/*.md, and the authored pages in
+# website/
+# Everything under build/ is generated — never edit it.
+docs_dir: build/docs
+site_dir: build/site
+
+theme:
+  name: material
+  language: en
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Montserrat
+  features:
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: amber
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: amber
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          # griffe parses the source statically (no imports), so heavy deps
+          # (torch, cv2, mediapipe, …) are never loaded when building the API.
+          paths: [nectar]
+          options:
+            docstring_style: numpy
+            docstring_section_style: table
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_if_no_docstring: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            filters: ["!^_"]
+            show_submodules: false
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      # GitHub-compatible heading slugs so anchors authored in the READMEs resolve
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:zensical.extensions.emoji.twemoji
+      emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["build/docs/includes"]
+      auto_append:
+        - abbreviations.md
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  # Click-to-zoom for content images (only wraps Markdown images, not raw-HTML badges)
+  - zensical.extensions.glightbox:
+      auto_caption: true
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Overview: get-started/index.md
+      - Fly a drone: get-started/control.md
+      - See with a camera: get-started/vision.md
+      - Detect & segment: get-started/ai.md
+  - Setup:
+      - Installation: setup/index.md
+      - Drone drivers: setup/drivers.md
+      - Simulation: setup/simulation.md
+      - RealSense & indoor: setup/realsense.md
+      - Docker: setup/docker.md
+      - Configuration: setup/configuration.md
+      - Compatibility: setup/compatibility.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+  - Modules:
+      - Control:
+          - Overview: modules/control/index.md
+          - Vehicle core: modules/control/vehicle.md
+          - ArduPilot: modules/control/ardupilot.md
+          - PX4: modules/control/px4.md
+          - MAVROS transport: modules/control/mavros.md
+          - MAVLink transport: modules/control/mavlink.md
+          - Localization (indoor VSLAM): modules/control/localization.md
+          - Obstacles: modules/control/obstacles.md
+          - PID: modules/control/pid.md
+          - Bebop: modules/control/bebop.md
+          - Crazyflie: modules/control/crazyflie.md
+      - Vision:
+          - Overview: modules/vision/index.md
+          - Cameras: modules/vision/camera.md
+          - Algorithms: modules/vision/algorithms.md
+          - ROS 2 nodes: modules/vision/nodes.md
+      - AI:
+          - Overview: modules/ai/index.md
+          - Detection: modules/ai/detection.md
+          - Segmentation: modules/ai/segmentation.md
+      - Sensors: modules/sensors.md
+      - Interface (GUI): modules/interface.md
+      - Simulation: modules/simulation.md
+      - Messages (nectar_interfaces): modules/interfaces.md
+      - Utils: modules/utils.md
+  - Examples:
+      - Overview: modules/examples/index.md
+      - Control: modules/examples/control.md
+      - Vision: modules/examples/vision.md
+      - AI: modules/examples/ai.md
+      - Sensors: modules/examples/sensors.md
+  - Development:
+      - Python API:
+          - Overview: api/index.md
+          - Runtime: api/runtime.md
+          - Control: api/control.md
+          - Vision: api/vision.md
+          - AI: api/ai.md
+          - Sensors: api/sensors.md
+          - Utils: api/utils.md
+      - Commands & Makefile: development/commands.md
+      - Contributing: project/contributing.md
+      - Releasing: project/releasing.md
+  - Projects:
+      - Overview: projects/index.md
+      - IMAV 2025: projects/imav-2025.md
+      - CBR 2025: projects/cbr-2025.md
+      - IMAV 2023 (indoor): projects/imav-2023.md
+      - SAE 2026: projects/sae-2026.md
+  - Community:
+      - Overview: community/index.md
+      - Code of Conduct: project/code-of-conduct.md
+      - Security: project/security.md

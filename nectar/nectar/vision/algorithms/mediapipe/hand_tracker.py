@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import urllib.request
 from dataclasses import dataclass
@@ -6,19 +8,25 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.vision import (
-    HandLandmarksConnections,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_styles as mp_styles,
-)
-from mediapipe.tasks.python.vision import (
-    drawing_utils as mp_drawing,
-)
+
+try:
+    import mediapipe as mp
+    from mediapipe.framework.formats import landmark_pb2
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+
+    MEDIAPIPE_AVAILABLE = True
+except (ImportError, TypeError) as e:
+    import warnings
+
+    _mediapipe_error = e
+    warnings.warn(f"mediapipe not available (HandTracker disabled): {e}", stacklevel=1)
+    mp = None
+    landmark_pb2 = None
+    python = None
+    vision = None
+    MEDIAPIPE_AVAILABLE = False
 
 
 class HandLandmark(IntEnum):
@@ -170,13 +178,22 @@ class HandTracker:
     _DEPTH_CALIB_Y = np.array([20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100])
 
     def __init__(self, config: Optional[HandTrackerConfig] = None):
+        if not MEDIAPIPE_AVAILABLE:
+            raise ImportError(
+                f"mediapipe is required for HandTracker. "
+                f"Install with: pip install nectar-sdk[vision] "
+                f"(cause: {_mediapipe_error})"
+            )
+
         self._config = config or HandTrackerConfig()
         self._detector: Optional[vision.HandLandmarker] = None
         self._detection_result: Optional[vision.HandLandmarkerResult] = None
         self._is_running = False
 
-        # drawing utilities (Tasks API)
-        self._hand_connections = HandLandmarksConnections.HAND_CONNECTIONS
+        self._mp_hands = mp.solutions.hands
+        self._mp_drawing = mp.solutions.drawing_utils
+        self._mp_drawing_styles = mp.solutions.drawing_styles
+        self._hand_connections = self._mp_hands.HAND_CONNECTIONS
 
         self._depth_coeffs = np.polyfit(self._DEPTH_CALIB_X, self._DEPTH_CALIB_Y, 2)
 
@@ -304,13 +321,19 @@ class HandTracker:
         for idx, hand_landmarks in enumerate(self._detection_result.hand_landmarks):
             handedness = self._detection_result.handedness[idx]
 
-            # Draw landmarks and connections (Tasks API)
-            mp_drawing.draw_landmarks(
+            hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+            hand_landmarks_proto.landmark.extend(
+                [
+                    landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
+                    for landmark in hand_landmarks
+                ]
+            )
+            self._mp_drawing.draw_landmarks(
                 image,
-                hand_landmarks,
+                hand_landmarks_proto,
                 self._hand_connections,
-                mp_styles.get_default_hand_landmarks_style(),
-                mp_styles.get_default_hand_connections_style(),
+                self._mp_drawing_styles.get_default_hand_landmarks_style(),
+                self._mp_drawing_styles.get_default_hand_connections_style(),
             )
 
             # Draw handedness label

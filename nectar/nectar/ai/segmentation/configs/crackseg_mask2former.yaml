@@ -1,0 +1,33 @@
+# Crack Segmentation - MaskFormer / Transformers (quick test)
+# Dataset auto-converted from YOLO-seg to COCO-seg by the trainer
+# Usage: nectar-ai segment train --config <path-to-this-file>
+
+data:
+  dataset_path: nectar/ai/data/crack-seg
+  dataset_format: coco
+
+train:
+  framework: transformers
+  model: facebook/maskformer-swin-tiny-coco
+  epochs: 2
+  batch_size: 2
+  learning_rate: 5e-5
+  output_dir: nectar/ai/outputs/crackseg-mask2former
+  device: "0"
+  seed: 42
+  tensorboard: true
+  start_tensorboard: false
+  mixed_precision: fp16
+  gradient_accumulation_steps: 4
+  imgsz: 320
+  early_stopping_patience: 0
+  max_train_samples: 50
+  max_eval_samples: 25
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 1
+  device: "0"

@@ -520,7 +520,7 @@ class ParameterReconfigureWidget(QWidget):
         else:
             client = self._param_clients[service_name]
 
-        if not client.wait_for_service(timeout_sec=1.0):
+        if not client.service_is_ready():
             self._status_label.setText("Parameter service not available")
             return
 
@@ -561,7 +561,7 @@ class ParameterReconfigureWidget(QWidget):
         else:
             client = self._param_clients[service_name]
 
-        if not client.wait_for_service(timeout_sec=1.0):
+        if not client.service_is_ready():
             self._status_label.setText("Get parameters service not available")
             return
 
@@ -684,7 +684,7 @@ class ParameterReconfigureWidget(QWidget):
         else:
             client = self._param_clients[service_name]
 
-        if not client.wait_for_service(timeout_sec=0.5):
+        if not client.service_is_ready():
             self.errorOccurred.emit("Set parameters service not available")
             return
 

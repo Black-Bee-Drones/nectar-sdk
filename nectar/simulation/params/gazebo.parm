@@ -1,0 +1,17 @@
+# Nectar SDK — Gazebo SITL parameters
+#
+# Enables SITL simulated rangefinder so ArduPilot publishes
+# DISTANCE_SENSOR MAVLink → MAVROS → /mavros/rangefinder/rangefinder.
+# Matches the official ardupilot gazebo-iris.parm approach.
+#
+# Loaded via: start_sitl.sh --gazebo (appended to --defaults)
+
+# SITL simulated sonar (ground distance from physics engine)
+SIM_SONAR_SCALE  10
+
+# Rangefinder — analog type driven by SIM_SONAR_SCALE
+RNGFND1_TYPE     1
+RNGFND1_SCALING  10
+RNGFND1_PIN      0
+RNGFND1_MAX      40
+RNGFND1_MIN      0.10

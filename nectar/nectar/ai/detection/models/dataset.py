@@ -110,47 +110,35 @@ class CocoDetectionDataset(Dataset):
         # Find image file
         img_path = self._find_image_path(img_info["file_name"])
         image = Image.open(img_path).convert("RGB")
-        width, height = image.size
 
         # Get annotations
         anns = self.img_id_to_anns.get(img_id, [])
 
-        # Build target
-        boxes = []
-        class_labels = []
-        areas = []
-
+        # Build COCO-wrapped annotations (required by modern transformers processors)
+        coco_annotations = []
         for ann in anns:
-            x, y, w, h = ann["bbox"]
+            coco_annotations.append(
+                {
+                    "image_id": img_id,
+                    "category_id": self.old_to_new_id.get(ann["category_id"], 0),
+                    "bbox": ann["bbox"],  # [x, y, w, h] COCO format
+                    "area": ann.get("area", ann["bbox"][2] * ann["bbox"][3]),
+                    "iscrowd": 0,
+                }
+            )
 
-            # Convert to center format (normalized)
-            x_center = (x + w / 2) / width
-            y_center = (y + h / 2) / height
-            w_norm = w / width
-            h_norm = h / height
+        target = {"image_id": img_id, "annotations": coco_annotations}
 
-            boxes.append([x_center, y_center, w_norm, h_norm])
-            class_labels.append(self.old_to_new_id.get(ann["category_id"], 0))
-            areas.append(ann.get("area", w * h))
-
-        target = {
-            "boxes": np.array(boxes, dtype=np.float32),
-            "class_labels": np.array(class_labels, dtype=np.int64),
-            "image_id": img_id,
-            "area": np.array(areas, dtype=np.float32),
-            "iscrowd": np.zeros(len(boxes), dtype=np.int64),
-            "orig_size": np.array([height, width], dtype=np.int64),
-            "size": np.array([height, width], dtype=np.int64),
-        }
-
-        # Process with image processor
-        encoding = self.image_processor(images=image, annotations=[target], return_tensors="pt")
+        # Process with image processor (pass numpy array for compatibility)
+        result = self.image_processor(
+            images=np.array(image), annotations=target, return_tensors="pt"
+        )
 
         # Remove batch dimension
-        pixel_values = encoding["pixel_values"].squeeze(0)
-        labels = encoding["labels"][0] if "labels" in encoding else target
-
-        return {"pixel_values": pixel_values, "labels": labels}
+        return {
+            k: v[0] if isinstance(v, (list, torch.Tensor)) and len(v) > 0 else v
+            for k, v in result.items()
+        }
 
     def _find_image_path(self, filename: str) -> Path:
         """Find image file in directory."""
@@ -172,10 +160,15 @@ class CocoDetectionDataset(Dataset):
 
 
 def collate_fn(batch: List[Dict]) -> Dict[str, Any]:
-    """Collate function for DataLoader."""
+    """Collate function for DataLoader with pixel_mask support."""
     pixel_values = torch.stack([x["pixel_values"] for x in batch])
-    labels = [x["labels"] for x in batch]
-    return {"pixel_values": pixel_values, "labels": labels}
+    encoding = {"pixel_values": pixel_values}
+
+    if "pixel_mask" in batch[0]:
+        encoding["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
+
+    encoding["labels"] = [x["labels"] for x in batch]
+    return encoding
 
 
 class DetectionDataset:
@@ -324,14 +317,26 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
     with open(yaml_path) as f:
         data = yaml.safe_load(f)
 
-    classes = list(data.get("names", {}).values())
+    names = data.get("names", {})
+    classes = names if isinstance(names, list) else list(names.values())
 
-    # Get split directory
+    # Resolve the split's directory. Honor the YAML's optional `path:` root
+    # (Ultralytics convention) and fall back to stripping leading '..'
+    # segments to handle Roboflow's YOLOv8 quirk where exports contain paths
+    # like '../test/images' that assume an outer datasets_dir.
+    root = dataset_path
+    if data.get("path"):
+        p = Path(data["path"])
+        root = p if p.is_absolute() else (dataset_path / p).resolve()
+
     split_path = data.get(split, data.get("val", "valid"))
-    if not Path(split_path).is_absolute():
-        split_dir = dataset_path / split_path
-    else:
+    if Path(split_path).is_absolute():
         split_dir = Path(split_path)
+    else:
+        split_dir = (root / split_path).resolve()
+        if not split_dir.exists():
+            stripped = tuple(p for p in Path(split_path).parts if p != "..")
+            split_dir = root.joinpath(*stripped) if stripped else root
 
     # Get image and label directories
     images_dir = split_dir
@@ -363,20 +368,33 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
             with open(label_path) as f:
                 for line in f:
                     parts = line.strip().split()
-                    if len(parts) >= 5:
+                    if len(parts) < 5:
+                        continue
+                    try:
                         cls_id = int(parts[0])
-                        x_center = float(parts[1]) * width
-                        y_center = float(parts[2]) * height
-                        w = float(parts[3]) * width
-                        h = float(parts[4]) * height
+                        coords = [float(x) for x in parts[1:]]
+                    except ValueError:
+                        continue
 
-                        x1 = x_center - w / 2
-                        y1 = y_center - h / 2
-                        x2 = x_center + w / 2
-                        y2 = y_center + h / 2
+                    if len(coords) == 4:
+                        # YOLO bbox: class cx cy w h (normalized).
+                        cx, cy, bw, bh = coords
+                        x1 = (cx - bw / 2) * width
+                        y1 = (cy - bh / 2) * height
+                        x2 = (cx + bw / 2) * width
+                        y2 = (cy + bh / 2) * height
+                    elif len(coords) >= 6 and len(coords) % 2 == 0:
+                        # YOLO polygon (segmentation/OBB): class x1 y1 x2 y2 ...
+                        # Roboflow exports segmentation projects this way even
+                        # when format=yolo. Reduce to bbox via min/max.
+                        xs = [coords[i] * width for i in range(0, len(coords), 2)]
+                        ys = [coords[i] * height for i in range(1, len(coords), 2)]
+                        x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+                    else:
+                        continue
 
-                        boxes.append([x1, y1, x2, y2])
-                        class_ids.append(cls_id)
+                    boxes.append([x1, y1, x2, y2])
+                    class_ids.append(cls_id)
 
             if boxes:
                 detection = sv.Detections(

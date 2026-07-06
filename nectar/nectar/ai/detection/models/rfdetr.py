@@ -1,8 +1,8 @@
 """RF-DETR model implementation."""
 
-import gc
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -20,21 +20,21 @@ except ImportError:
     sv = None
 
 try:
-    from rfdetr import RFDETRBase, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
-    from rfdetr.util.coco_classes import COCO_CLASSES
+    from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
+    from rfdetr.assets.coco_classes import COCO_CLASS_NAMES
 
     RFDETR_AVAILABLE = True
     RFDETR_MODELS = {
         "rfdetr-nano": RFDETRNano,
         "rfdetr-small": RFDETRSmall,
-        "rfdetr-base": RFDETRBase,
         "rfdetr-medium": RFDETRMedium,
         "rfdetr-large": RFDETRLarge,
     }
-except ImportError:
+except ImportError as _rfdetr_err:
     RFDETR_AVAILABLE = False
-    COCO_CLASSES = []
+    COCO_CLASS_NAMES = []
     RFDETR_MODELS = {}
+    logging.getLogger(__name__).debug("rfdetr import failed: %s", _rfdetr_err)
 
 from PIL import Image
 
@@ -42,6 +42,8 @@ from nectar.ai.detection.core.base import BaseDetectionModel
 from nectar.ai.detection.core.configs import TrainingConfig
 from nectar.ai.detection.core.exceptions import ModelNotLoadedError, TrainingError
 from nectar.ai.detection.core.types import DetectionInput, Prediction
+from nectar.ai.detection.datasets.format import FormatConverter, FormatDetector
+from nectar.ai.detection.datasets.subset import SubsetCreator
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +55,9 @@ class RFDETRModel(BaseDetectionModel):
     Parameters
     ----------
     model_name : str
-        Model name ('rfdetr-base') or checkpoint path.
+        Model name ('rfdetr-medium') or checkpoint path.
     rfdetr_size : str, optional
-        Explicit model size (nano, small, base, medium, large).
+        Explicit model size (nano, small, medium, large).
     resolution : int, optional
         Image resolution. Defaults to model's default.
     from_scratch : bool, optional
@@ -63,14 +65,14 @@ class RFDETRModel(BaseDetectionModel):
 
     Examples
     --------
-    >>> model = RFDETRModel("rfdetr-base", resolution=560)
+    >>> model = RFDETRModel("rfdetr-medium")
     >>> model.load_model()
     >>> result = model.detect(image)
     """
 
     def __init__(
         self,
-        model_name: str = "rfdetr-base",
+        model_name: str = "rfdetr-medium",
         rfdetr_size: Optional[str] = None,
         resolution: Optional[int] = None,
         from_scratch: bool = False,
@@ -90,6 +92,9 @@ class RFDETRModel(BaseDetectionModel):
         else:
             self.base_model_name = model_name
 
+        self.base_model_name = self.base_model_name.replace("rf-detr", "rfdetr").replace(
+            "rf_detr", "rfdetr"
+        )
         self.model_class = RFDETR_MODELS.get(self.base_model_name)
         if self.model_class is None:
             raise ValueError(
@@ -101,7 +106,7 @@ class RFDETRModel(BaseDetectionModel):
         self.rfdetr_wrapper = None
         self.from_scratch = from_scratch
         self.resolution = resolution
-        self.class_names = {i: name for i, name in enumerate(COCO_CLASSES)}
+        self.class_names = {i: name for i, name in enumerate(COCO_CLASS_NAMES)}
 
     def _infer_model_size(self, path: str) -> str:
         """Infer model size from checkpoint path."""
@@ -112,48 +117,72 @@ class RFDETRModel(BaseDetectionModel):
                 size_short = size.replace("rfdetr-", "")
                 if size_short in candidate:
                     return size
-        return "rfdetr-base"
+        return "rfdetr-medium"
 
     def load_model(self, model_path: Optional[str] = None) -> None:
         """Load RF-DETR model."""
         checkpoint_path = model_path or self.model_path
-
         model_kwargs = {}
 
-        if len(self.class_names) != len(COCO_CLASSES):
+        if len(self.class_names) != len(COCO_CLASS_NAMES):
             model_kwargs["num_classes"] = len(self.class_names)
-            self.logger.info(f"Initializing with {len(self.class_names)} classes")
 
         if self.resolution:
             model_kwargs["resolution"] = self.resolution
-            self.logger.info(f"Using resolution: {self.resolution}")
 
         if torch and torch.backends.mps.is_available():
             model_kwargs["device"] = "mps"
 
         if checkpoint_path and Path(checkpoint_path).exists():
-            self.logger.info(f"Loading from checkpoint: {checkpoint_path}")
+            self.logger.info("Loading RF-DETR model from checkpoint: %s", checkpoint_path)
             self.rfdetr_wrapper = self.model_class(pretrain_weights=checkpoint_path, **model_kwargs)
         else:
-            self.logger.info(f"Loading pretrained: {self.base_model_name}")
+            if self.from_scratch:
+                model_kwargs["pretrain_weights"] = None
+            self.logger.info("Loading pre-trained RF-DETR model: %s", self.base_model_name)
             self.rfdetr_wrapper = self.model_class(**model_kwargs)
 
         self.model = self.rfdetr_wrapper.model.model
 
+        wrapper_names = getattr(self.rfdetr_wrapper, "class_names", None)
+        if wrapper_names:
+            self.class_names = {i: name for i, name in enumerate(wrapper_names)}
+
     def update_class_names_from_dataset(self, dataset_path: str) -> None:
-        """Update class names from COCO dataset."""
+        """Update class names from dataset annotations (COCO or YOLO)."""
+        dataset_root = Path(dataset_path)
+        if dataset_root.suffix in (".yaml", ".yml"):
+            dataset_root = dataset_root.parent
+
         for split in ["train", "valid", "test"]:
-            ann_path = Path(dataset_path) / split / "_annotations.coco.json"
+            ann_path = dataset_root / split / "_annotations.coco.json"
             if ann_path.exists():
                 with open(ann_path) as f:
                     data = json.load(f)
-                categories = data.get("categories", [])
+                categories = sorted(data.get("categories", []), key=lambda c: c["id"])
                 if categories:
-                    self.class_names = {
-                        cat["id"]: cat["name"] for cat in sorted(categories, key=lambda x: x["id"])
-                    }
-                    self.logger.info(f"Loaded {len(self.class_names)} classes from dataset")
+                    self.class_names = {i: cat["name"] for i, cat in enumerate(categories)}
+                    self.logger.info(
+                        "Loaded %d classes from COCO annotations",
+                        len(self.class_names),
+                    )
                     return
+
+        yaml_path = dataset_root / "data.yaml"
+        if yaml_path.exists():
+            import yaml
+
+            with open(yaml_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            names = data.get("names", {})
+            if isinstance(names, dict):
+                self.class_names = {int(k): v for k, v in names.items()}
+            elif isinstance(names, list):
+                self.class_names = {i: n for i, n in enumerate(names)}
+            if self.class_names:
+                self.logger.info("Loaded %d classes from data.yaml", len(self.class_names))
+                return
+
         self.logger.warning("Could not load class names from dataset")
 
     def _predict_single(self, detection_input: DetectionInput) -> Prediction:
@@ -169,6 +198,8 @@ class RFDETRModel(BaseDetectionModel):
             pil_image = Image.open(image_path).convert("RGB")
         elif isinstance(image, np.ndarray):
             image_path = "array"
+            if image.ndim == 3 and image.shape[2] == 3:
+                image = np.ascontiguousarray(image[..., ::-1])
             pil_image = Image.fromarray(image).convert("RGB")
         elif isinstance(image, Image.Image):
             image_path = "pil"
@@ -178,9 +209,18 @@ class RFDETRModel(BaseDetectionModel):
 
         start_time = time.time()
         detections = self.rfdetr_wrapper.predict(
-            pil_image, threshold=detection_input.conf_threshold
+            pil_image,
+            threshold=detection_input.conf_threshold,
+            include_source_image=False,
         )
         inference_time = time.time() - start_time
+
+        for key in ("source_shape", "source_image"):
+            detections.data.pop(key, None)
+
+        if len(detections) > 0 and detections.class_id is not None:
+            valid = detections.class_id < len(self.class_names)
+            detections = detections[valid]
 
         return Prediction.from_detections(
             detections=detections,
@@ -190,177 +230,204 @@ class RFDETRModel(BaseDetectionModel):
             model_name=self.model_name,
         )
 
-    def train(self, config: TrainingConfig) -> Dict[str, Any]:
+    def train(self, config: TrainingConfig, is_main_process: bool = True) -> Dict[str, Any]:
         """Train RF-DETR model."""
+        output_dir = Path(config.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if is_main_process:
+            detector = FormatDetector(config.dataset_path)
+            detected_format = detector.detect()
+
+            if detected_format == "unknown":
+                self.logger.warning("Could not auto-detect format, assuming COCO")
+                detected_format = "coco"
+
+            if detected_format != "coco":
+                converted_dir = output_dir / "datasets" / "converted"
+                if (converted_dir / "train" / "_annotations.coco.json").exists():
+                    self.logger.info("Using existing COCO conversion: %s", converted_dir)
+                else:
+                    self.logger.info("Converting dataset from %s to coco", detected_format)
+                    converter = FormatConverter(
+                        config.dataset_path, str(converted_dir), verbose=True
+                    )
+                    converter.convert(target_format="coco", copy_images=False)
+                config.dataset_path = str(converted_dir)
+
         self.update_class_names_from_dataset(config.dataset_path)
 
         if self.rfdetr_wrapper is None:
             self.load_model()
 
-        output_dir = Path(config.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Prepare dataset subset if needed
-        dataset_path = self._prepare_dataset_subset(config, output_dir)
-
-        # Setup callbacks
-        self._setup_callbacks(config, output_dir)
-
-        # Build training arguments - use framework-specific config if available
-        if hasattr(config, "to_rfdetr_args"):
-            train_args = config.to_rfdetr_args()
-            train_args["dataset_dir"] = dataset_path
-            train_args["output_dir"] = str(output_dir)
+        if is_main_process:
+            dataset_path = self._prepare_dataset_subset(config)
         else:
-            # Fallback for base TrainingConfig
-            imgsz = getattr(config, "imgsz", 728)
-            if imgsz % 56 != 0:
-                self.logger.warning("Image size %d not divisible by 56", imgsz)
+            dataset_path = self._get_subset_path_if_any(config)
 
-            train_args = {
-                "dataset_dir": dataset_path,
-                "output_dir": str(output_dir),
-                "epochs": config.epochs,
-                "batch_size": config.batch_size,
-                "grad_accum_steps": config.gradient_accumulation_steps,
-                "lr": config.learning_rate,
-                "resolution": imgsz,
-                "weight_decay": getattr(config, "weight_decay", 0.0001),
-                "device": config.device,
-                "use_ema": getattr(config, "use_ema", True),
-                "checkpoint_interval": config.save_period,
-                "tensorboard": config.tensorboard,
-                "early_stopping": config.early_stopping_patience is not None,
-                "early_stopping_patience": config.early_stopping_patience,
-                "warmup_epochs": getattr(config, "warmup_epochs", 1),
-                "amp": config.mixed_precision == "fp16",
-            }
+        if torch and torch.distributed.is_initialized():
+            torch.distributed.barrier()
 
-        self.logger.info("Starting RF-DETR training")
+        resolution = getattr(config, "resolution", None)
+        if resolution is None:
+            imgsz_raw = getattr(config, "imgsz", None)
+            if isinstance(imgsz_raw, list):
+                resolution = imgsz_raw[0]
+            elif isinstance(imgsz_raw, int):
+                resolution = imgsz_raw
+            else:
+                resolution = 560
+        imgsz = int(resolution)
+
+        # Apply ModelConfig overrides before training
+        if getattr(config, "gradient_checkpointing", False):
+            self.rfdetr_wrapper.model_config.gradient_checkpointing = True
+        if getattr(config, "freeze_encoder", False):
+            self.rfdetr_wrapper.model_config.freeze_encoder = True
+        if getattr(config, "backbone_lora", False):
+            self.rfdetr_wrapper.model_config.backbone_lora = True
+
+        lr_scheduler = getattr(config, "lr_scheduler_type", "step")
+        if lr_scheduler not in ("step", "cosine"):
+            lr_scheduler = "step"
+
+        lr_encoder = getattr(config, "lr_encoder", None)
+        esp = config.early_stopping_patience
+        train_kwargs: Dict[str, Any] = {
+            "dataset_dir": dataset_path,
+            "output_dir": str(output_dir),
+            "epochs": config.epochs,
+            "warmup_epochs": getattr(config, "warmup_epochs", 1),
+            "batch_size": config.batch_size,
+            "grad_accum_steps": config.gradient_accumulation_steps,
+            "lr": float(config.learning_rate),
+            "lr_scheduler": lr_scheduler,
+            "lr_encoder": float(lr_encoder) if lr_encoder is not None else None,
+            "weight_decay": config.weight_decay,
+            "use_ema": getattr(config, "use_ema", True),
+            "checkpoint_interval": config.save_period,
+            "tensorboard": config.tensorboard,
+            "early_stopping": esp is not None and esp > 0,
+            "early_stopping_min_delta": config.early_stopping_delta,
+            "early_stopping_use_ema": getattr(config, "early_stopping_use_ema", False),
+            "clip_max_norm": getattr(config, "max_grad_norm", 1.0),
+            "drop_path": getattr(config, "drop_path", 0.0),
+            "multi_scale": getattr(config, "multi_scale", False),
+            "ema_decay": getattr(config, "ema_decay", 0.9997),
+            "ema_tau": getattr(config, "ema_tau", 0.0),
+            "lr_vit_layer_decay": getattr(config, "lr_vit_layer_decay", 0.8),
+            "lr_component_decay": getattr(config, "lr_component_decay", 1.0),
+            "sync_bn": getattr(config, "sync_bn", True),
+            "num_workers": getattr(config, "num_workers", 2),
+            "seed": config.seed,
+        }
+        if esp is not None:
+            train_kwargs["early_stopping_patience"] = esp
+
+        resume_path = None
+        if not self.from_scratch and config.model and Path(config.model).exists():
+            if getattr(config, "resume", False):
+                resume_path = config.model
+                self.logger.info("Resuming training from checkpoint: %s", config.model)
 
         try:
-            self.rfdetr_wrapper.train(**{k: v for k, v in train_args.items() if v is not None})
+            self._train_with_ptl(config, output_dir, imgsz, train_kwargs, resume_path)
         except RuntimeError as e:
-            if "DistributedDataParallel" in str(e):
-                self.logger.warning("DDP error at end of training, ignoring")
-            else:
-                raise TrainingError(str(e)) from e
+            raise TrainingError(str(e)) from e
 
-        model_path = self._find_best_checkpoint(output_dir)
+        model_path = None
+        if is_main_process:
+            model_path = self._find_best_checkpoint(output_dir)
+            self.logger.info("Using model checkpoint: %s", model_path)
 
         return {
-            "model_path": str(model_path) if model_path else str(output_dir),
+            "model_path": (
+                str(model_path) if model_path and model_path.exists() else str(output_dir)
+            ),
             "metrics": {},
         }
 
-    def _setup_callbacks(self, config: TrainingConfig, output_dir: Path) -> None:
-        """Setup RF-DETR callbacks."""
-        from ..utils.huggingface import HuggingFaceUploader
+    def _train_with_ptl(
+        self,
+        config: TrainingConfig,
+        output_dir: Path,
+        resolution: int,
+        train_kwargs: Dict[str, Any],
+        resume_path: Optional[str] = None,
+    ) -> None:
+        """Run training via the RF-DETR Custom Training API (PTL)."""
+        from rfdetr.config import TrainConfig as RFTrainConfig
+        from rfdetr.training import RFDETRDataModule, RFDETRModelModule, build_trainer
 
-        # Initialize GC callback
-        self.rfdetr_wrapper._gc_batch_counter = 0
+        from nectar.ai.detection.utils.callbacks import get_hf_upload_ptl_callback
 
-        def on_batch_gc(info_dict):
-            self.rfdetr_wrapper._gc_batch_counter += 1
-            if self.rfdetr_wrapper._gc_batch_counter % 20 == 0:
-                gc.collect()
+        model_config = self.rfdetr_wrapper.model_config
+        model_config.resolution = resolution
+        model_config.num_classes = len(self.class_names)
 
-        def on_epoch_gc(info_dict):
-            gc.collect()
-            if torch and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            self.rfdetr_wrapper._gc_batch_counter = 0
+        filtered = {k: v for k, v in train_kwargs.items() if v is not None}
+        rf_train_config = RFTrainConfig(**filtered)
 
-        self.rfdetr_wrapper.callbacks["on_train_batch_start"].append(on_batch_gc)
-        self.rfdetr_wrapper.callbacks["on_fit_epoch_end"].append(on_epoch_gc)
+        module = RFDETRModelModule(model_config, rf_train_config)
+        datamodule = RFDETRDataModule(model_config, rf_train_config)
+        trainer = build_trainer(rf_train_config, model_config)
 
-        # HuggingFace upload callback
         if config.push_to_hub and config.hub_model_id:
-            uploader = HuggingFaceUploader(
-                repo_id=config.hub_model_id,
-                local_dir=str(output_dir),
-                private=True,
-            )
-            uploader.ensure_repo_exists()
+            hf_cb = get_hf_upload_ptl_callback(config.hub_model_id, output_dir, self.logger)
+            trainer.callbacks.extend([hf_cb])
 
-            def on_epoch_upload(stats):
-                epoch = stats.get("epoch", 0)
-                if (epoch + 1) % config.save_period == 0:
-                    try:
-                        uploader.upload(
-                            commit_message=f"Epoch {epoch + 1}",
-                            ignore_patterns=["*.log", "dataset_subset/**"],
-                        )
-                    except Exception as e:
-                        self.logger.error(f"Upload failed: {e}")
+        trainer.fit(module, datamodule, ckpt_path=resume_path)
 
-            def on_train_end_upload():
-                try:
-                    uploader.upload(commit_message="Training completed")
-                except Exception as e:
-                    self.logger.error(f"Final upload failed: {e}")
+        self.rfdetr_wrapper.model.model = module.model
 
-            self.rfdetr_wrapper.callbacks["on_fit_epoch_end"].append(on_epoch_upload)
-            self.rfdetr_wrapper.callbacks["on_train_end"].append(on_train_end_upload)
+    def _get_subset_path_if_any(self, config: TrainingConfig) -> str:
+        """
+        Get the path to the dataset subset if it was created, otherwise return the original path.
+        """
+        use_subset = config.max_train_samples or config.max_eval_samples or config.max_test_samples
+        if use_subset:
+            return str(Path(config.output_dir) / "datasets" / "subset")
+        return config.dataset_path
 
-    def _prepare_dataset_subset(self, config: TrainingConfig, output_dir: Path) -> str:
-        """Create dataset subset if max samples specified."""
-        if not config.max_train_samples and not config.max_eval_samples:
-            return config.dataset_path
-
-        import random
-        import shutil
-
+    def _prepare_dataset_subset(self, config: TrainingConfig) -> str:
+        """
+        Creates a subset of the dataset if max_train_samples, max_eval_samples, or
+        max_test_samples are specified in the config.
+        Uses centralized SubsetCreator for balanced sampling.
+        Returns the path to the dataset to be used for training.
+        """
         source_dir = Path(config.dataset_path)
-        subset_dir = output_dir / "dataset_subset"
+
+        if (
+            not config.max_train_samples
+            and not config.max_eval_samples
+            and not config.max_test_samples
+        ):
+            self.logger.info("No max samples specified, using original dataset: %s", source_dir)
+            return str(source_dir)
+
+        self.logger.info("Creating a balanced subset of the dataset as max samples are specified.")
+        subset_dir = Path(config.output_dir) / "datasets" / "subset"
         subset_dir.mkdir(parents=True, exist_ok=True)
 
+        subset_creator = SubsetCreator(
+            str(source_dir), str(subset_dir), seed=config.seed, verbose=True
+        )
+        subset_path = subset_creator.create(
+            max_train_samples=config.max_train_samples,
+            max_eval_samples=config.max_eval_samples,
+            max_test_samples=config.max_test_samples,
+        )
+
+        # Symlink any source splits missing from the subset.
         for split in ["train", "valid", "test"]:
+            subset_split = subset_dir / split
             source_split = source_dir / split
-            if not source_split.is_dir():
-                continue
+            if not subset_split.exists() and source_split.exists():
+                os.symlink(source_split.resolve(), subset_split)
+                self.logger.info("Linked missing split: %s -> %s", split, source_split)
 
-            max_samples = config.max_train_samples if split == "train" else config.max_eval_samples
-            if not max_samples:
-                continue
-
-            ann_file = source_split / "_annotations.coco.json"
-            if not ann_file.exists():
-                continue
-
-            with open(ann_file) as f:
-                data = json.load(f)
-
-            images = data["images"]
-            if max_samples and len(images) > max_samples:
-                random.seed(config.seed)
-                random.shuffle(images)
-                images = images[:max_samples]
-
-            image_ids = {img["id"] for img in images}
-            annotations = [a for a in data["annotations"] if a["image_id"] in image_ids]
-
-            new_data = {
-                "images": images,
-                "annotations": annotations,
-                "categories": data["categories"],
-            }
-
-            target_split = subset_dir / split
-            target_split.mkdir(parents=True, exist_ok=True)
-
-            with open(target_split / "_annotations.coco.json", "w") as f:
-                json.dump(new_data, f)
-
-            for img in images:
-                src = source_split / img["file_name"]
-                dst = target_split / img["file_name"]
-                if src.exists() and not dst.exists():
-                    shutil.copy(src, dst)
-
-            self.logger.info(f"Created {split} subset: {len(images)} images")
-
-        return str(subset_dir)
+        return subset_path
 
     def _find_best_checkpoint(self, output_dir: Path) -> Optional[Path]:
         """Find best checkpoint."""

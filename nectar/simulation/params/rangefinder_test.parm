@@ -1,0 +1,31 @@
+# Nectar SDK - Multi-orientation rangefinder test parameters
+#
+# Forward/back rangefinders fed by the iris_with_rangefinders Gazebo model
+# (rng_2/rng_3). ArduPilot emits one DISTANCE_SENSOR per instance with
+# id = instance and orientation = RNGFNDx_ORIENT, which the SDK exposes through
+# drone.distance_sensors / drone.get_distance().
+#
+# The downward rangefinder (RNGFND1, id 0, orientation DOWN) stays on the analog
+# SITL sonar configured in gazebo.parm. On the ground the airframe is only ~0.2 m
+# tall, so a downward GPU lidar sits under the body and reads below its minimum
+# range; the analog sonar reports vehicle height above terrain reliably, which is
+# what the SDK uses as an altitude reference. The Gazebo down lidar is still
+# produced (rng_1) but the FCU's downward reading comes from the sonar.
+#
+# Load after gazebo.parm:
+#   start_sitl.sh --gazebo --params nectar/simulation/params/rangefinder_test.parm
+#
+# ORIENT values are ArduPilot Rotation enum (= MAV_SENSOR_ORIENTATION):
+#   0 = forward, 4 = YAW_180 (back), 25 = PITCH_270 (down)
+
+# Forward (rng_2) -> DISTANCE_SENSOR id 1, orientation FORWARD
+RNGFND2_TYPE    100
+RNGFND2_ORIENT  0
+RNGFND2_MIN     0.10
+RNGFND2_MAX     40.0
+
+# Back (rng_3) -> DISTANCE_SENSOR id 2, orientation BACK
+RNGFND3_TYPE    100
+RNGFND3_ORIENT  4
+RNGFND3_MIN     0.10
+RNGFND3_MAX     40.0

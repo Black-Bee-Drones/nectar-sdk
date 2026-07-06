@@ -1,0 +1,40 @@
+# Gate Detection - RF-DETR Nano (e2e test)
+# Dataset: Roboflow black-bee-drones/imav-25-gate-sfbbq (auto-converted to COCO)
+# Usage: nectar-ai detect train --config <path-to-this-file>
+
+data:
+  dataset_path: nectar/ai/data/imav-gate
+  dataset_format: yolo
+
+train:
+  framework: rfdetr
+  model: rfdetr-nano
+  epochs: 4
+  batch_size: 8
+  learning_rate: 1e-4
+  lr_encoder: 1e-5
+  output_dir: nectar/ai/outputs/gate-rfdetr-nano
+  max_train_samples: 100
+  max_eval_samples: 50
+  device: cuda
+  seed: 42
+  tensorboard: true
+  start_tensorboard: false
+  gradient_accumulation_steps: 2
+  resolution: 320
+  use_ema: true
+  gradient_checkpointing: true
+  lr_scheduler_type: cosine
+  warmup_epochs: 1
+  max_grad_norm: 1.0
+  early_stopping_patience: 0
+  push_to_hub: true
+  hub_model_id: blackbeedrones/gate-rfdetr-nano
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 1
+  device: cuda

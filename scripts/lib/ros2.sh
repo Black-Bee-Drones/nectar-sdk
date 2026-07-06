@@ -27,6 +27,10 @@ http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | \
 
 cmd_geographiclib() {
     log_section "INSTALLING GEOGRAPHICLIB DATASETS"
+    if [ -d /usr/share/GeographicLib/geoids ] || [ -d /usr/local/share/GeographicLib/geoids ]; then
+        log_success "GeographicLib datasets already present (skipping)"
+        return 0
+    fi
     local tmp="/tmp/install_geographiclib_datasets.sh"
     wget -q https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh \
         -O "$tmp"
@@ -48,9 +52,21 @@ source /opt/ros/${ROS_DISTRO}/setup.bash
 [ -f "${WORKSPACE_DIR}/install/local_setup.bash" ] && source ${WORKSPACE_DIR}/install/local_setup.bash
 source /usr/share/colcon_cd/function/colcon_cd.sh
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+# Nectar SDK Python venv (uv): opt-in, NOT auto-activated, so it stays out of the
+# way of your other projects/workspaces. Run 'nectar-activate' to enter it and the
+# built-in 'deactivate' to leave.
+nectar-activate() {
+    if [ -f "${NECTAR_VENV}/bin/activate" ]; then
+        source "${NECTAR_VENV}/bin/activate"
+    else
+        echo "Nectar venv not found at ${NECTAR_VENV} — run 'make install-all' first."
+    fi
+}
 # End ROS 2 Configuration
 EOF
     log_success "Environment configured. Run: source ~/.bashrc"
+    log_info "Python env is opt-in: run 'nectar-activate' to enter it (and 'deactivate' to leave)."
+    log_info "Prefer it always on? Add to ~/.bashrc:  source ${NECTAR_VENV}/bin/activate"
 }
 
 cmd_rosdep_init() {

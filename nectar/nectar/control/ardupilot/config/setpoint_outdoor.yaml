@@ -1,0 +1,25 @@
+# Outdoor setpoint navigation parameters
+# ArduPilot GUIDED mode speed/radius/jerk limits
+# All values in SI units (m/s, m, m/s³)
+#
+# guid_options: GUID_OPTIONS bitmask
+#   bit 0 (1): Allow arming from TX
+#   bit 6 (64): WPNav S-curve for position targets
+#   bit 7 (128): Weathervaning
+#   65 = arm from TX + WPNav
+guid_options: 1
+speed: 1.6
+speed_up: 1.5
+speed_down: 1.0
+accel: 1.0
+radius: 0.2
+
+# Jerk limits (m/s³)
+# jerk: WPNav S-curve jerk (WPNAV_JERK). Range 1–20, default 1.
+# psc_jerk: Position controller horizontal jerk (PSC_JERK_XY/PSC_JERK_NE). Range 1–20, default 5.
+#   Raise in SITL (e.g. 50) for usable response time.
+jerk: 1.0
+psc_jerk: 5.0
+
+# Rangefinder terrain following for WPNav (WPNAV_RFND_USE). 0=off, 1=on.
+rfnd_use: 0

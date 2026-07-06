@@ -3,6 +3,7 @@ Training configuration classes.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict
 
 from nectar.ai.detection.core.configs import TrainingConfig as BaseTrainingConfig
@@ -88,16 +89,17 @@ class UltralyticsTrainingConfig(TrainingConfig):
         Dict[str, Any]
             Arguments for YOLO.train().
         """
-        return {
+        output_dir = Path(self.output_dir).resolve()
+        args = {
             "data": self.dataset_path,
             "epochs": self.epochs,
             "batch": self.batch_size,
-            "imgsz": self.imgsz or 640,
+            "imgsz": self.imgsz if self.imgsz is not None else 640,
             "save": True,
             "save_period": self.save_period,
-            "project": self.output_dir,
+            "project": str(output_dir.parent),
+            "name": output_dir.name,
             "exist_ok": True,
-            "optimizer": self.optimizer_type,
             "lr0": self.learning_rate,
             "seed": self.seed,
             "deterministic": True,
@@ -126,6 +128,9 @@ class UltralyticsTrainingConfig(TrainingConfig):
             "fliplr": self.fliplr,
             "close_mosaic": self.close_mosaic,
         }
+        if self.optimizer_type is not None:
+            args["optimizer"] = self.optimizer_type
+        return args
 
 
 @dataclass
@@ -201,10 +206,6 @@ class TransformersTrainingConfig(TrainingConfig):
             "greater_is_better": self.greater_is_better,
             "seed": self.seed,
             "report_to": ["tensorboard"] if self.tensorboard else None,
-            "push_to_hub": self.push_to_hub,
-            "hub_model_id": self.hub_model_id,
-            "hub_strategy": self.hub_strategy,
-            "hub_private_repo": self.hub_private_repo,
             "fp16": self.mixed_precision == "fp16",
             "bf16": self.mixed_precision == "bf16",
             "dataloader_pin_memory": self.dataloader_pin_memory,
@@ -228,9 +229,9 @@ class RFDETRTrainingConfig(TrainingConfig):
     Parameters
     ----------
     model : str
-        Model path or size (e.g., 'rfdetr-base').
+        Model path or size (e.g., 'rfdetr-medium').
     rfdetr_size : str, optional
-        Model size ('nano', 'small', 'base', 'medium', 'large').
+        Model size ('nano', 'small', 'medium', 'large').
     resolution : int, optional
         Input resolution. Defaults to 560.
     use_ema : bool, optional
@@ -256,7 +257,7 @@ class RFDETRTrainingConfig(TrainingConfig):
     """
 
     # Required
-    model: str = "rfdetr-base"
+    model: str = "rfdetr-medium"
     framework: str = field(default="rfdetr", init=False)
 
     # RF-DETR specific

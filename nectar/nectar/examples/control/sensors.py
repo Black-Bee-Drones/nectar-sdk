@@ -1,90 +1,81 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 
-import rclpy
-from rclpy.node import Node
-
+import nectar
 from nectar.control import AltitudeSource, DroneFactory, MavrosConfig, PoseSource
 
+log = logging.getLogger("sensors_example")
 
-class SensorsExample(Node):
-    def __init__(self, source: str):
-        super().__init__("sensors_example")
 
-        pose_source = PoseSource.VISION if source == "vision" else PoseSource.GPS
-        config = MavrosConfig(pose_source=pose_source, start_driver=False)
+def run(drone, source: str, duration: float) -> None:
+    log.info("Monitoring %s data for %.0fs...", source, duration)
+    iterations = int(duration * 10)
+    for i in range(iterations):
+        drone.delay(0.1)
+        if (i + 1) % 10 == 0:
+            _log_data(drone, source)
+    log.info("Monitoring complete")
 
-        self.drone = DroneFactory.create("mavros", config, self)
-        self.source = source
-        self.get_logger().info(f"Initialized with {source} source")
 
-    def run(self, duration: float = 30.0):
-        """Monitor sensor data for specified duration."""
-        self.get_logger().info(f"Monitoring {self.source} data for {duration}s...")
-
-        iterations = int(duration * 10)
-
-        for i in range(iterations):
-            self.drone.delay(0.1)
-
-            if (i + 1) % 10 == 0:
-                self._log_data()
-
-        self.get_logger().info("Monitoring complete")
-
-    def _log_data(self):
-        """Log current sensor data."""
-        altitude = self.drone.get_altitude()
-        lidar = self.drone.get_altitude(AltitudeSource.LIDAR)
-
-        if self.source == "gps":
-            gps = self.drone.gps
-            heading = self.drone.heading
-            rel_alt = self.drone.rel_alt
-
-            self.get_logger().info(
-                f"GPS: lat={gps.latitude:.6f}, lon={gps.longitude:.6f}, "
-                f"alt={gps.altitude:.1f}m | heading={heading:.1f}° | "
-                f"rel_alt={rel_alt:.2f}m | altitude={altitude} | lidar={lidar}"
+def _log_data(drone, source: str) -> None:
+    altitude = drone.get_altitude()
+    lidar = drone.get_altitude(AltitudeSource.LIDAR)
+    local = drone.local_pose
+    local_str = (
+        f"x={local.position.x:.2f}, y={local.position.y:.2f}, z={local.position.z:.2f}"
+        if local
+        else "N/A"
+    )
+    if source == "gps":
+        gps = drone.gps
+        log.info(
+            "GPS: lat=%.6f, lon=%.6f, alt=%.1fm | heading=%.1f deg | rel_alt=%.2fm | lidar=%s | local=[%s]",
+            gps.latitude,
+            gps.longitude,
+            gps.altitude,
+            drone.heading,
+            drone.rel_alt,
+            lidar,
+            local_str,
+        )
+    else:
+        vision = drone.vision_pose
+        if vision:
+            p = vision.position
+            log.info(
+                "Vision: x=%.2f, y=%.2f, z=%.2f | altitude=%s | lidar=%s | local=[%s]",
+                p.x,
+                p.y,
+                p.z,
+                altitude,
+                lidar,
+                local_str,
             )
         else:
-            vision = self.drone.vision_pos
-            if vision:
-                pos = vision.pose.pose.position
-                self.get_logger().info(
-                    f"Vision: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f} | "
-                    f"altitude={altitude} | lidar={lidar}"
-                )
-            else:
-                self.get_logger().warn("No vision data")
+            log.warning("No vision data")
 
 
-def main():
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     parser = argparse.ArgumentParser(description="Sensor monitoring example")
-    parser.add_argument(
-        "--source",
-        choices=["gps", "vision"],
-        default="gps",
-        help="Position source (default: gps)",
-    )
-    parser.add_argument(
-        "--duration",
-        type=float,
-        default=30.0,
-        help="Monitoring duration in seconds (default: 30)",
-    )
+    parser.add_argument("--source", choices=["gps", "vision"], default="gps")
+    parser.add_argument("--duration", type=float, default=30.0)
     args = parser.parse_args()
 
-    rclpy.init()
-    node = SensorsExample(args.source)
-
+    nectar.init()
+    pose_source = PoseSource.VISION if args.source == "vision" else PoseSource.GPS
+    drone = DroneFactory.create(
+        "mavros",
+        MavrosConfig(pose_source=pose_source, start_driver=False),
+    )
     try:
-        node.run(args.duration)
+        run(drone, args.source, args.duration)
     except KeyboardInterrupt:
-        node.get_logger().info("Interrupted")
+        log.info("Interrupted")
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        drone.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nectar-sdk"
-version = "1.0.0"
+version = "1.1.0"
 description = "Drone control, computer vision, and AI toolkit for ROS2"
 readme = {text = "Drone control, computer vision, and AI toolkit for ROS2", content-type = "text/plain"}
 license = {text = "Apache-2.0"}
@@ -15,13 +15,13 @@ maintainers = [
 
 dependencies = [
     "numpy>=1.26.0,<2.0.0",
-    "opencv-python==4.11.0.86",
     "opencv-contrib-python==4.11.0.86",
     "scipy==1.14.1",
     "pillow==12.1.1",
     "pyyaml==6.0.3",
     "tqdm==4.67.3",
     "catkin-pkg==1.0.0",
+    "docutils>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -32,20 +32,21 @@ control = [
     "geopy==2.4.1",
     "transforms3d==0.4.2",
     "scikit-learn==1.7.2",
+    "rowan>=1.3.0",
 ]
 
 vision = [
-    "mediapipe==0.10.32",
+    "mediapipe==0.10.18",
 ]
 
 ai = [
-    "ultralytics==8.4.14",
-    "huggingface-hub==0.32.4",
-    "transformers==4.53.3",
-    "timm==1.0.24",
-    "accelerate==1.12.0",
-    "datasets==3.6.0",
-    "rfdetr==1.4.1",
+    "ultralytics==8.4.36",
+    "huggingface-hub==1.9.2",
+    "transformers==5.5.0",
+    "timm==1.0.26",
+    "accelerate==1.13.0",
+    "datasets==4.8.4",
+    "rfdetr[train]==1.7.1",
     "supervision==0.27.0",
     "tensorboard==2.20.0",
     "roboflow==1.2.13",
@@ -53,25 +54,38 @@ ai = [
 ]
 
 interface = [
-    "PySide6==6.10.2",
+    "PySide6>=6.8.0,<7.0.0",
     "pyqtgraph==0.14.0",
 ]
 
 realsense = [
-    "pyrealsense2==2.56.5.9235",
+    "pyrealsense2>=2.55,<3.0",
 ]
 
 oakd = [
     "depthai==2.32.0.0",
 ]
 
+sensors = [
+    "pyserial>=3.5,<4.0",
+    "pymavlink>=2.4.40,<3.0",
+]
+
 all = [
-    "nectar-sdk[control,vision,interface,realsense,oakd]",
+    "nectar-sdk[control,vision,interface,realsense,oakd,sensors]",
 ]
 
 full = [
     "nectar-sdk[all,ai]",
 ]
+
+dev = [
+    "pytest>=7.4,<9",
+    "pytest-timeout>=2.1,<3",
+]
+
+[project.scripts]
+nectar-ai = "nectar.ai.cli.main:main"
 
 [tool.ruff]
 target-version = "py310"
@@ -94,6 +108,35 @@ known-first-party = ["nectar"]
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
+[tool.pytest.ini_options]
+# test/ holds the functional suite (test/functional) and hardware-gated checks
+# (test/hardware), plus the ament lint tests. `import helpers` is made resolvable
+# by a sys.path insert in test/conftest.py (works on pytest 6, unlike the
+# `pythonpath` ini which needs pytest 7+).
+testpaths = ["test"]
+# Hardware-, GPU- and SITL-gated tests are deselected by default; opt in with
+# `pytest test/hardware -m hardware`, `pytest -m gpu`, or `make verify-sitl`
+# (an explicit -m on the command line overrides this).
+addopts = "-m 'not hardware and not gpu and not sitl'"
+markers = [
+    "core: ROS 2 runtime + cv_bridge foundation",
+    "control: drone control (factory, PID, transforms, MAVLink loopback)",
+    "vision: camera + image-processing algorithms",
+    "sensors: rangefinder filters and MAVLink DISTANCE_SENSOR bridge",
+    "localization: vision-pose bridge (mavros / mavlink backends)",
+    "interface: Qt6 GUI (offscreen)",
+    "ai: detection CLI / inference",
+    "sim: requires the simulation stack (make sim-install)",
+    "sitl: SITL/integration flight in a headless simulator (make verify-sitl); heavy, opt-in",
+    "ardupilot: SITL flight on ArduPilot firmware",
+    "px4: SITL flight on PX4 firmware",
+    "crazyflie: flight on the Crazyswarm2 sim backend",
+    "hardware: requires a physical device (camera, rangefinder); deselected by default",
+    "gpu: requires a usable CUDA device; deselected by default",
+    "network: needs network access (model download)",
+    "slow: long-running",
+]
+
 [tool.setuptools.packages.find]
 include = ["nectar*"]
 exclude = ["test*"]
@@ -101,4 +144,6 @@ exclude = ["test*"]
 [tool.setuptools.package-data]
 "nectar.interface" = ["images/*.png"]
 "nectar.ai.detection" = ["configs/*.yaml"]
-"nectar.control" = ["config/**/*.yaml"]
+"nectar.ai.segmentation" = ["configs/*.yaml"]
+"nectar.control.ardupilot" = ["config/*.yaml"]
+"nectar.control.px4" = ["config/*.yaml"]

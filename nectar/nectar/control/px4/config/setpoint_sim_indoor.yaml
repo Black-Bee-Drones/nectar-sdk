@@ -1,0 +1,17 @@
+# Indoor SITL setpoint navigation parameters (PX4 x500 in Gazebo, vision pose)
+# Mirrors setpoint_indoor.yaml; gentle limits for confined sim flight.
+# Maps to MPC_* parameters; all values SI except yaw_rate (deg/s).
+
+speed: 1.5        # MPC_XY_CRUISE
+vel_max: 3.0      # MPC_XY_VEL_MAX
+speed_up: 1.0     # MPC_Z_VEL_MAX_UP
+speed_down: 0.7   # MPC_Z_VEL_MAX_DN
+
+accel: 2.0        # MPC_ACC_HOR
+accel_up: 2.0     # MPC_ACC_UP_MAX
+accel_down: 2.0   # MPC_ACC_DOWN_MAX
+
+jerk: 4.0         # MPC_JERK_AUTO
+yaw_rate: 30.0    # MPC_YAWRAUTO_MAX
+
+takeoff_speed: 1.0  # MPC_TKO_SPEED

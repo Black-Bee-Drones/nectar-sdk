@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
+from nectar.ai.paths import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR  # noqa: F401
+
 
 @dataclass
 class TrainingConfig:
@@ -48,7 +50,7 @@ class TrainingConfig:
     # Common parameters
     batch_size: int = 16
     learning_rate: float = 0.001
-    output_dir: str = "outputs"
+    output_dir: str = field(default_factory=lambda: str(DEFAULT_OUTPUT_DIR))
     device: str = "auto"
     seed: int = 42
 
@@ -90,7 +92,7 @@ class TrainingConfig:
     warmup_steps: int = 10
     warmup_ratio: float = 0.1
     max_grad_norm: float = 1.0
-    optimizer_type: str = "adamw_torch"
+    optimizer_type: Optional[str] = None
 
     # Ultralytics-specific
     dropout: float = 0.0
@@ -101,14 +103,32 @@ class TrainingConfig:
     cos_lr: bool = False
 
     # RF-DETR specific
-    rfdetr_size: Optional[str] = None  # "nano", "small", "base", "medium", "large"
+    rfdetr_size: Optional[str] = None  # "nano", "small", "medium", "large"
     lr_encoder: Optional[float] = None
     use_ema: bool = True
     gradient_checkpointing: bool = False
     drop_path: float = 0.0
+    drop_mode: str = "standard"
+    drop_schedule: str = "constant"
+    cutoff_epoch: int = 0
+    freeze_encoder: bool = False
+    layer_norm: bool = False
+    rms_norm: bool = False
+    backbone_lora: bool = False
+    multi_scale: bool = False
+    force_no_pretrain: bool = False
     ema_decay: float = 0.9997
+    ema_tau: float = 0.0
+    lr_vit_layer_decay: float = 0.8
+    lr_component_decay: float = 1.0
     sync_bn: bool = True
     num_workers: int = 2
+    set_cost_class: float = 2.0  # Matcher cost for class
+    set_cost_bbox: float = 5.0  # Matcher cost for bbox
+    set_cost_giou: float = 2.0  # Matcher cost for GIoU
+    start_epoch: int = 0  # Starting epoch for resume
+    gc_batch_frequency: int = 100
+    early_stopping_use_ema: bool = False
 
     # Transformers-specific
     gc_per_accumulation: bool = True
@@ -136,7 +156,7 @@ class TrainingConfig:
             Path to save YAML file.
         """
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             yaml.dump(self.to_dict(), f, default_flow_style=False)
 
     @classmethod
@@ -229,6 +249,8 @@ class EvaluationConfig:
     device: str = "auto"
     batch_size: int = 16
     num_samples: Optional[int] = None
+    imgsz: Optional[int] = None
+    prediction_samples_max: int = 4
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -244,7 +266,7 @@ class EvaluationConfig:
     @classmethod
     def from_yaml(cls, path: str) -> "EvaluationConfig":
         """Load from YAML file."""
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         if "eval" in data:
@@ -357,7 +379,7 @@ class EvaluationMetrics:
         import json
 
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     def summary(self) -> str:
@@ -428,5 +450,5 @@ class TrainingResult:
         import json
 
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)

@@ -30,16 +30,42 @@ Example
 >>> distance_cm = estimator.estimate(pixel_height=25.0)
 """
 
-from nectar.vision.algorithms.distance.calibrator import (
-    CalibrationResult,
-    ModelCalibrator,
-)
+from importlib import import_module
+from typing import TYPE_CHECKING
+
 from nectar.vision.algorithms.distance.estimator import DistanceEstimator
 from nectar.vision.algorithms.distance.models import (
     EstimationModel,
     ModelType,
     create_model,
 )
+
+_LAZY_ATTRS = {
+    # Pulls matplotlib for calibration plots
+    "ModelCalibrator": "nectar.vision.algorithms.distance.calibrator",
+    "CalibrationResult": "nectar.vision.algorithms.distance.calibrator",
+}
+
+
+def __getattr__(name: str):
+    target = _LAZY_ATTRS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(target), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted({*globals(), *_LAZY_ATTRS})
+
+
+if TYPE_CHECKING:
+    from nectar.vision.algorithms.distance.calibrator import (
+        CalibrationResult,
+        ModelCalibrator,
+    )
+
 
 __all__ = [
     "ModelType",

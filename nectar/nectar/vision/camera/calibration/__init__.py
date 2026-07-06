@@ -1,3 +1,3 @@
-from nectar.vision.camera.calibration.calibration import Calibration
+from nectar.vision.camera.calibration.calibration import CameraCalibration
 
-__all__ = ["Calibration"]
+__all__ = ["CameraCalibration"]

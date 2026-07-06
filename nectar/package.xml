@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>nectar</name>
-  <version>0.1.0</version>
+  <version>1.1.0</version>
   <description>Drone control, computer vision, and AI toolkit for ROS2</description>
   <maintainer email="samuellimabraz@gmail.com">Black Bee Drones</maintainer>
   <license>Apache-2.0</license>
@@ -17,6 +17,9 @@
   <depend>sensor_msgs</depend>
   <depend>nectar_interfaces</depend>
   <exec_depend>ros2launch</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>image_geometry</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

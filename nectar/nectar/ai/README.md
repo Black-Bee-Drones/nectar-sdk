@@ -1,13 +1,17 @@
 # AI Module
 
-Deep learning inference and model management for aerial robotics.
+Deep learning inference, training, and evaluation for aerial robotics.
 
 ## Structure
 
 ```
 ai/
+├── paths.py            # Shared DEFAULT_DATA_DIR / DEFAULT_OUTPUT_DIR
+├── cli/                # Unified CLI entry point (nectar-ai)
 ├── detection/          # Object detection (see detection/README.md)
-└── utils/              # Utilities (RoboflowUploader)
+├── segmentation/       # Image segmentation (see segmentation/README.md)
+├── data/               # Shared datasets (gitignored)
+└── outputs/            # Shared training outputs (gitignored)
 ```
 
 ## Architecture
@@ -15,17 +19,21 @@ ai/
 ```mermaid
 flowchart TB
     subgraph AI["ai/"]
+        Paths["paths.py<br/>DEFAULT_DATA_DIR / DEFAULT_OUTPUT_DIR"]
+        CLI["cli/<br/>nectar-ai detect ... / nectar-ai segment ..."]
+
         subgraph Detection["detection/"]
             Detector["Detector"]
-            Core["Core<br/>(BaseDetectionModel, Types, Configs, Protocols, Registry, Exceptions)"]
-            Models["Models<br/>(UltralyticsModel, TransformersModel, RFDETRModel, ModelLoader)"]
-            Training["Training<br/>(Framework-specific Configs)"]
-            Evaluation["Evaluation<br/>(ObjectDetectionEvaluator)"]
-            Slicing["Slicing<br/>(SlicingInference, SlicingConfig)"]
-            PostProcess["Post-process<br/>(NMS, SoftNMS, WBF, NMM)"]
-            Utils["Utils<br/>(DeviceManager, HuggingFaceUploader, DatasetConverter, DatasetMerger)"]
+            DetCore["Core, Models, Training, Evaluation"]
+            DetDatasets["Datasets (VisDrone, Roboflow, FormatConverter)"]
+            DetSlicing["Slicing, Post-processing"]
         end
-        Utils["utils/<br/>(RoboflowUploader)"]
+
+        subgraph Segmentation["segmentation/"]
+            Segmentor["Segmentor"]
+            SegCore["Core, Models, Training, Evaluation"]
+            SegDatasets["Datasets (UltralyticsSegHandler, Roboflow, HuggingFace,<br/>SegFormatConverter, SegDatasetAnalyzer)"]
+        end
     end
 
     subgraph External["External"]
@@ -34,36 +42,50 @@ flowchart TB
         rfdetr
         supervision
         huggingface_hub
-        torch
-        torchvision
+        tensorboard
     end
 
-    Detector --> Core
-    Detector --> Models
-    Core --> Models
-    Models --> ultralytics
-    Models --> transformers
-    Models --> rfdetr
-    Models --> torch
-    Models --> torchvision
-    Evaluation --> supervision
-    Slicing --> PostProcess
-    Slicing --> supervision
-    PostProcess --> supervision
-    Utils --> huggingface_hub
+    CLI --> Detector
+    CLI --> Segmentor
+
+    Detector --> DetCore
+    Segmentor --> SegCore
+
+    DetCore --> ultralytics
+    DetCore --> transformers
+    DetCore --> rfdetr
+    SegCore --> ultralytics
+    SegCore --> transformers
+    SegCore --> rfdetr
+
+    DetDatasets --> supervision
+    SegDatasets --> supervision
 ```
 
 ## Quick Start
+
+### Detection
 
 ```python
 from nectar.ai.detection import Detector
 
 detector = Detector("yolov8n.pt")
 detector.load()
-
 result = detector.detect(image)
 for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
+```
+
+### Segmentation
+
+```python
+from nectar.ai.segmentation import Segmentor
+
+segmentor = Segmentor("yolov8n-seg.pt")
+segmentor.load()
+result = segmentor.segment(image)
+for seg in result:
+    print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
 ```
 
 ## Public API
@@ -72,201 +94,170 @@ for det in result:
 
 ```python
 from nectar.ai.detection import (
-    # Main API
-    Detector,
-    Framework,
-
-    # Model classes
-    UltralyticsModel,
-    TransformersModel,
-    RFDETRModel,
-    BaseDetectionModel,
-
-    # Types
-    Detection,
-    DetectionResult,
-
-    # Configs
-    TrainingConfig,
-    EvaluationConfig,
-
-    # Utilities
-    ModelLoader,
-    ObjectDetectionEvaluator,
+    Detector, Framework,
+    UltralyticsModel, TransformersModel, RFDETRModel, BaseDetectionModel,
+    Detection, DetectionResult,
+    TrainingConfig, EvaluationConfig,
+    ModelLoader, ObjectDetectionEvaluator,
 )
 ```
 
-### Detector
-
-Factory-based interface supporting multiple frameworks:
+### Segmentation
 
 ```python
-from nectar.ai.detection import Detector, Framework
-
-# Auto-detect framework
-detector = Detector("yolov8n.pt")
-
-# Explicit framework
-detector = Detector("model.pt", framework="ultralytics")
-detector = Detector("facebook/detr-resnet-50", framework=Framework.TRANSFORMERS)
-detector = Detector("rfdetr-base", framework=Framework.RFDETR)
-
-# HuggingFace model
-detector = Detector("user/repo:model.pt")
-
-detector.load()
-result = detector.detect(image, conf=0.5)
-annotated = detector.draw_detections(image, result)
+from nectar.ai.segmentation import (
+    Segmentor,
+    UltralyticsSegModel, TransformersSegModel, RFDETRSegModel, BaseSegmentationModel,
+    Segmentation, SegmentationResult,
+    SegTrainingConfig, SegEvaluationConfig,
+    SegmentationEvaluator,
+    SegFormatConverter, SegDatasetAnalyzer,
+    UltralyticsSegHandler, RoboflowSegHandler,
+)
+from nectar.ai.segmentation.datasets import (
+    HuggingFaceSegHandler, HuggingFaceSegDatasetUploader,
+    seg_coco_to_hf, seg_yolo_to_hf, hf_to_coco_seg, hf_to_yolo_seg, generate_seg_dataset_card,
+)
 ```
 
-### Framework Enum
+## CLI
 
-```python
-Framework.ULTRALYTICS  # YOLOv8, YOLOv10, YOLO11
-Framework.TRANSFORMERS  # DETR, Conditional DETR
-Framework.RFDETR        # RF-DETR
+```
+nectar-ai <task> <command> [options]
+
+Tasks:
+  detect       Object detection (aliases: detection, od)
+  segment      Image segmentation (aliases: segmentation, seg)
+
+Commands:
+  train     Train a model
+  predict   Run inference on images
+  eval      Evaluate a model on a dataset
+  dataset   Dataset management (download, convert, analyze, subset, ...)
 ```
 
-### Training
+### Examples
+
+**Detection**:
+
+```bash
+nectar-ai detect train --config configs/visdrone_yolo26n.yaml
+nectar-ai detect dataset download --source visdrone --output data/visdrone
+nectar-ai detect eval --model-path best.pt --dataset-path data/visdrone --framework ultralytics
+```
+
+**Segmentation**:
+
+```bash
+nectar-ai segment train --config configs/crackseg_yolo26n_seg.yaml
+nectar-ai segment dataset download --source ultralytics --dataset crack-seg --output data/crack-seg
+nectar-ai segment dataset download --source huggingface --repo user/my-seg --format yolo --output data/my-seg
+nectar-ai segment dataset analyze --input data/crack-seg
+nectar-ai segment dataset upload --target huggingface --repo user/my-seg --dataset data/my-seg --public --model-repo user/my-model
+nectar-ai segment eval --model-path best.pt --dataset-path data/crack-seg --framework ultralytics
+nectar-ai segment predict --model best.pt --input image.jpg --output predictions/ --save-masks
+```
+
+## Training
+
+Both detection and segmentation support training via YAML config or CLI args.
+
+**Detection**:
 
 ```python
 from nectar.ai.detection import Detector, TrainingConfig
-
 detector = Detector("yolov8n.pt")
 detector.load()
-
-config = TrainingConfig(
-    dataset_path="/path/to/dataset",
-    epochs=100,
-    batch_size=16,
-    tensorboard=True,
-    push_to_hub=True,
-    hub_model_id="user/model-name",
-)
-
-result = detector.train(config)
+result = detector.train(TrainingConfig(dataset_path="data/visdrone", epochs=100))
 ```
 
-### Evaluation
+**Segmentation**:
 
 ```python
-from nectar.ai.detection import EvaluationConfig
+from nectar.ai.segmentation import Segmentor, SegTrainingConfig
+segmentor = Segmentor("yolo26n-seg.pt")
+segmentor.load()
+result = segmentor.train(SegTrainingConfig(dataset_path="data/crack-seg/data.yaml", epochs=50))
+```
+
+## Evaluation
+
+Both modules generate evaluation artifacts: confusion matrix, error analysis, prediction samples, per-class metrics CSV/JSON. Detection produces 4 curve plots (PR, P, R, F1). Segmentation produces 8 curve plots (4 Box + 4 Mask) with separate box and mask mAP via `torchmetrics`.
+
+**Detection**:
+
+```python
 from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
-
-config = EvaluationConfig(
-    model_path="best.pt",
-    dataset_path="/path/to/dataset",
-    framework="ultralytics",
-)
-
-evaluator = ObjectDetectionEvaluator(detector.model, config)
-metrics = evaluator.evaluate()
-print(f"mAP@50: {metrics.map50:.4f}")
 ```
 
-## Utilities
-
-### RoboflowUploader
+**Segmentation**:
 
 ```python
-from nectar.ai.utils import RoboflowUploader
-
-uploader = RoboflowUploader(
-    api_key="rf_api_key",
-    workspace="workspace",
-    project="project",
-)
-
-uploader.upload_image("image.jpg", "annotation.txt")
-count = uploader.upload_batch("images/", "labels/")
+from nectar.ai.segmentation.evaluation import SegmentationEvaluator
 ```
 
-### ModelLoader
+The segmentation evaluator uses `load_segmentation_dataset()` which loads ground truth with binary masks from YOLO-seg polygon labels or COCO segmentation annotations. Mask mAP is computed via `torchmetrics` (`iou_type="segm"`), while P/R/F1 use `supervision` with `MetricTarget.MASKS`.
+
+## Shared Paths
+
+Both modules use the same data and output directories:
 
 ```python
-from nectar.ai.detection import ModelLoader
-
-# Local file
-path = ModelLoader.load("/models/model.pt")
-
-# HuggingFace
-path = ModelLoader.load("user/repo:model.pt")
-
-# Private repo
-path = ModelLoader.load("user/repo:model.pt", token="hf_token")
+from nectar.ai.paths import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR
 ```
+
+| Constant | Resolves to |
+|----------|-------------|
+| `DEFAULT_DATA_DIR` | `nectar/nectar/ai/data/` |
+| `DEFAULT_OUTPUT_DIR` | `nectar/nectar/ai/outputs/` |
+
+Both directories are gitignored.
+
+## Supported Frameworks
+
+| Framework | Detection | Segmentation |
+|-----------|-----------|--------------|
+| Ultralytics (YOLO) | Train, Eval, Predict | Train, Eval, Predict |
+| RF-DETR | Train, Eval, Predict | Train, Eval, Predict |
+| HuggingFace Transformers | Train, Eval, Predict | Predict (training WIP) |
 
 ## Device Management
 
-`device="auto"` checks: CUDA → MPS → CPU
+Pass `device` to any model constructor:
+
+| `device` | Behavior |
+|----------|----------|
+| `"auto"` | Auto-detect (CUDA → MPS → CPU) |
+| `"cpu"` | Force CPU |
+| `"0"` | GPU index 0 |
 
 ```python
-detector = Detector("model.pt", device="auto")   # Auto-detect
-detector = Detector("model.pt", device="cpu")    # Force CPU
-detector = Detector("model.pt", device="0")      # GPU 0
+segmentor = Segmentor("model.pt", device="auto")
 ```
-
-## Integration with Vision
-
-```python
-from nectar.ai.detection import Detector
-from nectar.vision import ImageHandler
-
-class DetectorNode(Node):
-    def __init__(self):
-        super().__init__("detector")
-
-        self.detector = Detector("model.pt")
-        self.detector.load()
-
-        self.handler = ImageHandler(
-            node=self,
-            image_source="webcam",
-            image_processing_callback=self.process,
-            show_result="Detections",
-        )
-        self.handler.run()
-
-    def process(self, frame):
-        result = self.detector.detect(frame)
-        annotated = self.detector.draw_detections(frame, result)
-        frame[:] = annotated
-```
-
-## Notebooks
-
-Training notebooks are hosted on Google Colab for easy access to GPU resources:
-
-| Notebook | Description |
-|----------|-------------|
-| [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1wIVALzoWfBYOlEwwSncHajSe8_OLjxCP?usp=sharing) | **Object Detection Training** - Train and evaluate YOLO, DETR, and RF-DETR models with Roboflow datasets |
 
 ## Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `torch` | 2.7.1 | Deep learning backend |
-| `torchvision` | 0.22.1 | Vision utilities |
-| `ultralytics` | 8.3.152 | YOLO inference |
-| `transformers` | 4.53.0 | DETR models |
-| `timm` | 1.0.24 | Vision models |
-| `rfdetr` | 1.3.0 | RF-DETR |
-| `supervision` | 0.26.1 | Visualization, metrics |
-| `huggingface-hub` | 0.32.2 | Model downloads |
-| `accelerate` | 1.12.0 | Multi-GPU training |
-| `tensorboard` | 2.19.0 | Training visualization |
+| `ultralytics` | 8.4.36 | YOLO models |
+| `transformers` | 5.5.0 | DETR, MaskFormer, SegFormer |
+| `rfdetr` | 1.7.1 | RF-DETR detection + segmentation |
+| `supervision` | 0.27.0 | Metrics, visualization, Detections bridge |
+| `huggingface-hub` | 1.9.2 | Model upload/download |
+| `tensorboard` | 2.20.0 | Training visualization |
 | `albumentations` | 2.0.8 | Data augmentation |
-| `roboflow` | 1.1.66 | Dataset management |
+| `roboflow` | 1.2.13 | Dataset download |
 
 ### Installation
 
-```bash
-# 1. Install PyTorch (based on CUDA version)
-# CPU:
-pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
-# CUDA 12.4:
-pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu124
+**PyTorch** (match your CUDA version):
 
-# 2. Install AI dependencies
-pip install -r requirements-ai.txt
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+**AI dependencies**:
+
+```bash
+pip install -e ".[ai]"
 ```

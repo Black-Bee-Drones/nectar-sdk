@@ -70,6 +70,9 @@ QOS_PROFILES = {
 
 class ROSTab(QWidget):
     message_received = Signal(str, str)
+    # Plot samples are marshaled to the GUI thread (deques are written/read
+    # there only), so the ROS callback thread never races the plot updater.
+    plot_sample = Signal(str, float)
 
     def __init__(self, node: Optional[Node] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -511,6 +514,7 @@ class ROSTab(QWidget):
 
     def _connect_signals(self) -> None:
         self.message_received.connect(self._display_message)
+        self.plot_sample.connect(self._on_plot_sample)
 
     @Slot()
     def _refresh_topics(self) -> None:
@@ -936,7 +940,9 @@ class ROSTab(QWidget):
                 client = self._node.create_client(srv_class, service_name)
                 self._service_clients[service_name] = client
 
-            if not client.wait_for_service(timeout_sec=2.0):
+            # Non-blocking readiness check (the background executor has already
+            # discovered the service selected from the list); never block the GUI.
+            if not client.service_is_ready():
                 self._service_response.setPlainText(f"Service {service_name} not available")
                 return
 
@@ -1290,10 +1296,14 @@ class ROSTab(QWidget):
                     return list(self.times), list(self.values)
 
             def callback(msg):
-                if not self._plot_is_paused:
-                    value = self._extract_plot_value(msg, field)
-                    if value is not None and plot_id in self._plot_data:
-                        self._plot_data[plot_id].add_point(value)
+                # Runs on the ROS executor thread: extract the value and marshal
+                # it to the GUI thread via a queued signal; never touch the
+                # deques here (that is the GUI thread's job).
+                if self._plot_is_paused:
+                    return
+                value = self._extract_plot_value(msg, field)
+                if value is not None:
+                    self.plot_sample.emit(plot_id, value)
 
             subscription = self._node.create_subscription(msg_class, topic, callback, qos_profile)
             self._plot_subscriptions[plot_id] = subscription
@@ -1347,6 +1357,13 @@ class ROSTab(QWidget):
             self._plot_start_time = None
         if self._node:
             self._node.get_logger().info(f"Removed plot: {plot_id}")
+
+    @Slot(str, float)
+    def _on_plot_sample(self, plot_id: str, value: float) -> None:
+        """Append a plot sample on the GUI thread (queued from the ROS callback)."""
+        data = self._plot_data.get(plot_id)
+        if data is not None:
+            data.add_point(value)
 
     def _update_plot_curves(self) -> None:
         if not self._plot_items or self._plot_start_time is None:

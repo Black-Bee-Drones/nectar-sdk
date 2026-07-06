@@ -39,10 +39,16 @@ check_distro() {
     log_info "Detected: $distro $version"
 
     if [[ "$distro" != "Ubuntu" ]] && [[ "$distro" != "Debian" ]]; then
-        log_warning "Only tested on Ubuntu/Debian"
-        if [[ "${NON_INTERACTIVE:-}" != "true" ]]; then
-            read -p "Continue anyway? (y/N): " -n 1 -r && echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then exit 1; fi
+        # Accept Ubuntu/Debian derivatives (Zorin, Mint, Pop!_OS, ...) via os-release,
+        # matching bootstrap.sh. apt/ROS use `lsb_release -cs` (the Ubuntu codename).
+        if grep -qiE '^(ID|ID_LIKE)=.*(ubuntu|debian)' /etc/os-release 2>/dev/null; then
+            log_info "Ubuntu/Debian derivative ($distro) - proceeding"
+        else
+            log_warning "Only tested on Ubuntu/Debian"
+            if [[ "${NON_INTERACTIVE:-}" != "true" ]]; then
+                read -p "Continue anyway? (y/N): " -n 1 -r && echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then exit 1; fi
+            fi
         fi
     fi
 }

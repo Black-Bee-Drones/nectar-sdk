@@ -5,8 +5,8 @@ from typing import Optional, Protocol, runtime_checkable
 from nectar.control.types import (
     AltitudeSource,
     MoveReference,
-    NavigationStrategy,
-    RTLStrategy,
+    NavigationMethod,
+    RTLMethod,
 )
 
 
@@ -62,7 +62,7 @@ class Drone(Protocol):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool: ...
 
@@ -74,7 +74,7 @@ class Drone(Protocol):
         heading: Optional[float] = None,
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
-        strategy: NavigationStrategy = NavigationStrategy.PID,
+        method: NavigationMethod = NavigationMethod.PID,
     ) -> bool: ...
 
     def emergency_stop(self) -> None: ...
@@ -85,7 +85,7 @@ class Drone(Protocol):
         self,
         altitude: Optional[float] = None,
         precision: float = 0.2,
-        strategy: RTLStrategy = RTLStrategy.PID,
+        method: RTLMethod = RTLMethod.NAVIGATE,
         land: bool = True,
     ) -> bool: ...
 

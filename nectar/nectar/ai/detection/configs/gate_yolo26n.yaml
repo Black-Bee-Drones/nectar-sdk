@@ -1,0 +1,40 @@
+# Gate Detection - YOLO26n (e2e test)
+# Dataset: Roboflow black-bee-drones/imav-25-gate-sfbbq
+# Usage: nectar-ai detect train --config <path-to-this-file>
+
+data:
+  dataset_path: nectar/ai/data/imav-gate/data.yaml
+  dataset_format: yolo
+
+train:
+  framework: ultralytics
+  model: yolo26n.pt
+  epochs: 4
+  batch_size: 16
+  learning_rate: 0.01
+  output_dir: nectar/ai/outputs/gate-yolo26n
+  max_train_samples: 100
+  max_eval_samples: 50
+  device: "0"
+  seed: 42
+  tensorboard: true
+  start_tensorboard: false
+  imgsz: 320
+  from_scratch: false
+  weight_decay: 0.0005
+  warmup_epochs: 1.0
+  warmup_momentum: 0.8
+  lrf: 0.01
+  cos_lr: false
+  dropout: 0.0
+  early_stopping_patience: 0
+  push_to_hub: true
+  hub_model_id: blackbeedrones/gate-yolo26n
+
+eval:
+  evaluate: true
+  eval_split: test
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  batch_size: 1
+  device: "0"

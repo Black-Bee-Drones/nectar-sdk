@@ -1,0 +1,33 @@
+// markdownlint-cli2 config. Purpose: keep Markdown that renders on GitHub also
+// rendering on the strict docs parser (Python-Markdown via Zensical). The rules that
+// matter are the blank-line ones (MD022/MD031/MD032/MD058); the rest of the default
+// set is trimmed to the project's existing, intentional style.
+{
+  "config": {
+    "default": true,
+
+    // Blank-line rules -- the reason this linter exists (issue I1).
+    "MD022": true, // blanks around headings
+    "MD031": true, // blanks around fenced code blocks
+    "MD032": true, // blanks around lists
+    "MD058": true, // blanks around tables
+
+    // --- Disabled: conflict with the project's valid, intentional style ---
+    "MD013": false, // line length -- prose/tables wrap freely
+    "MD030": false, // list-marker spacing -- Material "grid cards" use `-   ` (3 spaces)
+    "MD033": false, // inline HTML -- READMEs use <div align>, <img>, <p>, <details>
+    "MD041": false, // first line need not be a top-level heading
+    "MD040": false, // fenced code language optional (REPL transcripts, dir trees)
+    "MD046": false, // allow both fenced and indented code styles
+    "MD029": false, // ordered-list numbering style is mixed on purpose
+    "MD036": false, // bold "label:" lines before lists/tables are a deliberate pattern
+    "MD024": { "siblings_only": true } // repeated section names (Example, API) under different parents
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "**/build/**",
+    "**/node_modules/**",
+    "**/.venv*/**",
+    "**/.pytest_cache/**"
+  ]
+}

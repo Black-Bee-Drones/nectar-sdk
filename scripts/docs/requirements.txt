@@ -1,0 +1,6 @@
+# Documentation site toolchain (Zensical). Kept isolated from the SDK/ROS env:
+#   uv venv .venv-docs && uv pip install -r scripts/docs/requirements.txt
+# Build: zensical build --clean   |   Preview: zensical serve   (or use `make docs`)
+zensical~=0.0.46          # 0.0.x build tool — pin within the patch line for reproducible builds
+mkdocstrings[python]>=0.27
+pymdown-extensions>=10.9
