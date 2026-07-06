@@ -35,7 +35,7 @@ to watch it larger.
           <source src="assets/media/comp-imav25.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="nectar-cap"><a href="projects/imav-2025/">IMAV 2025, indoor</a><span class="cap-sub">Gate entry, obstacles, moving smoke platform · 3rd place</span></div>
+      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/imav-2025">IMAV 2025, indoor</a><span class="cap-sub">Gate entry, obstacles, moving smoke platform · 3rd place</span></div>
     </div>
     <div class="nectar-tile" data-src="assets/media/comp-hook.mp4" data-poster="assets/media/comp-hook.jpg">
       <div class="nectar-tile__media">
@@ -43,7 +43,7 @@ to watch it larger.
           <source src="assets/media/comp-hook.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="nectar-cap"><a href="projects/sae-2026/">SAE Eletroquad 2026</a><span class="cap-sub">Hook and place, annotated run</span></div>
+      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/SAE-Eletroquad">SAE Eletroquad 2026</a><span class="cap-sub">Hook and place, annotated run</span></div>
     </div>
     <div class="nectar-tile" data-src="assets/media/comp-imav23.mp4" data-poster="assets/media/comp-imav23.jpg">
       <div class="nectar-tile__media">
@@ -51,7 +51,7 @@ to watch it larger.
           <source src="assets/media/comp-imav23.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="nectar-cap"><a href="projects/imav-2023/">IMAV 2023, indoor</a><span class="cap-sub">Line following and ArUco landing · 3rd place</span></div>
+      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/imav2023-indoor">IMAV 2023, indoor</a><span class="cap-sub">Line following and ArUco landing · 3rd place</span></div>
     </div>
     <div class="nectar-tile nectar-tile--portrait" data-src="assets/media/comp-cbr.mp4" data-poster="assets/media/comp-cbr.jpg">
       <div class="nectar-tile__media">
@@ -59,7 +59,7 @@ to watch it larger.
           <source src="assets/media/comp-cbr.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="nectar-cap"><a href="projects/cbr-2025/">CBR 2025</a><span class="cap-sub">Phase 1: Precision landing on a base</span></div>
+      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/cbr-2025">CBR 2025</a><span class="cap-sub">Phase 1: Precision landing on a base</span></div>
     </div>
     <div class="nectar-tile" data-src="assets/media/comp-slalom.mp4" data-poster="assets/media/comp-slalom.jpg">
       <div class="nectar-tile__media">
@@ -67,7 +67,7 @@ to watch it larger.
           <source src="assets/media/comp-slalom.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="nectar-cap"><a href="projects/">SAE Eletroquad 2025</a><span class="cap-sub">Slalom mission</span></div>
+      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/SAE-Eletroquad">SAE Eletroquad 2025</a><span class="cap-sub">Slalom mission</span></div>
     </div>
   </div>
   <button class="nectar-carousel__btn nectar-carousel__btn--next" aria-label="Next">&rsaquo;</button>
