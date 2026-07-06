@@ -83,10 +83,36 @@ _torch_constraint_flags() {
         if [[ -f "${TORCH_INDEX_FILE}" ]]; then
             local idx
             idx=$(cat "${TORCH_INDEX_FILE}")
-            flags="${flags} --extra-index-url ${idx}"
+            flags="${flags} --extra-index-url ${idx} --index-strategy unsafe-best-match"
         fi
     fi
     echo "$flags"
+}
+
+_read_pyproject_pin() {
+    local pkg="$1"
+    local line spec
+    line=$(grep -E "\"${pkg}[^\"]*\"" "${PKG_DIR}/pyproject.toml" 2>/dev/null | head -1) || true
+    if [[ -z "$line" ]]; then
+        log_error "Pin for ${pkg} not found in ${PKG_DIR}/pyproject.toml"
+        return 1
+    fi
+    spec=$(echo "$line" | sed -E 's/.*"([^"]+)".*/\1/')
+    echo "$spec"
+}
+
+# [ai] extras pull opencv-python / opencv-python-headless transitively; all OpenCV
+# wheels install into the same cv2/ tree, so the last one wins and can shadow the
+# SDK's opencv-contrib-python (breaking ArUco pose APIs). Re-pin contrib after ai/full.
+_repin_opencv_contrib() {
+    local spec
+    spec=$(_read_pyproject_pin "opencv-contrib-python") || return 1
+    log_info "Re-pinning ${spec} (AI extras may install parallel OpenCV wheels)"
+    uv pip uninstall --python "$NECTAR_VENV/bin/python" \
+        opencv-python opencv-python-headless 2>/dev/null || true
+    uv pip install --python "$NECTAR_VENV/bin/python" \
+        --force-reinstall --no-deps "${spec}"
+    log_success "OpenCV re-pinned to ${spec}"
 }
 
 
@@ -112,6 +138,9 @@ cmd_python() {
     else
         log_info "Installing [$extra] dependencies..."
         cd "$PKG_DIR" && uv pip install --python "$NECTAR_VENV/bin/python" $torch_flags -e ".[$extra]"
+    fi
+    if [[ "$extra" == "ai" || "$extra" == "full" ]]; then
+        _repin_opencv_contrib || return 1
     fi
     log_success "Python dependencies installed (${extra:-core})"
 }

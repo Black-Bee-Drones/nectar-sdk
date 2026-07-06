@@ -9,7 +9,7 @@ x86_64 images (`Dockerfile`) are tagged by ROS distro (`nectar-sdk:<distro>`), e
 | `:humble` | core + control + vision + interface + realsense + oakd + mavros + crazyflie | None |
 | `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
 | `:humble-full-cpu` | All above + AI packages | CPU |
-| `:humble-full-cu124` | All above + AI packages | CUDA 12.4 |
+| `:humble-full-cu126` | All above + AI packages | CUDA 12.6 |
 | `:jetson` | all non-AI modules (L4T base) | None |
 | `:jetson-full` | All above + AI + RealSense (RSUSB) | CUDA 12.6 (Jetson wheels) |
 
@@ -28,7 +28,7 @@ On Jetson, these auto-target `Dockerfile.jetson` (`:jetson` tags) and `--runtime
 ```bash
 make docker-build                              # SDK (no AI)
 make docker-build-full                         # + AI with PyTorch CPU (default)
-TORCH_VARIANT=cu124 make docker-build-full     # + AI with PyTorch CUDA 12.4
+TORCH_VARIANT=cu126 make docker-build-full     # + AI with PyTorch CUDA 12.6
 TORCH_VARIANT=auto  make docker-build-full     # auto-detect CUDA from nvidia-smi
 ```
 
@@ -36,7 +36,7 @@ TORCH_VARIANT=auto  make docker-build-full     # auto-detect CUDA from nvidia-sm
 
 ```bash
 ROS_DISTRO=jazzy make docker-build
-ROS_DISTRO=jazzy TORCH_VARIANT=cu124 make docker-build-full
+ROS_DISTRO=jazzy TORCH_VARIANT=cu126 make docker-build-full
 ```
 
 ### Pinning a specific PyTorch version (advanced)
@@ -45,7 +45,7 @@ By default pip resolves the latest torch compatible with the chosen CUDA index.
 Override with environment variables:
 
 ```bash
-TORCH_VERSION=2.7.1 TORCHVISION_VERSION=0.22.1 TORCH_VARIANT=cu124 make docker-build-full
+TORCH_VERSION=2.9.1 TORCHVISION_VERSION=0.24.1 TORCH_VARIANT=cu126 make docker-build-full
 ```
 
 ## Run
@@ -80,27 +80,91 @@ DOCKER_NO_MOUNT=true make docker-run
 **PowerShell:**
 
 ```powershell
-.\docker\run_docker_win.ps1 build humble              # Build SDK image
-.\docker\run_docker_win.ps1 build jazzy full-cpu      # Build full image with CPU PyTorch
-.\docker\run_docker_win.ps1 run humble                 # Run container
-.\docker\run_docker_win.ps1 exec                       # Attach to running container
+.\docker\run_docker_win.ps1 build jazzy full-cu126 -Realsense   # + librealsense (~15-20 min)
+.\docker\run_docker_win.ps1 test jazzy full-cu126
+.\docker\run_docker_win.ps1 run jazzy full-cu126                # GUI + GPU + USB bus
+.\docker\run_docker_win.ps1 exec
 ```
 
 The script supports:
 
 - ROS 2 distros: `humble`, `jazzy`, `kilted`
-- Build variants: `full-cpu`, `full-cu124` (for full builds)
+- Build variants: `full-cpu`, `full-cu126` (for full builds; `cu126` matches default torch 2.9.x pins)
+- `-Realsense` on `build` — sets `INSTALL_REALSENSE=true` (librealsense + realsense-ros from source)
 - Automatic GPU detection (requires Docker Desktop with NVIDIA Container Toolkit)
-- Windows X11 display setup for GUI applications
+- GUI via [VcXsrv](https://sourceforge.net/projects/vcxsrv/) / XLaunch (`DISPLAY=host.docker.internal:0.0`)
+- USB via [usbipd-win](https://github.com/dorssel/usbipd-win) (`usb` subcommand; see below)
 
-**Note:** For GUI applications on Windows, ensure Docker Desktop is configured to allow X11 forwarding. The script uses `host.docker.internal:0.0` for display.
+#### GUI (VcXsrv)
+
+1. Install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) and run **XLaunch**.
+2. **Multiple windows**, display **0**, **Start no client**.
+3. Enable **Disable access control** (required).
+4. Start XLaunch **before** `run`. Uncheck **Native opengl** if the Qt window is blank.
+
+```powershell
+.\docker\run_docker_win.ps1 run jazzy full-cu126
+# inside container:
+ros2 run nectar app.py
+```
+
+#### USB cameras and RealSense
+
+Docker Desktop does not pass USB devices through natively ([Docker FAQ](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/general/#can-i-pass-through-a-usb-device-to-a-container)). Use **usbipd-win** to share devices with the `docker-desktop` WSL VM, then mount `/dev/bus/usb` into the container (the `run` command does this by default).
+
+**Install usbipd-win** ([releases](https://github.com/dorssel/usbipd-win/releases)), then:
+
+```powershell
+.\docker\run_docker_win.ps1 usb list
+```
+
+| Device | Windows Docker | Notes |
+|--------|----------------|-------|
+| **Intel RealSense D435i** | Supported (with setup) | Uses libusb (RSUSB); does **not** need `/dev/video*`. Rebuild with `-Realsense`. |
+| **Built-in / USB webcam** | Limited | USB attaches and `lsusb` sees the device, but the Docker Desktop WSL kernel often lacks the UVC driver — `/dev/video0` may not appear, so OpenCV `webcam` / `VideoCapture(0)` fails. Use RealSense or native Linux for webcam workflows. |
+
+**RealSense workflow:**
+
+```powershell
+# 1) One-time bind (admin PowerShell) — or use: .\run_docker_win.ps1 usb bind realsense
+usbipd bind --busid <BUSID>    # from: .\run_docker_win.ps1 usb list
+
+# 2) Attach before each session (re-attach after unplug with -AutoAttach)
+.\docker\run_docker_win.ps1 usb attach realsense -AutoAttach
+
+# 3) Rebuild image with RealSense stack (once, ~15-20 min extra)
+.\docker\run_docker_win.ps1 build jazzy full-cu126 -Realsense
+
+# 4) Probe inside container
+.\docker\run_docker_win.ps1 -Command usb -UsbAction check -Distro jazzy -Variant full-cu126
+
+# 5) Run and test
+.\docker\run_docker_win.ps1 run jazzy full-cu126
+```
+
+Inside the container:
+
+```bash
+source /opt/ros/$ROS_DISTRO/setup.bash
+source /home/ros2_ws/install/local_setup.bash
+rs-enumerate-devices
+ros2 launch realsense2_camera rs_launch.py
+```
+
+While a device is attached to WSL it is **exclusive** — Windows apps cannot use it until `usbipd detach`.
+
+**Webcam (experimental):** `usb attach webcam` shares the device, but without `/dev/video*` OpenCV cannot open it. If video nodes appear (`usb list` shows them under docker-desktop), `run` auto-adds `--device` flags.
+
+Pass `-NoUsb` on `run` to skip USB volume mounts.
+
+**Note:** For GUI applications on Windows, ensure VcXsrv is running with access control disabled.
 
 ## GPU
 
 | Hardware | Build command |
 |----------|-------------|
 | No GPU | `make docker-build-full` |
-| NVIDIA GPU | `TORCH_VARIANT=cu124 make docker-build-full` |
+| NVIDIA GPU | `TORCH_VARIANT=cu126 make docker-build-full` |
 | Auto-detect | `TORCH_VARIANT=auto make docker-build-full` |
 | Jetson (Orin) | `make docker-build-full` (auto-detected → `Dockerfile.jetson`) |
 | No AI needed | `make docker-build` |
@@ -111,7 +175,7 @@ See [Docker GPU docs](https://docs.docker.com/desktop/features/gpu/) for setup.
 You can also install CUDA torch inside a running CPU container:
 
 ```bash
-./scripts/setup.sh pytorch cu124
+./scripts/setup.sh pytorch cu126
 ./scripts/setup.sh python ai
 ```
 
@@ -192,13 +256,13 @@ INSTALL_REALSENSE=true make docker-build
 **Full with RealSense + AI + GPU**:
 
 ```bash
-INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
+INSTALL_REALSENSE=true TORCH_VARIANT=cu126 make docker-build-full
 ```
 
 **With CUDA-accelerated librealsense**:
 
 ```bash
-INSTALL_REALSENSE=true REALSENSE_CUDA=true TORCH_VARIANT=cu124 make docker-build-full
+INSTALL_REALSENSE=true REALSENSE_CUDA=true TORCH_VARIANT=cu126 make docker-build-full
 ```
 
 Versions are auto-selected per ROS distro (`scripts/lib/config.sh`):
@@ -433,7 +497,7 @@ INSTALL_GAZEBO=true ROS_DISTRO=jazzy make docker-build
 **Combined with RealSense + AI + GPU**:
 
 ```bash
-INSTALL_GAZEBO=true INSTALL_REALSENSE=true TORCH_VARIANT=cu124 make docker-build-full
+INSTALL_GAZEBO=true INSTALL_REALSENSE=true TORCH_VARIANT=cu126 make docker-build-full
 ```
 
 Per-distro Gazebo versions:
@@ -498,7 +562,7 @@ See [vision_opencv#535](https://github.com/ros-perception/vision_opencv/issues/5
     - This setup allows customization of the installation directory and the default location for WSL (Docker images).
     - Customizing these paths is especially useful if your primary drive (e.g., `C:`) has limited space.
 
-4. Optionally, install [XLaunch](https://sourceforge.net/projects/vcxsrv/) to enable GUI applications in Docker. Configure the `DISPLAY` environment variable in Docker and launch applications with GUI support.
+4. For GUI in Docker, install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) (XLaunch: disable access control). For USB cameras / RealSense, install [usbipd-win](https://github.com/dorssel/usbipd-win/releases) — see [Windows USB](#usb-cameras-and-realsense) in this guide.
 
 ### Linux (Ubuntu)
 

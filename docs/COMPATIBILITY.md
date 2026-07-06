@@ -32,7 +32,7 @@ Base SDK (`nectar`, `nectar_interfaces`, core Python) — builds and `make verif
 | Ubuntu amd64 (CI) | ● | ● | ● |
 | Ubuntu arm64 (CI) | ◐ | ◐ | ◐ |
 | Jetson JetPack 6.x (arm64) | ● | — | — |
-| Windows (WSL2 / Docker Desktop) | ○ | ○ | ○ |
+| Windows (WSL2 / Docker Desktop) | ● | ● | ● |
 
 amd64 is built, `verify`-checked, and **functionally verified** on all three distros
 (the [`_build-verify.yml`](../.github/workflows/_build-verify.yml) harness; reproduced
@@ -148,7 +148,6 @@ Three commands back this matrix; a cell's symbol reflects the deepest tier reach
 
 ## Not covered yet
 
-- **Windows (WSL2 / Docker Desktop)**: not yet exercised.
 - **ROS 2 Lyrical (Ubuntu 26.04)**: not supported yet. At time of writing the `mavros` deb is not published for Lyrical and the scientific-Python stack lacks Python 3.14 wheels; the ROS/C++ layer and Gazebo build. Revisit when both land.
 
 [^usb]: **USB / OpenCV camera**: driver builds and imports; exercising it needs a camera, so it is not run by the harness.
