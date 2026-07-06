@@ -25,8 +25,10 @@ Start from the row that matches your machine:
 - **ROS 2 environment**, **Build**, **Verify**, **RealSense**
 
 !!! note "Nothing installs until you choose"
-    System packages are idempotent, and the MAVROS geoid datasets (GeographicLib) install
-    only with the `mavros` driver — not on every run.
+    System packages are idempotent. **MAVROS** (`ros-*-mavros`) is opt-in — run
+    `make drone-mavros` when you use the MAVROS backend. **GeographicLib** geoid
+    datasets install with `make full-install` / bootstrap (idempotent) or with
+    `make drone-mavros`; they are not pulled on every menu run.
 
 ### Then add what your mission needs
 
@@ -46,7 +48,7 @@ Full details: [Drone drivers](drivers.md) (install + fly real hardware), [Simula
 
 === "From scratch (no ROS 2)"
 
-    A standalone bootstrap script installs everything on a fresh Ubuntu/Debian machine: system packages, ROS 2, MAVROS, GeographicLib, git/SSH, the SDK itself, Python dependencies, and builds the workspace.
+    A standalone bootstrap script installs everything on a fresh Ubuntu/Debian machine: system packages, ROS 2 (ros-base), GeographicLib geoid data, Git LFS, the SDK itself, Python dependencies (`python all`), and builds the workspace. MAVROS and other drone drivers remain opt-in — add them from the setup menu or with `make drone-mavros` after bootstrap.
 
     ```bash
     bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
@@ -79,7 +81,7 @@ Full details: [Drone drivers](drivers.md) (install + fly real hardware), [Simula
     make setup
     ```
 
-    The menu's **Quick setup** runs: `system` (idempotent) → `git-lfs` → **module selection** (`cmd_python` for the modules you pick; PyTorch first if you choose AI) → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`. GeographicLib is not part of this — it installs with the `mavros` driver. Non-interactively (`NON_INTERACTIVE=true`, e.g. CI) `make setup` skips the menu and runs Quick setup with `all`.
+    The menu's **Quick setup** runs: `system` (idempotent) → `git-lfs` → **module selection** (`cmd_python` for the modules you pick; PyTorch first if you choose AI) → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`. GeographicLib is not part of Quick setup — it installs with `make full-install` / bootstrap or with `make drone-mavros` (idempotent). Non-interactively (`NON_INTERACTIVE=true`, e.g. CI) `make setup` skips the menu and runs Quick setup with `all`.
 
 === "Docker"
 
@@ -124,7 +126,7 @@ Install only the modules you need (dependencies defined in `nectar/pyproject.tom
 | `make` target | Setup script | Installs |
 |---|---|---|
 | `make python` | `./scripts/setup.sh python` | Core only (numpy, opencv, scipy) |
-| `make python-control` | `./scripts/setup.sh python control` | + GPS, PID, MAVROS navigation |
+| `make python-control` | `./scripts/setup.sh python control` | + GPS/PID navigation, pymavlink (direct MAVLink) |
 | `make python-vision` | `./scripts/setup.sh python vision` | + Camera drivers, ArUco, color, line detection |
 | `make python-ai` | `./scripts/setup.sh python ai` | + YOLO, DETR, RF-DETR (requires PyTorch) |
 | `make python-interface` | `./scripts/setup.sh python interface` | + Qt6 / PySide6 GUI |
@@ -163,8 +165,8 @@ The full command list is on the [Commands & Makefile](../development/commands.md
 | Command | Step |
 |---|---|
 | `./scripts/setup.sh system` | apt packages |
-| `./scripts/setup.sh ros2` | ROS 2 + MAVROS |
-| `./scripts/setup.sh geographiclib` | GeographicLib datasets |
+| `./scripts/setup.sh ros2` | ROS 2 base packages (ros-base, rviz2, cv_bridge, …) |
+| `./scripts/setup.sh geographiclib` | GeographicLib geoid datasets (also run by `full-install` and `make drone-mavros`) |
 | `./scripts/setup.sh ros2-env` | Configure `~/.bashrc` |
 | `./scripts/setup.sh rosdep-init` | Initialize rosdep |
 | `./scripts/setup.sh git-ssh` | Configure git and SSH keys |

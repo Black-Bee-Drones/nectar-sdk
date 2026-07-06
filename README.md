@@ -230,7 +230,7 @@ Then add only what your mission needs:
 
 | Goal | Commands |
 |---|---|
-| ArduPilot / PX4 over direct MAVLink (simplest) | `make setup` (pick `control`) then `make drone-mavros` |
+| ArduPilot / PX4 over direct MAVLink (simplest) | `make setup` (pick `control`) — `pymavlink` ships with the core SDK; optional `make drone-mavros` for geoid data |
 | ArduPilot / PX4 over MAVROS | `make setup` (pick `control`) then `make drone-mavros` |
 | PX4 over uXRCE-DDS + object detection | `make setup` (pick `control ai`) then `make drone-px4-dds` |
 | Crazyflie / Bebop | `make drone-crazyflie` / `make drone-bebop` |
@@ -410,6 +410,8 @@ detector = Detector("model.bin", framework="custom")
 | [Docker Guide](docker/README.md) | Build variants, GPU, RealSense, Isaac VSLAM container, dependency strategy |
 | [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, documentation conventions, PR process |
 | [Releasing](docs/RELEASING.md) | Version bump, CI workflows, Docker Hub push |
+
+Check out the complete documentation at **[black-bee-drones.github.io/nectar-sdk](https://black-bee-drones.github.io/nectar-sdk/)**. See [Contributing — Documentation](docs/CONTRIBUTING.md#documentation) for how docs are authored and published.
 
 ## ROS 2 Nodes
 

@@ -12,23 +12,26 @@ authors:
     website: 'https://github.com/Black-Bee-Drones'
 repository-code: 'https://github.com/Black-Bee-Drones/nectar-sdk'
 abstract: >-
-  Nectar SDK is a modular software development kit for
-  autonomous aerial systems built on ROS2. Designed for
-  drone competitions, research, and rapid prototyping of
-  UAV applications. Features include drone control (MAVROS,
-  Bebop), computer vision (ArUco, color, line detection),
-  AI-powered object detection (YOLO, DETR, RF-DETR),
-  camera abstraction (USB, RealSense, OAK-D), PID control,
-  GPS navigation, and a Qt6 graphical interface.
+  Nectar SDK is a modular ROS 2 software development kit for autonomous
+  aerial systems. It provides a firmware-agnostic vehicle core for ArduPilot
+  and PX4 over MAVROS, direct pymavlink, or uXRCE-DDS, plus Crazyflie and
+  Bebop backends. Modules cover computer vision (cameras, ArUco, optical flow),
+  AI detection and segmentation (YOLO, DETR, RF-DETR), companion sensors,
+  indoor localization (Isaac ROS Visual SLAM), simulation (ArduPilot/PX4 SITL),
+  and a Qt6 operator GUI.
 keywords:
   - Drone Control
   - Computer Vision
   - ROS2
+  - ArduPilot
+  - PX4
   - MAVROS
-  - Bebop
+  - MAVLink
+  - Crazyflie
   - OpenCV
-  - OAK-D
+  - Object Detection
+  - Segmentation
   - PID Controller
 license: Apache-2.0
 version: 1.1.0
-date-released: 2026-06-22
+date-released: 2026-07-06
