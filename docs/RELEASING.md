@@ -49,6 +49,7 @@ Check the [Actions tab](https://github.com/Black-Bee-Drones/nectar-sdk/actions) 
 - Tag: `vX.Y.Z` (create new tag, targeting `main`)
 - Title: `vX.Y.Z "Code Name"`
 - Include breaking-change migration notes when applicable (see the merge PR description)
+- Link to the [documentation site](https://black-bee-drones.github.io/nectar-sdk/) in the release body
 - Click "Generate release notes" for the changelog, then publish
 
 ### 4. CI automatically

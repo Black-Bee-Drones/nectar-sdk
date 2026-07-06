@@ -500,6 +500,60 @@ body.nectar-lightbox-open {
   border-color: var(--b);
 }
 
+/* Competition project cards — responsive 2-column grid on the Projects page. */
+.nectar-project-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin: 1.2rem 0 1.6rem;
+}
+@media screen and (min-width: 52rem) {
+  .nectar-project-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.nectar-project-row {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.6rem;
+  padding: 0.85rem 1rem 0.95rem;
+  background: var(--md-code-bg-color);
+}
+.nectar-project-row h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.nectar-project-caption {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--md-default-fg-color--light);
+}
+.nectar-project-award {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--md-accent-fg-color);
+}
+.nectar-project-desc {
+  flex: 1 1 auto;
+  margin: 0.3rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--md-default-fg-color--light);
+}
+.nectar-project-row .nectar-meta {
+  margin-top: 0.7rem;
+}
+.nectar-project-row .nectar-meta ul {
+  margin: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nectar-carousel__track {
     scroll-behavior: auto;

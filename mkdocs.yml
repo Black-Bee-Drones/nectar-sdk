@@ -210,12 +210,7 @@ nav:
       - Commands & Makefile: development/commands.md
       - Contributing: project/contributing.md
       - Releasing: project/releasing.md
-  - Projects:
-      - Overview: projects/index.md
-      - IMAV 2025: projects/imav-2025.md
-      - CBR 2025: projects/cbr-2025.md
-      - IMAV 2023 (indoor): projects/imav-2023.md
-      - SAE 2026: projects/sae-2026.md
+  - Projects: projects/index.md
   - Community:
       - Overview: community/index.md
       - Code of Conduct: project/code-of-conduct.md
