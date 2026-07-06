@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # Intel RealSense installation
-# Builds librealsense from source with optional CUDA support
-# installs realsense-ros and vision_to_mavros
-
+# Builds librealsense from source with optional CUDA support and installs
+# realsense-ros.
 _check_cuda() {
     USE_CUDA=false
     NVCC_PATH=""
@@ -264,20 +263,6 @@ _install_realsense_ros() {
     fi
 }
 
-# Install vision_to_mavros
-
-_install_vision_to_mavros() {
-    log_section "INSTALLING VISION_TO_MAVROS"
-
-    cd "${WORKSPACE_DIR}/src"
-    if [ ! -d "vision_to_mavros" ]; then
-        git clone https://github.com/Black-Bee-Drones/vision_to_mavros.git
-    else
-        cd vision_to_mavros && git pull origin main && cd ..
-    fi
-    log_success "vision_to_mavros ready"
-}
-
 # Rebuild workspace with RealSense
 
 _rebuild_workspace_realsense() {
@@ -290,10 +275,8 @@ _rebuild_workspace_realsense() {
 
     rm -rf "build/${ROS2_PKG_NAME}" "build/${INTERFACES_PKG_NAME}" \
            "build/realsense2_camera" "build/realsense2_camera_msgs" "build/realsense2_description" \
-           "build/vision_to_mavros" \
            "install/${ROS2_PKG_NAME}" "install/${INTERFACES_PKG_NAME}" \
            "install/realsense2_camera" "install/realsense2_camera_msgs" "install/realsense2_description" \
-           "install/vision_to_mavros" \
            log/
     colcon build --symlink-install
     log_success "Workspace rebuilt"
@@ -339,7 +322,6 @@ _verify_realsense() {
     local pkgs
     pkgs=$(ros2 pkg list 2>/dev/null || true)
     echo "$pkgs" | grep -q "realsense2_camera" && log_success "realsense2_camera: OK" || log_warning "realsense2_camera: not found"
-    echo "$pkgs" | grep -q "vision_to_mavros"  && log_success "vision_to_mavros: OK"  || log_warning "vision_to_mavros: not found"
 
     log_success "RealSense verification complete"
 }
@@ -360,7 +342,6 @@ cmd_realsense() {
         _install_realsense_deps
         _build_librealsense
         _install_realsense_ros
-        _install_vision_to_mavros
         _rebuild_workspace_realsense
         _verify_realsense
         return
@@ -381,22 +362,20 @@ cmd_realsense() {
             _install_realsense_deps
             _build_librealsense
             _install_realsense_ros
-            _install_vision_to_mavros
             _rebuild_workspace_realsense
             _verify_realsense
             ;;
         2)
             echo "Select steps (space-separated, e.g., 1 3 5):"
             echo "1) Remove conflicts   2) System deps   3) Build librealsense"
-            echo "4) realsense-ros      5) vision_to_mavros   6) Rebuild workspace"
-            echo "7) Verify"
+            echo "4) realsense-ros      5) Rebuild workspace   6) Verify"
             read -p "Steps: " steps
             for step in $steps; do
                 case $step in
                     1) _remove_conflicting_realsense ;; 2) _install_realsense_deps ;;
                     3) _build_librealsense ;; 4) _install_realsense_ros ;;
-                    5) _install_vision_to_mavros ;; 6) _rebuild_workspace_realsense ;;
-                    7) _verify_realsense ;; *) log_warning "Invalid step: $step" ;;
+                    5) _rebuild_workspace_realsense ;; 6) _verify_realsense ;;
+                    *) log_warning "Invalid step: $step" ;;
                 esac
             done
             ;;

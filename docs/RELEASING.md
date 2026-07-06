@@ -17,6 +17,7 @@ vMAJOR.MINOR.PATCH
 Releases can have a code name associated with the version. The git tag is always `vX.Y.Z` (machine-readable). The GitHub release title includes the code name (human-readable).
 
 Examples:
+
 - `v0.2.0 "Tadini"` — team captain
 - `v1.0.0 "CBR 2026"` — competition name
 - `v1.1.0 "Mangalarga"` — internal code name
@@ -34,7 +35,8 @@ CI runs `code-quality` (lint) and `pr-check` (Humble build + verify) on the PR.
 
 ### 2. Merge to main
 
-After review, merge the PR. CI runs `build-test` (all distros: Humble, Jazzy, Kilted).
+After review, merge the PR. CI runs `build-test-{humble,jazzy,kilted}` on push to `main`
+(weekly on all three distros; Humble also on amd64 and arm64).
 
 Check the [Actions tab](https://github.com/Black-Bee-Drones/nectar-sdk/actions) — all green before proceeding.
 
@@ -64,6 +66,7 @@ Images are pushed to [Docker Hub](https://hub.docker.com/r/blackbeedrones/nectar
 | `:<distro>-vX.Y.Z` | `humble-v0.2.0` | Specific release |
 
 Pull and run:
+
 ```bash
 docker pull blackbeedrones/nectar-sdk:humble
 docker run -it --rm --net=host blackbeedrones/nectar-sdk:humble
@@ -73,9 +76,11 @@ docker run -it --rm --net=host blackbeedrones/nectar-sdk:humble
 
 | Workflow | Trigger | Distros | What it does |
 |---|---|---|---|
-| `code-quality.yml` | PR + push to main | — | Lint + format (~30s) |
-| `pr-check.yml` | PR to main | Humble | Build Docker + verify (catches regressions before merge) |
-| `build-test.yml` | Push to main, weekly | All 3 | Build Docker + verify (full coverage) |
+| `code-quality.yml` | PR to `main` or `dev` | — | Lint + format (~30s) |
+| `pr-check.yml` | PR to `main` | Humble | Build Docker + verify (catches regressions before merge) |
+| `build-test-humble.yml` | Push to `main`, weekly (Mon 05:00 UTC) | Humble (amd64 + arm64) | Build Docker + verify |
+| `build-test-jazzy.yml` | Push to `main`, weekly (Mon 05:00 UTC) | Jazzy | Build Docker + verify |
+| `build-test-kilted.yml` | Push to `main`, weekly (Mon 05:00 UTC) | Kilted | Build Docker + verify |
 | `docker-push.yml` | GitHub release | All 3 | Build → verify → push to Docker Hub |
 
 The build and verify logic is shared via `_build-verify.yml` (reusable workflow).

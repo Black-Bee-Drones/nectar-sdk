@@ -1,10 +1,12 @@
 # Sensors Module Examples
 
-| File | Description |
-|------|-------------|
+Bench-test the companion-computer sensor pipelines before wiring them into a mission.
+
+| Script | What it does |
+|--------|--------------|
 | `rangefinder_example.py` | Bench-test the TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` pipeline (no ROS) |
 
-### Arguments
+## Arguments
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -23,20 +25,27 @@
 
 ## Bench test
 
+**Raw passthrough** (runs until Ctrl-C):
+
 ```bash
-# Raw passthrough; runs until Ctrl-C.
 python3 rangefinder_example.py \
     --port /dev/ttyUSB0 \
     --mavlink udp:127.0.0.1:14551
+```
 
-# Hook mission and similar: auto-detect the obstacle height. No prior knowledge needed.
+**Auto-detect the obstacle height** (hook mission and similar; no prior knowledge needed):
+
+```bash
 python3 rangefinder_example.py \
     --port /dev/ttyUSB0 \
     --mavlink udp:127.0.0.1:14551 \
     --filter obstacle_mask \
     --duration 60
+```
 
-# Fixed-height override (SITL, known fixtures): lock to 1.7 m.
+**Fixed-height override** (SITL, known fixtures; lock to 1.7 m):
+
+```bash
 python3 rangefinder_example.py \
     --port /dev/ttyUSB0 \
     --mavlink udp:127.0.0.1:14551 \
@@ -44,6 +53,8 @@ python3 rangefinder_example.py \
     --obstacle-height 1.7 \
     --duration 60
 ```
+
+Expected result: the script prints filtered range samples at `--rate` Hz and streams them as MAVLink `DISTANCE_SENSOR`; the FCU rangefinder topic (below) mirrors the values.
 
 While the script is running, in another terminal echo the FCU rangefinder
 topic to confirm the masked stream is reaching the EKF via MAVROS:

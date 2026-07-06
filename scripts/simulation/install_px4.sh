@@ -91,57 +91,13 @@ link_nectar_asset "${NECTAR_SIM_DIR}/models/outdoor_field_scenery"   "${PX4_MODE
 link_nectar_asset "${NECTAR_SIM_DIR}/worlds/outdoor_field_px4.sdf"   "${PX4_WORLDS_DIR}/outdoor_field_px4.sdf"
 
 # ── Native uXRCE-DDS path (optional) ────────────────────────────────────────
+# Shares the same implementation as `make drone-px4-dds` (px4_msgs + agent),
+# kept in a single script so the real-hardware and simulation paths never drift.
 if [ "${WITH_NATIVE}" = true ]; then
     echo ""
-    echo "[INFO] Setting up the native uXRCE-DDS path (px4_msgs + agent)..."
-    WS_ROOT="$(dirname "${WS_SRC}")"
-
-    # ── px4_msgs: ROS 2 message definitions, version-matched to PX4 ──────────
-    # The branch MUST match your PX4 firmware (uORB topics are versioned, e.g.
-    # vehicle_status_v4). 'main' matches a 'main' PX4 checkout; for a release,
-    # clone the matching px4_msgs branch (e.g. release/1.15).
-    if [ -d "${WS_SRC}/px4_msgs" ]; then
-        echo "[INFO] px4_msgs already present at ${WS_SRC}/px4_msgs"
-    else
-        echo "[INFO] Cloning px4_msgs into ${WS_SRC} (branch must match your PX4 release)..."
-        git clone https://github.com/PX4/px4_msgs.git "${WS_SRC}/px4_msgs"
-    fi
-
-    # Source ROS so colcon and the agent's find_package(fastdds) resolve.
-    # (ROS setup scripts reference unset vars, so relax -u around the source.)
-    set +u
-    if [ -z "${ROS_DISTRO:-}" ]; then
-        for d in jazzy humble iron rolling; do
-            [ -f "/opt/ros/$d/setup.bash" ] && { ROS_DISTRO="$d"; break; }
-        done
-    fi
-    [ -n "${ROS_DISTRO:-}" ] && source "/opt/ros/${ROS_DISTRO}/setup.bash"
-    set -u
-
-    echo "[INFO] Building px4_msgs (required for drone 'px4_dds')..."
-    ( cd "${WS_ROOT}" && colcon build --packages-select px4_msgs )
-
-    # ── Micro XRCE-DDS Agent: the PX4 <-> ROS 2 DDS bridge ───────────────────
-    if command -v MicroXRCEAgent >/dev/null 2>&1; then
-        echo "[INFO] MicroXRCEAgent already installed"
-    else
-        echo "[INFO] Building Micro-XRCE-DDS-Agent (against system Fast-DDS)..."
-        AGENT_DIR="${HOME}/Micro-XRCE-DDS-Agent"
-        [ -d "${AGENT_DIR}" ] || git clone -b v2.4.3 --depth 1 \
-            https://github.com/eProsima/Micro-XRCE-DDS-Agent.git "${AGENT_DIR}"
-        mkdir -p "${AGENT_DIR}/build"
-        # Reuse ROS's Fast-DDS/Fast-CDR instead of the bundled superbuild, whose
-        # asio+OpenSSL build fails on recent distros (X509_check_host).
-        ( cd "${AGENT_DIR}/build" && \
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DUAGENT_BUILD_EXECUTABLE=ON \
-                -DUAGENT_USE_SYSTEM_FASTDDS=ON -DUAGENT_USE_SYSTEM_FASTCDR=ON && \
-            make -j"$(nproc)" && \
-            sudo make install && \
-            sudo ldconfig )
-    fi
-
+    bash "${SCRIPT_DIR}/install_px4_dds.sh"
     echo ""
-    echo "[INFO] Native uXRCE-DDS ready. Run (3 terminals):"
+    echo "[INFO] For PX4 SITL over DDS, run (3 terminals):"
     echo "         make sim-start  FIRMWARE=px4 ENV=outdoor"
     echo "         make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds   # MicroXRCEAgent"
     echo "         python3 nectar/nectar/examples/control/basic.py --drone px4_dds --env outdoor"

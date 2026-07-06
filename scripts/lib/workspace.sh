@@ -144,19 +144,18 @@ cmd_verify() {
     _req "pkg: ${ROS2_PKG_NAME}"         'grep -qx "${ROS2_PKG_NAME}" <<<"$_pkgs"'
     _req "pkg: ${INTERFACES_PKG_NAME}"   'grep -qx "${INTERFACES_PKG_NAME}" <<<"$_pkgs"'
     _req "pkg: cv_bridge"                'grep -q "cv_bridge" <<<"$_pkgs"'
-    _req "pkg: mavros"                   'grep -q "mavros" <<<"$_pkgs"'
     _req "pkg: tf_transformations"       'grep -q "tf_transformations" <<<"$_pkgs"'
     _req "pkg: image_geometry"           'grep -q "image_geometry" <<<"$_pkgs"'
+    _opt "pkg: mavros"                   'grep -q "mavros" <<<"$_pkgs"'
     _opt "pkg: crazyflie_interfaces"     'grep -q "crazyflie_interfaces" <<<"$_pkgs"'
     _opt "pkg: bebop_driver"             'grep -q "bebop_driver" <<<"$_pkgs"'
     _opt "pkg: realsense2_camera"        'grep -q "realsense2_camera" <<<"$_pkgs"'
-    _opt "pkg: vision_to_mavros"         'grep -q "vision_to_mavros" <<<"$_pkgs"'
 
     # --- Core Python ---
     _group "Core Python" python
     _req "numpy ($(_ver numpy))"           'python3 -c "import numpy"'
     _req "numpy < 2.0 (cv_bridge ABI)"     'python3 -c "import numpy,sys; sys.exit(0 if int(numpy.__version__.split(chr(46))[0])<2 else 1)"'
-    _req "opencv ($(_ver opencv-python))"  'python3 -c "import cv2"'
+    _req "opencv ($(_ver opencv-contrib-python))"  'python3 -c "import cv2"'
     _req "scipy ($(_ver scipy))"           'python3 -c "import scipy.special"'
     _req "pillow ($(_ver pillow))"         'python3 -c "import PIL"'
     _req "pyyaml ($(_ver pyyaml))"         'python3 -c "import yaml"'
@@ -263,6 +262,81 @@ cmd_verify() {
     fi
 }
 
+# Tier-2 functional suite: pytest over the package's test/functional (real ops on
+# synthetic inputs / loopbacks; checks self-skip when a device/dep/sim is absent).
+# Optional module args map to pytest markers: `verify-functional vision control`
+# -> `-m "vision or control"`.
+cmd_verify_functional() {
+    cd "$WORKSPACE_DIR"
+    source "/opt/ros/${ROS_DISTRO}/setup.bash" 2>/dev/null || true
+    [ -f "${WORKSPACE_DIR}/install/local_setup.bash" ] && \
+        source "${WORKSPACE_DIR}/install/local_setup.bash" 2>/dev/null || true
+
+    cd "${PKG_DIR}" || { log_error "package dir not found: ${PKG_DIR}"; return 1; }
+
+    local marker_expr="" m
+    for m in "$@"; do
+        if [ -z "$marker_expr" ]; then marker_expr="$m"; else marker_expr="$marker_expr or $m"; fi
+    done
+
+    # Disable third-party plugin autoload so the ROS launch_testing / ament_* pytest
+    # plugins (whose hook signatures can be incompatible with the venv's pytest --
+    # notably on Humble) cannot break collection. Enable only what the suite needs.
+    # The suite runs single-process; per-module isolation is the job of `colcon test`.
+    local args=(test/functional)
+    if python3 -c "import pytest_timeout" >/dev/null 2>&1; then args+=(-p pytest_timeout --timeout=600); fi
+    [ -n "$marker_expr" ] && args+=(-m "$marker_expr")
+    [ -n "${JUNIT_XML:-}" ] && args+=(--junit-xml="${JUNIT_XML}")
+
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest "${args[@]}"
+}
+
+# Hardware-gated functional tests (test/hardware).
+cmd_verify_hardware() {
+    cd "$WORKSPACE_DIR"
+    source "/opt/ros/${ROS_DISTRO}/setup.bash" 2>/dev/null || true
+    [ -f "${WORKSPACE_DIR}/install/local_setup.bash" ] && \
+        source "${WORKSPACE_DIR}/install/local_setup.bash" 2>/dev/null || true
+
+    cd "${PKG_DIR}" || { log_error "package dir not found: ${PKG_DIR}"; return 1; }
+
+    local args=(test/hardware -m hardware)
+    if python3 -c "import pytest_timeout" >/dev/null 2>&1; then args+=(-p pytest_timeout --timeout=120); fi
+    [ -n "${JUNIT_XML:-}" ] && args+=(--junit-xml="${JUNIT_XML}")
+
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest "${args[@]}"
+}
+
+# Tier-3 SITL/integration suite: pytest over test/sitl, which boots a headless
+# simulator per firmware/protocol and flies a real smoke mission through the SDK
+# (connect -> takeoff -> move -> land).
+cmd_verify_sitl() {
+    cd "$WORKSPACE_DIR"
+    source "/opt/ros/${ROS_DISTRO}/setup.bash" 2>/dev/null || true
+    [ -f "${WORKSPACE_DIR}/install/local_setup.bash" ] && \
+        source "${WORKSPACE_DIR}/install/local_setup.bash" 2>/dev/null || true
+
+    cd "${PKG_DIR}" || { log_error "package dir not found: ${PKG_DIR}"; return 1; }
+
+    local marker="sitl"
+    [ -n "${FIRMWARE:-}" ] && marker="sitl and ${FIRMWARE}"
+    local args=(test/sitl -m "$marker")
+    [ -n "${PROTOCOL:-}" ] && args+=(-k "${PROTOCOL}")
+    if python3 -c "import pytest_timeout" >/dev/null 2>&1; then args+=(-p pytest_timeout --timeout=900); fi
+    [ -n "${JUNIT_XML:-}" ] && args+=(--junit-xml="${JUNIT_XML}")
+
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest "${args[@]}"
+}
+
+# Environment doctor: a read-only report of this machine (ROS env, installed SDK
+# modules + optional deps, and live hardware/CUDA)
+cmd_doctor() {
+    source "/opt/ros/${ROS_DISTRO}/setup.bash" 2>/dev/null || true
+    [ -f "${WORKSPACE_DIR}/install/local_setup.bash" ] && \
+        source "${WORKSPACE_DIR}/install/local_setup.bash" 2>/dev/null || true
+    python3 -m nectar.diagnostics "$@"
+}
+
 cmd_test() {
     log_section "RUNNING TESTS"
     cd "$WORKSPACE_DIR"
@@ -271,4 +345,11 @@ cmd_test() {
     colcon test --packages-select "$ROS2_PKG_NAME"
     colcon test-result --verbose
     log_success "Tests complete"
+}
+
+# Local cross-distro CI runner: builds the SDK image per ROS distro from the local
+# source and runs verify + verify-functional in each (see scripts/ci_local.sh).
+# Flags are read from the environment (DISTROS, FULL, REALSENSE, DRONES, KEEP).
+cmd_ci_local() {
+    "${PROJECT_DIR}/scripts/ci_local.sh" "$@"
 }

@@ -1,8 +1,22 @@
 # PID Controller Module
 
-Configurable PID controller implementation with YAML-based tuning and multi-axis support for position control.
+Configurable PID controller with anti-windup, output clamping, and YAML-based tuning, plus
+a per-axis (`x`/`y`/`z`/`yaw`) variant for position control. Used by the navigator's PID
+methods, and usable standalone for any control loop.
 
-## Architecture
+## At a glance
+
+```python
+from nectar.control.pid import PIDController
+
+pid = PIDController(kp=1.0, ki=0.1, kd=0.05, setpoint=2.0)
+output = pid.update(current_value)   # control output, clamped to output_limits
+```
+
+## Concepts
+
+A `PIDController` is configured by a `PIDConfig` (loadable from YAML); `PositionPIDConfig`
+bundles one `PIDConfig` per axis for `x`/`y`/`z`/`yaw`.
 
 ```mermaid
 classDiagram
@@ -78,22 +92,41 @@ pid = PIDController(
 )
 ```
 
-### Control Loop
+### Control loop
+
+`PIDController.update()` implements a discrete-time PID with anti-windup on the integral
+term and clamping on the output:
+
+$$
+e_k = r - y_k
+$$
+
+$$
+P_k = K_p \, e_k
+$$
+
+$$
+I_k = \mathrm{clamp}\!\left(K_i \sum_{i=0}^{k} e_i \, \Delta t,\; I_{\min},\, I_{\max}\right)
+$$
+
+$$
+D_k = K_d \frac{e_k - e_{k-1}}{\Delta t}
+$$
+
+$$
+u_k = \mathrm{clamp}(P_k + I_k + D_k,\; u_{\min},\, u_{\max})
+$$
+
+Where \(r\) is the setpoint (`setpoint`), \(y_k\) is the current measurement,
+\(\Delta t\) is the elapsed time between calls (from `time.time()`), and
+\(\mathrm{clamp}(x, a, b) = \min(\max(x, a), b)\).
+
+An optional **output deadband** (`output_deadband`) forces \(u_k = 0\) when
+\(|u_k| < \mathrm{deadband}\) after clamping.
 
 ```python
 control_output = pid.update(current_value: float) -> float
 ```
-
-**Algorithm**:
-```
-1. Calculate error: e(t) = setpoint - current_value
-2. Proportional term: P = kp × e(t)
-3. Integral term: I = ki × ∫e(t)dt (clamped to integral_limits)
-4. Derivative term: D = kd × de/dt
-5. Output = P + I + D (clamped to output_limits)
-```
-
-**Delta Time**: Automatically computed from `time.time()` between updates.
 
 ### Methods
 
@@ -102,7 +135,7 @@ pid.update(current_value)              # Returns control output
 pid.reset()                            # Clear integral, previous error
 pid.set_setpoint(value)                # Change target
 pid.tune(kp, ki, kd)                   # Update gains
-pid.get_components()                   # Returns {'p': ..., 'i': ..., 'd': ...}
+pid.get_components()                   # Returns proportional, integral, derivative, output
 ```
 
 ## PIDConfig
@@ -230,16 +263,21 @@ while True:
 
 ### Configuration Loading
 
-**Automatic** (based on pose source):
+**Automatic** — the config picks a preset by `is_indoor`:
+
+| Mode | Preset loaded |
+|------|---------------|
+| Indoor (vision) | `ardupilot/config/position_indoor.yaml` |
+| Outdoor (GPS) | `ardupilot/config/position_outdoor.yaml` |
+| SITL | `position_sim_indoor.yaml` / `position_sim_outdoor.yaml` |
+
 ```python
-# Indoor mode loads: ardupilot/config/position_indoor.yaml
-# Outdoor mode loads: ardupilot/config/position_outdoor.yaml
-# SITL presets use the position_sim_indoor.yaml / position_sim_outdoor.yaml variants.
 config = MavrosConfig(pose_source=PoseSource.VISION)
 drone = DroneFactory.create("mavros", config)
 ```
 
 **Explicit**:
+
 ```python
 config = MavrosConfig(
     pose_source=PoseSource.VISION,
@@ -248,6 +286,7 @@ config = MavrosConfig(
 ```
 
 **Runtime**:
+
 ```python
 drone.set_pid_config("/path/to/config.yaml")
 drone.set_pid_config(config_dict)
@@ -263,8 +302,8 @@ Controls response magnitude.
 - **Higher kp**: Faster response, potential overshoot
 - **Lower kp**: Slower response, more stable
 
-**Indoor**: 0.3-0.6 (vision pose is accurate)
-**Outdoor**: 0.6-1.0 (GPS noise requires higher gain)
+- **Indoor**: 0.3-0.6 (vision pose is accurate)
+- **Outdoor**: 0.6-1.0 (GPS noise requires higher gain)
 
 ### Integral Gain (ki)
 
@@ -273,8 +312,8 @@ Eliminates steady-state error.
 - **Higher ki**: Faster error elimination, potential instability
 - **Lower ki**: Slower convergence, more stable
 
-**Typical**: 0.0-0.1 (often not needed for position control)
-**Yaw**: 0.05-0.15 (helps with compass drift)
+- **Typical**: 0.0-0.1 (often not needed for position control)
+- **Yaw**: 0.05-0.15 (helps with compass drift)
 
 ### Derivative Gain (kd)
 
@@ -289,16 +328,16 @@ Dampens oscillations and overshoot.
 
 Velocity command limits (m/s for position, rad/s for yaw).
 
-**Indoor**: ±0.4-0.6 m/s (safe in constrained space)
-**Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)
-**Vertical**: ±0.15-0.8 m/s (asymmetric: slower ascent)
+- **Indoor**: ±0.4-0.6 m/s (safe in constrained space)
+- **Outdoor**: ±0.8-1.5 m/s (more aggressive allowed)
+- **Vertical**: ±0.15-0.8 m/s (asymmetric: slower ascent)
 
 ### Integral Limits
 
 Anti-windup protection.
 
-**Typical**: 10-20% of output limits
-**Purpose**: Prevent integral term from accumulating during saturation
+- **Typical**: 10-20% of output limits
+- **Purpose**: prevent the integral term from accumulating during saturation
 
 ## Default Configurations
 
@@ -328,6 +367,7 @@ yaw:
 ```
 
 **Rationale**:
+
 - Lower velocities for safety indoors
 - Asymmetric Z limits (slower ascent to avoid ceiling collisions)
 - Yaw integral term compensates for vision pose drift
@@ -358,6 +398,7 @@ yaw:
 ```
 
 **Rationale**:
+
 - Higher gains compensate for GPS latency and noise
 - Larger velocity limits for faster waypoint transitions
 - Symmetric Z limits (open outdoor environment)

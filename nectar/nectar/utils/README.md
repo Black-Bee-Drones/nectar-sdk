@@ -6,9 +6,10 @@ Shared utility functions for process management, GPS calculations, and position 
 
 | File | Description |
 |------|-------------|
-| `process.py` | Process lifecycle management using tmux/gnome-terminal |
+| `process.py` | Process lifecycle management and ROS 2 graph checks (tmux/gnome-terminal) |
 | `gps_calculate.py` | GPS coordinate transformations and distance calculations |
 | `position_utils.py` | Position/orientation conversions and transformations |
+| `log.py` | ANSI color/symbol helpers for terminal log output (`OK`, `ERR`, `WARN`, `ARROW`) |
 
 ## ProcessUtils
 
@@ -22,6 +23,9 @@ Manages external processes with tmux or gnome-terminal fallback.
 | `get_ros2_nodes(timeout)` | Get list of running ROS2 node names |
 | `is_node_running(node_pattern, timeout)` | Check if ROS2 node matching pattern is running |
 | `wait_for_node(node_pattern, timeout, poll_interval)` | Wait for ROS2 node to appear |
+| `get_ros2_topics(timeout)` | Get list of advertised ROS 2 topic names |
+| `is_topic_present(topic_pattern, timeout)` | Check if a topic matching the pattern is advertised |
+| `wait_for_topic(topic_pattern, timeout, poll_interval)` | Wait for a ROS 2 topic to appear |
 | `start_process(command, name, gui)` | Launch command in tmux session or terminal |
 | `has_process(name)` | Check if tmux session exists |
 | `kill_process(name)` | Terminate tmux session |
@@ -46,6 +50,10 @@ ProcessUtils.start_process(
 if ProcessUtils.wait_for_node("mavros_node", timeout=10.0):
     print("MAVROS node started")
 
+# Wait for a topic before connecting
+if ProcessUtils.wait_for_topic("/mavros/local_position/pose", timeout=10.0):
+    print("Local position topic is live")
+
 # Check if tmux session exists
 if ProcessUtils.has_process("mavros_node"):
     print("MAVROS session exists")
@@ -60,6 +68,21 @@ ProcessUtils.kill_process("mavros_node")
 - `kill_process()` returns True if session does not exist (no error)
 - All methods use Python logging module (no print statements)
 - ROS2 node detection uses `ros2 node list` command
+- Topic detection uses `ros2 topic list` command
+
+## Log helpers
+
+`log.py` provides ANSI-colored symbols for CLI output. They auto-disable when stderr is not a
+TTY, when `NO_COLOR` is set, or when `RCUTILS_COLORIZED_OUTPUT=0` (ROS 2 convention).
+
+```python
+from nectar.utils.log import OK, ERR, WARN, ARROW
+
+print(f"{OK} Driver started")
+print(f"{ERR} Connection failed")
+print(f"{WARN} Retrying...")
+print(f"{ARROW} Next step: arm")
+```
 
 ## GPS Utilities
 
@@ -122,7 +145,7 @@ grid = GPSCalculate.generate_point_grid(vertices, grid_shape=(10, 10))
 
 `PositionUtils.get_body_distance()` uses `Geodesic.WGS84.Inverse` ([Karney 2013](https://doi.org/10.1007/s00190-012-0578-z)) for GPS distance and bearing. Haversine (spherical, R=6371km) remains in `GPSCalculate` for general use.
 
-Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. Full benchmark: [`scripts/experiments/benchmark_geodesic_vs_haversine.py`](../../../scripts/experiments/benchmark_geodesic_vs_haversine.py)
+Points placed at exact known distances using `Geodesic.WGS84.Direct` (accurate to ~15nm). Both methods then compute the distance. See the [full benchmark script](../../../scripts/experiments/benchmark_geodesic_vs_haversine.py).
 
 **Distance error** (against exact known distances):
 
@@ -213,17 +236,21 @@ vx_body, vy_body, vz_body = PositionUtils.transform_takeoff_to_body_velocities(
 ### Supported Message Types
 
 **PositionUtils.get_body_distance()**:
+
 - `target`: `PositionTarget` (local) or `GeoPoseStamped` (GPS)
 - `current`: `PoseStamped` or `PoseWithCovarianceStamped` (local) or `NavSatFix` (GPS)
 
 **PositionUtils.get_yaw_from_pose()**:
+
 - `PoseStamped`, `PoseWithCovarianceStamped`, `GeoPoseStamped`, or `PositionTarget`
 
 **PositionUtils.compute_yaw_error()**:
+
 - `target_yaw`, `current_yaw`: floats in radians
 - `threshold`: optional deadband in radians (errors below this return 0.0)
 
 **PositionUtils.convert_position_to_target()**:
+
 - `PoseStamped` / `PoseWithCovarianceStamped` → `PositionTarget` (local)
 - `NavSatFix` → `GeoPoseStamped` (GPS, requires heading)
 

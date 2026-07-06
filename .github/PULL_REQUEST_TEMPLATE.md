@@ -1,6 +1,7 @@
 ## Title
 
 ## Description
+
 <!--- Provide a brief description of the changes being implemented and the issue or functionality being addressed. Keep the focus on the most important points and the purpose of the changes. -->
 
 ## Pull Request Type
@@ -26,10 +27,15 @@ Issue Number: N/A (Optional)
 <!-- Please describe the behavior or changes that are being added by this PR. Modified/Created Files -->
 
 - File Name 1 :
+
 Changes: Briefly describe the changes or implementations made to this file.
+
 - File Name 2 :
+
 Changes: Briefly describe the changes or implementations made to this file.
+
 - File Name 3 :
+
 Changes: Briefly describe the changes or implementations made to this file.
 (Continue the list as necessary for each file modified or created.)
 

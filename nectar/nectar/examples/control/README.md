@@ -1,7 +1,12 @@
 # Control Module Examples
 
-| File | Description | Key args |
-|------|-------------|------|
+Flight examples for every supported drone and transport, from a basic takeoff to an
+interactive navigation REPL. Run any script with `python3 <script>.py [flags]` from this
+directory (these scripts are not installed as ROS 2 executables). They default to
+`start_driver=False`, so start the matching driver, bridge, or simulator first.
+
+| Script | What it does | Key flags |
+|--------|--------------|-----------|
 | `basic.py` | Takeoff, velocity/hover/position patterns, land | `--drone {mavros,mavlink,px4,px4_mavlink,px4_dds,bebop,crazyflie}` · `--env {outdoor,indoor}` · `--mode {velocity,hover,position}` · `--connection` (mavlink/px4_mavlink) · `--height --side --velocity --precision --hover-time --cf-name --backend` |
 | `sensors.py` | Monitor GPS/vision/local data | `--source gps\|vision` |
 | `pid_simulation.py` | PID controller simulation | `--kp --ki --plot` |
@@ -14,34 +19,23 @@
 
 ## Basic Flight
 
-```bash
-# MAVROS -- velocity box at 2m altitude (outdoor / GPS, default)
-python3 basic.py --drone mavros --height 2.0
+`basic.py` arms, takes off to `--height`, flies one `--mode` pattern, and lands. Common invocations:
 
-# MAVROS indoor (vision pose, GPS-denied) -- position box
-python3 basic.py --drone mavros --env indoor --mode position --height 2.0
+| Case | Command |
+|------|---------|
+| ArduPilot / MAVROS, velocity box (outdoor GPS, default) | `python3 basic.py --drone mavros --height 2.0` |
+| ArduPilot / MAVROS, indoor position box (vision pose) | `python3 basic.py --drone mavros --env indoor --mode position --height 2.0` |
+| Crazyflie, hover in simulation | `python3 basic.py --drone crazyflie --mode hover --height 0.5 --backend sim --hover-time 10` |
+| Crazyflie, position box (0.6 m sides) | `python3 basic.py --drone crazyflie --mode position --height 0.5 --side 0.6` |
+| Crazyflie, velocity box | `python3 basic.py --drone crazyflie --mode velocity --height 0.4 --velocity 0.2 --side 0.5` |
+| Bebop, velocity box | `python3 basic.py --drone bebop --mode velocity` |
+| PX4 / MAVROS | `python3 basic.py --drone px4 --height 2.0` |
+| PX4 / direct MAVLink | `python3 basic.py --drone px4_mavlink --connection udp:0.0.0.0:14540 --height 2.0` |
+| PX4 / native uXRCE-DDS | `python3 basic.py --drone px4_dds --height 2.0` |
 
-# Crazyflie -- hover test in simulation
-python3 basic.py --drone crazyflie --mode hover --height 0.5 --backend sim --hover-time 10
+Expected result: the drone arms, climbs to `--height`, flies the selected pattern (a square for `velocity`/`position`, a timed hold for `hover`), then lands and disarms.
 
-# Crazyflie -- position box (move_to) with 0.6m sides
-python3 basic.py --drone crazyflie --mode position --height 0.5 --side 0.6
-
-# Crazyflie -- velocity box at 0.4m altitude
-python3 basic.py --drone crazyflie --mode velocity --height 0.4 --velocity 0.2 --side 0.5
-
-# Bebop -- velocity box
-python3 basic.py --drone bebop --mode velocity
-
-# PX4 over MAVROS (PX4 SITL: make sim-start FIRMWARE=px4 ENV=outdoor + make sim-bridge FIRMWARE=px4 ENV=outdoor)
-python3 basic.py --drone px4 --height 2.0
-
-# PX4 over direct pymavlink, no MAVROS (sim-bridge ... PROTOCOL=mavlink)
-python3 basic.py --drone px4_mavlink --connection udp:0.0.0.0:14540 --height 2.0
-
-# PX4 over native uXRCE-DDS (sim-bridge ... PROTOCOL=dds runs MicroXRCEAgent)
-python3 basic.py --drone px4_dds --height 2.0
-```
+For PX4 in simulation start the matching sim first: `make sim-start FIRMWARE=px4 ENV=outdoor` plus `make sim-bridge FIRMWARE=px4 ENV=outdoor` (add `PROTOCOL=mavlink` for `px4_mavlink`, `PROTOCOL=dds` for `px4_dds`, which runs MicroXRCEAgent).
 
 ### Modes
 
@@ -70,31 +64,16 @@ python3 pid_simulation.py --plot
 
 ArduPilot or PX4 — `--drone mavros|mavlink|px4` (default `mavros`). `--mode indoor` uses the vision pose source, `--mode outdoor` (default) uses GPS.
 
-```bash
-# Full outdoor flight (default: PID strategy)
-python3 navigation.py --mode outdoor
-
-# Indoor (vision pose) over MAVROS
-python3 navigation.py --mode indoor --test body
-
-# Direct pymavlink against SITL on the secondary port (5762)
-python3 navigation.py --drone mavlink --connection tcp:127.0.0.1:5762 --test body
-
-# Use EKF local position instead of raw GPS
-python3 navigation.py --strategy pid-ekf
-
-# Local setpoint (FCU handles position control)
-python3 navigation.py --strategy position --test body
-
-# GPS global setpoint for long-range waypoints
-python3 navigation.py --mode outdoor --test gps --strategy position-global
-
-# Hand-held test (no takeoff, verify navigation logic)
-python3 navigation.py --no-takeoff --test body
-
-# Custom distance, specific tests, log per-leg results, repeat 3x
-python3 navigation.py --test body takeoff-ref --distance 3.0 --csv runs.csv --loop 3
-```
+| Case | Command |
+|------|---------|
+| Full outdoor flight (default PID strategy) | `python3 navigation.py --mode outdoor` |
+| Indoor (vision pose) over MAVROS | `python3 navigation.py --mode indoor --test body` |
+| Direct MAVLink against SITL secondary port (5762) | `python3 navigation.py --drone mavlink --connection tcp:127.0.0.1:5762 --test body` |
+| EKF local position instead of raw GPS | `python3 navigation.py --strategy pid-ekf` |
+| Local setpoint (FCU handles position control) | `python3 navigation.py --strategy position --test body` |
+| GPS global setpoint (long-range waypoints) | `python3 navigation.py --mode outdoor --test gps --strategy position-global` |
+| Hand-held test (no takeoff) | `python3 navigation.py --no-takeoff --test body` |
+| Custom distance, selected tests, CSV log, repeat 3x | `python3 navigation.py --test body takeoff-ref --distance 3.0 --csv runs.csv --loop 3` |
 
 ### Tests (`--test`, one or more; default `all`)
 
@@ -114,19 +93,12 @@ python3 navigation.py --test body takeoff-ref --distance 3.0 --csv runs.csv --lo
 
 ## Interactive Navigation
 
-```bash
-# Outdoor with default PID
-python3 interactive_navigation.py --mode outdoor
-
-# Direct pymavlink transport
-python3 interactive_navigation.py --drone mavlink --mode outdoor
-
-# Outdoor with EKF, 3m altitude
-python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0
-
-# Hand-held testing (no arm/takeoff)
-python3 interactive_navigation.py --no-takeoff
-```
+| Case | Command |
+|------|---------|
+| Outdoor, default PID | `python3 interactive_navigation.py --mode outdoor` |
+| Direct MAVLink transport | `python3 interactive_navigation.py --drone mavlink --mode outdoor` |
+| Outdoor, EKF, 3 m altitude | `python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0` |
+| Hand-held (no arm/takeoff) | `python3 interactive_navigation.py --no-takeoff` |
 
 Once running, type waypoints at the `nav>` prompt:
 
@@ -159,7 +131,10 @@ nav> land
 python3 obstacles.py
 ```
 
-Attaches a `DepthObstacleDetector` (RealSense D435i) with a pause strategy and runs an obstacle-aware `move_to`. Requires a connected depth camera; see [`control/obstacles/README.md`](../../control/obstacles/README.md) for detectors and strategies.
+Attaches a `DepthObstacleDetector` (RealSense D435i) with a `SequenceStrategy`
+(lateral-pass-and-return) and runs an obstacle-aware `move_to`. Requires a connected depth
+camera; see [`control/obstacles/README.md`](../../control/obstacles/README.md) for detectors
+and strategies.
 
 ## Servo / PWM Test
 
@@ -168,12 +143,15 @@ can verify the correct AUX OUT channel and the PWM endpoints (e.g. hook hold /
 release) on the bench. The script never arms the drone and never takes off —
 keep props off.
 
-```bash
-# MAVROS already running. Defaults: channel=3 (FCU ch 11 = AUX OUT 3),
-# hold=1000us, release=2000us.
-python3 servo_test.py
+**Defaults** — channel 3 (FCU ch 11 = AUX OUT 3), hold 1000 us, release 2000 us; MAVROS already running:
 
-# Custom channel and presets
+```bash
+python3 servo_test.py
+```
+
+**Custom channel and presets**
+
+```bash
 python3 servo_test.py --channel 4 --hold 1100 --release 1900
 ```
 

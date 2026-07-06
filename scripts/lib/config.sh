@@ -14,10 +14,13 @@ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-14}"
 # release-3.2 = Humble / JetPack 6.x, built via isaac_ros_common/run_dev.sh.
 ISAAC_ROS_VERSION="${ISAAC_ROS_VERSION:-release-3.2}"
 
-# PyTorch
+# PyTorch - Override with env vars; if you bump
+# TORCH_VERSION, set a matching TORCHVISION_VERSION too.
 TORCH_VARIANT="${TORCH_VARIANT:-auto}"
-TORCH_VERSION="${TORCH_VERSION:-}"
-TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
+TORCH_VERSION="${TORCH_VERSION:-2.9.1}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.24.1}"
+
+export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-600}"
 
 TORCH_CONSTRAINTS_FILE="/tmp/nectar-torch-constraints.txt"
 TORCH_INDEX_FILE="/tmp/nectar-torch-index.txt"
@@ -80,12 +83,12 @@ SYSTEM_PACKAGES=(
     libssl-dev libusb-1.0-0-dev
 )
 
-# ROS2 apt packages
+# ROS2 apt packages (core, distro-agnostic). MAVROS is NOT here: it is specific
+# to the MAVROS control backend and is installed on demand via `make drone-mavros`
+# (scripts/lib/drones.sh). Keep this list to what every install needs.
 ROS2_PACKAGES=(
     "ros-${ROS_DISTRO}-ros-base"
     "ros-${ROS_DISTRO}-rviz2"
-    "ros-${ROS_DISTRO}-mavros"
-    "ros-${ROS_DISTRO}-mavros-extras"
     "ros-${ROS_DISTRO}-tf-transformations"
     "ros-${ROS_DISTRO}-ament-cmake"
     "ros-${ROS_DISTRO}-vision-opencv"
@@ -155,3 +158,8 @@ detect_workspace() {
 WORKSPACE_DIR="$(detect_workspace)"
 
 PKG_DIR="${PROJECT_DIR}/${ROS2_PKG_NAME}"
+
+# Shared workspace virtual environment. One venv per colcon
+# workspace, reused by the SDK and any sibling project (e.g. competition code).
+# Override with NECTAR_VENV=/custom/path; an already-active VIRTUAL_ENV wins.
+NECTAR_VENV="${NECTAR_VENV:-${VIRTUAL_ENV:-${WORKSPACE_DIR}/.venv}}"

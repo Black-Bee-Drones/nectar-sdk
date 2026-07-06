@@ -138,13 +138,17 @@ Commands:
 
 ### Examples
 
+**Detection**:
+
 ```bash
-# Detection
 nectar-ai detect train --config configs/visdrone_yolo26n.yaml
 nectar-ai detect dataset download --source visdrone --output data/visdrone
 nectar-ai detect eval --model-path best.pt --dataset-path data/visdrone --framework ultralytics
+```
 
-# Segmentation
+**Segmentation**:
+
+```bash
 nectar-ai segment train --config configs/crackseg_yolo26n_seg.yaml
 nectar-ai segment dataset download --source ultralytics --dataset crack-seg --output data/crack-seg
 nectar-ai segment dataset download --source huggingface --repo user/my-seg --format yolo --output data/my-seg
@@ -158,14 +162,18 @@ nectar-ai segment predict --model best.pt --input image.jpg --output predictions
 
 Both detection and segmentation support training via YAML config or CLI args.
 
+**Detection**:
+
 ```python
-# Detection
 from nectar.ai.detection import Detector, TrainingConfig
 detector = Detector("yolov8n.pt")
 detector.load()
 result = detector.train(TrainingConfig(dataset_path="data/visdrone", epochs=100))
+```
 
-# Segmentation
+**Segmentation**:
+
+```python
 from nectar.ai.segmentation import Segmentor, SegTrainingConfig
 segmentor = Segmentor("yolo26n-seg.pt")
 segmentor.load()
@@ -176,11 +184,15 @@ result = segmentor.train(SegTrainingConfig(dataset_path="data/crack-seg/data.yam
 
 Both modules generate evaluation artifacts: confusion matrix, error analysis, prediction samples, per-class metrics CSV/JSON. Detection produces 4 curve plots (PR, P, R, F1). Segmentation produces 8 curve plots (4 Box + 4 Mask) with separate box and mask mAP via `torchmetrics`.
 
-```python
-# Detection
-from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
+**Detection**:
 
-# Segmentation
+```python
+from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
+```
+
+**Segmentation**:
+
+```python
 from nectar.ai.segmentation.evaluation import SegmentationEvaluator
 ```
 
@@ -192,11 +204,14 @@ Both modules use the same data and output directories:
 
 ```python
 from nectar.ai.paths import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR
-# DEFAULT_DATA_DIR  -> nectar/nectar/ai/data/
-# DEFAULT_OUTPUT_DIR -> nectar/nectar/ai/outputs/
 ```
 
-These directories are gitignored.
+| Constant | Resolves to |
+|----------|-------------|
+| `DEFAULT_DATA_DIR` | `nectar/nectar/ai/data/` |
+| `DEFAULT_OUTPUT_DIR` | `nectar/nectar/ai/outputs/` |
+
+Both directories are gitignored.
 
 ## Supported Frameworks
 
@@ -208,12 +223,16 @@ These directories are gitignored.
 
 ## Device Management
 
-`device="auto"` checks: CUDA -> MPS -> CPU.
+Pass `device` to any model constructor:
+
+| `device` | Behavior |
+|----------|----------|
+| `"auto"` | Auto-detect (CUDA → MPS → CPU) |
+| `"cpu"` | Force CPU |
+| `"0"` | GPU index 0 |
 
 ```python
-segmentor = Segmentor("model.pt", device="auto")   # Auto-detect
-segmentor = Segmentor("model.pt", device="cpu")    # Force CPU
-segmentor = Segmentor("model.pt", device="0")      # GPU 0
+segmentor = Segmentor("model.pt", device="auto")
 ```
 
 ## Dependencies
@@ -231,10 +250,14 @@ segmentor = Segmentor("model.pt", device="0")      # GPU 0
 
 ### Installation
 
-```bash
-# PyTorch (match your CUDA version)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+**PyTorch** (match your CUDA version):
 
-# AI dependencies
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+**AI dependencies**:
+
+```bash
 pip install -e ".[ai]"
 ```

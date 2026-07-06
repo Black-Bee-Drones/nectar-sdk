@@ -2,7 +2,7 @@
 
 Firmware-agnostic flight logic shared by every MAVLink-class autopilot in the SDK. ArduPilot and PX4 are the **same vehicle behavior reached through different firmware semantics and transports** — all navigation, takeoff/land detection, GPS math, PID control, and movement API live here exactly once. Firmware specializations ([ardupilot](../ardupilot/README.md), [px4](../px4/README.md)) implement only the parts that differ; transports ([mavros](../mavros/README.md), [mavlink](../mavlink/README.md)) implement only the wire plumbing.
 
-> This README is the reference for the shared behavior — navigation methods, reference frames, altitude sources, takeoff/land detection, GPS/EGM96 handling, and PID configuration — and applies to every vehicle (ArduPilot and PX4 alike). Firmware-specific semantics are in [ardupilot/README.md](../ardupilot/README.md) (GUIDED, WPNAV/GUID_OPTIONS, native RTL params) and [px4/README.md](../px4/README.md) (OFFBOARD, mode names, RTL params).
+> This README is the reference for the shared behavior — navigation methods, reference frames, altitude sources, takeoff/land detection, GPS/EGM96 handling, and PID configuration — and applies to every vehicle (ArduPilot and PX4 alike). Firmware-specific semantics are in [ArduPilot](../ardupilot/README.md) (GUIDED, WPNAV/GUID_OPTIONS, native RTL params) and [PX4](../px4/README.md) (OFFBOARD, mode names, RTL params).
 
 ## Design
 
@@ -121,7 +121,7 @@ The SDK's `MoveReference` enum maps to a wire `TargetFrame`:
 | **WORLD** | LOCAL (FRAME_LOCAL_NED) | vx=east, vy=north, vz=up (absolute directions) |
 | **TAKEOFF** | BODY (FRAME_BODY_NED) | Velocities in takeoff heading, rotated to current body frame |
 
-The EKF local frame needs an origin — outdoors GPS sets it automatically; indoors it must be set manually before flight (firmware-specific — see [ardupilot/README.md](../ardupilot/README.md#ekf-origin-indoor-requirement)). Without it, the local pose is not published and `FRAME_LOCAL_NED` commands won't work.
+> **Note:** the EKF local frame needs an origin — outdoors GPS sets it automatically; indoors it must be set manually before flight (firmware-specific — see [ArduPilot](../ardupilot/README.md#ekf-origin-indoor-requirement)). Without it, the local pose is not published and `FRAME_LOCAL_NED` commands won't work.
 
 ## Distance Sensors
 
@@ -163,6 +163,7 @@ drone.takeoff(altitude=2.0, adjust_altitude=False)
 Climb progress (altitude, gain, vertical velocity) is logged at roughly 1 Hz so a long takeoff stays observable.
 
 **Short-circuits**:
+
 - Already airborne (`is_airborne`): skip the flow and return success.
 - Settled but `height_gain < _LIFTOFF_DELTA` while `is_airborne` reports flight: accept (sensor-glitch tolerance).
 - Liftoff never detected after `timeout`: disarm and retry; on the last attempt, fail.
@@ -190,11 +191,12 @@ drone.land(timeout=45.0)
 ```
 
 **Sequence**:
+
 1. Capture `start_alt`.
 2. Send `_command_land()` (FCU land command on ArduPilot, `AUTO.LAND` on PX4).
 3. **Wait for touchdown** (`wait_landed`): the drone has descended (`start_alt - alt > _LIFTOFF_DELTA` or `alt < _LANDED_THRESHOLD`) **and** its descent velocity over `_LAND_SETTLE_WINDOW` has dropped below `_LAND_STOP_VELOCITY`, **or** the FCU reports `armed=False`.
 
-`land()` returns `True` at touchdown without waiting for the autopilot's disarm delay, so the caller is unblocked as soon as the drone is on the ground. Check `drone.is_armed` to confirm motors are off.
+> **Note:** `land()` returns `True` at touchdown without waiting for the autopilot's disarm delay, so the caller is unblocked as soon as the drone is on the ground. Check `drone.is_armed` to confirm motors are off.
 
 | Constant | Default | Meaning |
 |---|---|---|
@@ -235,7 +237,7 @@ Navigation lives in [`VehicleNavigator`](navigator.py), keeping the drone classe
 | `move_to_gps` | VISION | any | N/A | any | Unsupported |
 | `move_velocity` | any | N/A | BODY, WORLD, TAKEOFF | N/A | Direct velocity command |
 
-PX4 shares this matrix; the one deviation is `POSITION_GLOBAL` over the native uXRCE-DDS backend (`px4_dds`), where global setpoints are local-frame only — use a PID method or the MAVROS path (see [px4/README.md](../px4/README.md#native-uxrce-dds-path-px4_dds)).
+PX4 shares this matrix; the one deviation is `POSITION_GLOBAL` over the native uXRCE-DDS backend (`px4_dds`), where global setpoints are local-frame only — use a PID method or the MAVROS path (see [PX4](../px4/README.md#native-uxrce-dds-path-px4_dds)).
 
 ### `move_to` Parameter Behavior
 
@@ -277,29 +279,45 @@ The position target is computed at call time in the original heading direction �
 
 ### Navigation Examples
 
+**Body-relative** (relative to current position):
+
 ```python
-# BODY (relative to current position)
 drone.move_to(x=2.0, y=0.0, z=0.0)            # 2m forward
 drone.move_to(z=0.5)                           # 0.5m up (x/y disabled)
 drone.move_to(x=3.0, yaw=45.0)                 # rotate 45°, then 3m to target
+```
 
-# TAKEOFF (absolute offsets from takeoff origin)
+**Takeoff-relative** (absolute offsets from the takeoff origin):
+
+```python
 drone.move_to(x=2.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)
 drone.move_to(x=0.0, y=0.0, z=0.0, reference=MoveReference.TAKEOFF)  # back to takeoff
+```
 
-# Terrain following (z = height above ground)
+**Terrain following** (z = height above ground):
+
+```python
 drone.move_to(x=2.0, z=0.3, altitude_source=AltitudeSource.LIDAR)   # fly at 0.3m AGL
+```
 
-# EKF local PID (unified indoor/outdoor) and FCU position control
+**Navigation method** (EKF local PID, or FCU position control):
+
+```python
 drone.move_to(x=2.0, method=NavigationMethod.PID_EKF)
 drone.move_to(x=2.0, y=1.0, method=NavigationMethod.POSITION)
+```
 
-# GPS waypoints (outdoor)
+**GPS waypoints** (outdoor):
+
+```python
 drone.move_to_gps(latitude=-27.1234, longitude=-48.4567, altitude=15.0, precision=1.0)
 drone.move_to_gps(latitude=-27.1234, longitude=-48.4567, altitude=15.0,
                   method=NavigationMethod.POSITION_GLOBAL)
+```
 
-# Velocity
+**Velocity**:
+
+```python
 drone.move_velocity(vx=0.5, reference=MoveReference.BODY)     # forward (heading-relative)
 drone.move_velocity(vx=0.5, reference=MoveReference.WORLD)    # east (ENU absolute)
 drone.move_velocity(vx=1.0, duration=2.0)                     # forward for 2s, then stop
@@ -375,7 +393,7 @@ Direct setpoint publishing via `navigate_setpoint()`. The FCU receives a full ta
 
 Both verify the target yaw is reached (within `YAW_THRESHOLD = 3°`) before declaring arrival.
 
-How a firmware routes a published setpoint to its onboard controllers is firmware-specific: ArduPilot's GUIDED-mode `AC_PosControl`/`AC_WPNav` selection and `WPNAV_*` parameters are in [ardupilot/README.md](../ardupilot/README.md#ardupilot-guided-mode-position-controllers); PX4's continuous OFFBOARD setpoint pump is in [px4/README.md](../px4/README.md).
+How a firmware routes a published setpoint to its onboard controllers is firmware-specific: ArduPilot's GUIDED-mode `AC_PosControl`/`AC_WPNav` selection and `WPNAV_*` parameters are in [ArduPilot](../ardupilot/README.md#ardupilot-guided-mode-position-controllers); PX4's continuous OFFBOARD setpoint pump is in [PX4](../px4/README.md).
 
 ### Reference Frame Transformations
 
@@ -398,7 +416,7 @@ drone.rtl(method=RTLMethod.NATIVE)                              # FCU RTL, auto-
 ```
 
 - **NAVIGATE**: optionally climb/descend to `altitude`, navigate to the takeoff position (`x=0, y=0, z=0, reference=TAKEOFF`, `PID_EKF`), then land if `land=True`. This path is identical across firmwares.
-- **NATIVE**: switches the FCU into its own return-to-launch mode; the mode name and altitude/loiter parameters are firmware-specific — see [ardupilot/README.md](../ardupilot/README.md#rtl) (`RTL`, `RTL_ALT`/`RTL_ALT_FINAL`) and [px4/README.md](../px4/README.md) (`AUTO.RTL`, `RTL_RETURN_ALT`/`RTL_LAND_DELAY`).
+- **NATIVE**: switches the FCU into its own return-to-launch mode; the mode name and altitude/loiter parameters are firmware-specific — see [ArduPilot](../ardupilot/README.md#rtl) (`RTL`, `RTL_ALT`/`RTL_ALT_FINAL`) and [PX4](../px4/README.md) (`AUTO.RTL`, `RTL_RETURN_ALT`/`RTL_LAND_DELAY`).
 
 ## GPS Utilities
 
@@ -412,7 +430,7 @@ GPS altitude (WGS84 ellipsoid) differs from AMSL by the geoid height. Global set
 AMSL = GPS_ellipsoid_altitude - geoid_height + relative_altitude
 ```
 
-The EGM96 dataset must be installed (provided by [GeographicLib](https://geographiclib.sourceforge.io/), read from `/usr/share/GeographicLib/geoids/egm96-5.pgm`).
+> **Note:** the EGM96 dataset must be installed (provided by [GeographicLib](https://geographiclib.sourceforge.io/), read from `/usr/share/GeographicLib/geoids/egm96-5.pgm`).
 
 ### API
 
@@ -439,25 +457,25 @@ east, north = GPSUtils.local_offset(                           # equirectangular
 
 ## PID Configuration
 
-`VehicleDrone` loads a `PositionPIDConfig` (per-axis `x/y/z/yaw` `PIDConfig`) at construction. If `pid_config_file` is set it is loaded from there; otherwise the bundled per-firmware presets (`position_indoor.yaml` / `position_outdoor.yaml`, under each firmware's `config/` — [ardupilot/config](../ardupilot/config) or [px4/config](../px4/config)) are selected by `is_indoor`. SITL presets ship as `position_sim_indoor.yaml` / `position_sim_outdoor.yaml` — point `pid_config_file` at them when flying the simulator. Update at runtime from a file path, dict, or object:
+`VehicleDrone` loads a `PositionPIDConfig` (per-axis `x/y/z/yaw` `PIDConfig`) at construction. If `pid_config_file` is set it is loaded from there; otherwise the bundled per-firmware presets (`position_indoor.yaml` / `position_outdoor.yaml`, under each firmware's `config/` — [ArduPilot presets](../ardupilot/config) or [PX4 presets](../px4/config)) are selected by `is_indoor`. SITL presets ship as `position_sim_indoor.yaml` / `position_sim_outdoor.yaml` — point `pid_config_file` at them when flying the simulator. Update at runtime from a file path, dict, or object:
 
 ```python
 drone.set_pid_config("/path/to/config.yaml")
 drone.set_pid_config({"x": {"kp": 0.8, "output_min": -1.0, "output_max": 1.0}})
 ```
 
-The controller internals (gains, output clamps, integral handling) live in [`pid/README.md`](../pid/README.md).
+The controller internals (gains, output clamps, integral handling) live in the [PID module](../pid/README.md).
 
 ## Transports
 
 The same vehicle is reached over interchangeable transports, all implementing the `VehicleTransport` ABC:
 
-- [`mavros/`](../mavros/README.md) — `MavrosTransport`: subscriptions → telemetry, service clients → commands, publishers → setpoints. Requires a running `mavros_node`. Shared by ArduPilot and PX4.
-- [`mavlink/`](../mavlink/README.md) — `PymavlinkTransport`: owns the FCU link directly (RX timer decode, direct `mav.*_send`), built-in vision bridge. Firmware-neutral via an injected mode codec.
-- [`px4/`](../px4/README.md) — `Px4DdsTransport`: native PX4 uORB over the uXRCE-DDS bridge (`px4_msgs`), no MAVROS.
+- [MAVROS transport](../mavros/README.md) — `MavrosTransport`: subscriptions → telemetry, service clients → commands, publishers → setpoints. Requires a running `mavros_node`. Shared by ArduPilot and PX4.
+- [Direct MAVLink transport](../mavlink/README.md) — `PymavlinkTransport`: owns the FCU link directly (RX timer decode, direct `mav.*_send`), built-in vision bridge. Firmware-neutral via an injected mode codec.
+- [PX4 uXRCE-DDS transport](../px4/README.md) — `Px4DdsTransport`: native PX4 uORB over the uXRCE-DDS bridge (`px4_msgs`), no MAVROS.
 
 ## References
 
 - [MAVLink common messages](https://mavlink.io/en/messages/common.html) · [MAV_FRAME](https://mavlink.io/en/messages/common.html#MAV_FRAME) · [SET_POSITION_TARGET_LOCAL_NED](https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED)
 - [Understanding Altitude](https://ardupilot.org/copter/docs/common-understanding-altitude.html) · [EGM96](https://en.wikipedia.org/wiki/EGM96) · [GeographicLib](https://geographiclib.sourceforge.io/)
-- Firmware specifics: [ardupilot/README.md](../ardupilot/README.md) · [px4/README.md](../px4/README.md) · PID tuning: [pid/README.md](../pid/README.md)
+- Firmware specifics: [ArduPilot](../ardupilot/README.md) · [PX4](../px4/README.md) · PID tuning: [PID](../pid/README.md)

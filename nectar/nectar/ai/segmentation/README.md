@@ -1,8 +1,26 @@
 # Segmentation Module
 
-Instance segmentation API supporting Ultralytics YOLO, HuggingFace Transformers (MaskFormer), and RF-DETR Seg frameworks.
+Instance segmentation across Ultralytics YOLO, HuggingFace Transformers (MaskFormer), and
+RF-DETR Seg behind one `Segmentor` — load a model, call `segment`, and get typed masks. The
+same API covers training and evaluation, with dataset tooling and a `nectar-ai segment` CLI.
 
-## Architecture
+## At a glance
+
+```python
+from nectar.ai.segmentation import Segmentor
+
+segmentor = Segmentor("yolov8n-seg.pt")     # framework auto-detected from the model name
+segmentor.load()
+result = segmentor.segment(image)
+for seg in result:
+    print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
+```
+
+## Concepts
+
+`Segmentor` is a factory over three framework backends (`UltralyticsSegModel`,
+`TransformersSegModel`, `RFDETRSegModel`), all sharing `BaseSegmentationModel`, the same
+typed results, dataset handling, and evaluation:
 
 ```mermaid
 flowchart TB
@@ -71,48 +89,32 @@ flowchart TB
     RM -->|converts| Converter
 ```
 
-## Quick Start
-
-```python
-from nectar.ai.segmentation import Segmentor
-
-# Inference
-segmentor = Segmentor("yolov8n-seg.pt")
-segmentor.load()
-result = segmentor.segment(image)
-for seg in result:
-    print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
-
-# Training
-from nectar.ai.segmentation import SegTrainingConfig
-config = SegTrainingConfig(
-    dataset_path="/path/to/dataset/data.yaml",
-    epochs=50,
-    batch_size=16,
-    output_dir="outputs/my-run",
-    tensorboard=True,
-)
-result = segmentor.train(config)
-```
-
 ## Segmentor
 
 Factory-based interface with auto-detection or explicit framework selection.
+
+**Auto-detect from the model name**:
 
 ```python
 from nectar.ai.segmentation import Segmentor
 from nectar.ai.detection.detector import Framework
 
-# Auto-detect from model name
 segmentor = Segmentor("yolov8n-seg.pt")
 segmentor = Segmentor("rfdetr-seg-nano")
 segmentor = Segmentor("facebook/maskformer-swin-tiny-coco")
+```
 
-# Explicit framework
+**Explicit framework**:
+
+```python
 segmentor = Segmentor("model.pt", framework="ultralytics")
 segmentor = Segmentor("rfdetr-seg-medium", framework=Framework.RFDETR)
 segmentor = Segmentor("facebook/maskformer-swin-tiny-coco", framework=Framework.TRANSFORMERS)
+```
 
+Load and run:
+
+```python
 segmentor.load()
 result = segmentor.segment(image, conf=0.5)
 annotated = segmentor.draw_segmentations(image, result, show_masks=True, show_boxes=True)
@@ -228,6 +230,7 @@ Each provides a `to_*_args()` method that maps to the underlying framework's tra
 ### Dataset Format Conversion
 
 The training pipeline auto-converts between YOLO-seg and COCO-seg formats as needed:
+
 - Ultralytics requires YOLO-seg format (polygon labels in `.txt` files)
 - RF-DETR and Transformers require COCO format (polygon annotations in JSON)
 
@@ -292,15 +295,22 @@ nectar-ai segment eval \
 
 ### Download
 
-```bash
-# Ultralytics datasets (crack-seg, coco8-seg, etc.)
-nectar-ai segment dataset download --source ultralytics --dataset crack-seg --output data/crack-seg
+**Ultralytics datasets** (crack-seg, coco8-seg, etc.):
 
-# Roboflow projects
+```bash
+nectar-ai segment dataset download --source ultralytics --dataset crack-seg --output data/crack-seg
+```
+
+**Roboflow projects**:
+
+```bash
 nectar-ai segment dataset download --source roboflow --api-key KEY \
   --workspace ws --project proj --version 1 --roboflow-format yolov8
+```
 
-# HuggingFace Hub (native seg dataset -> YOLO-seg or COCO-seg on disk)
+**HuggingFace Hub** (native seg dataset → YOLO-seg or COCO-seg on disk):
+
+```bash
 nectar-ai segment dataset download --source huggingface \
   --repo blackbeedrones/sae-2026-hook --format yolo --output data/sae-2026-hook
 ```
@@ -313,12 +323,17 @@ shards plus a generated dataset card. The Hub viewer renders bounding-box
 overlays (derived from the polygons); the polygons themselves are stored for
 mask training and round-trip back to YOLO-seg via `HuggingFaceSegHandler`.
 
+**Native upload** (Parquet + viewer):
+
 ```bash
 nectar-ai segment dataset upload --target huggingface \
   --repo user/my-seg-dataset --dataset data/my-seg \
   --public --title "My Seg Dataset" --model-repo user/my-model
+```
 
-# Upload files as-is (no viewer / no Parquet):
+**Raw upload** (files as-is, no viewer / no Parquet):
+
+```bash
 nectar-ai segment dataset upload --target huggingface --raw \
   --repo user/my-seg-dataset --dataset data/my-seg
 ```
@@ -387,7 +402,9 @@ Commands:
 
 ### HuggingFace Hub Upload
 
-All frameworks upload checkpoints to HuggingFace Hub **during training** (between epochs), not just after. Configured via `push_to_hub: true` and `hub_model_id` in YAML config. Requires `HF_TOKEN` env var.
+All frameworks upload checkpoints to HuggingFace Hub **during training** (between epochs), not just after. Configured via `push_to_hub: true` and `hub_model_id` in YAML config.
+
+> **Note:** requires the `HF_TOKEN` environment variable.
 
 | Framework | Mechanism | Upload Timing |
 |-----------|-----------|---------------|
@@ -400,6 +417,7 @@ Callback implementations are shared across detection/segmentation via `detection
 ### TensorBoard
 
 All frameworks log to TensorBoard when `tensorboard: true` in config:
+
 - **Ultralytics**: events under `{save_dir}/` (configured via `ultralytics_settings`)
 - **RF-DETR**: `TensorBoardLogger` added by `build_trainer` (PTL)
 - **Transformers**: `report_to: ["tensorboard"]` in `TrainingArguments`
@@ -490,7 +508,7 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 - Download, analyze, train, eval, predict all working via CLI
 - Per-epoch HF upload via shared `setup_ultralytics_hf_callbacks()`
 - Evaluation uses `MetricTarget.MASKS` for proper mask-based metrics
-- Standalone evaluation generates 22 artifacts (9 plots, CSVs, JSONs)
+- Standalone evaluation generates 16 artifacts (13 PNG plots plus CSV/JSON reports; see [Generated Artifacts](#generated-artifacts) above)
 
 ### RF-DETR Seg Nano -- Full pipeline
 
@@ -526,46 +544,14 @@ Example training configs in `configs/`:
 | `crackseg_rfdetr_seg_nano.yaml` | RF-DETR | RF-DETR Seg Nano, 10 epochs, 312px, cosine LR |
 | `crackseg_mask2former.yaml` | Transformers | MaskFormer Swin-Tiny, 2 epochs, 320px |
 
-## Module Structure
+## Layout
 
-```
-segmentation/
-├── __init__.py
-├── README.md
-├── segmentor.py                # Segmentor facade (factory pattern)
-├── cli/
-│   ├── train.py                # nectar-ai segment train
-│   ├── predict.py              # nectar-ai segment predict
-│   ├── evaluate.py             # nectar-ai segment eval
-│   └── dataset.py              # nectar-ai segment dataset
-├── configs/
-│   ├── crackseg_yolo26n_seg.yaml
-│   ├── crackseg_yolo11n_seg.yaml
-│   ├── crackseg_rfdetr_seg_nano.yaml
-│   └── crackseg_mask2former.yaml
-├── core/
-│   ├── base.py                 # BaseSegmentationModel
-│   ├── configs.py              # SegTrainingConfig, SegEvaluationConfig, SegEvaluationMetrics
-│   ├── types.py                # Segmentation, SegmentationResult, SegmentationInput, SegPrediction
-│   └── exceptions.py           # SegmentationError hierarchy
-├── datasets/
-│   ├── format.py               # SegFormatConverter (YOLO-seg <-> COCO-seg)
-│   ├── hf_converter.py         # YOLO-seg/COCO-seg <-> HuggingFace DatasetDict + dataset card
-│   ├── upload.py               # HuggingFaceSegDatasetUploader (native Parquet upload)
-│   ├── analyze.py              # SegDatasetAnalyzer
-│   └── handlers/
-│       ├── ultralytics_seg.py  # UltralyticsSegHandler (crack-seg, etc.)
-│       ├── roboflow.py         # RoboflowSegHandler
-│       └── huggingface.py      # HuggingFaceSegHandler (download)
-├── evaluation/
-│   ├── evaluator.py            # SegmentationEvaluator
-│   ├── analysis.py             # PR curves, error statistics
-│   └── visualizations.py       # Plots (PR, confusion matrix, error, prediction samples)
-├── models/
-│   ├── ultralytics.py          # UltralyticsSegModel
-│   ├── rfdetr.py               # RFDETRSegModel
-│   ├── transformers.py         # TransformersSegModel
-│   └── dataset.py              # SegmentationDataset, load_segmentation_dataset
-└── training/
-    └── config.py               # Framework-specific training configs
-```
+The `segmentation/` package mirrors `detection/`:
+
+- `segmentor.py` — the `Segmentor` facade and factory
+- `core/` — `BaseSegmentationModel`, segmentation types, `SegTrainingConfig`/`SegEvaluationConfig`, exceptions
+- `models/` — framework backends (`UltralyticsSegModel`, `RFDETRSegModel`, `TransformersSegModel`) and dataset loading
+- `training/` — framework-specific training configs
+- `evaluation/` — `SegmentationEvaluator`, PR/error analysis, plots
+- `datasets/` — YOLO-seg/COCO-seg conversion, HuggingFace upload, analysis, and download handlers
+- `cli/`, `configs/` — the `nectar-ai segment` CLI and example configs

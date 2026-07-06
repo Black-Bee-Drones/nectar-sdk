@@ -21,17 +21,11 @@ class MavlinkConnection:
     """
     Thin wrapper around ``pymavlink.mavutil.mavlink_connection``.
 
+    The connection string and baud rate are passed to :meth:`connect`, not the
+    constructor.
+
     Parameters
     ----------
-    device : str
-        Connection string. Examples:
-
-        - ``"udp:127.0.0.1:14551"`` (UDP listener)
-        - ``"udpout:192.168.1.10:14550"`` (UDP sender)
-        - ``"tcp:192.168.1.10:5760"`` (TCP)
-        - ``"/dev/ttyUSB0"`` (serial; requires ``baud``)
-    baud : int, optional
-        Serial baud rate. Ignored for network connections. Default 921600.
     source_system : int, optional
         MAVLink system ID this connection presents itself as. Default 1
         (same system as the FCU; ArduPilot accepts companion-computer

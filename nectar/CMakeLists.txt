@@ -114,11 +114,29 @@ install(DIRECTORY simulation/
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  # Style/format linting is owned by ruff (pyproject.toml + pre-commit + the
+  # code-quality CI workflow). Disable the overlapping ament linters so they do
+  # not enforce a conflicting convention; ruff is the single source of truth.
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
+  set(ament_cmake_flake8_FOUND TRUE)
+  set(ament_cmake_pep257_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 
+  # Tier-2 functional suite. Each module is its own pytest target so colcon runs
+  # it in a separate process -- rclpy contexts, Qt and torch do not compose
+  # cleanly in one. Hardware-/GPU-gated tests are deselected by default
+  # (addopts in pyproject.toml); checks self-skip when a dep/device/sim is absent.
   find_package(ament_cmake_pytest REQUIRED)
+  set(_nectar_functional_dir "${CMAKE_CURRENT_SOURCE_DIR}/test/functional")
+  ament_add_pytest_test(functional_core        "${_nectar_functional_dir}/test_core.py"        TIMEOUT 120)
+  ament_add_pytest_test(functional_control     "${_nectar_functional_dir}/test_control.py"     TIMEOUT 120)
+  ament_add_pytest_test(functional_vision      "${_nectar_functional_dir}/test_vision.py"      TIMEOUT 120)
+  ament_add_pytest_test(functional_sensors     "${_nectar_functional_dir}/test_sensors.py"     TIMEOUT 120)
+  ament_add_pytest_test(functional_localization "${_nectar_functional_dir}/test_localization.py" TIMEOUT 120)
+  ament_add_pytest_test(functional_interface   "${_nectar_functional_dir}/test_interface.py"   TIMEOUT 120)
+  ament_add_pytest_test(functional_simulation  "${_nectar_functional_dir}/test_simulation.py"  TIMEOUT 180)
+  ament_add_pytest_test(functional_ai          "${_nectar_functional_dir}/test_ai.py"          TIMEOUT 600)
 endif()
 
 ament_package()

@@ -34,8 +34,15 @@ _drone_px4() {
     log_info "Connect to a PX4 FCU/SITL with:"
     log_info "  ros2 launch mavros px4.launch fcu_url:=udp://:14540@127.0.0.1:14580"
     log_info "For PX4 SITL + Gazebo, see: make sim-install FIRMWARE=px4 (scripts/simulation/install_px4.sh)"
-    log_info "For the native uXRCE-DDS path (drone 'px4_dds'): build px4_msgs + the"
-    log_info "  Micro XRCE-DDS Agent with: make sim-install FIRMWARE=px4 ARGS=--native"
+    log_info "For the native uXRCE-DDS path (drone 'px4_dds'), run: make drone-px4-dds"
+}
+
+# PX4 native uXRCE-DDS (drone 'px4_dds')
+_drone_px4_dds() {
+    log_section "INSTALLING PX4 NATIVE uXRCE-DDS (px4_msgs + agent)"
+    bash "${PROJECT_DIR}/scripts/simulation/install_px4_dds.sh"
+    _source_ros_ws
+    _drone_activation_hint
 }
 
 # Crazyswarm2 (Crazyflie 2.x). Prefer apt binaries; fall back to source build.
@@ -60,10 +67,10 @@ _drone_crazyflie() {
         return 1
     fi
 
-    # rowan: used by CrazyflieDrone full-state streaming.
-    local flags
-    flags=$(_pip_flags)
-    python3 -m pip install $flags "rowan>=1.3.0" || log_warning "rowan install skipped"
+    # rowan: used by CrazyflieDrone full-state streaming. Pin numpy<2 alongside it
+    # so the venv stays cv_bridge-ABI compatible (cv_bridge links against numpy<2).
+    _ensure_venv && uv pip install --python "$NECTAR_VENV/bin/python" "rowan>=1.3.0" "numpy>=1.26,<2.0" \
+        || log_warning "rowan install skipped"
 
     _crazyflie_udev
 
@@ -81,14 +88,17 @@ _drone_crazyflie() {
 # Crazyradio USB permissions: plugdev group + udev rules (Bitcraze vendor 1915).
 _crazyflie_udev() {
     log_info "Configuring Crazyradio USB permissions (udev)..."
-    getent group plugdev >/dev/null || SUDO groupadd plugdev
-    SUDO usermod -a -G plugdev "${USER:-root}"
+    getent group plugdev >/dev/null || SUDO groupadd plugdev || true
+    SUDO usermod -a -G plugdev "${USER:-root}" || true
     cat <<'EOF' | SUDO tee /etc/udev/rules.d/99-bitcraze.rules >/dev/null
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1915", ATTRS{idProduct}=="7777", MODE="0664", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1915", ATTRS{idProduct}=="0101", MODE="0664", GROUP="plugdev"
 EOF
-    SUDO udevadm control --reload-rules
-    SUDO udevadm trigger
+    # Reloading needs a running udevd (absent in containers/at image build time).
+    if command -v udevadm >/dev/null 2>&1; then
+        SUDO udevadm control --reload-rules 2>/dev/null || true
+        SUDO udevadm trigger 2>/dev/null || true
+    fi
     log_success "Crazyradio udev rules installed (log out/in for group change)"
 }
 
@@ -153,17 +163,18 @@ _bebop_patch_ffmpeg() {
 cmd_drone() {
     local kind="${1:-}"
     case "$kind" in
-        mavros)    _drone_mavros ;;
-        px4)       _drone_px4 ;;
-        crazyflie) _drone_crazyflie ;;
-        bebop)     _drone_bebop ;;
-        all)       _drone_mavros && _drone_crazyflie && _drone_bebop ;;
+        mavros)            _drone_mavros ;;
+        px4)               _drone_px4 ;;
+        px4-dds|px4_dds)   _drone_px4_dds ;;
+        crazyflie)         _drone_crazyflie ;;
+        bebop)             _drone_bebop ;;
+        all)               _drone_mavros && _drone_crazyflie && _drone_bebop ;;
         ""|list)
             echo "Usage: ./setup.sh drone <type>"
-            echo "  types: mavros, px4, crazyflie, bebop, all"
+            echo "  types: mavros, px4, px4-dds, crazyflie, bebop, all"
             ;;
         *)
-            log_error "Unknown drone type: $kind (expected mavros|px4|crazyflie|bebop|all)"
+            log_error "Unknown drone type: $kind (expected mavros|px4|px4-dds|crazyflie|bebop|all)"
             return 1
             ;;
     esac

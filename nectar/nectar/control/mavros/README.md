@@ -1,6 +1,6 @@
 # MAVROS Transport
 
-`MavrosTransport` connects the shared [vehicle core](../vehicle/README.md) to a running [`mavros_node`](https://github.com/mavlink/mavros). It backs the same vehicle over MAVROS for both firmwares (`MavrosDrone` for ArduPilot, `Px4MavrosDrone` for PX4) — the firmware-agnostic flight, navigation, takeoff/land, GPS, RTL, and PID behavior is **shared and documented in [`vehicle/README.md`](../vehicle/README.md)** (ArduPilot setpoint/parameter specifics in [`ardupilot/README.md`](../ardupilot/README.md)).
+`MavrosTransport` connects the shared [vehicle core](../vehicle/README.md) to a running [`mavros_node`](https://github.com/mavlink/mavros). It backs the same vehicle over MAVROS for both firmwares (`MavrosDrone` for ArduPilot, `Px4MavrosDrone` for PX4) — the firmware-agnostic flight, navigation, takeoff/land, GPS, RTL, and PID behavior is **shared and documented in the [vehicle core](../vehicle/README.md)** (ArduPilot setpoint/parameter specifics in [ArduPilot](../ardupilot/README.md)).
 
 > For the public `Drone` API, navigation methods, references, altitude sources, takeoff/land detection, and PID configuration, see the [vehicle core README](../vehicle/README.md).
 
@@ -35,7 +35,9 @@ classDiagram
 
 ## Requirements
 
-A `mavros_node` must be bridging the FCU. The transport can launch it for you when `MavrosConfig.start_driver=True`:
+MAVROS is an opt-in dependency (it is not part of the core SDK install). Install it once with `make drone-mavros` (or `./scripts/setup.sh drone mavros`), which adds `ros-<distro>-mavros`/`-mavros-extras` and the GeographicLib datasets.
+
+A `mavros_node` must then be bridging the FCU. The transport can launch it for you when `MavrosConfig.start_driver=True`:
 
 ```
 ros2 launch mavros apm.launch fcu_url:=<connection_string>
@@ -81,6 +83,8 @@ Subscriber callbacks convert ROS messages to the core's plain types:
 
 `/mavros/state` is subscribed with `TRANSIENT_LOCAL` durability so the latest cached state is delivered on subscribe (reliably catching arm/mode changes). The vision subscription is chosen at runtime: a `PoseWithCovarianceStamped` callback when the topic name contains `pose_cov`, otherwise a plain `PoseStamped`. Indoor (`pose_source=VISION`) subscribes to the vision topic; outdoor subscribes to GPS, rel-alt, and compass heading.
 
+Command topics (publishers) and MAVROS services are listed below.
+
 ## Distance Sensors
 
 `lidar_topic` feeds the downward `rangefinder` used for altitude. To expose additional rangefinders or proximity sectors (`distance_sensors` / `get_distance(orientation)` on the drone), two sides must line up:
@@ -102,18 +106,6 @@ config = MavrosConfig(
 `sensor_type` is derived from `Range.radiation_type`; `signal_quality` is not available over MAVROS and stays `None`. The direct [MAVLink transport](../mavlink/README.md) needs none of this, reading id and orientation straight from `DISTANCE_SENSOR`. See the [vehicle core README](../vehicle/README.md#distance-sensors) for the data model.
 
 ## ROS2 Topics and Services
-
-### Subscribers
-
-| Topic | Type | Purpose |
-|-------|------|---------|
-| `/mavros/state` | State | FCU connection, mode, armed |
-| `/mavros/local_position/pose` | PoseStamped | EKF local position (always) |
-| `/mavros/vision_pose/pose_cov` · `/mavros/vision_pose/pose` | PoseWithCovarianceStamped · PoseStamped | Vision pose (indoor) |
-| `/mavros/global_position/global` | NavSatFix | GPS position (outdoor) |
-| `/mavros/global_position/rel_alt` | Float64 | Relative altitude (outdoor) |
-| `/mavros/global_position/compass_hdg` | Float64 | Compass heading (outdoor) |
-| `/mavros/rangefinder/rangefinder` | Range | Lidar altitude |
 
 ### Publishers
 
@@ -170,4 +162,4 @@ Per-firmware FCU parameters (sources, rate, height source) and the EKF-origin st
 - [SET_POSITION_TARGET_LOCAL_NED](https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED) · [MAV_RESULT](https://mavlink.io/en/messages/common.html#MAV_RESULT) · [VISION_POSITION_ESTIMATE](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE)
 - [ROS 2 Sync vs Async Service Clients](https://docs.ros.org/en/humble/How-To-Guides/Sync-Vs-Async.html) · [ROS 2 Executors](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Executors.html)
 - [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros) · [Isaac ROS cuVSLAM with RealSense](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/tutorial_realsense.html)
-- Shared flight logic: [`vehicle/README.md`](../vehicle/README.md) · ArduPilot specifics: [`ardupilot/README.md`](../ardupilot/README.md)
+- Shared flight logic: [Vehicle core](../vehicle/README.md) · ArduPilot specifics: [ArduPilot](../ardupilot/README.md)

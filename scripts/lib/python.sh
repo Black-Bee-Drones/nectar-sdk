@@ -1,16 +1,32 @@
 #!/bin/bash
 
-_pip_flags() {
-    local flags=""
-    if [[ "${NON_INTERACTIVE:-}" == "true" ]] && [[ $EUID -eq 0 ]]; then
-        flags="--ignore-installed"
+_ensure_uv() {
+    if has_command uv; then return 0; fi
+    log_info "Installing uv (fast Python package manager)..."
+    if [[ $EUID -eq 0 ]]; then
+        curl -LsSf https://astral.sh/uv/install.sh \
+            | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+    else
+        curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
+        export PATH="$HOME/.local/bin:$PATH"
     fi
-    # `[ -f glob ]` breaks when the glob matches 0 or >1 paths; compgen -G handles
-    # any match count (e.g. systems with multiple python3.X dirs).
-    if compgen -G "/usr/lib/python3.*/EXTERNALLY-MANAGED" >/dev/null 2>&1; then
-        flags="$flags --break-system-packages"
+    has_command uv || { log_error "uv installation failed"; return 1; }
+    log_success "uv installed ($(uv --version 2>/dev/null))"
+}
+
+# Create the shared workspace virtual environment if absent
+_ensure_venv() {
+    _ensure_uv || return 1
+    if [ ! -f "$NECTAR_VENV/bin/activate" ]; then
+        log_info "Creating shared workspace venv: ${NECTAR_VENV} (--system-site-packages)"
+        uv venv "$NECTAR_VENV" --system-site-packages --seed --prompt nectar --python "$(command -v python3)"
     fi
-    echo "$flags"
+}
+
+# Activate the shared venv into the current shell if it exists
+_activate_venv() {
+    [ -f "$NECTAR_VENV/bin/activate" ] && source "$NECTAR_VENV/bin/activate"
+    return 0
 }
 
 _detect_cuda_version() {
@@ -46,7 +62,7 @@ _cuda_to_torch_variant() {
 _save_torch_constraints() {
     local dest="${TORCH_CONSTRAINTS_FILE}"
     log_info "Saving PyTorch constraints → ${dest}"
-    python3 -c "
+    "${NECTAR_VENV}/bin/python" -c "
 import importlib, sys, pathlib
 lines = []
 for pkg in ('torch', 'torchvision'):
@@ -67,10 +83,36 @@ _torch_constraint_flags() {
         if [[ -f "${TORCH_INDEX_FILE}" ]]; then
             local idx
             idx=$(cat "${TORCH_INDEX_FILE}")
-            flags="${flags} --extra-index-url ${idx}"
+            flags="${flags} --extra-index-url ${idx} --index-strategy unsafe-best-match"
         fi
     fi
     echo "$flags"
+}
+
+_read_pyproject_pin() {
+    local pkg="$1"
+    local line spec
+    line=$(grep -E "\"${pkg}[^\"]*\"" "${PKG_DIR}/pyproject.toml" 2>/dev/null | head -1) || true
+    if [[ -z "$line" ]]; then
+        log_error "Pin for ${pkg} not found in ${PKG_DIR}/pyproject.toml"
+        return 1
+    fi
+    spec=$(echo "$line" | sed -E 's/.*"([^"]+)".*/\1/')
+    echo "$spec"
+}
+
+# [ai] extras pull opencv-python / opencv-python-headless transitively; all OpenCV
+# wheels install into the same cv2/ tree, so the last one wins and can shadow the
+# SDK's opencv-contrib-python (breaking ArUco pose APIs). Re-pin contrib after ai/full.
+_repin_opencv_contrib() {
+    local spec
+    spec=$(_read_pyproject_pin "opencv-contrib-python") || return 1
+    log_info "Re-pinning ${spec} (AI extras may install parallel OpenCV wheels)"
+    uv pip uninstall --python "$NECTAR_VENV/bin/python" \
+        opencv-python opencv-python-headless 2>/dev/null || true
+    uv pip install --python "$NECTAR_VENV/bin/python" \
+        --force-reinstall --no-deps "${spec}"
+    log_success "OpenCV re-pinned to ${spec}"
 }
 
 
@@ -78,10 +120,9 @@ _torch_constraint_flags() {
 #   extra: control, vision, ai, interface, all, full  (empty = core only)
 cmd_python() {
     local extra="${1:-}"
-    local flags
-    flags=$(_pip_flags)
+    _ensure_venv || return 1
+    _activate_venv
     log_section "INSTALLING PYTHON DEPENDENCIES"
-    python3 -m pip install --upgrade pip $flags
 
     local torch_flags=""
     if [[ "$extra" == "ai" || "$extra" == "full" ]]; then
@@ -93,64 +134,64 @@ cmd_python() {
 
     if [[ -z "$extra" ]]; then
         log_info "Installing core dependencies..."
-        cd "$PKG_DIR" && python3 -m pip install $flags $torch_flags -e "."
+        cd "$PKG_DIR" && uv pip install --python "$NECTAR_VENV/bin/python" $torch_flags -e "."
     else
         log_info "Installing [$extra] dependencies..."
-        cd "$PKG_DIR" && python3 -m pip install $flags $torch_flags -e ".[$extra]"
+        cd "$PKG_DIR" && uv pip install --python "$NECTAR_VENV/bin/python" $torch_flags -e ".[$extra]"
+    fi
+    if [[ "$extra" == "ai" || "$extra" == "full" ]]; then
+        _repin_opencv_contrib || return 1
     fi
     log_success "Python dependencies installed (${extra:-core})"
 }
 
-# Usage: cmd_pytorch [variant]
-#   variant: cpu, cu118, cu121, cu124, cu126, auto (default: auto)
-#   auto = parse nvidia-smi CUDA version → best matching index, else cpu
+# Usage: cmd_pytorch [backend]
+#   backend: auto (default), cpu, cu118, cu126, cu128, cu130, ...  (uv --torch-backend)
+#   auto = uv queries the CUDA driver and picks the matching wheel index
+#          (CUDA 13 -> cu130), or falls back to cpu when no GPU is present.
+#
+# Uses uv's native PyTorch integration, which routes torch + its nvidia-* CUDA
+# deps to the correct download.pytorch.org index (avoiding slow/timeout-prone
+# pulls from pypi.nvidia.com). See https://docs.astral.sh/uv/guides/integration/pytorch/
 #
 # Env-var overrides (advanced):
-#   TORCH_VERSION       Pin a specific torch version  (e.g. "2.7.1")
-#   TORCHVISION_VERSION Pin a specific torchvision    (e.g. "0.22.1")
+#   TORCH_VERSION       Pin a specific torch version       (default in config.sh)
+#   TORCHVISION_VERSION Pin a matching torchvision         (default in config.sh)
+#   UV_HTTP_TIMEOUT     Per-request timeout (default 600s; raise on slow links)
+#   UV_CONCURRENT_DOWNLOADS=1   Serialize downloads on very flaky networks
 cmd_pytorch() {
-    local variant="${1:-${TORCH_VARIANT:-auto}}"
-    local flags
-    flags=$(_pip_flags)
+    local backend="${1:-${TORCH_VARIANT:-auto}}"
+    _ensure_venv || return 1
+    _activate_venv
 
-    if [[ "$variant" == "auto" ]]; then
-        local cuda_ver
-        cuda_ver=$(_detect_cuda_version)
-        if [[ -n "$cuda_ver" ]]; then
-            variant=$(_cuda_to_torch_variant "$cuda_ver")
-            log_info "NVIDIA GPU detected — CUDA ${cuda_ver} → ${variant}"
-        else
-            variant="cpu"
-            log_info "No NVIDIA GPU detected → CPU"
-        fi
-    fi
-
-    local index="https://download.pytorch.org/whl/${variant}"
-
-    log_section "INSTALLING PYTORCH (${variant})"
-    log_info "Index: ${index}"
+    log_section "INSTALLING PYTORCH (backend=${backend})"
+    log_info "uv --torch-backend (auto-detects the CUDA driver when 'auto')"
 
     local torch_spec="torch"
     local vision_spec="torchvision"
     if [[ -n "${TORCH_VERSION:-}" ]]; then
         torch_spec="torch==${TORCH_VERSION}"
-        log_info "Pinned torch version: ${TORCH_VERSION}"
-    fi
-    if [[ -n "${TORCHVISION_VERSION:-}" ]]; then
-        vision_spec="torchvision==${TORCHVISION_VERSION}"
-        log_info "Pinned torchvision version: ${TORCHVISION_VERSION}"
+        vision_spec="torchvision==${TORCHVISION_VERSION:-}"
+        [[ -z "${TORCHVISION_VERSION:-}" ]] && vision_spec="torchvision"
+        log_info "Pinned: ${torch_spec}  ${vision_spec}"
     fi
 
-    python3 -m pip install $flags \
-        "${torch_spec}" "${vision_spec}" \
-        --index-url "$index"
+    uv pip install --python "$NECTAR_VENV/bin/python" \
+        --torch-backend="${backend}" \
+        "${torch_spec}" "${vision_spec}"
 
     _save_torch_constraints
-    echo "$index" > "${TORCH_INDEX_FILE}"
+    # Record the resolved wheel index (from the installed +local tag, e.g.
+    # cu130 / cpu) so a later [ai] install can pin to the same build if needed.
+    "${NECTAR_VENV}/bin/python" -c "
+import torch, pathlib
+tag = torch.__version__.split('+')[-1] if '+' in torch.__version__ else 'cpu'
+pathlib.Path('${TORCH_INDEX_FILE}').write_text(f'https://download.pytorch.org/whl/{tag}\n')
+" 2>/dev/null || true
 
-    log_success "PyTorch ${variant} installed"
+    log_success "PyTorch installed (backend=${backend})"
 
-    python3 -c "
+    "${NECTAR_VENV}/bin/python" -c "
 import torch
 print(f'  torch   {torch.__version__}  CUDA: {torch.cuda.is_available()}')
 import torchvision

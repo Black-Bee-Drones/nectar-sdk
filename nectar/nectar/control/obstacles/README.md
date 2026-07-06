@@ -1,6 +1,19 @@
 # Obstacle Detection Module
 
-Event-based obstacle detection with strategy pattern for avoidance behaviors.
+Event-based obstacle detection with a strategy pattern for avoidance behaviors. A detector
+reports obstacles, a strategy decides how to react, and the `ObstacleManager` runs them as
+part of navigation — attach one to any drone with `add_obstacle_detector`.
+
+## At a glance
+
+```python
+from nectar.control import DepthObstacleDetector, strategies
+
+drone.add_obstacle_detector("depth", DepthObstacleDetector(), strategies.PauseStrategy())
+drone.enable_all_obstacle_detectors()
+
+drone.move_to(x=10.0, y=0.0, z=0.0)   # pauses while an obstacle is detected ahead
+```
 
 ## Architecture
 
@@ -206,10 +219,10 @@ sequenceDiagram
 
 ### Separation of Concerns
 
-**Detection** (What): Identify obstacles and return `ObstacleInfo`
-**Strategy** (How): Define response behavior
-**Handler** (When): Manage timing and integration
-**Manager** (Where): Coordinate multiple detectors on a drone
+- **Detection** (What): identify obstacles and return `ObstacleInfo`
+- **Strategy** (How): define response behavior
+- **Handler** (When): manage timing and integration
+- **Manager** (Where): coordinate multiple detectors on a drone
 
 ### ObstacleInfo
 
@@ -242,21 +255,27 @@ class ObstacleDetector(Protocol):
 
 ### Detection Zones
 
-**Direction returned** (from cluster position vs image center, as implemented in [`depth_camera.py`](depth_camera.py)):
-- All clusters left of center (`x_max < center`) → `ObstacleDirection.RIGHT`
-- All clusters right of center (`x_min > center`) → `ObstacleDirection.LEFT`
+Direction is derived from cluster position vs image center (see flowchart below and
+[`depth_camera.py`](depth_camera.py)):
+
+- All clusters left of center → `ObstacleDirection.RIGHT`
+- All clusters right of center → `ObstacleDirection.LEFT`
 - Clusters on both sides → `ObstacleDirection.FRONT`
 
-**Distance Thresholds**:
-- Min: 0.1m (too close to camera)
-- Max: 1.5m (detection limit)
-- Threshold: 1.3m (cluster filter)
+**Distance thresholds** (mm unless noted):
+
+| Parameter | Value | Role |
+|-----------|-------|------|
+| Min distance | 100 | Ignore returns closer than this |
+| Max distance | 1500 | Detection range limit |
+| Cluster filter | 1300 | Max mean cluster depth to count as obstacle |
 
 ### DepthObstacleDetector
 
 RealSense D435i depth camera-based detection using DBSCAN clustering.
 
 **Configuration**:
+
 ```python
 from nectar.control.obstacles import DepthObstacleDetector
 
@@ -272,23 +291,9 @@ detector = DepthObstacleDetector(
 )
 ```
 
-The detector owns its own RealSense `ImageHandler` (and ROS node) internally — no `node` argument is passed.
+> **Note:** the detector owns its own RealSense `ImageHandler` (and ROS node) internally — no `node` argument is passed.
 
-**Algorithm**:
-1. Acquire depth frame from RealSense camera
-2. Downsample depth image (10% scale for performance)
-3. Filter valid points (0 < depth < max_distance_mm)
-4. Apply DBSCAN clustering to group obstacle points
-5. Filter clusters by mean depth (< depth_threshold_mm)
-6. Determine obstacle direction (LEFT, RIGHT, FRONT) based on cluster position
-7. Calculate closest obstacle distance
-
-**Direction Logic** (matches [`depth_camera.py`](depth_camera.py)):
-- All clusters left of center → `ObstacleDirection.RIGHT`
-- All clusters right of center → `ObstacleDirection.LEFT`
-- Clusters on both sides → `ObstacleDirection.FRONT`
-
-#### Depth Camera Processing Flow
+#### Depth camera processing
 
 ```mermaid
 flowchart TD
@@ -323,12 +328,6 @@ flowchart TD
 
     CalcDist --> Return([Return ObstacleInfo<br/>detected=True, direction, distance])
     NoObstacle --> ReturnFalse([Return ObstacleInfo<br/>detected=False])
-
-    style Start fill:#e1f5ff
-    style Return fill:#d4edda
-    style ReturnFalse fill:#f8d7da
-    style DBSCAN fill:#fff3cd
-    style Direction fill:#cce5ff
 ```
 
 ### BaseObstacleDetector
@@ -380,11 +379,6 @@ flowchart TD
 
     CheckDist -->|No| Nav
     CheckDist -->|Yes| Done([Target Reached])
-
-    style Pause fill:#ffe6e6
-    style DisableZ fill:#fff4e6
-    style ExecuteSeq fill:#e6f3ff
-    style Done fill:#d4edda
 ```
 
 ### Strategies Summary
@@ -425,6 +419,7 @@ strategy = strategies.PauseStrategy()
 ```
 
 **Behavior**:
+
 ```python
 def execute(self, drone, info):
     if info.detected:
@@ -530,6 +525,7 @@ disable_x, disable_y, disable_z = manager.get_axis_control()
 ```
 
 **Navigation Integration**:
+
 ```python
 # In VehicleNavigator.navigate_pid()
 while True:
@@ -559,6 +555,7 @@ drone.add_obstacle_detector(
 ```
 
 **Example**:
+
 ```python
 detector = DepthObstacleDetector()
 strategy = strategies.PauseStrategy()
@@ -578,20 +575,6 @@ drone.remove_obstacle_detector("depth")
 ```
 
 ## Usage Examples
-
-### Simple Pause
-
-```python
-from nectar.control import DepthObstacleDetector, strategies
-
-detector = DepthObstacleDetector()
-drone.add_obstacle_detector("depth", detector, strategies.PauseStrategy())
-drone.enable_obstacle_detector("depth")
-
-drone.takeoff(1.5)
-drone.move_to(x=10.0, y=0.0, z=0.0)  # Pauses when obstacle detected
-drone.land()
-```
 
 ### Lateral Evasion
 
@@ -691,9 +674,9 @@ drone.add_obstacle_detector("depth", detector, BackupStrategy(backup_distance=2.
 
 ## Thread Safety
 
-**Detectors**: Run on independent ROS2 timers (background threads)
-**Handlers**: Use locks for state access
-**Strategies**: Execute in navigation thread (main thread)
-**Manager**: Single-threaded (navigation loop)
+- **Detectors**: run on independent ROS2 timers (background threads)
+- **Handlers**: use locks for state access
+- **Strategies**: execute in the navigation thread (main thread)
+- **Manager**: single-threaded (navigation loop)
 
-**Synchronization**: Handler locks prevent race conditions between timer callback and navigation loop.
+**Synchronization**: handler locks prevent race conditions between the timer callback and the navigation loop.

@@ -1,3 +1,14 @@
+# Line endings: files executed inside the Linux containers / via shebang must
+# stay LF. Under core.autocrlf=true (default on Windows) these would otherwise
+# check out as CRLF, breaking the interpreter line (`/bin/bash\r: not found`,
+# `bad interpreter` on `ros2 run`) and Makefile recipes.
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.py        text eol=lf
+Dockerfile* text eol=lf
+Makefile    text eol=lf
+*.mk        text eol=lf
+
 # Images (PNG, JPG, JPEG, GIF, WebP)
 *.png filter=lfs diff=lfs merge=lfs -text
 *.jpg filter=lfs diff=lfs merge=lfs -text

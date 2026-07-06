@@ -1,6 +1,21 @@
 # Crazyflie Control Module
 
-[Bitcraze Crazyflie 2.x](https://www.bitcraze.io/products/crazyflie-2-1/) drone control via [Crazyswarm2](https://imrclab.github.io/crazyswarm2/) for ROS 2.
+[Bitcraze Crazyflie 2.x](https://www.bitcraze.io/products/crazyflie-2-1/) drone control via [Crazyswarm2](https://imrclab.github.io/crazyswarm2/) for ROS 2 — the same `Drone` API as the FCU drones, over a Crazyswarm2 bridge instead of MAVROS.
+
+## At a glance
+
+```python
+import nectar
+from nectar.control import DroneFactory, CrazyflieConfig
+
+nectar.init()
+drone = DroneFactory.create("crazyflie", CrazyflieConfig(cf_name="cf231"))
+
+drone.takeoff(altitude=0.5)
+drone.move_to(x=0.5, y=0.0, z=0.0)   # POSITION via the onboard goTo planner
+drone.land()
+nectar.shutdown()
+```
 
 ## Capabilities
 
@@ -28,12 +43,14 @@ Switching from streaming to high-level requires calling `notify_setpoints_stop()
 ### Flow Deck v2
 
 The [Flow Deck v2](https://www.bitcraze.io/products/flow-deck-v2/) provides relative position estimation using:
+
 - **Optical flow sensor**: Tracks movement over the ground surface
 - **ToF rangefinder**: Measures height above ground (range ~0.2m to ~4m)
 
 The onboard [Kalman estimator](https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/sensor-to-control/state_estimators/) (EKF) fuses these sensors with the IMU to produce position estimates.
 
 **Constraints**:
+
 - Position drifts over time (no absolute reference)
 - Requires textured floor surface for optical flow
 - Maximum practical flight height ~3m (ToF range limit)
@@ -42,6 +59,7 @@ The onboard [Kalman estimator](https://www.bitcraze.io/documentation/repository/
 ### Onboard Controller
 
 The Crazyflie supports two onboard controllers:
+
 - **PID** (`controller=1`): Standard cascaded PID controller
 - **Mellinger** (`controller=2`): Geometric tracking controller for aggressive maneuvers
 
@@ -229,7 +247,7 @@ yaw_duration = yaw_diff / radians(60)              # ~60 deg/s
 duration = max(distance / default_velocity, yaw_duration, 1.0)
 ```
 
-Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff/land use their own fixed floor (2.0 s). For precise timing control, use the `go_to()` method directly.
+Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff uses a 2.0 s minimum duration; land uses 1.0 s. For precise timing control, use the `go_to()` method directly.
 
 ### Velocity Control
 
@@ -277,10 +295,12 @@ Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff
 | `/<cf>/cmd_position` | `crazyflie_interfaces/Position` | Pub | Streaming position setpoint |
 | `/<cf>/pose` | `geometry_msgs/PoseStamped` | Sub | Estimated pose from state estimator |
 | `/<cf>/status` | `crazyflie_interfaces/Status` | Sub | Battery, RSSI, supervisor state |
+| `/tf` | `tf2_msgs/TFMessage` | Sub | Simulation pose when `backend:=sim` (Crazyswarm2 publishes the model TF here; `connect()` waits for this path instead of `/<cf>/pose`) |
 
 ### Parameters (via crazyflie_server)
 
 Firmware parameters are exposed as ROS 2 parameters on `/crazyflie_server` under `<cf_name>.params.<group>.<name>`. Examples:
+
 - `cf231.params.stabilizer.controller` (1=PID, 2=Mellinger)
 - `cf231.params.stabilizer.estimator` (1=complementary, 2=kalman)
 - `cf231.params.commander.enHighLevel` (1=enable high-level commander)
@@ -288,20 +308,24 @@ Firmware parameters are exposed as ROS 2 parameters on `/crazyflie_server` under
 ## Installation
 
 **Automated (Nectar)**:
+
 ```bash
 make drone-crazyflie        # or: ./scripts/setup.sh drone crazyflie
 ```
+
 Installs the apt packages below (when available for your ROS distro) plus `rowan`, and configures the Crazyradio USB permissions (step 2). Afterwards only `crazyflies.yaml` (step 3) needs editing for your radio URI. Log out and back in once for the `plugdev` group change to apply.
 
 ### 1. Install Crazyswarm2
 
 **Binary (recommended)**:
+
 ```bash
 sudo apt install ros-${ROS_DISTRO}-crazyflie ros-${ROS_DISTRO}-crazyflie-interfaces
 pip3 install rowan
 ```
 
 **From source**:
+
 ```bash
 cd ~/ros2_ws/src
 git clone https://github.com/IMRCLab/crazyswarm2 --recursive
@@ -361,11 +385,15 @@ all:
 
 ### 4. Verify Connection
 
-```bash
-# Terminal 1: Start the Crazyflie server
-ros2 launch crazyflie launch.py
+**Terminal 1 — Crazyflie server**:
 
-# Terminal 2: Check topics
+```bash
+ros2 launch crazyflie launch.py
+```
+
+**Terminal 2 — check topics**:
+
+```bash
 ros2 topic list | grep cf231
 ros2 topic echo /cf231/status
 ```
@@ -406,17 +434,21 @@ drone.land()
 
 ### Simulation
 
-```bash
-# Terminal 1: Start simulation backend
-ros2 launch crazyflie launch.py backend:=sim
+**Terminal 1 — simulation backend**:
 
-# Terminal 2: Run script with same code
+```bash
+ros2 launch crazyflie launch.py backend:=sim
+```
+
+**Terminal 2 — run a script** (same code):
+
+```bash
 python3 basic.py --drone crazyflie --backend sim
 ```
 
 ## What's distinct about Crazyflie
 
-For the declared capability sets across all drones, see the capability matrix in [`control/README.md`](../README.md#capabilities). Crazyflie-specific traits:
+For the declared capability sets across all drones, see the [control module capability matrix](../README.md#capabilities). Crazyflie-specific traits:
 
 - Position control is **onboard only** (`NavigationMethod.POSITION` via the firmware `goTo` planner) — no companion-side PID, GPS, or vision-pose path.
 - Altitude/position estimate comes from the Flow Deck ToF rangefinder fused by the onboard EKF.

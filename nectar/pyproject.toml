@@ -15,7 +15,6 @@ maintainers = [
 
 dependencies = [
     "numpy>=1.26.0,<2.0.0",
-    "opencv-python==4.11.0.86",
     "opencv-contrib-python==4.11.0.86",
     "scipy==1.14.1",
     "pillow==12.1.1",
@@ -80,6 +79,11 @@ full = [
     "nectar-sdk[all,ai]",
 ]
 
+dev = [
+    "pytest>=7.4,<9",
+    "pytest-timeout>=2.1,<3",
+]
+
 [project.scripts]
 nectar-ai = "nectar.ai.cli.main:main"
 
@@ -103,6 +107,35 @@ known-first-party = ["nectar"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.pytest.ini_options]
+# test/ holds the functional suite (test/functional) and hardware-gated checks
+# (test/hardware), plus the ament lint tests. `import helpers` is made resolvable
+# by a sys.path insert in test/conftest.py (works on pytest 6, unlike the
+# `pythonpath` ini which needs pytest 7+).
+testpaths = ["test"]
+# Hardware-, GPU- and SITL-gated tests are deselected by default; opt in with
+# `pytest test/hardware -m hardware`, `pytest -m gpu`, or `make verify-sitl`
+# (an explicit -m on the command line overrides this).
+addopts = "-m 'not hardware and not gpu and not sitl'"
+markers = [
+    "core: ROS 2 runtime + cv_bridge foundation",
+    "control: drone control (factory, PID, transforms, MAVLink loopback)",
+    "vision: camera + image-processing algorithms",
+    "sensors: rangefinder filters and MAVLink DISTANCE_SENSOR bridge",
+    "localization: vision-pose bridge (mavros / mavlink backends)",
+    "interface: Qt6 GUI (offscreen)",
+    "ai: detection CLI / inference",
+    "sim: requires the simulation stack (make sim-install)",
+    "sitl: SITL/integration flight in a headless simulator (make verify-sitl); heavy, opt-in",
+    "ardupilot: SITL flight on ArduPilot firmware",
+    "px4: SITL flight on PX4 firmware",
+    "crazyflie: flight on the Crazyswarm2 sim backend",
+    "hardware: requires a physical device (camera, rangefinder); deselected by default",
+    "gpu: requires a usable CUDA device; deselected by default",
+    "network: needs network access (model download)",
+    "slow: long-running",
+]
 
 [tool.setuptools.packages.find]
 include = ["nectar*"]

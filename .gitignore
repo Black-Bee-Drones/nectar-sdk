@@ -13,6 +13,9 @@ build/
 install/
 log/
 
+# Local cross-distro CI runner output (scripts/ci_local.sh -> make ci-local)
+ci-local-results/
+
 *.log
 *.tlog
 *.tlog.raw
@@ -27,3 +30,8 @@ nectar/nectar/ai/segmentation/outputs/
 
 *.pt
 *.pth
+
+# Documentation site (Zensical). You edit website/ (authored pages), the module
+# READMEs, and docs/*.md; everything generated is assembled under build/.
+/build/
+.venv-docs/

@@ -66,6 +66,25 @@ jobs:
             /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify
           "
 
+      - name: Functional verification
+        run: |
+          mkdir -p test-results
+          docker run --rm -v "${{ github.workspace }}/test-results:/tmp/results" ${{ steps.meta.outputs.tag }} bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            JUNIT_XML=/tmp/results/functional-${{ inputs.ros_distro }}-${{ runner.arch }}.xml \
+              /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify-functional
+          "
+
+      # JUnit report kept as a downloadable artifact (per distro/arch).
+      - name: Upload functional results (JUnit)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-${{ inputs.ros_distro }}-${{ runner.arch }}
+          path: test-results/*.xml
+          if-no-files-found: ignore
+
       - name: Verify RealSense
         if: inputs.install_realsense == 'true'
         run: |
