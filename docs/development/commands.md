@@ -18,7 +18,7 @@ make help          # or: ./scripts/setup.sh help
 | `make ros2-env` | Configure `~/.bashrc` (adds `nectar-activate`) |
 | `make rosdep-init` | Initialize rosdep |
 | `make full-install` | Full setup from zero (used by the bootstrap) |
-| `make update` | Update the workspace |
+| `make update` | Update system packages (apt upgrade) |
 
 ## Python modules
 

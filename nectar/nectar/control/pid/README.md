@@ -92,23 +92,41 @@ pid = PIDController(
 )
 ```
 
-### Control Loop
+### Control loop
+
+`PIDController.update()` implements a discrete-time PID with anti-windup on the integral
+term and clamping on the output:
+
+$$
+e_k = r - y_k
+$$
+
+$$
+P_k = K_p \, e_k
+$$
+
+$$
+I_k = \mathrm{clamp}\!\left(K_i \sum_{i=0}^{k} e_i \, \Delta t,\; I_{\min},\, I_{\max}\right)
+$$
+
+$$
+D_k = K_d \frac{e_k - e_{k-1}}{\Delta t}
+$$
+
+$$
+u_k = \mathrm{clamp}(P_k + I_k + D_k,\; u_{\min},\, u_{\max})
+$$
+
+Where \(r\) is the setpoint (`setpoint`), \(y_k\) is the current measurement,
+\(\Delta t\) is the elapsed time between calls (from `time.time()`), and
+\(\mathrm{clamp}(x, a, b) = \min(\max(x, a), b)\).
+
+An optional **output deadband** (`output_deadband`) forces \(u_k = 0\) when
+\(|u_k| < \mathrm{deadband}\) after clamping.
 
 ```python
 control_output = pid.update(current_value: float) -> float
 ```
-
-**Algorithm**:
-
-```
-1. Calculate error: e(t) = setpoint - current_value
-2. Proportional term: P = kp × e(t)
-3. Integral term: I = ki × ∫e(t)dt (clamped to integral_limits)
-4. Derivative term: D = kd × de/dt
-5. Output = P + I + D (clamped to output_limits)
-```
-
-**Delta Time**: Automatically computed from `time.time()` between updates.
 
 ### Methods
 
@@ -117,7 +135,7 @@ pid.update(current_value)              # Returns control output
 pid.reset()                            # Clear integral, previous error
 pid.set_setpoint(value)                # Change target
 pid.tune(kp, ki, kd)                   # Update gains
-pid.get_components()                   # Returns {'p': ..., 'i': ..., 'd': ...}
+pid.get_components()                   # Returns proportional, integral, derivative, output
 ```
 
 ## PIDConfig

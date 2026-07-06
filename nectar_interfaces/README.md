@@ -26,37 +26,7 @@ std_msgs/Float64 yaw
 | `translation` | `geometry_msgs/Vector3` | 3D position relative to camera (meters) |
 | `yaw` | `std_msgs/Float64` | Marker rotation angle (degrees, 0-360) |
 
-**Published by:** `ArucoNode`
-
-**Topic:** `/aruco/pose_estimate`
-
-**Usage Example:**
-
-```python
-from nectar_interfaces.msg import ArucoTransforms
-from geometry_msgs.msg import Vector3
-from std_msgs.msg import Float64
-
-msg = ArucoTransforms()
-msg.id = 42
-msg.translation = Vector3(x=0.5, y=0.1, z=1.2)
-msg.yaw = Float64(data=45.0)
-
-publisher.publish(msg)
-```
-
-**Subscriber Example:**
-
-```python
-def aruco_callback(msg: ArucoTransforms):
-    marker_id = msg.id
-    x, y, z = msg.translation.x, msg.translation.y, msg.translation.z
-    yaw_degrees = msg.yaw.data
-
-    print(f"Marker {marker_id} at ({x:.2f}, {y:.2f}, {z:.2f})m, yaw={yaw_degrees:.1f}°")
-
-node.create_subscription(ArucoTransforms, '/aruco/pose_estimate', aruco_callback, 10)
-```
+**Published by:** `ArucoNode` · **Topic:** `/aruco/pose_estimate`
 
 ---
 
@@ -82,35 +52,7 @@ float64 height
 | `width` | `float64` | Average line width (pixels) |
 | `height` | `float64` | Average line height (pixels) |
 
-**Published by:** `LineDetectionNode`
-
-**Topic:** `line_state/{color}` (e.g., `line_state/blue`)
-
-**Usage Example:**
-
-```python
-from nectar_interfaces.msg import LineInfo
-
-msg = LineInfo()
-msg.center_x = 320.5
-msg.center_y = 240.0
-msg.angle = -15.3
-msg.width = 25.0
-msg.height = 180.0
-
-publisher.publish(msg)
-```
-
-**Subscriber Example:**
-
-```python
-def line_callback(msg: LineInfo):
-    if msg.angle != float('nan'):
-        print(f"Line at ({msg.center_x:.1f}, {msg.center_y:.1f})")
-        print(f"Angle: {msg.angle:.1f}°, Width: {msg.width:.1f}px")
-
-node.create_subscription(LineInfo, 'line_state/blue', line_callback, 10)
-```
+**Published by:** `LineDetectionNode` · **Topic:** `line_state/{color}` (e.g. `line_state/blue`)
 
 ---
 
@@ -129,18 +71,6 @@ string photo_num
 |-------|------|-------------|
 | `coordinates` | `float64[]` | Array of coordinate values |
 | `photo_num` | `string` | Photo identifier/number |
-
-**Usage Example:**
-
-```python
-from nectar_interfaces.msg import PhotoInfo
-
-msg = PhotoInfo()
-msg.coordinates = [27.1234, -48.5678, 15.0]  # lat, lon, alt
-msg.photo_num = "IMG_001"
-
-publisher.publish(msg)
-```
 
 ---
 
@@ -162,49 +92,50 @@ colcon build --packages-select nectar_interfaces
 source install/setup.bash
 ```
 
-## Verifying Installation
+Verify:
 
 ```bash
-# List available messages
 ros2 interface list | grep nectar_interfaces
-
-# Show message definition
 ros2 interface show nectar_interfaces/msg/ArucoTransforms
-ros2 interface show nectar_interfaces/msg/LineInfo
-ros2 interface show nectar_interfaces/msg/PhotoInfo
 ```
 
-## Using in Python
+## Usage
+
+**Python** — import, publish, and subscribe:
 
 ```python
-# Import messages
 from nectar_interfaces.msg import ArucoTransforms, LineInfo, PhotoInfo
+from geometry_msgs.msg import Vector3
+from std_msgs.msg import Float64
 
-# Create publisher
-aruco_pub = node.create_publisher(ArucoTransforms, '/aruco/pose_estimate', 10)
-line_pub = node.create_publisher(LineInfo, 'line_state/blue', 10)
+# Publisher
+pub = node.create_publisher(ArucoTransforms, '/aruco/pose_estimate', 10)
+msg = ArucoTransforms()
+msg.id = 42
+msg.translation = Vector3(x=0.5, y=0.1, z=1.2)
+msg.yaw = Float64(data=45.0)
+pub.publish(msg)
+
+# Subscriber
+def on_aruco(msg: ArucoTransforms):
+    print(f"Marker {msg.id} at ({msg.translation.x:.2f}, {msg.translation.y:.2f}, {msg.translation.z:.2f}) m")
+
+node.create_subscription(ArucoTransforms, '/aruco/pose_estimate', on_aruco, 10)
 ```
 
-## Using in C++
+**C++**:
 
 ```cpp
 #include "nectar_interfaces/msg/aruco_transforms.hpp"
-#include "nectar_interfaces/msg/line_info.hpp"
-#include "nectar_interfaces/msg/photo_info.hpp"
 
-auto aruco_pub = node->create_publisher<nectar_interfaces::msg::ArucoTransforms>(
+auto pub = node->create_publisher<nectar_interfaces::msg::ArucoTransforms>(
     "/aruco/pose_estimate", 10);
 ```
 
-## Package layout
-
-Message definitions live in `msg/`: `ArucoTransforms.msg`, `LineInfo.msg`, and `PhotoInfo.msg`.
-The package builds them with the standard `CMakeLists.txt` / `package.xml` pair.
-
 ## Related Modules
 
-- [Vision Module](../nectar/nectar/vision/README.md) - Camera drivers and detection algorithms that publish these messages
-- [Vision Nodes](../nectar/nectar/vision/nodes/README.md) - ROS 2 nodes using these interfaces
+- [Vision Module](../nectar/nectar/vision/README.md) — camera drivers and algorithms that publish these messages
+- [Vision Nodes](../nectar/nectar/vision/nodes/README.md) — ROS 2 nodes using these interfaces
 
 ## References
 

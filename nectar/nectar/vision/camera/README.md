@@ -442,7 +442,20 @@ cam.start()
 
 > **Warning:** for drone flight with the ArduPilot EKF, disable relocalization and pose jumping (the EKF cannot handle discontinuous position teleports); keep mapping enabled. See [PR #4321](https://github.com/IntelRealSense/librealsense/pull/4321), [realsense-ros #779](https://github.com/IntelRealSense/realsense-ros/issues/779).
 >
-> **Note:** the T265 requires `pyrealsense2==2.53.1.4623` (the last PyPI release with TM2 support); 2.54+ dropped it.
+> **Note — T265 and RealSense versions:** RealSense support uses two independent stacks:
+>
+> 1. **System / ROS (`make realsense`)** — builds **librealsense** and **realsense-ros** from
+>    source. Override versions with `LIBREALSENSE_VERSION` and `REALSENSE_ROS_TAG` (defaults
+>    per ROS distro are in `scripts/lib/config.sh`). For the discontinued T265 on Humble:
+>    `LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 make realsense`. That build also
+>    installs a matching **pyrealsense2** under `/usr/local/lib` (added to `PYTHONPATH`).
+> 2. **Pip extra (`nectar-sdk[realsense]`)** — installs **PyPI pyrealsense2 ≥2.55** for **D4xx
+>    direct mode** (`RealsenseCam`). PyPI dropped T265 (TM2) after 2.53.x; the pip extra does
+>    not target the T265.
+>
+> For T265: use **ROS topic mode** (`T265Config(use_ros_topics=True)`) with the T265
+> `make realsense` versions above, or **direct mode** with pyrealsense2 from a v2.53.1 source
+> build — not the pip extra alone. See [RealSense setup](../../../../docs/setup/realsense.md).
 
 ## Camera calibration
 

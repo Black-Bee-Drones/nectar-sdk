@@ -10,8 +10,8 @@ Start from the row that matches your machine:
 
 | Starting point | Do this |
 |---|---|
-| Fresh machine, no ROS 2 | [From scratch](#from-scratch-no-ros-2) — one bootstrap command installs ROS 2 + the SDK |
-| ROS 2 installed, SDK not cloned | clone into `~/ros2_ws/src`, then [`make setup`](#existing-ros-2-workspace) |
+| Fresh machine, no ROS 2 | [**From scratch** tab](#from-scratch-no-ros-2) — one bootstrap command installs ROS 2 + the SDK |
+| ROS 2 installed, SDK not cloned | clone into `~/ros2_ws/src`, then [**Existing workspace** tab](#existing-ros-2-workspace) → `make setup` |
 | SDK cloned, nothing installed | `make setup` (opens the setup menu) |
 | Deps installed, just no venv yet | re-run `make python-all` (or your modules) — it creates `$WORKSPACE/.venv` |
 | Want zero host setup | [Docker](../../docker/README.md): `make docker-build && make docker-run` |
@@ -32,7 +32,7 @@ Start from the row that matches your machine:
 
 | Goal | Commands |
 |---|---|
-| ArduPilot / PX4 over direct MAVLink (simplest) | `make setup` (pick `control`) then `make drone-mavros` |
+| ArduPilot / PX4 over direct MAVLink | `make setup` (pick `control`) — `pymavlink` ships with the core SDK; optional `make drone-mavros` for geoid data |
 | ArduPilot / PX4 over MAVROS | `make setup` (pick `control`) then `make drone-mavros` |
 | PX4 over uXRCE-DDS + detection | `make setup` (pick `control ai`) then `make drone-px4-dds` |
 | Crazyflie / Bebop | `make drone-crazyflie` / `make drone-bebop` |
@@ -41,42 +41,56 @@ Start from the row that matches your machine:
 
 Full details: [Drone drivers](drivers.md) (install + fly real hardware), [Simulation](simulation.md), and [RealSense & indoor](realsense.md).
 
-## From Scratch (no ROS 2)
+<span id="from-scratch-no-ros-2"></span>
+<span id="existing-ros-2-workspace"></span>
 
-A standalone bootstrap script installs everything on a fresh Ubuntu/Debian machine: system packages, ROS 2, MAVROS, GeographicLib, git/SSH, the SDK itself, Python dependencies, and builds the workspace.
+=== "From scratch (no ROS 2)"
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
-```
+    A standalone bootstrap script installs everything on a fresh Ubuntu/Debian machine: system packages, ROS 2, MAVROS, GeographicLib, git/SSH, the SDK itself, Python dependencies, and builds the workspace.
 
-The bootstrap prompts for workspace path (default `~/ros2_ws`) and branch (main or dev), then clones the repo and delegates to `./scripts/setup.sh full-install`.
+    ```bash
+    bash <(curl -fsSL https://raw.githubusercontent.com/Black-Bee-Drones/nectar-sdk/main/scripts/bootstrap.sh)
+    ```
 
-For CI/Docker (non-interactive):
+    The bootstrap prompts for workspace path (default `~/ros2_ws`) and branch (main or dev), then clones the repo and delegates to `./scripts/setup.sh full-install`.
 
-```bash
-NON_INTERACTIVE=true ROS2_WORKSPACE=~/ros2_ws bash scripts/bootstrap.sh
-```
+    For CI/Docker (non-interactive):
 
-### Setup menu
+    ```bash
+    NON_INTERACTIVE=true ROS2_WORKSPACE=~/ros2_ws bash scripts/bootstrap.sh
+    ```
 
-Running the setup script with no arguments opens the same interactive menu as `make setup` (configure modules, drivers, system packages, ROS env, build, verify — nothing runs until you pick):
+    ### Setup menu
 
-```bash
-./scripts/setup.sh
-```
+    Running the setup script with no arguments opens the same interactive menu as `make setup` (configure modules, drivers, system packages, ROS env, build, verify — nothing runs until you pick):
 
-## Existing ROS 2 Workspace
+    ```bash
+    ./scripts/setup.sh
+    ```
 
-Clone into your workspace and open the setup menu:
+=== "Existing ROS 2 workspace"
 
-```bash
-cd ~/ros2_ws/src
-git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
-cd nectar-sdk
-make setup
-```
+    Clone into your workspace and open the setup menu:
 
-The menu's **Quick setup** runs: `system` (idempotent) → `git-lfs` → **module selection** (`cmd_python` for the modules you pick; PyTorch first if you choose AI) → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`. GeographicLib is not part of this — it installs with the `mavros` driver. Non-interactively (`NON_INTERACTIVE=true`, e.g. CI) `make setup` skips the menu and runs Quick setup with `all`.
+    ```bash
+    cd ~/ros2_ws/src
+    git clone git@github.com:Black-Bee-Drones/nectar-sdk.git
+    cd nectar-sdk
+    make setup
+    ```
+
+    The menu's **Quick setup** runs: `system` (idempotent) → `git-lfs` → **module selection** (`cmd_python` for the modules you pick; PyTorch first if you choose AI) → `rosdep-init` → `ros2-deps` → `build-pkg` → `verify`. GeographicLib is not part of this — it installs with the `mavros` driver. Non-interactively (`NON_INTERACTIVE=true`, e.g. CI) `make setup` skips the menu and runs Quick setup with `all`.
+
+=== "Docker"
+
+    Skip host ROS/Python setup — build and enter the dev container:
+
+    ```bash
+    make docker-build
+    make docker-run
+    ```
+
+    For Isaac / VSLAM / RealSense workflows, see the [Docker guide](../../docker/README.md) (`make isaac-run`, device mounts, Jetson notes).
 
 ## Python Environment
 
@@ -100,7 +114,7 @@ Prefer it always active? Add one line to `~/.bashrc`:
 source ~/ros2_ws/.venv/bin/activate
 ```
 
-Override the location with `NECTAR_VENV=/path` (an already-active `VIRTUAL_ENV` is respected); see [Configuration](configuration.md). One caveat: always let the SDK create the venv (it pins it to the ROS `python3`); a manual `uv venv` may pick a newer Python without wheels for some deps (e.g. `mediapipe`).
+Override the location with `NECTAR_VENV=/path` (an already-active `VIRTUAL_ENV` is respected); see [Configuration](configuration.md#python-environment-location) for the venv caveat.
 
 ## Install by Module
 

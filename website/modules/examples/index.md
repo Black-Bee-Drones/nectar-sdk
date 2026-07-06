@@ -13,12 +13,15 @@ run — start here to see how the modules are used and combined in practice.
 
 ## How to run
 
-Every example uses `argparse`, so run it directly or through ROS 2:
+Every example uses `argparse`. Run from the repo with:
 
 ```bash
 python3 nectar/nectar/examples/<group>/<script>.py [flags]
-ros2 run nectar <script>.py -- [flags]          # ROS 2 entry point
 ```
+
+Some scripts are also installed as ROS 2 executables (see each group's page for which
+ones): `ros2 run nectar <script>.py -- [flags]`. Control examples are **not** installed —
+use `python3` only.
 
 Control examples default to `start_driver=False` — start the driver/bridge (or the
 simulator) the mission connects to first, in its own terminal. See

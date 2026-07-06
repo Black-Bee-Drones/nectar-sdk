@@ -247,7 +247,7 @@ yaw_duration = yaw_diff / radians(60)              # ~60 deg/s
 duration = max(distance / default_velocity, yaw_duration, 1.0)
 ```
 
-Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff/land use their own fixed floor (2.0 s). For precise timing control, use the `go_to()` method directly.
+Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff uses a 2.0 s minimum duration; land uses 1.0 s. For precise timing control, use the `go_to()` method directly.
 
 ### Velocity Control
 
@@ -295,6 +295,7 @@ Where `default_velocity` comes from `CrazyflieConfig` (default 0.3 m/s). Takeoff
 | `/<cf>/cmd_position` | `crazyflie_interfaces/Position` | Pub | Streaming position setpoint |
 | `/<cf>/pose` | `geometry_msgs/PoseStamped` | Sub | Estimated pose from state estimator |
 | `/<cf>/status` | `crazyflie_interfaces/Status` | Sub | Battery, RSSI, supervisor state |
+| `/tf` | `tf2_msgs/TFMessage` | Sub | Simulation pose when `backend:=sim` (Crazyswarm2 publishes the model TF here; `connect()` waits for this path instead of `/<cf>/pose`) |
 
 ### Parameters (via crazyflie_server)
 

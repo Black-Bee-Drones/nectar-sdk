@@ -317,6 +317,10 @@ Flags: `--mavlink` (direct pymavlink on tcp 5762), `--px4` (PX4 over MAVROS, off
 
 Pre-flight tests (`sensors`, `heading_enu`) run without takeoff. GPS-only tests (skipped with `--indoor`): `heading_enu`, `setpoint_global`, `setpoint_global_yaw`, `sq_setpoint_global`, `rtl_ardupilot`.
 
+The `set_speed` test exercises `MAV_CMD_DO_CHANGE_SPEED` (horizontal/climb/descent). It is not
+in the pre-flight set because ArduCopter accepts that command only in a nav-capable mode
+(GUIDED), so it must run airborne.
+
 ## ArduPilot Parameters
 
 ### gazebo.parm (loaded for all Gazebo sessions)

@@ -22,10 +22,14 @@ propagates everywhere. Common per-invocation overrides (no edit needed):
 
 ## Python environment location
 
-Python dependencies install into a shared workspace venv at `$WORKSPACE/.venv` (see
-[Installation](index.md#python-environment)). Override its location with `NECTAR_VENV=/path`; an
-already-active `VIRTUAL_ENV` is respected. Always let the SDK create the venv (it pins it to the
-ROS `python3`) — a manual `uv venv` may pick a newer Python without wheels for some deps.
+Python dependencies install into `$WORKSPACE/.venv`. Override with `NECTAR_VENV=/path`; an
+active `VIRTUAL_ENV` is respected. For activation and workspace sharing, see
+[Installation — Python environment](index.md#python-environment).
+
+!!! warning "Let the SDK create the venv"
+    Always use `make python*` / `make setup` to create `$WORKSPACE/.venv` — it pins the venv to
+    the ROS `python3`. A manual `uv venv` may pick a newer Python without wheels for some
+    dependencies (e.g. `mediapipe`).
 
 ## Changing versions across the workspace
 

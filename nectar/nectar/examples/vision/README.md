@@ -10,7 +10,10 @@ Working examples for the vision module's camera drivers and image processing.
 | **Optical Flow** | `optical_flow_example.py` | Sparse/dense optical-flow visualization |
 | **Photo Collection** | `collect_photos.py` | Save frames at intervals for dataset creation |
 
-All scripts use `argparse` flags (not `--ros-args -p`). Run with `python3 <script>.py [flags]` or `ros2 run nectar <script>.py -- [flags]`.
+All scripts use `argparse` flags (not `--ros-args -p`). Run with `python3 <script>.py [flags]`.
+Some scripts are also installed as ROS 2 executables (`ros2 run nectar <script>.py -- [flags]`):
+`camera_example.py`, `depth_example.py`, `t265_example.py`, `collect_photos.py`. Use `python3`
+for `optical_flow_example.py` (not installed as an executable).
 
 ## Camera Example
 
@@ -38,7 +41,7 @@ python3 camera_example.py --camera-type realsense
 |------|--------|---------------|
 | `webcam` | `OpenCVCam` | 1280x720 @ 30fps, device 0 |
 | `realsense` | `RealsenseCam` | 1280x720 RGB+Depth @ 30fps |
-| `realsense_ros` | `RealsenseCam` | Via ROS topics (compressed color) |
+| `realsense_ros` | `ROSDepthCam` | Via ROS color + depth topics |
 | `oakd` | `OakdCam` | Default OAK-D settings |
 | `c920` | `C920Cam` | Profile 1 (1280x720) |
 | `imx219` | `IMX219Cam` | 1280x720 @ 30fps, flip 180° |
@@ -172,7 +175,7 @@ Check registered camera types:
 
 ```python
 from nectar.vision.camera import CameraFactory
-# Registered: webcam, opencv, realsense, oakd, c920, imx219, ros, file
+# Registered: webcam, opencv, realsense, t265, oakd, c920, imx219, ros, ros_depth, file
 ```
 
 ### RealSense Import Error
@@ -181,12 +184,14 @@ from nectar.vision.camera import CameraFactory
 RuntimeError: pyrealsense2 is not installed
 ```
 
-Install librealsense:
+Install librealsense and realsense-ros (builds matching pyrealsense2 from source):
 
 ```bash
-# See scripts/install_realsense.sh
-# Or use ROS topic mode (realsense_ros)
+make realsense
+# T265 (Humble only): LIBREALSENSE_VERSION=v2.53.1 REALSENSE_ROS_TAG=4.51.1 make realsense
 ```
+
+Or use ROS topic mode (`realsense_ros` / `ros_depth`) with `realsense2_camera` already running.
 
 ### OAK-D Import Error
 

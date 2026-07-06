@@ -1,9 +1,9 @@
 # Control Module Examples
 
 Flight examples for every supported drone and transport, from a basic takeoff to an
-interactive navigation REPL. Run any script with `python3 <script>.py [flags]` (or
-`ros2 run nectar <script>.py -- [flags]`); they default to `start_driver=False`, so start
-the matching driver, bridge, or simulator first.
+interactive navigation REPL. Run any script with `python3 <script>.py [flags]` from this
+directory (these scripts are not installed as ROS 2 executables). They default to
+`start_driver=False`, so start the matching driver, bridge, or simulator first.
 
 | Script | What it does | Key flags |
 |--------|--------------|-----------|
@@ -131,7 +131,10 @@ nav> land
 python3 obstacles.py
 ```
 
-Attaches a `DepthObstacleDetector` (RealSense D435i) with a pause strategy and runs an obstacle-aware `move_to`. Requires a connected depth camera; see [`control/obstacles/README.md`](../../control/obstacles/README.md) for detectors and strategies.
+Attaches a `DepthObstacleDetector` (RealSense D435i) with a `SequenceStrategy`
+(lateral-pass-and-return) and runs an obstacle-aware `move_to`. Requires a connected depth
+camera; see [`control/obstacles/README.md`](../../control/obstacles/README.md) for detectors
+and strategies.
 
 ## Servo / PWM Test
 

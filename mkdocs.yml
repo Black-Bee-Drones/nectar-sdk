@@ -36,6 +36,8 @@ extra_javascript:
   - javascripts/mermaid.mjs
   - javascripts/diagram-zoom.js
   - javascripts/showcase.js
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
 # edit only: the module README.md files, docs/*.md, and the authored pages in
 # website/
@@ -125,7 +127,12 @@ markdown_extensions:
       emoji_index: !!python/name:zensical.extensions.emoji.twemoji
       emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ["build/docs/includes"]
+      auto_append:
+        - abbreviations.md
+  - pymdownx.arithmatex:
+      generic: true
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences:

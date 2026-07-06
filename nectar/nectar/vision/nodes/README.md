@@ -76,7 +76,7 @@ ros2 run nectar line_detection_node.py --ros-args \
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `line_colors` | string | teste | Comma-separated colors |
+| `line_colors` | string | teste | Comma-separated color names from `color_calibration.json` (e.g. `blue,red`). The default `teste` is a placeholder — set explicit names that exist in your calibration file, as in the example above. |
 | `method` | string | HoughLinesP | Estimation method |
 | `spaces` | string | hsv | Comma-separated color spaces |
 | `image_source` | string | webcam | Camera source |

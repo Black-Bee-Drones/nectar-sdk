@@ -618,66 +618,14 @@ sequenceDiagram
 
 ### Framework-Specific Configs
 
+Framework-specific subclasses extend the base `TrainingConfig` (full field list in the
+[class diagram above](#class-diagram)):
+
 ```mermaid
 classDiagram
     class TrainingConfig {
         <<dataclass>>
-        +dataset_path str
-        +epochs int
-        +batch_size int
-        +learning_rate float
-        +output_dir str
-        +device str
-        +seed int
-        +tensorboard bool
-        +save_period int
-        +push_to_hub bool
-        +hub_model_id Optional~str~
-        +multi_gpu bool
-        +mixed_precision str
-        +gradient_accumulation_steps int
-        +max_train_samples Optional~int~
-        +max_eval_samples Optional~int~
-        +max_test_samples Optional~int~
-        +train_split float
-        +val_split float
-        +test_split float
-        +dataset_format Optional~str~
-        +framework str
-        +model str
-        +from_scratch bool
-        +imgsz Optional~Union~int,List~int~~
-        +early_stopping_patience Optional~int~
-        +early_stopping_delta float
-        +early_stopping_metric str
-        +early_stopping_mode str
-        +weight_decay float
-        +lr_scheduler_type str
-        +warmup_steps int
-        +warmup_ratio float
-        +max_grad_norm float
-        +optimizer_type str
-        +dropout float
-        +warmup_epochs float
-        +warmup_momentum float
-        +lrf float
-        +freeze Optional~Union~int,List~int~~
-        +cos_lr bool
-        +rfdetr_size Optional~str~
-        +lr_encoder Optional~float~
-        +use_ema bool
-        +gradient_checkpointing bool
-        +drop_path float
-        +ema_decay float
-        +sync_bn bool
-        +num_workers int
-        +gc_per_accumulation bool
-        +evaluate bool
-        +resume bool
-        +to_dict() Dict
-        +to_yaml(path)
-        +from_dict(data)$ TrainingConfig
-        +from_yaml(path)$ TrainingConfig
+        shared fields — see Class Diagram above
     }
 
     class UltralyticsTrainingConfig {

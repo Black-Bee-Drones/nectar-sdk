@@ -7,13 +7,25 @@ stream, and a set of algorithms (ArUco, color, line, distance, MediaPipe) run on
 ## At a glance
 
 ```python
+import nectar
 from nectar.vision.camera import ImageHandler
 
-# Run a callback on every frame -- webcam, realsense, oakd, a ROS topic, or a file
+nectar.init()
 ImageHandler("webcam", image_processing_callback=lambda frame: print(frame.shape)).run()
+nectar.spin()
+nectar.shutdown()
 ```
 
-Need a single frame instead of a stream? `CameraFactory.from_source("webcam").get_frame()`.
+Need a single frame instead of a stream?
+
+```python
+from nectar.vision import CameraFactory
+
+cam = CameraFactory.from_source("webcam")
+cam.start()
+frame = cam.get_frame()
+cam.close()
+```
 
 ## Documentation
 

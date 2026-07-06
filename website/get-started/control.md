@@ -130,7 +130,7 @@ to `start_driver=False`). Connection overrides go through env vars (`FCU_URL`, `
     make sim-start                        # terminal 1
     make sim-bridge                       # terminal 2
     ```
-    For direct MAVLink or DDS add `PROTOCOL=mavlink` / `PROTOCOL=dds` on `sim-bridge`. Full
+    For direct MAVLink or uXRCE-DDS add `PROTOCOL=mavlink` / `PROTOCOL=dds` on `sim-bridge`. Full
     matrix: [Simulation](../setup/simulation.md).
 
 ## 4. Write the mission

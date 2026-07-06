@@ -88,8 +88,9 @@ classDiagram
 
 ## ArUco markers
 
-Detects ArUco markers using `cv2.aruco.ArucoDetector` and estimates 6-DOF pose via
-`cv2.aruco.estimatePoseSingleMarkers`.
+Detects ArUco markers using `cv2.aruco.ArucoDetector` and estimates marker position plus yaw
+via `cv2.aruco.estimatePoseSingleMarkers` (`pose_estimate` returns translation and a
+corner-derived yaw; the rotation vector is not exposed).
 
 > **Note:** pose estimation requires the camera intrinsic matrix from [camera calibration](../camera/README.md#camera-calibration).
 
@@ -409,7 +410,9 @@ classDiagram
 
 Both trackers share the same shape: construct with a config, use as a context manager, call
 `detect(frame, draw=True)` per frame, then read landmarks. `model_path=None` auto-downloads the
-model; `running_mode` is `"IMAGE"` (sync) or `"LIVE_STREAM"` (async).
+model; `running_mode` is `"IMAGE"` (sync — results available immediately after `detect()`) or
+`"LIVE_STREAM"` (async — results arrive via callback). Use `"IMAGE"` in simple scripts unless
+you need a live camera callback pipeline.
 
 **Hand tracking** — 21 landmarks per hand, with finger-state gesture recognition:
 
@@ -433,7 +436,7 @@ with HandTracker(HandTrackerConfig(num_hands=2, running_mode="IMAGE")) as tracke
 ```python
 from nectar.vision import FaceMeshTracker, FaceMeshTrackerConfig, FaceLandmarkRegion
 
-with FaceMeshTracker(FaceMeshTrackerConfig(num_faces=1)) as tracker:
+with FaceMeshTracker(FaceMeshTrackerConfig(num_faces=1, running_mode="IMAGE")) as tracker:
     tracker.detect(frame, draw=True)
     if tracker.get_eye_aspect_ratio("left") < 0.15:
         print("Blink detected")

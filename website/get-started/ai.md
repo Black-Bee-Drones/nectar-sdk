@@ -91,8 +91,9 @@ segmentor.load()
 result = segmentor.segment(image, conf=0.5)
 ```
 
-**Expected result:** a list of detections/segments per frame, each with a class label, a
-confidence, and a box (detection) or mask (segmentation).
+!!! success "Expected result"
+    A list of detections/segments per frame, each with a class label, a confidence, and a box
+    (detection) or mask (segmentation).
 
 ## 4. Beyond inference
 
@@ -101,7 +102,8 @@ The same `Detector` / `Segmentor` cover the whole workflow — pointers into the
 - **Slicing inference** for small objects in high-resolution frames, with NMS / Soft-NMS / WBF /
   NMM post-processing — [Detection reference](../modules/ai/detection.md).
 - **Training** with per-framework config dataclasses, TensorBoard logging, and HuggingFace Hub
-  push; **evaluation** with mAP / precision / recall; **dataset** tooling — [AI overview](../modules/ai/index.md).
+  push; **evaluation** with mAP (\(\mathrm{mAP} = \frac{1}{N}\sum_{i=1}^{N} \mathrm{AP}_i\)
+  over \(N\) classes); **dataset** tooling — [AI overview](../modules/ai/index.md).
 - **`nectar-ai` CLI** for predict / train / evaluate without writing a script.
 
 ## Go deeper

@@ -83,6 +83,8 @@ Subscriber callbacks convert ROS messages to the core's plain types:
 
 `/mavros/state` is subscribed with `TRANSIENT_LOCAL` durability so the latest cached state is delivered on subscribe (reliably catching arm/mode changes). The vision subscription is chosen at runtime: a `PoseWithCovarianceStamped` callback when the topic name contains `pose_cov`, otherwise a plain `PoseStamped`. Indoor (`pose_source=VISION`) subscribes to the vision topic; outdoor subscribes to GPS, rel-alt, and compass heading.
 
+Command topics (publishers) and MAVROS services are listed below.
+
 ## Distance Sensors
 
 `lidar_topic` feeds the downward `rangefinder` used for altitude. To expose additional rangefinders or proximity sectors (`distance_sensors` / `get_distance(orientation)` on the drone), two sides must line up:
@@ -104,18 +106,6 @@ config = MavrosConfig(
 `sensor_type` is derived from `Range.radiation_type`; `signal_quality` is not available over MAVROS and stays `None`. The direct [MAVLink transport](../mavlink/README.md) needs none of this, reading id and orientation straight from `DISTANCE_SENSOR`. See the [vehicle core README](../vehicle/README.md#distance-sensors) for the data model.
 
 ## ROS2 Topics and Services
-
-### Subscribers
-
-| Topic | Type | Purpose |
-|-------|------|---------|
-| `/mavros/state` | State | FCU connection, mode, armed |
-| `/mavros/local_position/pose` | PoseStamped | EKF local position (always) |
-| `/mavros/vision_pose/pose_cov` · `/mavros/vision_pose/pose` | PoseWithCovarianceStamped · PoseStamped | Vision pose (indoor) |
-| `/mavros/global_position/global` | NavSatFix | GPS position (outdoor) |
-| `/mavros/global_position/rel_alt` | Float64 | Relative altitude (outdoor) |
-| `/mavros/global_position/compass_hdg` | Float64 | Compass heading (outdoor) |
-| `/mavros/rangefinder/rangefinder` | Range | Lidar altitude |
 
 ### Publishers
 

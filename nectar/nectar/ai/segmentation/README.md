@@ -508,7 +508,7 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 - Download, analyze, train, eval, predict all working via CLI
 - Per-epoch HF upload via shared `setup_ultralytics_hf_callbacks()`
 - Evaluation uses `MetricTarget.MASKS` for proper mask-based metrics
-- Standalone evaluation generates 22 artifacts (9 plots, CSVs, JSONs)
+- Standalone evaluation generates 16 artifacts (13 PNG plots plus CSV/JSON reports; see [Generated Artifacts](#generated-artifacts) above)
 
 ### RF-DETR Seg Nano -- Full pipeline
 

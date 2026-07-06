@@ -37,6 +37,13 @@
   --md-code-bg-color: #252827;
 }
 
+/* Abbreviation tooltips (pymdownx abbr + includes/abbreviations.md via auto_append). */
+.md-typeset abbr {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+  cursor: help;
+}
+
 /* Mermaid diagrams (rendered natively by Zensical) get a click-to-zoom affordance;
    see website/javascripts/diagram-zoom.js. The SVG is in a closed shadow root, so the
    overlay scales the host element itself. */

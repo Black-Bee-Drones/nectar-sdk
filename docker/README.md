@@ -265,16 +265,12 @@ INSTALL_REALSENSE=true TORCH_VARIANT=cu126 make docker-build-full
 INSTALL_REALSENSE=true REALSENSE_CUDA=true TORCH_VARIANT=cu126 make docker-build-full
 ```
 
-Versions are auto-selected per ROS distro (`scripts/lib/config.sh`):
+Versions are auto-selected per ROS distro (`scripts/lib/config.sh`). Default D4xx
+librealsense / realsense-ros pins per distro are in
+[COMPATIBILITY.md](../docs/COMPATIBILITY.md#pinned-versions).
 
-| ROS 2 Distro | realsense-ros | librealsense | Cameras |
-|---|---|---|---|
-| Humble | 4.55.1 | v2.55.1 | D435, D435i, D455 |
-| Humble (T265) | [4.51.1](https://github.com/realsenseai/realsense-ros/releases/tag/4.51.1) | [v2.53.1](https://github.com/realsenseai/librealsense/releases/tag/v2.53.1) | T265 (discontinued) |
-| Jazzy | [4.56.4](https://github.com/realsenseai/realsense-ros/releases/tag/4.56.4) | [v2.56.5](https://github.com/realsenseai/librealsense/releases/tag/v2.56.5) | D435, D435i, D455 |
-| Kilted | [4.57.2](https://github.com/realsenseai/realsense-ros/releases/tag/4.57.2) | [v2.57.6](https://github.com/realsenseai/librealsense/releases/tag/v2.57.6) | D435, D435i, D455 |
-
-Override versions for specific needs:
+**T265 (Humble only, discontinued):** librealsense **v2.53.1** and realsense-ros **4.51.1**.
+Override at build time:
 
 ```bash
 # T265 tracking camera (Humble only, last supported versions)
@@ -288,14 +284,9 @@ runtime device access (following the
 
 ### T265 Tracking Camera (Docker)
 
-The Intel RealSense T265 is discontinued. The last supporting versions are
-**librealsense v2.53.1** and **realsense-ros 4.51.1** (Humble only).
-
-??? note "Why Docker for the T265"
-    Those versions list kernel support for 4.x/5.x, but the build uses
-    `FORCE_RSUSB_BACKEND=true` (libusb user-space), so any host kernel works including 6.x.
-    Docker provides a clean isolated environment with the correct library versions without
-    conflicting with newer librealsense on the host.
+Uses the T265 override versions above. The build uses `FORCE_RSUSB_BACKEND=true` (libusb
+user-space), so any host kernel works including 6.x. Docker keeps those legacy versions isolated
+from newer librealsense on the host.
 
 **Build** (requires `:humble` base image — built automatically if missing):
 
@@ -343,9 +334,8 @@ sudo cp docker/realsense/99-realsense-libusb-custom.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-!!! note
-    If `realsense-viewer` fails with OpenGL errors, set `LIBGL_ALWAYS_SOFTWARE=1` inside the
-    container for software rendering.
+> **Note:** If `realsense-viewer` fails with OpenGL errors, set `LIBGL_ALWAYS_SOFTWARE=1` inside the
+> container for software rendering.
 
 ## Isaac ROS Visual SLAM (Jetson)
 
@@ -368,23 +358,20 @@ realsense-ros `4.51.1-isaac`) → `nectar`
 (`--privileged`, `--runtime nvidia`, tegra mounts, `-e ROS_DOMAIN_ID`); the wrapper adds
 `-v /dev/bus/usb:/dev/bus/usb` so the RealSense stays visible across USB re-enumerations.
 
-!!! note "First build takes ~40-50 min on an Orin Nano"
-    It compiles librealsense from source; later runs are cached.
-
-??? note "Why the RSUSB backend (do not apt-install `realsense2-camera`)"
-    The RSUSB backend is required for the D435i IMU on JetPack 6, which removed the `hiddraw`
-    kernel support the apt `realsense2-camera` build relies on (otherwise `No HID info
-    provided, IMU is disabled`). Apt-installing `realsense2-camera` in `Dockerfile.nectar`
-    would pull that broken kernel-HID build over the source one.
-
-??? warning "Device mounts: bind `/dev/bus/usb`, never all of `/dev`"
-    With `--privileged` alone the container's `/dev` is a static snapshot taken at creation,
-    so the camera's nodes — recreated on USB enumeration/reset after the container starts —
-    never appear; the `/dev/bus/usb` bind mount is a live view of the host that survives
-    re-enumerations. Do not mount all of `/dev` (`-v /dev:/dev`): it shadows the GPU device
-    nodes `--runtime nvidia` injects, and since `run_dev.sh` runs cuVSLAM as the non-root
-    `admin` user, the CUDA memory-pool init then fails with `cudaErrorNotSupported` /
-    `setCUDAMemoryPoolSize Error: GXF_FAILURE` (works as root, fails as `admin`).
+> **Note — First build takes ~40-50 min on an Orin Nano:** It compiles librealsense from source;
+> later runs are cached.
+> **Note — Why the RSUSB backend (do not apt-install `realsense2-camera`):** The RSUSB backend is
+> required for the D435i IMU on JetPack 6, which removed the `hiddraw` kernel support the apt
+> `realsense2-camera` build relies on (otherwise `No HID info provided, IMU is disabled`).
+> Apt-installing `realsense2-camera` in `Dockerfile.nectar` would pull that broken kernel-HID build
+> over the source one.
+> **Warning — Device mounts: bind `/dev/bus/usb`, never all of `/dev`:** With `--privileged` alone
+> the container's `/dev` is a static snapshot taken at creation, so the camera's nodes — recreated on
+> USB enumeration/reset after the container starts — never appear; the `/dev/bus/usb` bind mount is
+> a live view of the host that survives re-enumerations. Do not mount all of `/dev` (`-v /dev:/dev`):
+> it shadows the GPU device nodes `--runtime nvidia` injects, and since `run_dev.sh` runs cuVSLAM as
+> the non-root `admin` user, the CUDA memory-pool init then fails with `cudaErrorNotSupported` /
+> `setCUDAMemoryPoolSize Error: GXF_FAILURE` (works as root, fails as `admin`).
 
 **Start (or enter) the Isaac container** — clone + build (if needed) + enter:
 
@@ -398,17 +385,16 @@ make isaac-run        # or: ./docker/isaac_vslam/run_docker.sh
 nectar-vslam          # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
 ```
 
-!!! warning "Run only one cuVSLAM container at a time"
-    The container uses `--ipc=host` and `--pid=host`, so if cuVSLAM crashes the dead GXF
-    process leaves a robust mutex in shared memory that aborts the next launch with
-    `cudaErrorNotSupported` / `setCUDAMemoryPoolSize Error` and a `pthread ... ESRCH`
-    assertion. Recover by removing the container (which `run_dev.sh` would otherwise
-    re-attach to):
-
-    ```bash
-    make isaac-stop       # docker rm -f the nectar (and old isaac) containers
-    make isaac-run        # fresh container; cuVSLAM initializes cleanly
-    ```
+> **Warning — Run only one cuVSLAM container at a time:** The container uses `--ipc=host` and
+> `--pid=host`, so if cuVSLAM crashes the dead GXF process leaves a robust mutex in shared memory
+> that aborts the next launch with `cudaErrorNotSupported` / `setCUDAMemoryPoolSize Error` and a
+> `pthread ... ESRCH` assertion. Recover by removing the container (which `run_dev.sh` would
+> otherwise re-attach to):
+>
+> ```bash
+> make isaac-stop       # docker rm -f the nectar (and old isaac) containers
+> make isaac-run        # fresh container; cuVSLAM initializes cleanly
+> ```
 
 Consumer side (SDK image or host), same `ROS_DOMAIN_ID`:
 
@@ -500,13 +486,9 @@ INSTALL_GAZEBO=true ROS_DISTRO=jazzy make docker-build
 INSTALL_GAZEBO=true INSTALL_REALSENSE=true TORCH_VARIANT=cu126 make docker-build-full
 ```
 
-Per-distro Gazebo versions:
-
-| ROS 2 Distro | Gazebo | ros_gz method | Notes |
-|---|---|---|---|
-| Humble | Harmonic | source | apt binary links against Fortress |
-| Jazzy | Harmonic | binary | native support |
-| Kilted | Ionic | binary | native support |
+Per-distro Gazebo versions and `ros_gz` install method (source vs binary) are pinned in
+[`config.sh`](../scripts/lib/config.sh) and summarized in
+[COMPATIBILITY.md](../docs/COMPATIBILITY.md#pinned-versions).
 
 ### SITL (flight in simulation)
 

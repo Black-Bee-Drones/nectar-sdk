@@ -255,17 +255,20 @@ class ObstacleDetector(Protocol):
 
 ### Detection Zones
 
-**Direction returned** (from cluster position vs image center, as implemented in [`depth_camera.py`](depth_camera.py)):
+Direction is derived from cluster position vs image center (see flowchart below and
+[`depth_camera.py`](depth_camera.py)):
 
-- All clusters left of center (`x_max < center`) → `ObstacleDirection.RIGHT`
-- All clusters right of center (`x_min > center`) → `ObstacleDirection.LEFT`
+- All clusters left of center → `ObstacleDirection.RIGHT`
+- All clusters right of center → `ObstacleDirection.LEFT`
 - Clusters on both sides → `ObstacleDirection.FRONT`
 
-**Distance Thresholds**:
+**Distance thresholds** (mm unless noted):
 
-- Min: 0.1m (too close to camera)
-- Max: 1.5m (detection limit)
-- Threshold: 1.3m (cluster filter)
+| Parameter | Value | Role |
+|-----------|-------|------|
+| Min distance | 100 | Ignore returns closer than this |
+| Max distance | 1500 | Detection range limit |
+| Cluster filter | 1300 | Max mean cluster depth to count as obstacle |
 
 ### DepthObstacleDetector
 
@@ -290,23 +293,7 @@ detector = DepthObstacleDetector(
 
 > **Note:** the detector owns its own RealSense `ImageHandler` (and ROS node) internally — no `node` argument is passed.
 
-**Algorithm**:
-
-1. Acquire depth frame from RealSense camera
-2. Downsample depth image (10% scale for performance)
-3. Filter valid points (0 < depth < max_distance_mm)
-4. Apply DBSCAN clustering to group obstacle points
-5. Filter clusters by mean depth (< depth_threshold_mm)
-6. Determine obstacle direction (LEFT, RIGHT, FRONT) based on cluster position
-7. Calculate closest obstacle distance
-
-**Direction Logic** (matches [`depth_camera.py`](depth_camera.py)):
-
-- All clusters left of center → `ObstacleDirection.RIGHT`
-- All clusters right of center → `ObstacleDirection.LEFT`
-- Clusters on both sides → `ObstacleDirection.FRONT`
-
-#### Depth Camera Processing Flow
+#### Depth camera processing
 
 ```mermaid
 flowchart TD
@@ -588,20 +575,6 @@ drone.remove_obstacle_detector("depth")
 ```
 
 ## Usage Examples
-
-### Simple Pause
-
-```python
-from nectar.control import DepthObstacleDetector, strategies
-
-detector = DepthObstacleDetector()
-drone.add_obstacle_detector("depth", detector, strategies.PauseStrategy())
-drone.enable_obstacle_detector("depth")
-
-drone.takeoff(1.5)
-drone.move_to(x=10.0, y=0.0, z=0.0)  # Pauses when obstacle detected
-drone.land()
-```
 
 ### Lateral Evasion
 

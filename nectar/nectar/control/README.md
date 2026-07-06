@@ -426,7 +426,7 @@ Abstract base providing common functionality.
 **Protected Methods**:
 
 - `_create_subscriber()`, `_create_publisher()`, `_create_client()`
-- `_init_driver()`, `_check_driver_running()`, `_wait_for_driver()`
+- `_init_driver()`, `check_driver_status()`, `_wait_for_driver()`
 - `delay(seconds)`: Non-blocking delay
 
 ### Configuration System
@@ -556,4 +556,7 @@ Each submodule is documented in its own README, indexed in the
 - `RTLMethod`: NAVIGATE, NATIVE
 - `AltitudeSource`: AUTO, LIDAR, VISION, REL_ALT
 - `ObstacleDirection`: FRONT, BACK, LEFT, RIGHT, UP, DOWN
-- `ObstacleInfo`: Detection result
+
+**Dataclasses**:
+
+- `ObstacleInfo`: Obstacle detection result (direction, distance, zone)
