@@ -1,16 +1,8 @@
 """Nectar SDK top-level package."""
 
-from nectar.runtime import (
-    add_node,
-    get_executor,
-    init,
-    is_initialized,
-    owns_executor,
-    remove_node,
-    shutdown,
-    spin,
-    use_executor,
-)
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 __all__ = [
     "init",
@@ -23,3 +15,24 @@ __all__ = [
     "owns_executor",
     "spin",
 ]
+
+if TYPE_CHECKING:
+    from nectar.runtime import (
+        add_node,
+        get_executor,
+        init,
+        is_initialized,
+        owns_executor,
+        remove_node,
+        shutdown,
+        spin,
+        use_executor,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    if name in __all__:
+        from nectar import runtime
+
+        return getattr(runtime, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
