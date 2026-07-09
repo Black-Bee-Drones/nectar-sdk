@@ -1,0 +1,169 @@
+name: Docker Push Distro
+
+on:
+  workflow_call:
+    inputs:
+      ros_distro:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      install_drone:
+        required: false
+        type: string
+        default: "all"
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+
+jobs:
+  build:
+    name: Build ${{ inputs.ros_distro }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    env:
+      REGISTRY_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build (load for verify)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |
+            ROS_DISTRO=${{ inputs.ros_distro }}
+            INSTALL_REALSENSE=true
+            INSTALL_DRONE=${{ inputs.install_drone }}
+          target: sdk
+          load: true
+          push: false
+          tags: nectar-sdk:verify
+          cache-from: type=gha,scope=${{ inputs.ros_distro }}-${{ matrix.arch }}-sdk
+          cache-to: type=gha,mode=max,scope=${{ inputs.ros_distro }}-${{ matrix.arch }}-sdk
+
+      - name: Verify SDK
+        run: |
+          docker run --rm nectar-sdk:verify bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify
+          "
+
+      - name: Functional verification
+        run: |
+          mkdir -p test-results
+          docker run --rm -v "${{ github.workspace }}/test-results:/tmp/results" nectar-sdk:verify bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            JUNIT_XML=/tmp/results/functional-${{ inputs.ros_distro }}-${{ matrix.arch }}.xml \
+              /home/ros2_ws/src/nectar-sdk/scripts/setup.sh verify-functional
+          "
+
+      - name: Upload functional results (JUnit)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-${{ inputs.ros_distro }}-${{ matrix.arch }}
+          path: test-results/*.xml
+          if-no-files-found: ignore
+
+      - name: Verify RealSense
+        run: |
+          docker run --rm nectar-sdk:verify bash -c "
+            source /opt/ros/\$ROS_DISTRO/setup.bash
+            source /home/ros2_ws/install/local_setup.bash 2>/dev/null
+            /home/ros2_ws/src/nectar-sdk/scripts/setup.sh realsense-verify
+          "
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |
+            ROS_DISTRO=${{ inputs.ros_distro }}
+            INSTALL_REALSENSE=true
+            INSTALL_DRONE=${{ inputs.install_drone }}
+          target: sdk
+          cache-from: type=gha,scope=${{ inputs.ros_distro }}-${{ matrix.arch }}-sdk
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ inputs.ros_distro }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Manifest ${{ inputs.ros_distro }}
+    runs-on: ubuntu-24.04
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    env:
+      REGISTRY_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/nectar-sdk
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ inputs.ros_distro }}-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t "${REGISTRY_IMAGE}:${{ inputs.ros_distro }}" \
+            -t "${REGISTRY_IMAGE}:${{ inputs.ros_distro }}-${{ inputs.release_tag }}" \
+            $(printf "${REGISTRY_IMAGE}@sha256:%s " *)
+
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect "${REGISTRY_IMAGE}:${{ inputs.ros_distro }}"

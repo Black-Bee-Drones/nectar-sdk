@@ -13,6 +13,25 @@ _drone_activation_hint() {
     log_info "New terminals pick it up automatically (configured in ~/.bashrc)."
 }
 
+# Run a driver install function; abort on failure
+_drone_install_required() {
+    local fn="$1"
+    if ! "$fn"; then
+        log_error "Required driver install failed: ${fn#_}"
+        return 1
+    fi
+}
+
+# Run a driver install function; log and continue on failure
+_drone_install_optional() {
+    local fn="$1"
+    local label="$2"
+    if ! "$fn"; then
+        log_warning "Skipping ${label} on ${ROS_DISTRO} (optional; install failed or unsupported)"
+        return 0
+    fi
+}
+
 # MAVROS + GeographicLib datasets (ArduPilot / PX4 over ROS).
 _drone_mavros() {
     log_section "INSTALLING MAVROS DRIVER"
@@ -45,6 +64,33 @@ _drone_px4_dds() {
     _drone_activation_hint
 }
 
+_crazyflie_build_from_source() {
+    local dest="${WORKSPACE_DIR}/src/crazyswarm2"
+    mkdir -p "${WORKSPACE_DIR}/src"
+
+    if [ -d "$dest" ]; then
+        log_info "crazyswarm2 already present at ${dest}, skipping clone"
+    else
+        log_info "Cloning Crazyswarm2 from ${CRAZYSWARM2_REPO}..."
+        if [ -n "${CRAZYSWARM2_REF}" ]; then
+            git clone --recursive -b "${CRAZYSWARM2_REF}" "${CRAZYSWARM2_REPO}" "$dest"
+        else
+            git clone --recursive "${CRAZYSWARM2_REPO}" "$dest"
+        fi
+    fi
+
+    cd "$WORKSPACE_DIR"
+    source "/opt/ros/${ROS_DISTRO}/setup.bash"
+    [ -f install/setup.bash ] && source install/setup.bash
+
+    log_info "Installing Crazyswarm2 rosdep dependencies..."
+    rosdep install --from-paths src --ignore-src -y -r
+
+    log_info "Building Crazyswarm2 (crazyflie, crazyflie_interfaces)..."
+    colcon build --symlink-install --packages-up-to crazyflie crazyflie_interfaces \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release
+}
+
 # Crazyswarm2 (Crazyflie 2.x). Prefer apt binaries; fall back to source build.
 _drone_crazyflie() {
     log_section "INSTALLING CRAZYFLIE DRIVER (Crazyswarm2)"
@@ -58,13 +104,8 @@ _drone_crazyflie() {
         log_info "Installing Crazyswarm2 from apt (${candidate})..."
         SUDO apt-get install -y --no-install-recommends "${CRAZYFLIE_PACKAGES[@]}"
     else
-        log_warning "No apt binary for ros-${ROS_DISTRO}-crazyflie; build from source:"
-        echo "  cd ${WORKSPACE_DIR}/src"
-        echo "  git clone https://github.com/IMRCLab/crazyswarm2 --recursive"
-        echo "  cd ${WORKSPACE_DIR}"
-        echo "  rosdep install --from-paths src --ignore-src -y"
-        echo "  colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release"
-        return 1
+        log_warning "No apt binary for ros-${ROS_DISTRO}-crazyflie; building from source..."
+        _crazyflie_build_from_source
     fi
 
     # rowan: used by CrazyflieDrone full-state streaming. Pin numpy<2 alongside it
@@ -78,7 +119,8 @@ _drone_crazyflie() {
     if ros2 pkg list 2>/dev/null | grep -qx "crazyflie"; then
         log_success "Crazyflie driver installed (crazyflie on ROS path)"
     else
-        log_success "Crazyflie driver installed"
+        log_error "Crazyflie driver not on ROS path after install"
+        return 1
     fi
     log_info "Next: set your radio URI in crazyflies.yaml — see"
     log_info "  nectar/nectar/control/crazyflie/README.md (Installation, step 3)"
@@ -142,6 +184,7 @@ _drone_bebop() {
         log_success "Bebop driver built (ros2_bebop_driver on ROS path)"
     else
         log_warning "Bebop driver built but not on ROS path — check colcon output above"
+        return 1
     fi
     log_info "Launch: ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:=192.168.42.1"
     _drone_activation_hint
@@ -159,6 +202,14 @@ _bebop_patch_ffmpeg() {
     fi
 }
 
+# Full published-image set: required backends first, then best-effort optional ones.
+_drone_all() {
+    _drone_install_required _drone_mavros
+    _drone_install_required _drone_crazyflie
+    _drone_install_optional _drone_bebop "Bebop"
+    _drone_install_optional _drone_px4_dds "PX4 uXRCE-DDS"
+}
+
 # Dispatcher: ./setup.sh drone <mavros|crazyflie|bebop|all>
 cmd_drone() {
     local kind="${1:-}"
@@ -168,10 +219,11 @@ cmd_drone() {
         px4-dds|px4_dds)   _drone_px4_dds ;;
         crazyflie)         _drone_crazyflie ;;
         bebop)             _drone_bebop ;;
-        all)               _drone_mavros && _drone_crazyflie && _drone_bebop ;;
+        all)               _drone_all ;;
         ""|list)
             echo "Usage: ./setup.sh drone <type>"
             echo "  types: mavros, px4, px4-dds, crazyflie, bebop, all"
+            echo "  all:   mavros + crazyflie (required), bebop + px4-dds (best-effort)"
             ;;
         *)
             log_error "Unknown drone type: $kind (expected mavros|px4|px4-dds|crazyflie|bebop|all)"

@@ -6,7 +6,7 @@ x86_64 images (`Dockerfile`) are tagged by ROS distro (`nectar-sdk:<distro>`), e
 
 | Tag | Contents | PyTorch |
 |-----|----------|---------|
-| `:humble` | core + control + vision + interface + realsense + oakd + mavros + crazyflie | None |
+| `:humble` | core + control + vision + interface + realsense + oakd + `INSTALL_DRONE=all` | None |
 | `:humble-t265` | All above + librealsense v2.53.1 + T265 support | None |
 | `:humble-full-cpu` | All above + AI packages | CPU |
 | `:humble-full-cu126` | All above + AI packages | CUDA 12.6 |
@@ -222,14 +222,14 @@ line — the image only runs on matching JetPack), and `:jetson-full`. Pass
 
 ## Control backends
 
-Control backends are opt-in via the `INSTALL_DRONE` build arg (a space-separated
-list of `make drone-<x>` targets). The core image ships MAVLink (`pymavlink`)
-only; the published images add `mavros` + `crazyflie`:
+Control backends are opt-in via the `INSTALL_DRONE` build arg. Use `all` for the
+published release image (`make drone-all`: MAVROS + Crazyflie required; Bebop and
+PX4 uXRCE-DDS best-effort per distro). The core image ships MAVLink (`pymavlink`) only.
 
-**Published set** (MAVROS + Crazyflie):
+**Published set** (`INSTALL_DRONE=all`):
 
 ```bash
-INSTALL_DRONE="mavros crazyflie" make docker-build
+INSTALL_DRONE=all make docker-build
 ```
 
 **MAVLink/pymavlink only** (default):
@@ -238,9 +238,15 @@ INSTALL_DRONE="mavros crazyflie" make docker-build
 make docker-build
 ```
 
-Bebop is not a default (source build, Humble-only); add it with
-`INSTALL_DRONE="mavros crazyflie bebop"`, or `make drone-bebop` at runtime.
-PX4 over MAVROS needs `mavros`; PX4 native uXRCE-DDS is part of the simulation install.
+**Custom list:**
+
+```bash
+INSTALL_DRONE="mavros crazyflie" make docker-build
+```
+
+Crazyflie installs from apt on Humble/Jazzy and from source on Kilted when no apt
+binary exists. Bebop and PX4-DDS are attempted in `all` but skipped with a warning
+if they fail on a given distro. PX4 over MAVROS needs `mavros` (included in `all`).
 
 ## RealSense
 

@@ -80,7 +80,10 @@ RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
 # Control backends: space-separated `make drone-<x>` list (e.g. "mavros crazyflie").
 # Empty by default; core ships MAVLink/pymavlink only.
 ARG INSTALL_DRONE=""
-RUN if [ -n "$INSTALL_DRONE" ]; then for d in $INSTALL_DRONE; do make drone-$d; done; fi
+RUN if [ -n "$INSTALL_DRONE" ]; then \
+      if [ "$INSTALL_DRONE" = "all" ]; then make drone-all; \
+      else for d in $INSTALL_DRONE; do make drone-$d; done; fi; \
+    fi
 
 CMD ["/bin/bash"]
 

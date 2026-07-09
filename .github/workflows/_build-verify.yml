@@ -10,6 +10,10 @@ on:
         required: false
         type: string
         default: "true"
+      install_drone:
+        required: false
+        type: string
+        default: "all"
       runner:
         required: false
         type: string
@@ -23,7 +27,7 @@ jobs:
   build_and_verify:
     name: Build & Verify (${{ inputs.ros_distro }})
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     outputs:
       image_tag: ${{ steps.meta.outputs.tag }}
 
@@ -51,6 +55,7 @@ jobs:
           build-args: |
             ROS_DISTRO=${{ inputs.ros_distro }}
             INSTALL_REALSENSE=${{ inputs.install_realsense }}
+            INSTALL_DRONE=${{ inputs.install_drone }}
           target: sdk
           load: true
           push: false

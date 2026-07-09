@@ -18,4 +18,5 @@ jobs:
     uses: ./.github/workflows/_build-verify.yml
     with:
       ros_distro: jazzy
+      install_drone: all
       runner: ${{ matrix.runner }}
