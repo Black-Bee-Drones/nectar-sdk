@@ -97,9 +97,17 @@ if [ "${GZ_ROS_FROM_SOURCE}" = true ]; then
 
     if ! colcon build --help 2>&1 | grep -q "allow-overriding"; then
         pip install -q colcon-override-check 2>/dev/null || true
+
+        if ! colcon build --help 2>&1 | grep -q "allow-overriding"; then
+            sudo pip3 install -q colcon-override-check 2>/dev/null || true
+        fi
+    fi
+    _colcon_override=()
+    if colcon build --help 2>&1 | grep -q "allow-overriding"; then
+        _colcon_override=(--allow-overriding ros_gz_bridge ros_gz_interfaces)
     fi
     colcon build --packages-up-to ros_gz_bridge \
-        --allow-overriding ros_gz_bridge ros_gz_interfaces \
+        "${_colcon_override[@]}" \
         --cmake-clean-cache
     set +u
     source install/setup.bash

@@ -51,10 +51,10 @@ Install: `make python-vision` (algorithms) / camera extras as needed.
 |---|:---:|:---:|:---:|:---:|
 | ArUco / color / line / distance (algorithms) | ● | ● | ● | ● |
 | ROS-topic camera (`CameraFactory`) | ● | ● | ● | ● |
-| USB / OpenCV camera[^usb] | ◐ | ◐ | ◐ | ◐ |
-| RealSense D4xx (librealsense from source)[^realsense] | ● | ◐ | ◐ | ● |
-| OAK-D (`depthai`)[^oakd] | ● | ◐ | ◐ | ● |
-| MediaPipe hand / face[^mediapipe] | ◐ | ◐ | ◐ | ◐ |
+| USB / OpenCV camera[^usb] | ● | ● | ● | ● |
+| RealSense D4xx (librealsense from source)[^realsense] | ● | ● | ◐ | ● |
+| OAK-D (`depthai`)[^oakd] | ● | ● | ◐ | ● |
+| MediaPipe hand / face[^mediapipe] | ● | ● | ● | ◐ |
 
 ## Control
 
@@ -63,11 +63,11 @@ Install: `make python-control`; backends are opt-in (`make drone-<x>`).
 | Feature | Humble | Jazzy | Kilted | Jetson |
 |---|:---:|:---:|:---:|:---:|
 | Vehicle core (PID, navigator, frame transforms) | ● | ● | ● | ● |
-| Direct MAVLink (`pymavlink`) transport | ● | ● | ● | ● |
-| MAVROS backend (ArduPilot / PX4)[^mavros] | ◐ | ● | ◐ | ◐ |
-| PX4 native uXRCE-DDS[^mavros] | ◐ | ● | ◐ | ◐ |
-| Crazyflie / Crazyswarm2[^crazyflie] | ○ | ○ | ○ | ○ |
-| Bebop driver[^bebop] | ◐ | — | — | — |
+| Direct MAVLink (`pymavlink`) transport[^mavlink] | ● | ● | ● | ● |
+| MAVROS backend (ArduPilot / PX4)[^mavros] | ◐ | ● | ● | ◐ |
+| PX4 native uXRCE-DDS[^px4dds] | ● | ● | ● | ◐ |
+| Crazyflie / Crazyswarm2[^crazyflie] | ● | ● | ● | ○ |
+| Bebop driver[^bebop] | ● | ○ | ○ | — |
 
 ## Localization (indoor / GPS-denied)
 
@@ -87,7 +87,7 @@ Install: `make python-sensors`.
 |---|:---:|:---:|:---:|:---:|
 | Obstacle-mask filter | ● | ● | ● | ● |
 | Rangefinder → MAVLink `DISTANCE_SENSOR` | ● | ● | ● | ● |
-| TF-Luna UART driver[^tfluna] | ◐ | ◐ | ◐ | ◐ |
+| TF-Luna UART driver[^tfluna] | ● | ● | ● | ● |
 
 ## AI / detection
 
@@ -97,8 +97,8 @@ Install: `make python-ai && make pytorch`.
 |---|:---:|:---:|:---:|:---:|
 | `nectar-ai` CLI | ● | ● | ● | ● |
 | Detection inference (YOLO / DETR / RF-DETR)[^detect] | ● | ● | ◐ | ● |
-| PyTorch CUDA (GPU tensor)[^torchcuda] | ○ | ● | ○ | ● |
-| Training / segmentation | ◐ | ◐ | ◐ | ◐ |
+| PyTorch CUDA (GPU tensor)[^torchcuda] | ● | ● | ● | ● |
+| Training / segmentation | ● | ● | ◐ | ◐ |
 
 ## Interface
 
@@ -107,7 +107,7 @@ Install: `make python-interface`.
 | Feature | Humble | Jazzy | Kilted | Jetson |
 |---|:---:|:---:|:---:|:---:|
 | Qt6 / PySide6 GUI (offscreen construct) | ● | ● | ● | ● |
-| Full GUI on a display[^gui] | ◐ | ◐ | ◐ | ◐ |
+| Full GUI on a display[^gui] | ● | ● | ● | ● |
 
 ## Simulation
 
@@ -115,9 +115,12 @@ Install: `make sim-install`. Not part of any published image.
 
 | Feature | Humble | Jazzy | Kilted | Jetson |
 |---|:---:|:---:|:---:|:---:|
-| Gazebo + `ros_gz` bridge[^gazebo] | ○ | ● | ○ | ○ |
-| ArduPilot SITL flight[^sitl] | ○ | ● | ○ | — |
-| PX4 SITL flight[^sitl] | ○ | ● | ○ | — |
+| Gazebo + `ros_gz` bridge[^gazebo] | ● | ● | ● | ○ |
+| ArduPilot SITL — MAVROS[^sitl] | ● | ● | ● | — |
+| ArduPilot SITL — MAVLink[^sitl] | ● | ● | ● | — |
+| PX4 SITL — MAVROS[^sitl] | ◐ | ● | ● | — |
+| PX4 SITL — MAVLink[^sitl] | ◐ | ● | ● | — |
+| PX4 SITL — uXRCE-DDS[^sitl] | ● | ● | ● | — |
 
 ## Pinned versions
 
@@ -137,7 +140,7 @@ Three commands back this matrix; a cell's symbol reflects the deepest tier reach
 |------|---------|----------------|
 | 1 — Build | `make verify` | The image builds, packages are present, modules import, and node executables are installed. (`make doctor` gives a read-only environment/device/CUDA report.) |
 | 2 — Functional | `make verify-functional` | The **pytest** suite under [`nectar/test/`](../nectar/test) (also run by `colcon test`). Each test performs a *real operation* — detect a synthetic ArUco marker, run a PID step response, complete a MAVLink handshake over loopback, relay a VSLAM pose, open the Qt window offscreen, run a nano-model inference. Tests self-skip when a device/GPU/sim/dependency is absent. Subset with `MODULE="vision control"`; hardware/GPU tests opt in via `make verify-hardware`; reproduce per-distro with `make ci-local`. |
-| 3 — SITL / integration | `make verify-sitl` | The suite under [`nectar/test/sitl/`](../nectar/test/sitl): a real headless flight (connect, takeoff, move, land) per firmware/protocol (ArduPilot/PX4 over MAVROS, MAVLink, uXRCE-DDS; Crazyflie sim). Opt-in; run where the sim stack is installed (`make sim-install`), not in CI (from-source simulators take ~45-70 min). Backs the Simulation / MAVROS / PX4-DDS rows. |
+| 3 — SITL / integration | `make verify-sitl` | The suite under [`nectar/test/sitl/`](../nectar/test/sitl): a real headless flight (connect, takeoff, move, land) per firmware/protocol. |
 
 ## Not covered yet
 

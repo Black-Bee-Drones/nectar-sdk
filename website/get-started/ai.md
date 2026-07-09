@@ -102,9 +102,15 @@ The same `Detector` / `Segmentor` cover the whole workflow — pointers into the
 - **Slicing inference** for small objects in high-resolution frames, with NMS / Soft-NMS / WBF /
   NMM post-processing — [Detection reference](../modules/ai/detection.md).
 - **Training** with per-framework config dataclasses, TensorBoard logging, and HuggingFace Hub
-  push; **evaluation** with mAP (\(\mathrm{mAP} = \frac{1}{N}\sum_{i=1}^{N} \mathrm{AP}_i\)
-  over \(N\) classes); **dataset** tooling — [AI overview](../modules/ai/index.md).
+  push; **evaluation** and **dataset** tooling — [AI overview](../modules/ai/index.md).
 - **`nectar-ai` CLI** for predict / train / evaluate without writing a script.
+
+## 5. Notebook tutorial
+
+End-to-end detection workflow in Jupyter/Colab.
+
+- Notebook:
+  [`nectar_detection.ipynb`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/ai/detection/notebook/nectar_detection.ipynb)
 
 ## Go deeper
 

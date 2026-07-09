@@ -102,6 +102,10 @@ CRAZYFLIE_PACKAGES=(
     "ros-${ROS_DISTRO}-crazyflie-interfaces"
 )
 
+# Crazyswarm2 source fallback
+CRAZYSWARM2_REPO="${CRAZYSWARM2_REPO:-https://github.com/IMRCLab/crazyswarm2}"
+CRAZYSWARM2_REF="${CRAZYSWARM2_REF:-}"
+
 # Bebop driver (jeremyfix ros2_bebop_driver + ros2_parrot_arsdk, built from source).
 # apt deps required to build/run the driver.
 BEBOP_APT_PACKAGES=(

@@ -1,6 +1,6 @@
 # VisDrone 2019 - YOLO26 Nano Baseline
 # Resolution: 640x640 (standard YOLO)
-# Usage: nectar-od train --config configs/visdrone_yolo26n.yaml
+# Usage: nectar-ai detect train --config configs/visdrone_yolo26n.yaml
 
 data:
   dataset_path: datasets/visdrone

@@ -9,3 +9,4 @@ jobs:
     uses: ./.github/workflows/_build-verify.yml
     with:
       ros_distro: humble
+      install_drone: all

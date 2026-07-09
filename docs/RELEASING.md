@@ -56,9 +56,13 @@ Check the [Actions tab](https://github.com/Black-Bee-Drones/nectar-sdk/actions) 
 
 `docker-push.yml` triggers on release publish. For each distro (Humble, Jazzy, Kilted) and architecture (amd64, arm64):
 
-1. Builds the Docker image with RealSense and drone drivers (`mavros`, `crazyflie`)
+1. Builds the Docker image with RealSense and all drone drivers (`INSTALL_DRONE=all`)
 2. Runs `verify` + `verify-functional` + `realsense-verify`
-3. **Only if all checks pass**: pushes multi-arch manifests to Docker Hub
+3. **Only if all checks pass for that distro**: pushes multi-arch manifests to Docker Hub
+
+Distros are independent — a Kilted failure does not block Humble/Jazzy tagging.
+
+To re-publish Docker tags without a new GitHub release, run **Actions → Docker Push → Run workflow** with the desired `release_tag` (e.g. `v1.1.0`) and `distros`.
 
 ## Documentation site (GitHub Pages)
 
@@ -94,6 +98,6 @@ docker run -it --rm --net=host blackbeedrones/nectar-sdk:humble
 | `build-test-jazzy.yml` | Push to `main`, weekly (Mon 05:00 UTC) | Jazzy | Docker build + `verify` + `verify-functional` + RealSense |
 | `build-test-kilted.yml` | Push to `main`, weekly (Mon 05:00 UTC) | Kilted | Docker build + `verify` + `verify-functional` + RealSense |
 | `docs.yml` | PR (build) / push to `main` (build + deploy) | — | Zensical site; deploys to GitHub Pages |
-| `docker-push.yml` | GitHub release | All 3 × amd64 + arm64 | Build → `verify` + `verify-functional` + RealSense → push to Docker Hub |
+| `docker-push.yml` | GitHub release / manual dispatch | All 3 × amd64 + arm64 (independent per distro) | Build → `verify` + `verify-functional` + RealSense → push to Docker Hub |
 
 The Docker build and verify logic is shared via `_build-verify.yml` (reusable workflow). `docker-push.yml` mirrors the same verification steps before publishing release images.

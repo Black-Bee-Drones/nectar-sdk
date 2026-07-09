@@ -61,7 +61,10 @@ RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
 # (e.g. "mavros crazyflie"). Empty by default (core install ships MAVLink/pymavlink
 # only). Bebop is intentionally not a default (source build, Humble-only).
 ARG INSTALL_DRONE=""
-RUN if [ -n "$INSTALL_DRONE" ]; then for d in $INSTALL_DRONE; do make drone-$d; done; fi
+RUN if [ -n "$INSTALL_DRONE" ]; then \
+      if [ "$INSTALL_DRONE" = "all" ]; then make drone-all; \
+      else for d in $INSTALL_DRONE; do make drone-$d; done; fi; \
+    fi
 
 # Simulation stack (opt-in): "ardupilot" | "px4" | "all" (see docker/README.md).
 # ArduPilot's prereqs refuse root, so install_sitl.sh re-runs as AP_BUILD_USER;

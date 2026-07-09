@@ -17,6 +17,12 @@ for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
 ```
 
+## Tutorial notebook
+
+Interactive Colab/Jupyter walkthrough
+
+- Notebook: [`detection/notebook/nectar_detection.ipynb`](notebook/nectar_detection.ipynb)
+
 ## Concepts
 
 `Detector` is a thin factory over three framework backends (`UltralyticsModel`,
