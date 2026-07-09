@@ -100,7 +100,7 @@ SIM_SPECS = {
         drone_type="mavros",
         config_factory=_ardupilot_mavros,
         start_cmds=[_AP_START, _AP_BRIDGE.format(proto="mavros")],
-        settle=90.0,  # ArduPilot EKF + gyro-consistency prearm needs time to converge
+        settle=120.0,  # ArduPilot EKF + gyro/accel consistency prearm needs time to converge
     ),
     "ardupilot-mavlink": SimSpec(
         key="ardupilot-mavlink",
@@ -111,7 +111,7 @@ SIM_SPECS = {
         # once SERIAL0 (5760) has a client, so run the mavros bridge alongside to
         # unblock it (matches `sitl_test.py --mavlink`).
         start_cmds=[_AP_START, _AP_BRIDGE.format(proto="mavros")],
-        settle=90.0,
+        settle=120.0,
     ),
     "px4-mavros": SimSpec(
         key="px4-mavros",
@@ -119,6 +119,7 @@ SIM_SPECS = {
         drone_type="px4",
         config_factory=_px4_mavros,
         start_cmds=[_PX4_START, "make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=mavros"],
+        settle=90.0,  # OFFBOARD setpoint stream + EKF need time before arm
     ),
     "px4-mavlink": SimSpec(
         key="px4-mavlink",
@@ -126,6 +127,7 @@ SIM_SPECS = {
         drone_type="px4_mavlink",
         config_factory=_px4_mavlink,
         start_cmds=[_PX4_START, "make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=mavlink"],
+        settle=90.0,
     ),
     "px4-dds": SimSpec(
         key="px4-dds",
@@ -133,6 +135,7 @@ SIM_SPECS = {
         drone_type="px4_dds",
         config_factory=_px4_dds,
         start_cmds=[_PX4_START, "make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds"],
+        settle=90.0,
     ),
     "crazyflie-sim": SimSpec(
         key="crazyflie-sim",
@@ -179,7 +182,7 @@ def start_sim(spec: SimSpec) -> List[subprocess.Popen]:
             subprocess.Popen(cmd, cwd=REPO_DIR, shell=True, stdout=log, stderr=subprocess.STDOUT)
         )
         # Let the simulator come up before the bridge connects to it.
-        time.sleep(12 if i == 0 and len(spec.start_cmds) > 1 else 2)
+        time.sleep(20 if i == 0 and len(spec.start_cmds) > 1 else 2)
     return handles
 
 

@@ -123,13 +123,13 @@ MAVROS). `ENV` must match between the two terminals.
 
 | Scenario                          | Terminal 1                                      | Terminal 2                                                        | Mission config                                       |
 | --------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
-| ArduPilot outdoor, MAVROS         | `make sim-start FIRMWARE=ardupilot ENV=outdoor` | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor`                  | `MavrosDrone` / `SITL_GAZEBO_CONFIG`                 |
-| ArduPilot outdoor, direct MAVLink | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor PROTOCOL=mavlink` | `MavlinkDrone` / `MAVLINK_SITL_GAZEBO_CONFIG`        |
+| ArduPilot outdoor, MAVROS         | `make sim-start FIRMWARE=ardupilot ENV=outdoor` | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor`                  | `MavrosDrone` / `SITL_GAZEBO_CONFIG` |
+| ArduPilot outdoor, direct MAVLink | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor PROTOCOL=mavlink` | `MavlinkDrone` / `MAVLINK_SITL_GAZEBO_CONFIG` |
 | ArduPilot indoor, MAVROS          | `make sim-start FIRMWARE=ardupilot ENV=indoor`  | `make sim-bridge FIRMWARE=ardupilot ENV=indoor`                   | `MavrosDrone` / `SITL_VISION_CONFIG`                 |
 | ArduPilot indoor, direct MAVLink  | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=indoor PROTOCOL=mavlink`  | `MavlinkDrone` / `MAVLINK_SITL_VISION_CONFIG`        |
 | PX4 outdoor, MAVROS               | `make sim-start FIRMWARE=px4 ENV=outdoor`       | `make sim-bridge FIRMWARE=px4 ENV=outdoor`                        | `Px4MavrosDrone` / `PX4_SITL_GAZEBO_CONFIG`          |
 | PX4 outdoor, direct MAVLink       | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=mavlink`       | `Px4MavlinkDrone` / `PX4_MAVLINK_SITL_GAZEBO_CONFIG` |
-| PX4 outdoor, uXRCE-DDS            | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds`           | `Px4DdsDrone` / `PX4_DDS_SITL_CONFIG`                |
+| PX4 outdoor, uXRCE-DDS            | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds`           | `Px4DdsDrone` / `PX4_DDS_SITL_CONFIG`            |
 | PX4 indoor (VIO)                  | `make sim-start FIRMWARE=px4 ENV=indoor`        | `make sim-bridge FIRMWARE=px4 ENV=indoor`                         | `Px4MavrosDrone` / `PX4_SITL_VISION_CONFIG`          |
 
 - **ArduPilot**: Terminal 1 runs the SITL physics; Terminal 2 launches the Gazebo world + `ros_gz_bridge` + (unless `PROTOCOL=mavlink`) MAVROS. `mavros` uses SERIAL0 (tcp `5760`); direct MAVLink connects a `MavlinkDrone` on SERIAL1 (tcp `5762`), which `start_sitl.sh` always exposes.
@@ -272,6 +272,8 @@ drone = DroneFactory.create("px4_mavlink", PX4_MAVLINK_SITL_GAZEBO_CONFIG)
 ```
 
 ## Test Suite
+
+Per-distro outdoor protocol status lives in [`docs/COMPATIBILITY.md`](../../docs/COMPATIBILITY.md) (Simulation section). Tier-3 gate per protocol: `make verify-sitl FIRMWARE=<ardupilot|px4> PROTOCOL=<mavros|mavlink|dds>` — maps to the scenario rows below.
 
 `sitl_test.py` runs atomic navigation tests. Each test starts from a clean hover and verifies a specific capability.
 

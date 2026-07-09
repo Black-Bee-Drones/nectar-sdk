@@ -8,7 +8,8 @@
   stream stalls for ~500 ms. A background ROS timer (the *offboard pump*)
   republishes the last commanded setpoint at ``offboard_rate_hz`` so the vehicle
   stays in offboard between explicit movement commands.
-- **Arm sequence**: stream a hold setpoint, switch to ``OFFBOARD``, then arm.
+- **Arm sequence**: stream a hold setpoint until the pump has actually ticked
+  enough times, switch to ``OFFBOARD``, then arm.
 - **Takeoff/land/RTL**: takeoff climbs to an offboard position setpoint (no mode
   change); landing and RTL use PX4's ``AUTO.LAND`` / ``AUTO.RTL`` modes.
 
@@ -44,8 +45,11 @@ _MODE_RTL = "AUTO.RTL"
 class Px4Drone(VehicleDrone):
     """Base PX4 drone: OFFBOARD control with a continuous setpoint pump."""
 
-    # Seconds to stream setpoints before requesting OFFBOARD so PX4 accepts it.
+    # Nominal seconds of setpoint streaming before requesting OFFBOARD so PX4
+    # accepts it.
     _OFFBOARD_PRESTREAM_S = 0.5
+    # Upper bound on that wait so a dead pump/transport can't hang arm() forever.
+    _OFFBOARD_PRESTREAM_TIMEOUT_S = 2.0
 
     # PX4 setpoint params come from a Px4SetpointConfig (MPC_* speed/accel/jerk).
     _setpoint_config_class = Px4SetpointConfig
@@ -87,6 +91,7 @@ class Px4Drone(VehicleDrone):
         super()._load_firmware_config()
         self._offboard_setpoint: Optional[tuple] = None
         self._offboard_active: bool = False
+        self._pump_ticks: int = 0
         rate = float(getattr(self._config, "offboard_rate_hz", 20.0) or 20.0)
         self._pump_timer = self._node.create_timer(
             1.0 / rate, self._pump_tick, callback_group=self._callback_group
@@ -97,6 +102,7 @@ class Px4Drone(VehicleDrone):
         sp = self._offboard_setpoint
         if not self._offboard_active or sp is None:
             return
+        self._pump_ticks += 1
         kind = sp[0]
         if kind == "vel":
             _, vx, vy, vz, yaw_rate, frame = sp
@@ -138,6 +144,23 @@ class Px4Drone(VehicleDrone):
             self._transport.send_local_target(target)
         self._offboard_active = True
 
+    def _stream_offboard_prestream(self) -> None:
+        """Block until the pump has actually published enough setpoints.
+
+        PX4 only accepts the ``OFFBOARD`` switch while a setpoint stream is
+        already flowing.
+        """
+        rate = float(getattr(self._config, "offboard_rate_hz", 20.0) or 20.0)
+        min_ticks = max(1, round(rate * self._OFFBOARD_PRESTREAM_S))
+        target = self._pump_ticks + min_ticks
+        if not self._wait_until(
+            lambda: self._pump_ticks >= target, self._OFFBOARD_PRESTREAM_TIMEOUT_S
+        ):
+            self._node.get_logger().warn(
+                f"{WARN} Offboard pump reached {self._pump_ticks}/{target} setpoints "
+                "before the prestream timeout; requesting OFFBOARD anyway"
+            )
+
     def _ensure_offboard_ready(self) -> None:
         """Ensure the pump is streaming and the FCU is in OFFBOARD mode."""
         if self._offboard_setpoint is None:
@@ -146,7 +169,7 @@ class Px4Drone(VehicleDrone):
         if (self.flight_mode or "").upper() == _MODE_OFFBOARD:
             return
         # Let the pump stream a few setpoints before requesting the mode switch.
-        self.delay(self._OFFBOARD_PRESTREAM_S)
+        self._stream_offboard_prestream()
         if not self.set_mode(_MODE_OFFBOARD):
             self._node.get_logger().warn(f"{WARN} Could not enter {_MODE_OFFBOARD} mode")
 
@@ -167,7 +190,7 @@ class Px4Drone(VehicleDrone):
         try:
             self._seed_hold_setpoint()
             self._offboard_active = True
-            self.delay(self._OFFBOARD_PRESTREAM_S)
+            self._stream_offboard_prestream()
 
             if not self.set_mode(_MODE_OFFBOARD):
                 return False
