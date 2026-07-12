@@ -165,7 +165,8 @@ make drone-bebop            # or: ./scripts/setup.sh drone bebop
 Installs the apt dependencies, clones `ros2_parrot_arsdk` and `ros2_bebop_driver` into the workspace if missing, and builds them in order (applying the FFmpeg patch below). The manual steps are equivalent:
 
 ```bash
-sudo apt install ros-${ROS_DISTRO}-camera-info-manager libavdevice-dev libavahi-client-dev python-is-python3
+sudo apt install ros-${ROS_DISTRO}-camera-info-manager ros-${ROS_DISTRO}-image-transport \
+  ros-${ROS_DISTRO}-cv-bridge libavdevice-dev libavahi-client-dev python-is-python3
 cd ~/ros2_ws/src
 git clone https://github.com/jeremyfix/ros2_parrot_arsdk.git
 git clone https://github.com/jeremyfix/ros2_bebop_driver.git

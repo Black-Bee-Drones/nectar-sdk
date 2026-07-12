@@ -109,7 +109,7 @@ defined in `scripts/lib/drones.sh`.
 
 === "Bebop"
 
-    Installs `ros2_parrot_arsdk` and `ros2_bebop_driver` (source build, Humble-only).
+    Installs `ros2_parrot_arsdk` and `ros2_bebop_driver` (source build).
 
     ```bash
     make drone-bebop

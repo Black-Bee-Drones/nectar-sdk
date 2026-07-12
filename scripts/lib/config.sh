@@ -110,6 +110,8 @@ CRAZYSWARM2_REF="${CRAZYSWARM2_REF:-}"
 # apt deps required to build/run the driver.
 BEBOP_APT_PACKAGES=(
     "ros-${ROS_DISTRO}-camera-info-manager"
+    "ros-${ROS_DISTRO}-image-transport"
+    "ros-${ROS_DISTRO}-cv-bridge"
     libavdevice-dev
     libavahi-client-dev
     python-is-python3

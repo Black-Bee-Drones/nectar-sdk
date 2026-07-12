@@ -144,6 +144,56 @@ EOF
     log_success "Crazyradio udev rules installed (log out/in for group change)"
 }
 
+# Parrot dragon_build (and ArduPilot prereqs) refuse euid 0. Create a passwordless
+# sudo build user for Docker/CI; bare-metal non-root installs skip this.
+_ensure_build_user() {
+    local user="${NECTAR_BUILD_USER:-nectar}"
+    if ! command -v sudo >/dev/null 2>&1; then
+        apt-get update && apt-get install -y --no-install-recommends sudo
+    fi
+    if ! id -u "${user}" >/dev/null 2>&1; then
+        useradd -m -s /bin/bash "${user}"
+    fi
+    if [ ! -f "/etc/sudoers.d/90-${user}-nectar" ]; then
+        echo "${user} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-${user}-nectar"
+        chmod 0440 "/etc/sudoers.d/90-${user}-nectar"
+    fi
+    echo "${user}"
+}
+
+# Run colcon as a non-root
+_bebop_colcon_build() {
+    local target="$1"
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        colcon build --packages-up-to "${target}" --symlink-install
+        return
+    fi
+
+    local user
+    user="$(_ensure_build_user)"
+    log_info "Parrot ARSDK refuses root; building ${target} as '${user}'..."
+    mkdir -p "${WORKSPACE_DIR}/build" "${WORKSPACE_DIR}/install" "${WORKSPACE_DIR}/log"
+    chown -R "${user}:${user}" \
+        "${WORKSPACE_DIR}/src/ros2_parrot_arsdk" \
+        "${WORKSPACE_DIR}/src/ros2_bebop_driver" \
+        "${WORKSPACE_DIR}/build" \
+        "${WORKSPACE_DIR}/install" \
+        "${WORKSPACE_DIR}/log"
+
+    sudo -u "${user}" -H env ROS_DISTRO="${ROS_DISTRO}" WORKSPACE_DIR="${WORKSPACE_DIR}" \
+        bash -c '
+            set -eo pipefail
+            git config --global color.ui auto
+            # ROS setup.bash references unset vars; nounset must stay off around source.
+            set +u
+            source "/opt/ros/${ROS_DISTRO}/setup.bash"
+            cd "${WORKSPACE_DIR}"
+            [ -f install/setup.bash ] && source install/setup.bash
+            set -u
+            colcon build --packages-up-to "'"${target}"'" --symlink-install
+        '
+}
+
 # Bebop 2 driver (jeremyfix ros2_parrot_arsdk + ros2_bebop_driver, built from source).
 _drone_bebop() {
     log_section "INSTALLING BEBOP DRIVER (ros2_bebop_driver)"
@@ -172,12 +222,18 @@ _drone_bebop() {
     cd "$WORKSPACE_DIR"
     source "/opt/ros/${ROS_DISTRO}/setup.bash"
 
+    log_info "Installing Bebop rosdep dependencies..."
+    rosdep install --from-paths \
+        src/ros2_parrot_arsdk src/ros2_bebop_driver \
+        --ignore-src -y -r \
+        || log_warning "rosdep install reported issues; continuing with apt packages"
+
     log_info "Building ros2_parrot_arsdk (ARSDK 3.14.0, takes a few minutes)..."
-    colcon build --packages-up-to ros2_parrot_arsdk --symlink-install
+    _bebop_colcon_build ros2_parrot_arsdk
     source install/setup.bash
 
     log_info "Building ros2_bebop_driver..."
-    colcon build --packages-up-to ros2_bebop_driver --symlink-install
+    _bebop_colcon_build ros2_bebop_driver
 
     _source_ros_ws
     if ros2 pkg list 2>/dev/null | grep -qx "ros2_bebop_driver"; then
