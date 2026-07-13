@@ -97,8 +97,9 @@ Install: `make python-ai && make pytorch`.
 |---|:---:|:---:|:---:|:---:|
 | `nectar-ai` CLI | ● | ● | ● | ● |
 | Detection inference (YOLO / DETR / RF-DETR)[^detect] | ● | ● | ◐ | ● |
+| Classification inference (YOLO-cls / ViT) | ● | ● | ◐ | ● |
 | PyTorch CUDA (GPU tensor)[^torchcuda] | ● | ● | ● | ● |
-| Training / segmentation | ● | ● | ◐ | ◐ |
+| Training / segmentation / classification | ● | ● | ◐ | ◐ |
 
 ## Interface
 

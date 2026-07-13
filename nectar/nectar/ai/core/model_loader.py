@@ -1,3 +1,5 @@
+"""Load model weights from local paths or Hugging Face Hub."""
+
 import os
 from pathlib import Path
 from typing import Optional
@@ -17,24 +19,8 @@ class ModelLoader:
         Download and load model from Hugging Face.
 
         Supports two formats:
-        1. Separate args: repo_id="blackbeedrones/cbr-25-base", filename="yolov11n.pt"
-        2. Combined: repo_id="blackbeedrones/cbr-25-base:yolov11n.pt"
-
-        Args:
-            repo_id: Hugging Face repository ID (e.g., "user/repo" or "user/repo:file.pt")
-            filename: Model filename (optional if included in repo_id)
-            cache_dir: Custom cache directory (default: ~/.cache/huggingface/hub)
-            token: HuggingFace API token for private repos (or set HF_TOKEN env var)
-
-        Returns:
-            Path to downloaded model file
-
-        Example:
-            # Public model
-            path = ModelLoader.from_huggingface("blackbeedrones/cbr-25-base:yolov11n.pt")
-
-            # Private model with token
-            path = ModelLoader.from_huggingface("blackbeedrones/cbr-25-base:yolov11n.pt", token="hf_...")
+        1. Separate args: repo_id="org/repo", filename="model.pt"
+        2. Combined: repo_id="org/repo:model.pt"
         """
         try:
             from huggingface_hub import hf_hub_download
@@ -43,7 +29,6 @@ class ModelLoader:
                 "huggingface_hub not installed. Install with: pip install huggingface-hub"
             ) from exc
 
-        # Parse repo_id if it contains filename
         if ":" in repo_id and filename is None:
             repo_id, filename = repo_id.split(":", 1)
 
@@ -69,18 +54,7 @@ class ModelLoader:
 
     @staticmethod
     def from_path(model_path: str) -> str:
-        """
-        Validate and return local model path.
-
-        Args:
-            model_path: Path to local model file
-
-        Returns:
-            Absolute path to model file
-
-        Raises:
-            FileNotFoundError: If model file doesn't exist
-        """
+        """Validate and return absolute local model path."""
         path = Path(model_path).expanduser().resolve()
 
         if not path.exists():
@@ -93,25 +67,7 @@ class ModelLoader:
         model_source: str, cache_dir: Optional[str] = None, token: Optional[str] = None
     ) -> str:
         """
-        Smart loader that handles both local paths and Hugging Face repos.
-
-        Args:
-            model_source: Either a local path or HuggingFace repo:file format
-            cache_dir: Cache directory for HuggingFace downloads
-            token: HuggingFace API token for private repos (or set HF_TOKEN env var)
-
-        Returns:
-            Path to model file
-
-        Example:
-            # Local file
-            path = ModelLoader.load("/path/to/model.pt")
-
-            # Public Hugging Face model
-            path = ModelLoader.load("blackbeedrones/cbr-25-base:yolov11n.pt")
-
-            # Private Hugging Face model
-            path = ModelLoader.load("blackbeedrones/cbr-25-base:yolov11n.pt", token="hf_...")
+        Smart loader for local paths or Hugging Face ``user/repo:file.pt``.
         """
         if os.path.exists(model_source):
             return ModelLoader.from_path(model_source)

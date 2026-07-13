@@ -154,7 +154,7 @@ nav:
       - Overview: get-started/index.md
       - Fly a drone: get-started/control.md
       - See with a camera: get-started/vision.md
-      - Detect & segment: get-started/ai.md
+      - Detect, segment & classify: get-started/ai.md
   - Setup:
       - Installation: setup/index.md
       - Drone drivers: setup/drivers.md
@@ -187,6 +187,7 @@ nav:
           - Overview: modules/ai/index.md
           - Detection: modules/ai/detection.md
           - Segmentation: modules/ai/segmentation.md
+          - Classification: modules/ai/classification.md
       - Sensors: modules/sensors.md
       - Interface (GUI): modules/interface.md
       - Simulation: modules/simulation.md

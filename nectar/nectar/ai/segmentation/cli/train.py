@@ -60,8 +60,8 @@ def main():
     framework = params.get("framework") or detect_framework(model, task="segmentation")
     logger.info("Framework: %s", framework)
 
-    from nectar.ai.detection.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
-    from nectar.ai.detection.utils.tensorboard import TensorBoardManager
+    from nectar.ai.core.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
+    from nectar.ai.core.utils.tensorboard import TensorBoardManager
     from nectar.ai.segmentation import Segmentor
     from nectar.ai.segmentation.core.configs import SegEvaluationConfig
     from nectar.ai.segmentation.evaluation.evaluator import SegmentationEvaluator
@@ -97,7 +97,10 @@ def main():
     logger.info("Output: %s", output_dir_raw)
 
     tb_manager = TensorBoardManager()
-    if params.get("start_tensorboard") and params.get("tensorboard"):
+    start_tb = params.get("start_tensorboard")
+    if start_tb is None:
+        start_tb = bool(params.get("tensorboard"))
+    if params.get("tensorboard") and start_tb:
         tb_manager.start_server(log_dir=output_dir_raw, port=params.get("tensorboard_port", 6006))
 
     segmentor = Segmentor(model, framework=framework, device=params.get("device", "auto"))
@@ -148,7 +151,7 @@ def main():
             if params.get("push_to_hub") and params.get("hub_model_id"):
                 logger.info("Uploading evaluation results to HuggingFace Hub...")
                 try:
-                    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+                    from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
                     eval_uploader = HuggingFaceUploader(
                         repo_id=params["hub_model_id"],
@@ -189,7 +192,7 @@ def main():
 
         if params.get("push_to_hub") and params.get("hub_model_id"):
             try:
-                from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+                from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
                 logger.info("Uploading to HuggingFace Hub: %s", params["hub_model_id"])
                 uploader = HuggingFaceUploader(

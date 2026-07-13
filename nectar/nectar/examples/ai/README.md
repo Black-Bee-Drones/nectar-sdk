@@ -6,6 +6,7 @@ across every supported framework.
 | Example | Script | What it does |
 |---------|--------|--------------|
 | **Detector Stream** | `detector_example.py` | Real-time object detection from a camera stream with ROS 2 integration |
+| **Classifier Stream** | `classifier_example.py` | Real-time image classification from a camera stream with ROS 2 integration |
 | **Batch Detector** | `batch_detector.py` | Offline processing of image directories or video files |
 | **Sequence Inference** | `sequence_inference.py` | Multi-model detection + segmentation over an image dir or video, annotated MP4 output |
 
@@ -13,8 +14,8 @@ across every supported framework.
 
 | Framework | Models | Example |
 |-----------|--------|---------|
-| **Ultralytics** | YOLOv8, YOLOv10, YOLO11 | `yolov8n.pt`, `yolov11n.pt` |
-| **Transformers** | DETR, Conditional DETR | `facebook/detr-resnet-50` |
+| **Ultralytics** | YOLOv8/11/26 detect, seg, cls | `yolov8n.pt`, `yolo26n-cls.pt` |
+| **Transformers** | DETR, ViT, … | `facebook/detr-resnet-50`, `google/vit-base-patch16-224` |
 | **RF-DETR** | RF-DETR Nano/Small/Medium/Large | `rfdetr-medium` |
 
 ---

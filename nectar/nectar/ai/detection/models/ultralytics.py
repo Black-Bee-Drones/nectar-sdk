@@ -27,13 +27,13 @@ except ImportError:
 
 from PIL import Image
 
+from nectar.ai.core.utils.device import get_device
 from nectar.ai.detection.core.base import BaseDetectionModel
 from nectar.ai.detection.core.configs import TrainingConfig
 from nectar.ai.detection.core.exceptions import ModelNotLoadedError, TrainingError
 from nectar.ai.detection.core.types import DetectionInput, Prediction
 from nectar.ai.detection.datasets.format import FormatConverter, FormatDetector
 from nectar.ai.detection.datasets.subset import SubsetCreator
-from nectar.ai.detection.utils.device import get_device
 
 logger = logging.getLogger(__name__)
 

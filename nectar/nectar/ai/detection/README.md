@@ -17,11 +17,11 @@ for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
 ```
 
-## Tutorial notebook
+## Tutorial (Colab)
 
-Interactive Colab/Jupyter walkthrough
+Interactive end-to-end detection walkthrough (dataset → train → TensorBoard → eval):
 
-- Notebook: [`detection/notebook/nectar_detection.ipynb`](notebook/nectar_detection.ipynb)
+[Open in Google Colab](https://colab.research.google.com/drive/1mQmbWwnwn-nzMdBlzvkuBmYPMHUrCm_Z?usp=sharing)
 
 ## Concepts
 
@@ -110,7 +110,8 @@ Factory-based detector with auto-detection or explicit framework selection.
 **Auto-detect from the model name**:
 
 ```python
-from nectar.ai.detection import Detector, Framework
+from nectar.ai.core import Framework
+from nectar.ai.detection import Detector
 
 detector = Detector("yolov8n.pt")
 ```
@@ -818,10 +819,12 @@ filtered = filter.filter(detections)
 
 ## Utilities
 
+Shared helpers live in ``nectar.ai.core`` (used by detection, segmentation, and classification).
+
 ### TensorBoard Management
 
 ```python
-from nectar.ai.detection.utils import TensorBoardManager
+from nectar.ai.core import TensorBoardManager
 
 manager = TensorBoardManager()
 manager.start_server(log_dir="outputs", port=6006)
@@ -832,7 +835,7 @@ manager.stop_server()
 ### HuggingFace Hub Upload
 
 ```python
-from nectar.ai.detection.utils import HuggingFaceUploader
+from nectar.ai.core import HuggingFaceUploader
 
 uploader = HuggingFaceUploader(
     repo_id="user/model-name",
@@ -1328,11 +1331,12 @@ The `detection/` package is organized into:
 
 - `detector.py` — the `Detector` facade and factory
 - `core/` — `BaseDetectionModel`, detection types, `TrainingConfig`/`EvaluationConfig`, exceptions
-- `models/` — framework backends (`UltralyticsModel`, `TransformersModel`, `RFDETRModel`) and the HuggingFace loader
+- `models/` — framework backends (`UltralyticsModel`, `TransformersModel`, `RFDETRModel`) and dataset loaders
 - `training/` — framework-specific training configs
 - `evaluation/` — `ObjectDetectionEvaluator`, PR/error analysis, plots
 - `slicing/` — `SlicingConfig` and `SlicingInference` for high-resolution tiling
 - `postprocess/` — merge strategies (NMS, Soft-NMS, WBF, NMM) and per-class confidence filtering
 - `datasets/` — format conversion, subset/stratify/augment/analyze/merge, and download handlers (VisDrone, Roboflow, HuggingFace)
 - `cli/`, `configs/`, `scripts/` — the `nectar-ai` CLI, example configs, and training shell scripts
-- `utils/` — device management, HuggingFace upload, TensorBoard
+
+Shared across tasks (``nectar.ai.core``): `Framework`, `ModelLoader`, device / Hub / TensorBoard / training callbacks.

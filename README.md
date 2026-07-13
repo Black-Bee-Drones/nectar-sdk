@@ -32,7 +32,7 @@ ArduPilot and PX4 over MAVROS, direct MAVLink, or uXRCE-DDS, plus Bebop and Craz
 
 - **[Control](https://black-bee-drones.github.io/nectar-sdk/modules/control/)** — firmware-agnostic flight interface, navigation, PID, obstacles, GPS
 - **[Vision](https://black-bee-drones.github.io/nectar-sdk/modules/vision/)** — cameras, ArUco, color, line, distance, optical flow, MediaPipe
-- **[AI](https://black-bee-drones.github.io/nectar-sdk/modules/ai/)** — detection and segmentation (YOLO, DETR, RF-DETR), training, evaluation
+- **[AI](https://black-bee-drones.github.io/nectar-sdk/modules/ai/)** — detection, segmentation, and classification (YOLO, DETR, RF-DETR, ViT), training, evaluation
 - **[Sensors](https://black-bee-drones.github.io/nectar-sdk/modules/sensors/)** — companion rangefinders and MAVLink bridges
 - **[Localization](https://black-bee-drones.github.io/nectar-sdk/modules/control/localization/)** — indoor VSLAM and vision-pose integration
 - **[Interface](https://black-bee-drones.github.io/nectar-sdk/modules/interface/)** — Qt6 operator GUI

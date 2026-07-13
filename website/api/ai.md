@@ -7,3 +7,7 @@
 ## Segmentation
 
 ::: nectar.ai.segmentation
+
+## Classification
+
+::: nectar.ai.classification

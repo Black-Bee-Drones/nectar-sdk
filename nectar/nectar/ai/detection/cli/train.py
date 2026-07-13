@@ -60,6 +60,9 @@ def main():
     framework = params.get("framework") or detect_framework(model, task="detection")
     logger.info("Framework: %s", framework)
 
+    from nectar.ai.core.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
+    from nectar.ai.core.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.core.utils.tensorboard import TensorBoardManager
     from nectar.ai.detection import Detector
     from nectar.ai.detection.core.configs import EvaluationConfig
     from nectar.ai.detection.evaluation.evaluator import ObjectDetectionEvaluator
@@ -68,9 +71,6 @@ def main():
         TransformersTrainingConfig,
         UltralyticsTrainingConfig,
     )
-    from nectar.ai.detection.utils.callbacks import HF_SYNC_IGNORE_PATTERNS
-    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
-    from nectar.ai.detection.utils.tensorboard import TensorBoardManager
 
     common_args = collect_common_train_params(params, dataset, output_dir_raw)
 
@@ -99,7 +99,10 @@ def main():
     logger.info("Output: %s", output_dir_raw)
 
     tb_manager = TensorBoardManager()
-    if params.get("start_tensorboard") and params.get("tensorboard"):
+    start_tb = params.get("start_tensorboard")
+    if start_tb is None:
+        start_tb = bool(params.get("tensorboard"))
+    if params.get("tensorboard") and start_tb:
         tb_port = params.get("tensorboard_port", 6006)
         tb_manager.start_server(log_dir=output_dir_raw, port=tb_port)
 

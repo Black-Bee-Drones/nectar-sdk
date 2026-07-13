@@ -2,8 +2,10 @@
 Custom exceptions for the detection module.
 """
 
+from nectar.ai.core.exceptions import AIError, ModelNotLoadedError, TrainingError
 
-class DetectionError(Exception):
+
+class DetectionError(AIError):
     """
     Base exception for all detection module errors.
 
@@ -16,59 +18,6 @@ class DetectionError(Exception):
     """
 
     pass
-
-
-class ModelNotLoadedError(DetectionError):
-    """
-    Exception raised when model is not loaded.
-
-    Examples
-    --------
-    >>> detector = YOLODetector("model.pt", auto_load=False)
-    >>> detector.detect(image)  # Raises ModelNotLoadedError
-    """
-
-    def __init__(self, message: str = "Model not loaded. Call load() first."):
-        super().__init__(message)
-
-
-class TrainingError(DetectionError):
-    """
-    Exception raised during training.
-
-    Parameters
-    ----------
-    message : str
-        Error message.
-    epoch : int, optional
-        Epoch at which error occurred.
-    step : int, optional
-        Step at which error occurred.
-
-    Examples
-    --------
-    >>> try:
-    ...     model.train(config)
-    ... except TrainingError as e:
-    ...     logger.error(f"Training failed at epoch {e.epoch}: {e}")
-    """
-
-    def __init__(
-        self,
-        message: str,
-        epoch: int = None,
-        step: int = None,
-    ):
-        self.epoch = epoch
-        self.step = step
-
-        full_message = message
-        if epoch is not None:
-            full_message = f"[Epoch {epoch}] {message}"
-        if step is not None:
-            full_message = f"[Step {step}] {full_message}"
-
-        super().__init__(full_message)
 
 
 class EvaluationError(DetectionError):
@@ -277,3 +226,19 @@ class DeviceError(DetectionError):
             full_message = f"Device error for '{device}': {message}"
 
         super().__init__(full_message)
+
+
+__all__ = [
+    "AIError",
+    "DetectionError",
+    "ModelNotLoadedError",
+    "TrainingError",
+    "EvaluationError",
+    "DatasetError",
+    "ConfigurationError",
+    "FrameworkError",
+    "PostProcessingError",
+    "SlicingError",
+    "HuggingFaceError",
+    "DeviceError",
+]

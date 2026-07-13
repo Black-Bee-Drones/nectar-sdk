@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
 
 def parse_args():

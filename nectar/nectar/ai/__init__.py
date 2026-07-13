@@ -5,6 +5,7 @@ Nectar SDK - AI module.
 from importlib import import_module
 from typing import TYPE_CHECKING
 
+from nectar.ai.core import Framework
 from nectar.ai.detection import (
     Detection,
     DetectionInput,
@@ -12,7 +13,6 @@ from nectar.ai.detection import (
     Detector,
     EvaluationConfig,
     EvaluationMetrics,
-    Framework,
     Prediction,
     TrainingConfig,
 )
@@ -20,7 +20,7 @@ from nectar.ai.detection import (
 _LAZY_ATTRS = {
     # Detection (heavy)
     "BaseDetectionModel": "nectar.ai.detection",
-    "ModelLoader": "nectar.ai.detection",
+    "ModelLoader": "nectar.ai.core.model_loader",
     "UltralyticsModel": "nectar.ai.detection",
     "TransformersModel": "nectar.ai.detection",
     "RFDETRModel": "nectar.ai.detection",
@@ -45,6 +45,22 @@ _LAZY_ATTRS = {
     "SegDatasetHandlerRegistry": "nectar.ai.segmentation",
     "UltralyticsSegHandler": "nectar.ai.segmentation",
     "RoboflowSegHandler": "nectar.ai.segmentation",
+    # Classification
+    "Classifier": "nectar.ai.classification",
+    "BaseClassificationModel": "nectar.ai.classification",
+    "UltralyticsClsModel": "nectar.ai.classification",
+    "TransformersClsModel": "nectar.ai.classification",
+    "Classification": "nectar.ai.classification",
+    "ClassificationResult": "nectar.ai.classification",
+    "ClassificationInput": "nectar.ai.classification",
+    "ClsPrediction": "nectar.ai.classification",
+    "ClsTrainingConfig": "nectar.ai.classification",
+    "ClsEvaluationConfig": "nectar.ai.classification",
+    "ClsEvaluationMetrics": "nectar.ai.classification",
+    "ClassificationEvaluator": "nectar.ai.classification",
+    "ImageFolderDetector": "nectar.ai.classification",
+    "ClsDatasetAnalyzer": "nectar.ai.classification",
+    "ClsDatasetHandlerRegistry": "nectar.ai.classification",
 }
 
 
@@ -62,9 +78,26 @@ def __dir__():
 
 
 if TYPE_CHECKING:
+    from nectar.ai.classification import (
+        BaseClassificationModel,
+        Classification,
+        ClassificationEvaluator,
+        ClassificationInput,
+        ClassificationResult,
+        Classifier,
+        ClsDatasetAnalyzer,
+        ClsDatasetHandlerRegistry,
+        ClsEvaluationConfig,
+        ClsEvaluationMetrics,
+        ClsPrediction,
+        ClsTrainingConfig,
+        ImageFolderDetector,
+        TransformersClsModel,
+        UltralyticsClsModel,
+    )
+    from nectar.ai.core.model_loader import ModelLoader
     from nectar.ai.detection import (
         BaseDetectionModel,
-        ModelLoader,
         ObjectDetectionEvaluator,
         RFDETRModel,
         TransformersModel,
@@ -125,10 +158,25 @@ __all__ = [
     "SegEvaluationConfig",
     "SegEvaluationMetrics",
     "SegmentationEvaluator",
-    # Segmentation datasets
     "SegFormatConverter",
     "SegDatasetAnalyzer",
     "SegDatasetHandlerRegistry",
     "UltralyticsSegHandler",
     "RoboflowSegHandler",
+    # Classification API
+    "Classifier",
+    "UltralyticsClsModel",
+    "TransformersClsModel",
+    "BaseClassificationModel",
+    "Classification",
+    "ClassificationResult",
+    "ClassificationInput",
+    "ClsPrediction",
+    "ClsTrainingConfig",
+    "ClsEvaluationConfig",
+    "ClsEvaluationMetrics",
+    "ClassificationEvaluator",
+    "ImageFolderDetector",
+    "ClsDatasetAnalyzer",
+    "ClsDatasetHandlerRegistry",
 ]

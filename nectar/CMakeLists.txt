@@ -45,6 +45,7 @@ install(PROGRAMS
   nectar/examples/vision/t265_example.py
   nectar/examples/vision/collect_photos.py
   nectar/examples/ai/detector_example.py
+  nectar/examples/ai/classifier_example.py
   nectar/examples/sensors/rangefinder_example.py
   nectar/control/pid/pid_node.py
   nectar/sensors/nodes/rangefinder_node.py
@@ -85,6 +86,11 @@ install(DIRECTORY nectar/ai/detection/configs/
 
 install(DIRECTORY nectar/ai/segmentation/configs/
   DESTINATION share/${PROJECT_NAME}/ai/segmentation/configs
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
+install(DIRECTORY nectar/ai/classification/configs/
+  DESTINATION share/${PROJECT_NAME}/ai/classification/configs
   FILES_MATCHING PATTERN "*.yaml"
 )
 
