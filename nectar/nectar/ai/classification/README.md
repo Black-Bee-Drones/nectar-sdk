@@ -130,12 +130,18 @@ Bring your own ImageFolder the same way: point `data.dataset_path` at any
 
 ## Evaluation
 
-Produces top-1/top-5 accuracy, macro/weighted P/R/F1, confusion matrix, per-class CSV/JSON,
-and prediction samples.
+Produces a flat artifact suite aligned with detection/segmentation:
+
+- Metrics: top-1 / top-k accuracy, macro & weighted P/R/F1, per-class table
+- Curves: `P_curve`, `R_curve`, `F1_curve`, `PR_curve`
+- Plots: `confusion_matrix`, `error_analysis`, `performance_analysis`, `results`, `prediction_samples`
+- Tables: `metrics_summary.json`, `evaluation_metrics.csv`, `per_class_metrics.{json,csv}`,
+  `pr_analysis_results.csv`, `error_statistics.csv`, `evaluation_report.json`,
+  `evaluation_results.json`
 
 ```bash
 nectar-ai classify eval --model-path best.pt --dataset-path data/mnist160 \
-    --framework ultralytics --split test
+    --framework ultralytics --split test --conf-threshold 0.0 --topk 5
 ```
 
 ## Dataset management

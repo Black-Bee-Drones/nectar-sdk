@@ -148,6 +148,7 @@ class ClsEvaluationConfig:
     num_samples: Optional[int] = None
     imgsz: Optional[int] = 224
     topk: int = 5
+    conf_threshold: float = 0.0
     prediction_samples_max: int = 16
 
     def to_dict(self) -> Dict[str, Any]:

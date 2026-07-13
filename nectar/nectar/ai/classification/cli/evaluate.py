@@ -11,7 +11,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate classification models")
     add_common_eval_args(parser)
     parser.add_argument("--topk", type=int, default=5, help="Top-k for metrics")
-    parser.set_defaults(imgsz=224)
+    parser.set_defaults(imgsz=224, conf_threshold=0.0)
     return parser.parse_args()
 
 
@@ -52,6 +52,7 @@ def main():
         num_samples=args.num_samples,
         imgsz=getattr(args, "imgsz", 224),
         topk=args.topk,
+        conf_threshold=getattr(args, "conf_threshold", 0.0),
         prediction_samples_max=args.num_prediction_samples,
     )
 
