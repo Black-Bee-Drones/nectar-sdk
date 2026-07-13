@@ -2,10 +2,10 @@
 
 import logging
 import shutil
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Optional, Union
+from typing import Optional, Union
 
+from nectar.ai.core.utils.ultralytics_datasets import nectar_ultralytics_datasets_dir
 from nectar.ai.detection.datasets.handlers.base import BaseDatasetHandler
 from nectar.ai.paths import DEFAULT_DATA_DIR
 
@@ -29,42 +29,6 @@ def _resolve_dataset_root(data: Union[str, dict]) -> Path:
             return Path(split_path).resolve().parent
 
     raise ValueError(f"Could not resolve dataset root from: {data}")
-
-
-@contextmanager
-def _nectar_ultralytics_datasets_dir(target: Path) -> Iterator[None]:
-    """
-    Temporarily point Ultralytics classification downloads at ``target``.
-
-    Ultralytics keeps a global ``datasets_dir`` in
-    ``~/.config/Ultralytics/settings.json``. That value is often left pointing
-    at whatever project last called ``settings.update``. Worse, ``check_cls_dataset`` reads the module-level constant
-    ``ultralytics.data.utils.DATASETS_DIR`` (frozen at import time), so updating
-    settings alone is not enough — both must be overridden for the download.
-    """
-    try:
-        from ultralytics import settings as ultralytics_settings
-        from ultralytics.data import utils as ultralytics_data_utils
-    except ImportError as e:
-        raise ImportError("ultralytics is required. Install: pip install -e '.[ai]'") from e
-
-    target = target.resolve()
-    target.mkdir(parents=True, exist_ok=True)
-
-    previous_setting = ultralytics_settings.get("datasets_dir")
-    previous_const = getattr(ultralytics_data_utils, "DATASETS_DIR", None)
-
-    ultralytics_settings.update({"datasets_dir": str(target)})
-    ultralytics_data_utils.DATASETS_DIR = target
-    logger.info("Ultralytics DATASETS_DIR → %s (was %s)", target, previous_const)
-    try:
-        yield
-    finally:
-        if previous_const is not None:
-            ultralytics_data_utils.DATASETS_DIR = previous_const
-        if previous_setting is not None:
-            ultralytics_settings.update({"datasets_dir": previous_setting})
-        logger.debug("Restored Ultralytics DATASETS_DIR → %s", previous_const or previous_setting)
 
 
 class UltralyticsClsHandler(BaseDatasetHandler):
@@ -92,7 +56,7 @@ class UltralyticsClsHandler(BaseDatasetHandler):
         **kwargs,
     ) -> str:
         """
-        Download or resolve a built-in Ultralytics classification dataset.
+        Download (or reuse cache) an Ultralytics classification dataset.
 
         Parameters
         ----------
@@ -110,7 +74,7 @@ class UltralyticsClsHandler(BaseDatasetHandler):
         except ImportError as e:
             raise ImportError("ultralytics is required. Install: pip install -e '.[ai]'") from e
 
-        with _nectar_ultralytics_datasets_dir(self.CACHE_DIR):
+        with nectar_ultralytics_datasets_dir(self.CACHE_DIR):
             data = check_cls_dataset(dataset)
 
         src_root = _resolve_dataset_root(data)

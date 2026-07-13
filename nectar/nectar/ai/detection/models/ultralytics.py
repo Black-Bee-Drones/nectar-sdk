@@ -292,7 +292,7 @@ class UltralyticsModel(BaseDetectionModel):
 
     def _setup_callbacks(self, config: TrainingConfig, output_dir: Path) -> None:
         """Setup training callbacks for HF upload and GC."""
-        from ..utils.callbacks import (
+        from nectar.ai.core.utils.callbacks import (
             setup_ultralytics_gc_callback,
             setup_ultralytics_hf_callbacks,
         )
