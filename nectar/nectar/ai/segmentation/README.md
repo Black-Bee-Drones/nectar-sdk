@@ -16,6 +16,12 @@ for seg in result:
     print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
 ```
 
+## Tutorial (Colab)
+
+End-to-end segment workflow (dataset → train → TensorBoard → eval → Hub):
+
+[Open in Google Colab](https://colab.research.google.com/drive/1qZzAF_iD2sZyuWPin48XpxaY6dtak_gV?usp=sharing)
+
 ## Concepts
 
 `Segmentor` is a factory over three framework backends (`UltralyticsSegModel`,

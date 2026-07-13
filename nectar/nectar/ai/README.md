@@ -7,8 +7,8 @@ Deep learning inference, training, and evaluation for aerial robotics.
 | Task | Link |
 |------|------|
 | Detection | [Open in Colab](https://colab.research.google.com/drive/1mQmbWwnwn-nzMdBlzvkuBmYPMHUrCm_Z?usp=sharing) |
-| Classification | [Open in Colab](https://colab.research.google.com/drive/1mQmbWwnwn-nzMdBlzvkuBmYPMHUrCm_Z?usp=sharing) |
-| Segmentation | Coming soon |
+| Classification | [Open in Colab](https://colab.research.google.com/drive/1mEo05wfYJRsuxKodxbFwBuxRSRh43f-X?usp=sharing) |
+| Segmentation | [Open in Colab](https://colab.research.google.com/drive/1qZzAF_iD2sZyuWPin48XpxaY6dtak_gV?usp=sharing) |
 
 ## Structure
 

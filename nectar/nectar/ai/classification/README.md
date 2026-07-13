@@ -22,7 +22,7 @@ for pred in result.topk(5):
 
 End-to-end classify workflow (dataset → train → TensorBoard → eval → Hub):
 
-[Open in Google Colab](https://colab.research.google.com/drive/1mQmbWwnwn-nzMdBlzvkuBmYPMHUrCm_Z?usp=sharing)
+[Open in Google Colab](https://colab.research.google.com/drive/1mEo05wfYJRsuxKodxbFwBuxRSRh43f-X?usp=sharing)
 
 ## Architecture
 
