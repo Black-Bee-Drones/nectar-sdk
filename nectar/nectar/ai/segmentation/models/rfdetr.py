@@ -343,7 +343,7 @@ class RFDETRSegModel(BaseSegmentationModel):
         from rfdetr.config import SegmentationTrainConfig as RFSegTrainConfig
         from rfdetr.training import RFDETRDataModule, RFDETRModelModule, build_trainer
 
-        from nectar.ai.detection.utils.callbacks import get_hf_upload_ptl_callback
+        from nectar.ai.core.utils.callbacks import get_hf_upload_ptl_callback
 
         model_config = self.rfdetr_wrapper.model_config
         model_config.resolution = resolution

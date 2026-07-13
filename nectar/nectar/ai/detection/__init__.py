@@ -33,6 +33,7 @@ Examples
 from importlib import import_module
 from typing import TYPE_CHECKING
 
+from nectar.ai.core.framework import Framework
 from nectar.ai.detection.core.configs import (
     EvaluationConfig,
     EvaluationMetrics,
@@ -61,12 +62,12 @@ from nectar.ai.detection.core.types import (
     ImageType,
     Prediction,
 )
-from nectar.ai.detection.detector import Detector, Framework
+from nectar.ai.detection.detector import Detector
 
 _LAZY_ATTRS = {
     "BaseDetectionModel": "nectar.ai.detection.core.base",
     # Models (heavy: pull torch, ultralytics, transformers, rfdetr)
-    "ModelLoader": "nectar.ai.detection.models.model_loader",
+    "ModelLoader": "nectar.ai.core.model_loader",
     "UltralyticsModel": "nectar.ai.detection.models.ultralytics",
     "TransformersModel": "nectar.ai.detection.models.transformers",
     "RFDETRModel": "nectar.ai.detection.models.rfdetr",
@@ -85,10 +86,11 @@ _LAZY_ATTRS = {
     "SlicingConfig": "nectar.ai.detection.slicing",
     "SlicingStrategy": "nectar.ai.detection.slicing",
     "SlicingInference": "nectar.ai.detection.slicing",
-    # Utilities
-    "HuggingFaceUploader": "nectar.ai.detection.utils.huggingface",
-    "get_device": "nectar.ai.detection.utils.device",
-    "DeviceManager": "nectar.ai.detection.utils.device",
+    # Shared utilities (nectar.ai.core)
+    "HuggingFaceUploader": "nectar.ai.core.utils.huggingface",
+    "get_device": "nectar.ai.core.utils.device",
+    "DeviceManager": "nectar.ai.core.utils.device",
+    "TensorBoardManager": "nectar.ai.core.utils.tensorboard",
 }
 
 
@@ -106,11 +108,14 @@ def __dir__():
 
 
 if TYPE_CHECKING:
+    from nectar.ai.core.model_loader import ModelLoader
+    from nectar.ai.core.utils.device import DeviceManager, get_device
+    from nectar.ai.core.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.core.utils.tensorboard import TensorBoardManager
     from nectar.ai.detection.core.base import BaseDetectionModel
     from nectar.ai.detection.evaluation import ObjectDetectionEvaluator
     from nectar.ai.detection.models import (
         CocoDetectionDataset,
-        ModelLoader,
         RFDETRModel,
         TransformersModel,
         UltralyticsModel,
@@ -128,11 +133,6 @@ if TYPE_CHECKING:
         SlicingConfig,
         SlicingInference,
         SlicingStrategy,
-    )
-    from nectar.ai.detection.utils import (
-        DeviceManager,
-        HuggingFaceUploader,
-        get_device,
     )
 
 
@@ -172,7 +172,6 @@ __all__ = [
     "SlicingStrategy",
     "SlicingInference",
     # Models
-    "ModelLoader",
     "UltralyticsModel",
     "TransformersModel",
     "RFDETRModel",
@@ -187,8 +186,10 @@ __all__ = [
     "WBFStrategy",
     "NMMStrategy",
     "PerClassConfidenceFilter",
-    # Utilities
+    # Shared (nectar.ai.core)
+    "ModelLoader",
     "HuggingFaceUploader",
     "get_device",
     "DeviceManager",
+    "TensorBoardManager",
 ]

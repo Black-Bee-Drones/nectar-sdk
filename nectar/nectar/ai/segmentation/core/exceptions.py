@@ -1,8 +1,5 @@
-"""Segmentation exceptions -- reexports from detection for consistency."""
+"""Segmentation exceptions"""
 
-from nectar.ai.detection.core.exceptions import (
-    ModelNotLoadedError,
-    TrainingError,
-)
+from nectar.ai.core.exceptions import ModelNotLoadedError, TrainingError
 
 __all__ = ["ModelNotLoadedError", "TrainingError"]

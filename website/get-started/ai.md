@@ -1,8 +1,9 @@
-# Detect & segment
+# Detect & segment & classify
 
-Run object detection or instance segmentation across Ultralytics YOLO, HuggingFace
-Transformers (DETR), and RF-DETR behind one `Detector` / `Segmentor`. The framework is
-auto-detected from the model name; only the model string changes.
+Run object detection, instance segmentation, or image classification across Ultralytics
+YOLO, HuggingFace Transformers, and RF-DETR (detect/seg only) behind one
+`Detector` / `Segmentor` / `Classifier`. The framework is auto-detected from the model
+name; only the model string changes.
 
 Need the full install first? See [Installation](../setup/index.md).
 
@@ -32,14 +33,16 @@ Pick a framework — the model name selects it. `detect()` returns typed results
 === "DETR"
 
     ```python
-    from nectar.ai.detection import Detector, Framework
+    from nectar.ai.core import Framework
+    from nectar.ai.detection import Detector
     detector = Detector("facebook/detr-resnet-50", framework=Framework.TRANSFORMERS)
     ```
 
 === "RF-DETR"
 
     ```python
-    from nectar.ai.detection import Detector, Framework
+    from nectar.ai.core import Framework
+    from nectar.ai.detection import Detector
     detector = Detector("rfdetr-medium", framework=Framework.RFDETR)
     ```
 
@@ -74,7 +77,7 @@ same class/score fields:
 
     ```python
     from nectar.ai.segmentation import Segmentor
-    from nectar.ai.detection import Framework
+    from nectar.ai.core import Framework
     segmentor = Segmentor("facebook/maskformer-swin-tiny-coco", framework=Framework.TRANSFORMERS)
     ```
 
@@ -82,7 +85,7 @@ same class/score fields:
 
     ```python
     from nectar.ai.segmentation import Segmentor
-    from nectar.ai.detection import Framework
+    from nectar.ai.core import Framework
     segmentor = Segmentor("rfdetr-seg-medium", framework=Framework.RFDETR)
     ```
 
@@ -95,9 +98,36 @@ result = segmentor.segment(image, conf=0.5)
     A list of detections/segments per frame, each with a class label, a confidence, and a box
     (detection) or mask (segmentation).
 
-## 4. Beyond inference
+## 4. Classify images
 
-The same `Detector` / `Segmentor` cover the whole workflow — pointers into the reference:
+`classify()` returns typed top-k results with `top1_name` and `top1_confidence`:
+
+=== "YOLO-cls"
+
+    ```python
+    from nectar.ai.classification import Classifier
+    classifier = Classifier("yolo26n-cls.pt")
+    classifier.load()
+    result = classifier.classify(image)
+    print(result.top1_name, result.top1_confidence)
+    ```
+
+=== "ViT"
+
+    ```python
+    from nectar.ai.classification import Classifier
+    from nectar.ai.core import Framework
+    classifier = Classifier(
+        "google/vit-base-patch16-224",
+        framework=Framework.TRANSFORMERS,
+    )
+    classifier.load()
+    result = classifier.classify(image, topk=5)
+    ```
+
+## 5. Beyond inference
+
+The same `Detector` / `Segmentor` / `Classifier` cover the whole workflow — pointers into the reference:
 
 - **Slicing inference** for small objects in high-resolution frames, with NMS / Soft-NMS / WBF /
   NMM post-processing — [Detection reference](../modules/ai/detection.md).
@@ -105,15 +135,16 @@ The same `Detector` / `Segmentor` cover the whole workflow — pointers into the
   push; **evaluation** and **dataset** tooling — [AI overview](../modules/ai/index.md).
 - **`nectar-ai` CLI** for predict / train / evaluate without writing a script.
 
-## 5. Notebook tutorial
+## 6. Notebook tutorials (Colab)
 
-End-to-end detection workflow in Jupyter/Colab.
+End-to-end workflows in Google Colab:
 
-- Notebook:
-  [`nectar_detection.ipynb`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/ai/detection/notebook/nectar_detection.ipynb)
+- **Detection:** [Open in Colab](https://colab.research.google.com/drive/1mQmbWwnwn-nzMdBlzvkuBmYPMHUrCm_Z?usp=sharing)
+- **Classification:** [Open in Colab](https://colab.research.google.com/drive/1mQmbWwnwn-nzMdBlzvkuBmYPMHUrCm_Z?usp=sharing)
+- **Segmentation:** coming soon
 
 ## Go deeper
 
 - [AI overview](../modules/ai/index.md) · [Detection](../modules/ai/detection.md) ·
-  [Segmentation](../modules/ai/segmentation.md).
-- [AI examples](../modules/examples/ai.md) — detector and batch-detector scripts.
+  [Segmentation](../modules/ai/segmentation.md) · [Classification](../modules/ai/classification.md).
+- [AI examples](../modules/examples/ai.md) — detector, classifier, and batch-detector scripts.

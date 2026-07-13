@@ -19,7 +19,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 
 import nectar
-from nectar.ai.detection import Detector, Framework
+from nectar.ai.core import Framework
+from nectar.ai.detection import Detector
 from nectar.vision.camera import ImageHandler, OpenCVConfig, ROSConfig
 
 log = logging.getLogger("detector_example")

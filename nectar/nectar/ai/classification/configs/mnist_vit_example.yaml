@@ -1,0 +1,44 @@
+# Example: HuggingFace ViT on MNIST materialized as ImageFolder
+#
+# Prepare (small subset — avoid downloading the full set for tests):
+#   nectar-ai classify dataset download --source huggingface --repo ylecun/mnist \
+#       --max-samples 128 --output data/mnist-hf
+#
+# Train:
+#   nectar-ai classify train --config configs/mnist_vit_example.yaml
+#   # or: ./scripts/train_transformers.sh
+#
+# Optional Hub upload after train:
+#   push_to_hub: true
+#   hub_model_id: "your-org/nectar-cls-mnist-vit"
+# and export HF_TOKEN.
+
+data:
+  dataset_path: data/mnist-hf
+  dataset_format: imagefolder
+
+train:
+  framework: transformers
+  model: google/vit-base-patch16-224-in21k
+  epochs: 2
+  batch_size: 16
+  learning_rate: 5.0e-5
+  imgsz: 224
+  output_dir: outputs/mnist-vit
+  device: auto
+  tensorboard: true
+  start_tensorboard: true
+  mixed_precision: fp16
+  gradient_accumulation_steps: 2
+  max_train_samples: 128
+  max_eval_samples: 64
+  evaluate: true
+  eval_split: test
+  push_to_hub: false
+  hub_model_id: ""
+
+eval:
+  evaluate: true
+  eval_split: test
+  batch_size: 16
+  device: auto

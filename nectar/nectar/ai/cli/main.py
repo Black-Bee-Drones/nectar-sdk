@@ -6,12 +6,13 @@ Usage:
 Tasks:
     detect       Object detection (alias: detection, od)
     segment      Image segmentation (alias: segmentation, seg)
+    classify     Image classification (alias: classification, cls)
 
 Commands:
     train     Train a model
     predict   Run inference on images
     eval      Evaluate a model on a dataset
-    dataset   Dataset management (detection & segmentation)
+    dataset   Dataset management
 """
 
 import sys
@@ -23,6 +24,9 @@ TASK_ALIASES = {
     "segmentation": "segmentation",
     "segment": "segmentation",
     "seg": "segmentation",
+    "classification": "classification",
+    "classify": "classification",
+    "cls": "classification",
 }
 
 TASK_COMMANDS = {
@@ -38,6 +42,12 @@ TASK_COMMANDS = {
         "eval": "nectar.ai.segmentation.cli.evaluate",
         "dataset": "nectar.ai.segmentation.cli.dataset",
     },
+    "classification": {
+        "train": "nectar.ai.classification.cli.train",
+        "predict": "nectar.ai.classification.cli.predict",
+        "eval": "nectar.ai.classification.cli.evaluate",
+        "dataset": "nectar.ai.classification.cli.dataset",
+    },
 }
 
 HELP_TEXT = """\
@@ -46,20 +56,24 @@ Usage: nectar-ai <task> <command> [options]
 Tasks:
   detect       Object detection (aliases: detection, od)
   segment      Image segmentation (aliases: segmentation, seg)
+  classify     Image classification (aliases: classification, cls)
 
 Commands:
   train     Train a model
   predict   Run inference on images
   eval      Evaluate a model on a dataset
-  dataset   Dataset management (detection & segmentation)
+  dataset   Dataset management
 
 Examples:
   nectar-ai detect train --model yolov8n.pt --dataset /path/to/data
   nectar-ai detect predict --model yolov8n.pt --input image.jpg
   nectar-ai segment train --model yolov8n-seg.pt --dataset /path/to/data
   nectar-ai segment predict --model yolov8n-seg.pt --input image.jpg
+  nectar-ai classify train --model yolo26n-cls.pt --dataset /path/to/data
+  nectar-ai classify predict --model yolo26n-cls.pt --input image.jpg
   nectar-ai detect dataset download --source roboflow ...
   nectar-ai segment dataset download --source ultralytics --dataset crack-seg
+  nectar-ai classify dataset download --source ultralytics --dataset mnist160
 
 Run 'nectar-ai <task> <command> --help' for command-specific options."""
 

@@ -1,0 +1,41 @@
+# Example: Ultralytics YOLO-cls on the built-in mnist160 dataset
+#
+# Prepare:
+#   nectar-ai classify dataset download --source ultralytics --dataset mnist160 \
+#       --output data/mnist160
+#
+# Train:
+#   nectar-ai classify train --config configs/mnist_yolo26n_cls.yaml
+#   # or: ./scripts/train_ultralytics.sh
+#
+# TensorBoard starts when train.tensorboard is true (or pass --tensorboard).
+# To push weights to the Hub after training, set:
+#   push_to_hub: true
+#   hub_model_id: "your-org/your-cls-model"
+# and export HF_TOKEN.
+
+data:
+  dataset_path: mnist160
+  dataset_format: imagefolder
+
+train:
+  framework: ultralytics
+  model: yolo26n-cls.pt
+  epochs: 5
+  batch_size: 32
+  learning_rate: 0.001
+  imgsz: 64
+  output_dir: outputs/mnist-yolo26n-cls
+  device: auto
+  tensorboard: true
+  start_tensorboard: true
+  evaluate: true
+  eval_split: test
+  push_to_hub: false
+  hub_model_id: ""
+
+eval:
+  evaluate: true
+  eval_split: test
+  batch_size: 32
+  device: auto

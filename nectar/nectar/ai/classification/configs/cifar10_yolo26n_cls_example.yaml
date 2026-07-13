@@ -1,0 +1,39 @@
+# Example: Ultralytics YOLO-cls on a CIFAR-10 subset (+ Hub-ready knobs)
+#
+# Prepare a small subset (full CIFAR-10 is large; --max-samples keeps smoke runs light):
+#   nectar-ai classify dataset download --source ultralytics --dataset cifar10 \
+#       --max-samples 200 --output data/cifar10-subset
+#
+# Train:
+#   nectar-ai classify train --config configs/cifar10_yolo26n_cls_example.yaml
+#
+# Hub: set push_to_hub / hub_model_id and HF_TOKEN to upload weights after train.
+# Dataset upload (separate step):
+#   nectar-ai classify dataset upload --target huggingface \
+#       --repo your-org/cifar10-subset --dataset data/cifar10-subset --public
+
+data:
+  dataset_path: data/cifar10-subset
+  dataset_format: imagefolder
+
+train:
+  framework: ultralytics
+  model: yolo26n-cls.pt
+  epochs: 3
+  batch_size: 32
+  learning_rate: 0.001
+  imgsz: 64
+  output_dir: outputs/cifar10-yolo26n-cls
+  device: auto
+  tensorboard: true
+  start_tensorboard: true
+  evaluate: true
+  eval_split: test
+  push_to_hub: false
+  hub_model_id: ""
+
+eval:
+  evaluate: true
+  eval_split: test
+  batch_size: 32
+  device: auto
