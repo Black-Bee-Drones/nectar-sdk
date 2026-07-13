@@ -1,32 +1,21 @@
 <?xml version="1.0" ?>
 <!--
-  Nectar SDK — Indoor room world for Gazebo Harmonic.
+  Nectar indoor vehicle template
 
-  20x20x12m enclosed room for indoor flight testing.
+  Placeholders:
+    {{SCENERY_INCLUDE}} — <include> for scenery model URI (or empty)
+    {{SPAWN_POSE}}      — iris pose values: x y z roll pitch yaw (degrees)
 
-  Layout: drone spawns at x=-5 (open area). Obstacle course with
-  boxes, cylinders, and a fly-through gate in the x=5..9 zone.
-  Clear space x=-10..+4 (14m) for navigation tests.
-
-  NO GPS / NO NavSat — use with ArduPilot SITL + indoor.parm (EKF3
-  ExternalNav) and gz_vision_source.py to feed ground-truth pose.
-
-  Uses PosePublishing plugin to export model poses on a Gazebo topic,
-  which ros_gz_bridge forwards to ROS 2 for the vision pose source.
-
-  Usage:
-    gz sim -v4 -r indoor_room.sdf
+  Fixed world name nectar_indoor → /world/nectar_indoor/dynamic_pose/info
 -->
 <sdf version="1.9">
-  <world name="indoor_room">
+  <world name="nectar_indoor">
 
-    <!-- Physics -->
     <physics name="1ms" type="ignore">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>
 
-    <!-- Plugins (NO NavSat — indoor, no GPS) -->
     <plugin filename="gz-sim-physics-system"
       name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-sensors-system"
@@ -39,8 +28,6 @@
       name="gz::sim::systems::SceneBroadcaster"/>
     <plugin filename="gz-sim-imu-system"
       name="gz::sim::systems::Imu"/>
-
-    <!-- Publish model poses (ground-truth for vision pose bridge) -->
     <plugin filename="gz-sim-pose-publisher-system"
       name="gz::sim::systems::PosePublisher">
       <publish_model_pose>true</publish_model_pose>
@@ -48,7 +35,6 @@
       <update_frequency>30</update_frequency>
     </plugin>
 
-    <!-- ── GUI — camera feeds + topic echo inside Gazebo window ──── -->
     <gui fullscreen="0">
       <plugin filename="MinimalScene" name="3D View">
         <gz-gui>
@@ -134,7 +120,6 @@
         <real_time_factor>true</real_time_factor>
         <iterations>false</iterations>
       </plugin>
-      <!-- Camera feeds — start collapsed, expand to view -->
       <plugin filename="ImageDisplay" name="Front Camera RGB">
         <gz-gui>
           <property type="string" key="state">docked_collapsed</property>
@@ -153,7 +138,6 @@
         </gz-gui>
         <topic>/down_camera</topic>
       </plugin>
-      <!-- Topic echo — select any Gazebo topic to view live data -->
       <plugin filename="TopicEcho" name="Topic Echo">
         <gz-gui>
           <property type="string" key="state">docked_collapsed</property>
@@ -161,7 +145,12 @@
       </plugin>
     </gui>
 
-    <!-- Indoor lighting (4 lights to cover 20x20m room) -->
+    <scene>
+      <ambient>0.55 0.55 0.55 1</ambient>
+      <background>0.25 0.25 0.25 1</background>
+      <shadows>true</shadows>
+    </scene>
+
     <light type="point" name="ceiling_light_1">
       <pose>-5 -5 11.5 0 0 0</pose>
       <diffuse>1.0 1.0 1.0 1</diffuse>
@@ -207,22 +196,14 @@
       </attenuation>
     </light>
 
-    <!-- Stock room + obstacles (also swap via sitl_gazebo scenery:=) -->
-    <include>
-      <uri>model://indoor_room_scenery</uri>
-    </include>
+    {{SCENERY_INCLUDE}}
 
-    <!-- ── Drone ────────────────────────────────────────────────── -->
-
-    <!-- Iris quadcopter with gimbal (ardupilot_gazebo model) -->
-    <!-- Spawns at x=-5: 5m from west wall, 10m from obstacle zone at x=5+ -->
     <include>
       <uri>model://iris_with_gimbal</uri>
       <name>iris</name>
-      <pose degrees="true">-5 0 0.195 0 0 0</pose>
+      <pose degrees="true">{{SPAWN_POSE}}</pose>
     </include>
 
-    <!-- Front RGBD camera (simulates RealSense D435i) -->
     <model name="front_camera">
       <static>false</static>
       <pose relative_to="iris::iris_with_standoffs::base_link">0.18 0 -0.02 0 0 0</pose>
@@ -272,7 +253,6 @@
       <child>front_camera::link</child>
     </joint>
 
-    <!-- Downward RGB camera (simulates Arducam) -->
     <model name="down_camera">
       <static>false</static>
       <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.04 0 1.5708 0</pose>
@@ -316,7 +296,6 @@
       <child>down_camera::link</child>
     </joint>
 
-    <!-- Downward lidar rangefinder -->
     <model name="lidar_rangefinder">
       <static>false</static>
       <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.05 0 1.5708 0</pose>

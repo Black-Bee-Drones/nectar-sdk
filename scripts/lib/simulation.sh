@@ -119,14 +119,20 @@ cmd_sim_bridge() {
     _source_ros_env
     case "$_SIM_FIRMWARE" in
         ardupilot)
+            # ENV=indoor forces vision:=true
+            _SIM_VISION="false"
+            if [ "$_SIM_ENV" = "indoor" ]; then
+                _SIM_VISION="true"
+            fi
             case "$_SIM_PROTOCOL" in
                 mavros)
                     ros2 launch nectar sitl_gazebo.launch.py \
-                        world:="$_SIM_ENV" "${_SIM_EXTRA[@]}"
+                        world:="$_SIM_ENV" vision:="$_SIM_VISION" "${_SIM_EXTRA[@]}"
                     ;;
                 mavlink)
                     ros2 launch nectar sitl_gazebo.launch.py \
-                        world:="$_SIM_ENV" mavros:=false "${_SIM_EXTRA[@]}"
+                        world:="$_SIM_ENV" vision:="$_SIM_VISION" mavros:=false \
+                        "${_SIM_EXTRA[@]}"
                     ;;
                 *)
                     log_error "Unknown PROTOCOL '$_SIM_PROTOCOL' (valid: mavros, mavlink)"

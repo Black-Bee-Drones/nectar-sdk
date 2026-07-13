@@ -1,32 +1,21 @@
 <?xml version="1.0" ?>
 <!--
-  Nectar SDK — Indoor room world for Gazebo Harmonic.
+  Nectar outdoor vehicle template
 
-  20x20x12m enclosed room for indoor flight testing.
+  Placeholders:
+    {{SCENERY_INCLUDE}} — <include> for scenery model URI (or empty)
+    {{SPAWN_POSE}}      — iris pose values: x y z roll pitch yaw (degrees)
 
-  Layout: drone spawns at x=-5 (open area). Obstacle course with
-  boxes, cylinders, and a fly-through gate in the x=5..9 zone.
-  Clear space x=-10..+4 (14m) for navigation tests.
-
-  NO GPS / NO NavSat — use with ArduPilot SITL + indoor.parm (EKF3
-  ExternalNav) and gz_vision_source.py to feed ground-truth pose.
-
-  Uses PosePublishing plugin to export model poses on a Gazebo topic,
-  which ros_gz_bridge forwards to ROS 2 for the vision pose source.
-
-  Usage:
-    gz sim -v4 -r indoor_room.sdf
+  Fixed world name nectar_outdoor.
 -->
 <sdf version="1.9">
-  <world name="indoor_room">
+  <world name="nectar_outdoor">
 
-    <!-- Physics -->
     <physics name="1ms" type="ignore">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>
 
-    <!-- Plugins (NO NavSat — indoor, no GPS) -->
     <plugin filename="gz-sim-physics-system"
       name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-sensors-system"
@@ -39,16 +28,15 @@
       name="gz::sim::systems::SceneBroadcaster"/>
     <plugin filename="gz-sim-imu-system"
       name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-navsat-system"
+      name="gz::sim::systems::NavSat"/>
 
-    <!-- Publish model poses (ground-truth for vision pose bridge) -->
-    <plugin filename="gz-sim-pose-publisher-system"
-      name="gz::sim::systems::PosePublisher">
-      <publish_model_pose>true</publish_model_pose>
-      <publish_nested_model_pose>false</publish_nested_model_pose>
-      <update_frequency>30</update_frequency>
-    </plugin>
+    <scene>
+      <ambient>1.0 1.0 1.0</ambient>
+      <background>0.8 0.8 0.8</background>
+      <sky></sky>
+    </scene>
 
-    <!-- ── GUI — camera feeds + topic echo inside Gazebo window ──── -->
     <gui fullscreen="0">
       <plugin filename="MinimalScene" name="3D View">
         <gz-gui>
@@ -59,7 +47,7 @@
         <engine>ogre2</engine>
         <scene>scene</scene>
         <ambient_light>0.4 0.4 0.4</ambient_light>
-        <background_color>0.2 0.2 0.2</background_color>
+        <background_color>0.8 0.8 0.8</background_color>
         <camera_pose>-5 0 8 0 0.8 0</camera_pose>
       </plugin>
       <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
@@ -134,7 +122,6 @@
         <real_time_factor>true</real_time_factor>
         <iterations>false</iterations>
       </plugin>
-      <!-- Camera feeds — start collapsed, expand to view -->
       <plugin filename="ImageDisplay" name="Front Camera RGB">
         <gz-gui>
           <property type="string" key="state">docked_collapsed</property>
@@ -153,7 +140,6 @@
         </gz-gui>
         <topic>/down_camera</topic>
       </plugin>
-      <!-- Topic echo — select any Gazebo topic to view live data -->
       <plugin filename="TopicEcho" name="Topic Echo">
         <gz-gui>
           <property type="string" key="state">docked_collapsed</property>
@@ -161,68 +147,62 @@
       </plugin>
     </gui>
 
-    <!-- Indoor lighting (4 lights to cover 20x20m room) -->
-    <light type="point" name="ceiling_light_1">
-      <pose>-5 -5 11.5 0 0 0</pose>
-      <diffuse>1.0 1.0 1.0 1</diffuse>
-      <specular>0.3 0.3 0.3 1</specular>
+    <spherical_coordinates>
+      <latitude_deg>-35.363262</latitude_deg>
+      <longitude_deg>149.165237</longitude_deg>
+      <elevation>584</elevation>
+      <heading_deg>0</heading_deg>
+      <surface_model>EARTH_WGS84</surface_model>
+    </spherical_coordinates>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.8 0.8 0.8 1</specular>
       <attenuation>
-        <range>30</range>
-        <constant>0.5</constant>
-        <linear>0.02</linear>
-        <quadratic>0.003</quadratic>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
       </attenuation>
-    </light>
-    <light type="point" name="ceiling_light_2">
-      <pose>-5 5 11.5 0 0 0</pose>
-      <diffuse>1.0 1.0 1.0 1</diffuse>
-      <specular>0.3 0.3 0.3 1</specular>
-      <attenuation>
-        <range>30</range>
-        <constant>0.5</constant>
-        <linear>0.02</linear>
-        <quadratic>0.003</quadratic>
-      </attenuation>
-    </light>
-    <light type="point" name="ceiling_light_3">
-      <pose>5 -5 11.5 0 0 0</pose>
-      <diffuse>1.0 1.0 1.0 1</diffuse>
-      <specular>0.3 0.3 0.3 1</specular>
-      <attenuation>
-        <range>30</range>
-        <constant>0.5</constant>
-        <linear>0.02</linear>
-        <quadratic>0.003</quadratic>
-      </attenuation>
-    </light>
-    <light type="point" name="ceiling_light_4">
-      <pose>5 5 11.5 0 0 0</pose>
-      <diffuse>1.0 1.0 1.0 1</diffuse>
-      <specular>0.3 0.3 0.3 1</specular>
-      <attenuation>
-        <range>30</range>
-        <constant>0.5</constant>
-        <linear>0.02</linear>
-        <quadratic>0.003</quadratic>
-      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- Stock room + obstacles (also swap via sitl_gazebo scenery:=) -->
-    <include>
-      <uri>model://indoor_room_scenery</uri>
-    </include>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.3 1</ambient>
+            <diffuse>0.3 0.5 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
 
-    <!-- ── Drone ────────────────────────────────────────────────── -->
+    {{SCENERY_INCLUDE}}
 
-    <!-- Iris quadcopter with gimbal (ardupilot_gazebo model) -->
-    <!-- Spawns at x=-5: 5m from west wall, 10m from obstacle zone at x=5+ -->
     <include>
       <uri>model://iris_with_gimbal</uri>
       <name>iris</name>
-      <pose degrees="true">-5 0 0.195 0 0 0</pose>
+      <pose degrees="true">{{SPAWN_POSE}}</pose>
     </include>
 
-    <!-- Front RGBD camera (simulates RealSense D435i) -->
     <model name="front_camera">
       <static>false</static>
       <pose relative_to="iris::iris_with_standoffs::base_link">0.18 0 -0.02 0 0 0</pose>
@@ -272,7 +252,6 @@
       <child>front_camera::link</child>
     </joint>
 
-    <!-- Downward RGB camera (simulates Arducam) -->
     <model name="down_camera">
       <static>false</static>
       <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.04 0 1.5708 0</pose>
@@ -316,7 +295,6 @@
       <child>down_camera::link</child>
     </joint>
 
-    <!-- Downward lidar rangefinder -->
     <model name="lidar_rangefinder">
       <static>false</static>
       <pose relative_to="iris::iris_with_standoffs::base_link">0 0 -0.05 0 1.5708 0</pose>

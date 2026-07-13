@@ -137,11 +137,29 @@ MAVROS). `ENV` must match between the two terminals.
 - **PX4**: Terminal 1 (`start_px4.sh`) runs PX4 **and** its Gazebo. `ENV=outdoor` spawns `x500_nectar` into the shared `outdoor_field_px4.sdf` (matched sensors); `ENV=indoor` uses PX4's `x500_vision` (GPS-denied onboard VIO). Terminal 2 runs MAVROS (+ camera bridges for outdoor; + the external-vision relay for indoor). PX4 exposes the offboard MAVLink API on UDP `14540`. With `PROTOCOL=mavlink`, Terminal 2 skips MAVROS (camera bridges only) and a `Px4MavlinkDrone` connects to UDP `14540` directly (pymavlink `udp:0.0.0.0:14540`); the rangefinder then arrives as MAVLink `DISTANCE_SENSOR`, no MAVROS.
 - **PX4 uXRCE-DDS** (`PROTOCOL=dds`): Terminal 2 runs `MicroXRCEAgent` (udp4 :8888); PX4's onboard uXRCE-DDS client connects to it, exposing `/fmu/`* topics that `Px4DdsDrone` reads/writes directly (no MAVROS). One-time setup: `make sim-install FIRMWARE=px4 ARGS=--native` (builds `px4_msgs` + the agent). `px4_msgs` must match the PX4 firmware (topics are versioned, e.g. `vehicle_status_v4`).
 - **Indoor** adds the vision pipeline: ArduPilot uses `gz_vision_source` → `vision_pose_node` → `/mavros/vision_pose/pose_cov`; PX4 fuses onboard VIO. Same bridges as real hardware.
-- Forward extra launch/script args with `ARGS=...`, e.g. a custom ArduPilot world or a one-off mavros toggle:
+- Forward extra launch/script args with `ARGS=...`, e.g. a one-off mavros toggle or rangefinder test world:
 
 ```bash
 make sim-bridge FIRMWARE=ardupilot ARGS="world:=rangefinder_test.sdf mavros:=false"
 ```
+
+- **Custom mission arenas (recommended):** competition packages ship **scenery only** (`model.config` + `model.sdf` + meshes). Nectar composes the vehicle stack (plugins, iris, cameras, lidar). `ENV` selects indoor ExternalNav vs outdoor GPS; map and spawn are launch args:
+
+```bash
+make sim-start  FIRMWARE=ardupilot ENV=indoor
+make sim-bridge FIRMWARE=ardupilot ENV=indoor \
+  ARGS='scenery:=model://my_arena spawn_pose:="-5 0 0.195 0 0 0" resource_path:=/path/to/pkg/simulation/models'
+```
+
+| Arg | Role |
+|-----|------|
+| `world:=outdoor\|indoor` | Compose from Nectar vehicle template (+ stock scenery if `scenery` empty) |
+| `scenery:=model://name` | Replace stock scenery with a mission model |
+| `spawn_pose:="x y z r p y"` | Iris pose (degrees); empty = template default |
+| `resource_path:=a:b` | Extra dirs on `GZ_SIM_RESOURCE_PATH` (mission `simulation/models`) |
+| `world:=/abs/path.sdf` | Escape hatch: full custom world (must embed drone/sensors yourself) |
+
+Composed worlds use fixed names `nectar_indoor` / `nectar_outdoor` (pose topic `/world/<name>/dynamic_pose/info`). Mission packages must **not** hard-code iris/cameras in their SDF.
 
 - Headless ArduPilot without Gazebo (pure MAVROS): run `./scripts/simulation/start_sitl.sh` then `ros2 launch nectar sitl.launch.py` directly.
 
@@ -150,11 +168,21 @@ make sim-bridge FIRMWARE=ardupilot ARGS="world:=rangefinder_test.sdf mavros:=fal
 
 ### Shared-world architecture
 
-The arena is split into a static **scenery model** (gate + obstacles) and a per-firmware **drone+sensor overlay**:
+**Nectar owns the vehicle stack; missions own scenery.**
 
-- `simulation/models/outdoor_field_scenery/` — gate, obstacle boxes/cylinders. Static, firmware-agnostic. Both `outdoor_field.sdf` (ArduPilot) and `outdoor_field_px4.sdf` (PX4) include it via `<include><uri>model://outdoor_field_scenery</uri></include>`.
-- `simulation/models/x500_nectar/` — PX4 `x500` (merged) + the same sensors ArduPilot's `outdoor_field.sdf` jointed onto the iris. The front `rgbd_camera` (`/front_camera`) and down `camera` (`/down_camera`) bridge to ROS via `ros_gz_bridge`; the down `gpu_lidar` is wired the PX4 way (`lidar_sensor_link`/`lidar`, no custom topic) so PX4 fuses it and streams `DISTANCE_SENSOR` → `/mavros/rangefinder/rangefinder`, the same rangefinder source the SDK reads for ArduPilot.
-- `simulation/worlds/outdoor_field_px4.sdf` — scenery-only world (no `<plugin>` tags; PX4's `server.config` injects gz systems globally). PX4 spawns `x500_nectar` into it via `PX4_SIM_MODEL=gz_x500_nectar`. Its GPS origin is a near-zero magnetic-declination location (lat 0, lon 40), **not** ArduPilot's Canberra. PX4's `gz_bridge` feeds the EKF gz Harmonic's magnetometer, which has a known declination/frame bug ([gz-sim#2536](https://github.com/gazebosim/gz-sim/issues/2536), [#3270](https://github.com/gazebosim/gz-sim/issues/3270); see the `x500_base` mag TODO re [gz-sim#2460](https://github.com/gazebosim/gz-sim/pull/2460)); the cold-start mag yaw is off by ~~2× the local declination (~~24° at Canberra) until GPS-course converges it, which skewed the first body-relative move. At ~0 declination there is nothing to skew, so the heading is correct from cold start. ArduPilot simulates its own consistent magnetometer and is unaffected, so it keeps Canberra; only the GPS origin differs, the scenery/sensors/physics are identical.
+- `simulation/templates/{indoor,outdoor}_vehicle.sdf.in` — ArduPilot compose templates (plugins, iris, Nectar cameras/lidar). Launch substitutes scenery + spawn.
+- `simulation/models/indoor_room_scenery/` — stock 20×20×12 m indoor room + obstacles.
+- `simulation/models/outdoor_field_scenery/` — outdoor gate + obstacles. Also used by `outdoor_field.sdf` / `outdoor_field_px4.sdf`.
+- `simulation/models/x500_nectar/` — PX4 `x500` + matched sensors. Outdoor PX4 still uses shared scenery via include.
+- `simulation/worlds/outdoor_field_px4.sdf` — scenery-only world for PX4 (no world `<plugin>` tags; PX4's `server.config` injects systems). GPS origin near-zero declination (lat 0, lon 40), **not** ArduPilot's Canberra — see magnetometer notes in prior docs ([gz-sim#2536](https://github.com/gazebosim/gz-sim/issues/2536)).
+
+Mission package layout:
+
+```text
+my_mission/simulation/models/<arena>/{model.config,model.sdf,meshes/}
+```
+
+No iris, cameras, or Gazebo world plugins in the mission package.
 
 `install_px4.sh` symlinks the three Nectar assets into PX4's `Tools/simulation/gz/{models,worlds}` so PX4's launcher can find them while the source of truth stays in `nectar-sdk/`. `start_px4.sh --autostart` reuses PX4's existing `4001` (x500) airframe via `PX4_SYS_AUTOSTART`, so no PX4-tree airframe file is added.
 
@@ -352,7 +380,7 @@ in the pre-flight set because ArduCopter accepts that command only in a nav-capa
 
 ```mermaid
 flowchart LR
-    GzPose["Gazebo PosePublisher<br/>/world/indoor_room/dynamic_pose/info<br/>gz.msgs.Pose_V"]
+    GzPose["Gazebo SceneBroadcaster<br/>/world/nectar_indoor/dynamic_pose/info<br/>gz.msgs.Pose_V"]
     Bridge["ros_gz_bridge<br/>gz.msgs.Pose_V → tf2_msgs/TFMessage"]
     VPB["gz_vision_source.py<br/>Selects iris model pose"]
     Topic["/visual_slam/tracking/vo_pose_covariance<br/>(canonical VSLAM topic)"]
@@ -372,8 +400,9 @@ Simulation assets (`nectar/simulation/`):
 
 - `params/` — ArduPilot SITL parameter files: `gazebo.parm` (rangefinders), `indoor.parm` (no-GPS + EKF3 ExternalNav), `rangefinder_test.parm` (RNGFND2/3 for the test world)
 - `config/` — MAVROS bridge profiles: `apm_config_sitl.yaml` / `apm_pluginlists_sitl.yaml` (ArduPilot), `px4_config_sitl.yaml` / `px4_pluginlists_sitl.yaml` (PX4)
-- `models/` — `iris_with_rangefinders` (ArduPilot), `x500_nectar` (PX4), `outdoor_field_scenery` (shared)
-- `worlds/` — `outdoor_field.sdf`, `outdoor_field_px4.sdf`, `indoor_room.sdf` (20x20x12 m, no GPS), `rangefinder_test.sdf`
+- `models/` — `indoor_room_scenery`, `outdoor_field_scenery`, `iris_with_rangefinders`, `x500_nectar`
+- `templates/` — `indoor_vehicle.sdf.in`, `outdoor_vehicle.sdf.in` (composed by `sitl_gazebo.launch.py`)
+- `worlds/` — `outdoor_field.sdf`, `outdoor_field_px4.sdf`, `indoor_room.sdf`, `rangefinder_test.sdf`
 
 Install and start scripts (`scripts/simulation/`): `install_sitl.sh`, `install_gazebo.sh`,
 `install_px4.sh`, `start_sitl.sh`, `start_px4.sh`, and `gz_vision_source.py` (Gazebo ground-truth
