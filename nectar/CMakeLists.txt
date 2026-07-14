@@ -31,7 +31,87 @@ find_package(sensor_msgs REQUIRED)
 # install(TARGETS cpp_node DESTINATION lib/${PROJECT_NAME})
 
 
-ament_python_install_package(${PROJECT_NAME})
+# =============================================================================
+# Python package install
+# -----------------------------------------------------------------------------
+# ament_python_install_package() has no exclude API: it installs the whole
+# PACKAGE_DIR and only skips *.pyc / __pycache__ (ament_cmake_python). Local
+# AI datasets, training outputs, and tool caches under nectar/ must not enter
+# install/ . Workaround: rsync a trimmed tree into the
+# build dir and pass that as PACKAGE_DIR. Training still uses the source tree
+# via nectar.ai.paths (DEFAULT_DATA_DIR / DEFAULT_OUTPUT_DIR).
+# Do not exclude ai/*/datasets/ — those are Python source modules.
+# =============================================================================
+find_program(RSYNC_EXECUTABLE rsync)
+if(NOT RSYNC_EXECUTABLE)
+  message(FATAL_ERROR
+    "rsync is required to stage the nectar Python package without datasets/caches. "
+    "Install it (e.g. apt install rsync) and re-run cmake.")
+endif()
+
+set(_NECTAR_PY_STAGE "${CMAKE_CURRENT_BINARY_DIR}/python_stage/nectar")
+set(_NECTAR_PY_RSYNC_EXCLUDES
+  # AI bulk data (gitignored; paths.py resolves source tree)
+  --exclude ai/data/
+  --exclude ai/outputs/
+  --exclude ai/detection/data/
+  --exclude ai/detection/outputs/
+  --exclude ai/segmentation/data/
+  --exclude ai/segmentation/outputs/
+  --exclude ai/classification/data/
+  --exclude ai/classification/outputs/
+  # Bytecode / packaging noise
+  --exclude */__pycache__/
+  --exclude *.pyc
+  --exclude *.egg-info/
+  # Model weight dumps
+  --exclude *.pt
+  --exclude *.pth
+  # Tooling caches that may appear under the package tree
+  --exclude .pytest_cache/
+  --exclude .mypy_cache/
+  --exclude .ruff_cache/
+  --exclude .ipynb_checkpoints/
+  --exclude htmlcov/
+  --exclude .coverage
+)
+
+# Seed the stage at configure time so install(DIRECTORY) has a source.
+file(MAKE_DIRECTORY "${_NECTAR_PY_STAGE}")
+execute_process(
+  COMMAND
+    ${RSYNC_EXECUTABLE} -a --delete
+    ${_NECTAR_PY_RSYNC_EXCLUDES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/nectar/"
+    "${_NECTAR_PY_STAGE}/"
+  RESULT_VARIABLE _nectar_rsync_rc
+  ERROR_VARIABLE _nectar_rsync_err
+)
+if(NOT _nectar_rsync_rc EQUAL 0)
+  message(FATAL_ERROR "Failed to stage nectar Python package: ${_nectar_rsync_err}")
+endif()
+
+# Refresh before every build so source edits reach install without bulk/cache dirs.
+add_custom_target(nectar_python_stage ALL
+  COMMAND
+    ${RSYNC_EXECUTABLE} -a --delete
+    ${_NECTAR_PY_RSYNC_EXCLUDES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/nectar/"
+    "${_NECTAR_PY_STAGE}/"
+  COMMENT "Staging nectar Python package (excluding datasets, outputs, caches)"
+  VERBATIM
+)
+
+ament_python_install_package(${PROJECT_NAME}
+  PACKAGE_DIR "${_NECTAR_PY_STAGE}"
+)
+
+# Ensure ament's egg copy/symlink runs after the stage is refreshed.
+if(TARGET ament_cmake_python_symlink_nectar)
+  add_dependencies(ament_cmake_python_symlink_nectar nectar_python_stage)
+elseif(TARGET ament_cmake_python_copy_nectar)
+  add_dependencies(ament_cmake_python_copy_nectar nectar_python_stage)
+endif()
 
 install(PROGRAMS
   nectar/interface/app.py
@@ -45,6 +125,7 @@ install(PROGRAMS
   nectar/examples/vision/t265_example.py
   nectar/examples/vision/collect_photos.py
   nectar/examples/ai/detector_example.py
+  nectar/examples/ai/classifier_example.py
   nectar/examples/sensors/rangefinder_example.py
   nectar/control/pid/pid_node.py
   nectar/sensors/nodes/rangefinder_node.py
@@ -85,6 +166,11 @@ install(DIRECTORY nectar/ai/detection/configs/
 
 install(DIRECTORY nectar/ai/segmentation/configs/
   DESTINATION share/${PROJECT_NAME}/ai/segmentation/configs
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
+install(DIRECTORY nectar/ai/classification/configs/
+  DESTINATION share/${PROJECT_NAME}/ai/classification/configs
   FILES_MATCHING PATTERN "*.yaml"
 )
 

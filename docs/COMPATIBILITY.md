@@ -67,7 +67,7 @@ Install: `make python-control`; backends are opt-in (`make drone-<x>`).
 | MAVROS backend (ArduPilot / PX4)[^mavros] | ◐ | ● | ● | ◐ |
 | PX4 native uXRCE-DDS[^px4dds] | ● | ● | ● | ◐ |
 | Crazyflie / Crazyswarm2[^crazyflie] | ● | ● | ● | ○ |
-| Bebop driver[^bebop] | ● | ○ | ○ | — |
+| Bebop driver[^bebop] | ● | ◐ | ◐ | — |
 
 ## Localization (indoor / GPS-denied)
 
@@ -97,8 +97,9 @@ Install: `make python-ai && make pytorch`.
 |---|:---:|:---:|:---:|:---:|
 | `nectar-ai` CLI | ● | ● | ● | ● |
 | Detection inference (YOLO / DETR / RF-DETR)[^detect] | ● | ● | ◐ | ● |
+| Classification inference (YOLO-cls / ViT) | ● | ● | ◐ | ● |
 | PyTorch CUDA (GPU tensor)[^torchcuda] | ● | ● | ● | ● |
-| Training / segmentation | ● | ● | ◐ | ◐ |
+| Training / segmentation / classification | ● | ● | ◐ | ◐ |
 
 ## Interface
 
@@ -129,6 +130,7 @@ Per-distro versions live in [`scripts/lib/config.sh`](../scripts/lib/config.sh).
 | | Humble | Jazzy | Kilted | Jetson |
 |---|---|---|---|---|
 | librealsense / realsense-ros | v2.55.1 / 4.55.1 | v2.56.5 / 4.56.4 | v2.57.6 / 4.57.2 | v2.55.1 / 4.55.1 (CUDA, RSUSB) |
+| Micro-XRCE-DDS-Agent | v2.4.2 | v2.4.3 | v3.0.1 | (same as Humble) |
 | Gazebo (`ros_gz`) | Harmonic (source) | Harmonic (binary) | Ionic (binary) | — |
 | PyTorch | uv `--torch-backend` (CPU/CUDA) | same | same | JetPack wheels (CUDA) |
 

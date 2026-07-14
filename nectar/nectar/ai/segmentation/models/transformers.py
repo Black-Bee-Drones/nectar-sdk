@@ -39,8 +39,8 @@ except ImportError:
 
 from PIL import Image
 
+from nectar.ai.core.utils.device import get_device
 from nectar.ai.detection.datasets.format import FormatDetector
-from nectar.ai.detection.utils.device import get_device
 from nectar.ai.segmentation.core.base import BaseSegmentationModel
 from nectar.ai.segmentation.core.configs import SegTrainingConfig
 from nectar.ai.segmentation.core.exceptions import ModelNotLoadedError, TrainingError
@@ -557,7 +557,7 @@ class TransformersSegModel(BaseSegmentationModel):
             callbacks.append(_GCCallback(config.gradient_accumulation_steps))
 
         if config.push_to_hub and config.hub_model_id and output_dir:
-            from nectar.ai.detection.utils.callbacks import get_hf_upload_transformers_callback
+            from nectar.ai.core.utils.callbacks import get_hf_upload_transformers_callback
 
             callbacks.append(
                 get_hf_upload_transformers_callback(config.hub_model_id, output_dir, self.logger)

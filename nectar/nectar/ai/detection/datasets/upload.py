@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
 logger = logging.getLogger(__name__)
 

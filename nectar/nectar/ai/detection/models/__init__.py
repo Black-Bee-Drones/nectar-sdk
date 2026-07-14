@@ -6,7 +6,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 _LAZY_ATTRS = {
-    "ModelLoader": "nectar.ai.detection.models.model_loader",
     "UltralyticsModel": "nectar.ai.detection.models.ultralytics",
     "TransformersModel": "nectar.ai.detection.models.transformers",
     "RFDETRModel": "nectar.ai.detection.models.rfdetr",
@@ -37,14 +36,12 @@ if TYPE_CHECKING:
         collate_fn,
         load_detection_dataset,
     )
-    from nectar.ai.detection.models.model_loader import ModelLoader
     from nectar.ai.detection.models.rfdetr import RFDETRModel
     from nectar.ai.detection.models.transformers import TransformersModel
     from nectar.ai.detection.models.ultralytics import UltralyticsModel
 
 
 __all__ = [
-    "ModelLoader",
     "UltralyticsModel",
     "TransformersModel",
     "RFDETRModel",

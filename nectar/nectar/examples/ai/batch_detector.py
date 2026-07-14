@@ -27,7 +27,8 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 
-from nectar.ai.detection import Detector, Framework
+from nectar.ai.core import Framework
+from nectar.ai.detection import Detector
 
 
 def extract_video_frames(video_path: str, output_dir: str = None) -> Tuple[List[str], float]:

@@ -1,4 +1,4 @@
-"""Shared CLI utilities for detection and segmentation commands."""
+"""Shared CLI utilities for detection, segmentation, and classification commands."""
 
 import argparse
 from pathlib import Path
@@ -155,7 +155,7 @@ def detect_framework(model_name: str, task: str = "detection") -> str:
     model_name : str
         Model name or path.
     task : str
-        Task type ('detection' or 'segmentation') to adjust heuristics.
+        Task type ('detection', 'segmentation', or 'classification').
     """
     model_lower = model_name.lower()
     normalized = model_lower.replace("-", "").replace("_", "")
@@ -167,6 +167,24 @@ def detect_framework(model_name: str, task: str = "detection") -> str:
         if any(kw in model_lower for kw in ["mask2former", "maskformer", "segformer"]):
             return "transformers"
         if any(kw in model_lower for kw in ["facebook/", "microsoft/", "nvidia/"]):
+            return "transformers"
+        return "ultralytics"
+
+    if task == "classification":
+        if any(
+            kw in model_lower
+            for kw in [
+                "vit",
+                "beit",
+                "swin",
+                "convnext",
+                "resnet",
+                "efficientnet",
+                "google/",
+                "facebook/",
+                "microsoft/",
+            ]
+        ):
             return "transformers"
         return "ultralytics"
 

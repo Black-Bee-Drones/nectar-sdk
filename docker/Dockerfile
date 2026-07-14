@@ -59,7 +59,7 @@ RUN if [ "$INSTALL_REALSENSE" = "true" ]; then \
 
 # Control backends: space-separated list of `make drone-<x>` targets to install
 # (e.g. "mavros crazyflie"). Empty by default (core install ships MAVLink/pymavlink
-# only). Bebop is intentionally not a default (source build, Humble-only).
+# only). Bebop is intentionally not a default (source build, heavy ARSDK).
 ARG INSTALL_DRONE=""
 RUN if [ -n "$INSTALL_DRONE" ]; then \
       if [ "$INSTALL_DRONE" = "all" ]; then make drone-all; \

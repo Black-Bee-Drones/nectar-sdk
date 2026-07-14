@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -73,7 +74,9 @@ class TensorBoardManager:
 
             self.process = subprocess.Popen(
                 [
-                    "tensorboard",
+                    sys.executable,
+                    "-m",
+                    "tensorboard.main",
                     "--logdir",
                     str(log_path),
                     "--port",

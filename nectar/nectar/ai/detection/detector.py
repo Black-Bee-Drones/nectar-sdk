@@ -3,26 +3,17 @@ Unified detector with factory pattern.
 """
 
 import logging
-from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 
+from nectar.ai.core.framework import Framework
 from nectar.ai.detection.core.base import BaseDetectionModel
 from nectar.ai.detection.core.configs import EvaluationConfig, TrainingConfig
 from nectar.ai.detection.core.types import DetectionResult
 
 logger = logging.getLogger(__name__)
-
-
-class Framework(Enum):
-    """Supported detection frameworks."""
-
-    ULTRALYTICS = "ultralytics"
-    TRANSFORMERS = "transformers"
-    RFDETR = "rfdetr"
-
 
 BuilderFunc = Callable[..., BaseDetectionModel]
 
@@ -170,7 +161,7 @@ class Detector:
         try:
             if model_path is None and self._framework == Framework.ULTRALYTICS:
                 if "/" in self.model_source and ":" in self.model_source:
-                    from nectar.ai.detection.models.model_loader import ModelLoader
+                    from nectar.ai.core.model_loader import ModelLoader
 
                     model_path = ModelLoader.load(self.model_source, token=self._hf_token)
 

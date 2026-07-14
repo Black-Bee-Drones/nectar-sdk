@@ -125,7 +125,7 @@ markers = [
     "sensors: rangefinder filters and MAVLink DISTANCE_SENSOR bridge",
     "localization: vision-pose bridge (mavros / mavlink backends)",
     "interface: Qt6 GUI (offscreen)",
-    "ai: detection CLI / inference",
+    "ai: detection / segmentation / classification CLI and inference",
     "sim: requires the simulation stack (make sim-install)",
     "sitl: SITL/integration flight in a headless simulator (make verify-sitl); heavy, opt-in",
     "ardupilot: SITL flight on ArduPilot firmware",
@@ -145,5 +145,6 @@ exclude = ["test*"]
 "nectar.interface" = ["images/*.png"]
 "nectar.ai.detection" = ["configs/*.yaml"]
 "nectar.ai.segmentation" = ["configs/*.yaml"]
+"nectar.ai.classification" = ["configs/*.yaml"]
 "nectar.control.ardupilot" = ["config/*.yaml"]
 "nectar.control.px4" = ["config/*.yaml"]

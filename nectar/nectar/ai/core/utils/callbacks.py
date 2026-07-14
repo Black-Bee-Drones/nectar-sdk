@@ -67,7 +67,7 @@ def setup_ultralytics_hf_callbacks(
     log : logging.Logger, optional
         Logger instance. Uses module logger if not provided.
     """
-    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
     log = log or logger
 
@@ -157,7 +157,7 @@ def get_hf_upload_ptl_callback(
     """
     from pytorch_lightning import Callback
 
-    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
     log = log or logger
 
@@ -226,7 +226,7 @@ def get_hf_upload_transformers_callback(
     """
     from transformers import TrainerCallback
 
-    from nectar.ai.detection.utils.huggingface import HuggingFaceUploader
+    from nectar.ai.core.utils.huggingface import HuggingFaceUploader
 
     log = log or logger
 

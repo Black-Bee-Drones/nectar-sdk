@@ -60,3 +60,34 @@ def test_nano_inference():
     image = (np.random.rand(640, 640, 3) * 255).astype(np.uint8)
     result = detector.detect(image, conf=0.25)
     assert isinstance(result, DetectionResult), f"detect() returned {type(result).__name__}"
+
+
+@pytest.mark.slow
+@pytest.mark.network
+def test_nano_classification():
+    """A YOLO-cls inference runs end to end on a synthetic image."""
+    pytest.importorskip("torch", reason="torch not installed (make pytorch)")
+    pytest.importorskip("ultralytics", reason="ultralytics not installed (make python-ai)")
+    import numpy as np
+
+    from nectar.ai.classification import ClassificationResult, Classifier
+
+    classifier = Classifier("yolo26n-cls.pt")
+    try:
+        classifier.load()
+    except Exception as exc:  # noqa: BLE001
+        # Fallback to yolov8n-cls if yolo26 weights unavailable
+        try:
+            classifier = Classifier("yolov8n-cls.pt")
+            classifier.load()
+        except Exception as exc2:  # noqa: BLE001
+            pytest.skip(
+                f"cls weights unavailable (offline?): {type(exc).__name__}/{type(exc2).__name__}"
+            )
+
+    image = (np.random.rand(224, 224, 3) * 255).astype(np.uint8)
+    result = classifier.classify(image, topk=5)
+    assert isinstance(result, ClassificationResult), f"classify() returned {type(result).__name__}"
+    assert result.top1 is not None
+    assert result.top1_confidence is not None
+    assert 0.0 <= result.top1_confidence <= 1.0

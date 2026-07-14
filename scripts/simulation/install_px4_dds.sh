@@ -13,6 +13,11 @@
 # NOTE: the px4_msgs branch MUST match your PX4 firmware release (uORB topics are
 # versioned). 'main' matches a 'main' PX4 checkout; for a release use the matching
 # branch, e.g.  PX4_MSGS_BRANCH=release/1.15 make drone-px4-dds
+#
+# Agent tag must match the distro Fast-DDS / Fast-CDR ABI (override with AGENT_TAG):
+#   humble  → v2.4.2  (FastCDR 1.x, fastrtps 2.x)
+#   jazzy   → v2.4.3  (FastCDR 2.x, fastrtps 2.x)
+#   kilted+ → v3.0.1  (FastCDR 2.x, fastdds 3.x; needs PX4 XRCE client ≥ v3)
 # =============================================================================
 set -euo pipefail
 
@@ -24,6 +29,22 @@ WS_SRC="$(cd "${SCRIPT_DIR}/../../.." && pwd)"   # ros2_ws/src (parent of nectar
 WS_ROOT="$(dirname "${WS_SRC}")"                 # ros2_ws
 PX4_MSGS_BRANCH="${PX4_MSGS_BRANCH:-}"           # empty = default branch (main)
 AGENT_DIR="${AGENT_DIR:-${HOME}/Micro-XRCE-DDS-Agent}"
+
+_as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+_agent_tag_for_distro() {
+    case "${1}" in
+        humble) echo "v2.4.2" ;;
+        jazzy)  echo "v2.4.3" ;;
+        *)      echo "v3.0.1" ;;
+    esac
+}
 
 echo "[INFO] Setting up the PX4 native uXRCE-DDS path (px4_msgs + agent)..."
 
@@ -39,15 +60,17 @@ else
     fi
 fi
 
-# Source ROS so colcon and the agent's find_package(fastdds) resolve.
+# Source ROS so colcon and the agent's find_package(fastdds/fastrtps) resolve.
 set +u
 if [ -z "${ROS_DISTRO:-}" ]; then
-    for d in jazzy humble iron rolling; do
+    for d in kilted jazzy humble iron rolling; do
         [ -f "/opt/ros/$d/setup.bash" ] && { ROS_DISTRO="$d"; break; }
     done
 fi
 [ -n "${ROS_DISTRO:-}" ] && source "/opt/ros/${ROS_DISTRO}/setup.bash"
 set -u
+
+AGENT_TAG="${AGENT_TAG:-$(_agent_tag_for_distro "${ROS_DISTRO}")}"
 
 echo "[INFO] Building px4_msgs (required for drone 'px4_dds')..."
 ( cd "${WS_ROOT}" && colcon build --packages-select px4_msgs )
@@ -56,8 +79,10 @@ echo "[INFO] Building px4_msgs (required for drone 'px4_dds')..."
 if command -v MicroXRCEAgent >/dev/null 2>&1; then
     echo "[INFO] MicroXRCEAgent already installed"
 else
-    echo "[INFO] Building Micro-XRCE-DDS-Agent (against system Fast-DDS)..."
-    [ -d "${AGENT_DIR}" ] || git clone -b v2.4.3 --depth 1 \
+    echo "[INFO] Building Micro-XRCE-DDS-Agent ${AGENT_TAG} (system Fast-DDS, ${ROS_DISTRO})..."
+    # Drop any previous failed/wrong-tag tree so cmake sees the matching sources.
+    rm -rf "${AGENT_DIR}"
+    git clone -b "${AGENT_TAG}" --depth 1 \
         https://github.com/eProsima/Micro-XRCE-DDS-Agent.git "${AGENT_DIR}"
     mkdir -p "${AGENT_DIR}/build"
     # Reuse ROS's Fast-DDS/Fast-CDR instead of the bundled superbuild, whose
@@ -66,8 +91,8 @@ else
         cmake .. -DCMAKE_BUILD_TYPE=Release -DUAGENT_BUILD_EXECUTABLE=ON \
             -DUAGENT_USE_SYSTEM_FASTDDS=ON -DUAGENT_USE_SYSTEM_FASTCDR=ON && \
         make -j"$(nproc)" && \
-        sudo make install && \
-        sudo ldconfig )
+        _as_root make install && \
+        _as_root ldconfig )
 fi
 
 echo ""

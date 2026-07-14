@@ -11,7 +11,9 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 
+from nectar.ai.core.utils.ultralytics_datasets import nectar_ultralytics_datasets_dir
 from nectar.ai.detection.datasets.handlers.base import BaseDatasetHandler
+from nectar.ai.paths import DEFAULT_DATA_DIR
 from nectar.ai.segmentation.datasets.format import SegFormatConverter
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,8 @@ class UltralyticsSegHandler(BaseDatasetHandler):
     >>> handler.download_and_convert(output_format="coco")
     """
 
+    CACHE_DIR = DEFAULT_DATA_DIR / "ultralytics"
+
     def __init__(self, output_dir: str, dataset_name: str, verbose: bool = True):
         super().__init__(output_dir, verbose=verbose)
         self.dataset_name = dataset_name
@@ -66,7 +70,8 @@ class UltralyticsSegHandler(BaseDatasetHandler):
 
         self._print(f"Downloading '{dataset_id}' via Ultralytics...")
 
-        data_info = check_det_dataset(dataset_id)
+        with nectar_ultralytics_datasets_dir(self.CACHE_DIR):
+            data_info = check_det_dataset(dataset_id)
 
         source_path = Path(data_info.get("path", "")).resolve()
         if not source_path.exists():

@@ -16,6 +16,12 @@ for seg in result:
     print(f"{seg.class_name}: {seg.confidence:.2f}, mask_area={seg.mask_area}px")
 ```
 
+## Tutorial (Colab)
+
+End-to-end segment workflow (dataset → train → TensorBoard → eval → Hub):
+
+[Open in Google Colab](https://colab.research.google.com/drive/1qZzAF_iD2sZyuWPin48XpxaY6dtak_gV?usp=sharing)
+
 ## Concepts
 
 `Segmentor` is a factory over three framework backends (`UltralyticsSegModel`,
@@ -97,7 +103,7 @@ Factory-based interface with auto-detection or explicit framework selection.
 
 ```python
 from nectar.ai.segmentation import Segmentor
-from nectar.ai.detection.detector import Framework
+from nectar.ai.core import Framework
 
 segmentor = Segmentor("yolov8n-seg.pt")
 segmentor = Segmentor("rfdetr-seg-nano")
@@ -412,7 +418,7 @@ All frameworks upload checkpoints to HuggingFace Hub **during training** (betwee
 | RF-DETR | PTL `Callback.on_validation_epoch_end` | Output dir after each validation epoch + on fit end |
 | Transformers | Native `push_to_hub` + `hub_strategy="every_save"` | On every checkpoint save |
 
-Callback implementations are shared across detection/segmentation via `detection/utils/callbacks.py`.
+Callback implementations are shared across tasks via `nectar.ai.core.utils.callbacks`.
 
 ### TensorBoard
 
@@ -528,7 +534,7 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 
 ### Key implementation details
 
-- **Shared callbacks**: `detection/utils/callbacks.py` provides `setup_ultralytics_hf_callbacks()`, `setup_ultralytics_gc_callback()`, and `get_hf_upload_ptl_callback()` used by both detection and segmentation models
+- **Shared callbacks**: `nectar.ai.core.utils.callbacks` provides `setup_ultralytics_hf_callbacks()`, `setup_ultralytics_gc_callback()`, and `get_hf_upload_ptl_callback()` used by detection, segmentation, and classification
 - **RF-DETR Custom Training API**: Both detection and segmentation RF-DETR models use `build_trainer` + `trainer.callbacks.extend()` instead of `rfdetr_wrapper.train()`, enabling callback injection
 - **RF-DETR dependency**: Pinned to `rfdetr==1.7.1` (PyPI) for PTL training support and segmentation fixes
 - **COCO category IDs**: `SegFormatConverter` uses standard 1-indexed IDs (YOLO 0-indexed classes map to COCO `category_id = class_id + 1`)

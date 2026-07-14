@@ -9,6 +9,15 @@ __pycache__/
 dist/
 .venv/
 
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+htmlcov/
+.coverage
+coverage.xml
+
 build/
 install/
 log/
@@ -21,12 +30,16 @@ ci-local-results/
 *.tlog.raw
 
 # AI datasets and outputs
-nectar/nectar/ai/data/
-nectar/nectar/ai/outputs/
+nectar/nectar/ai/data/*
+!nectar/nectar/ai/data/.gitkeep
+nectar/nectar/ai/outputs/*
+!nectar/nectar/ai/outputs/.gitkeep
 nectar/nectar/ai/detection/data/
 nectar/nectar/ai/detection/outputs/
 nectar/nectar/ai/segmentation/data/
 nectar/nectar/ai/segmentation/outputs/
+nectar/nectar/ai/classification/data/
+nectar/nectar/ai/classification/outputs/
 
 *.pt
 *.pth

@@ -27,9 +27,9 @@ except ImportError:
 
 from PIL import Image
 
+from nectar.ai.core.utils.device import get_device
 from nectar.ai.detection.datasets.format import FormatDetector
 from nectar.ai.detection.datasets.subset import SubsetCreator
-from nectar.ai.detection.utils.device import get_device
 from nectar.ai.segmentation.core.base import BaseSegmentationModel
 from nectar.ai.segmentation.core.configs import SegTrainingConfig
 from nectar.ai.segmentation.core.exceptions import ModelNotLoadedError, TrainingError
@@ -252,7 +252,7 @@ class UltralyticsSegModel(BaseSegmentationModel):
 
     def _setup_callbacks(self, config: SegTrainingConfig, output_dir: Path) -> None:
         """Setup training callbacks for HF upload, GC, and save-dir tracking."""
-        from nectar.ai.detection.utils.callbacks import (
+        from nectar.ai.core.utils.callbacks import (
             setup_ultralytics_gc_callback,
             setup_ultralytics_hf_callbacks,
         )
