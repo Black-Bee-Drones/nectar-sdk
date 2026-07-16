@@ -124,7 +124,7 @@ class TransformersSegTrainingConfig(SegTrainingConfig):
             "metric_for_best_model": self.metric_for_best_model,
             "greater_is_better": self.greater_is_better,
             "seed": self.seed,
-            "report_to": ["tensorboard"] if self.tensorboard else None,
+            "report_to": ["tensorboard"] if self.tensorboard else [],
             "fp16": self.mixed_precision == "fp16",
             "bf16": self.mixed_precision == "bf16",
             "dataloader_pin_memory": self.dataloader_pin_memory,

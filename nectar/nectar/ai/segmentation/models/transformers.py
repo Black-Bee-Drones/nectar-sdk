@@ -114,7 +114,10 @@ class TransformersSegModel(BaseSegmentationModel):
         """Load segmentation model from path or HuggingFace Hub."""
         path = model_path or self.model_name
 
-        self.processor = AutoImageProcessor.from_pretrained(path, use_fast=True)
+        size = {"height": imgsz, "width": imgsz}
+        self.processor = AutoImageProcessor.from_pretrained(
+            path, do_resize=True, use_fast=True, size=size
+        )
 
         model_kwargs = {"ignore_mismatched_sizes": True}
         if id2label and label2id:
@@ -299,7 +302,7 @@ class TransformersSegModel(BaseSegmentationModel):
     def _train_instance(
         self, config: SegTrainingConfig, output_dir: Path, run_name: str
     ) -> Dict[str, Any]:
-        """Train instance segmentation model (Mask2Former)."""
+        """Train instance segmentation model (MaskFormer / Mask2Former)."""
         detector = FormatDetector(config.dataset_path)
         detected_format = detector.detect()
 
@@ -312,17 +315,42 @@ class TransformersSegModel(BaseSegmentationModel):
                 converter.convert(target_format="coco", copy_images=False)
             config.dataset_path = str(converted_dir)
 
-        train_dataset, val_dataset, id2label, label2id = self._load_coco_dataset(config)
-
+        # Resolve class maps first, then load the model/processor at the
+        # requested imgsz, then build datasets that bind that processor.
+        id2label, label2id = self._peek_coco_labels(config)
         imgsz = config.imgsz if config.imgsz else 640
+        if isinstance(imgsz, list):
+            imgsz = int(imgsz[0])
         self.load_model(self.model_name, id2label=id2label, label2id=label2id, imgsz=imgsz)
 
+        train_dataset, val_dataset, _, _ = self._load_coco_dataset(config)
+
         callbacks = self._setup_callbacks(config, output_dir)
+        report_to = ["tensorboard"] if config.tensorboard else []
+
+        # MaskFormer / Mask2Former matching produces NaNs under fp16 autocast.
+        mixed_precision = config.mixed_precision
+        if mixed_precision == "fp16":
+            self.logger.warning(
+                "fp16 is unstable for MaskFormer/Mask2Former training "
+                "(Hungarian matcher NaNs). Falling back to full precision."
+            )
+            mixed_precision = "no"
 
         if hasattr(config, "to_training_args"):
             args_dict = config.to_training_args()
             args_dict["output_dir"] = str(output_dir / run_name)
             args_dict["run_name"] = run_name
+            args_dict["logging_dir"] = (
+                str(output_dir / run_name / "logs") if config.tensorboard else None
+            )
+            args_dict["report_to"] = report_to
+            args_dict["fp16"] = mixed_precision == "fp16"
+            args_dict["bf16"] = mixed_precision == "bf16"
+            # Avoid broken reload (o_proj vs out_proj rename) when we are not
+            # actually selecting a best checkpoint via early stopping.
+            if not config.early_stopping_patience:
+                args_dict["load_best_model_at_end"] = False
             training_args = TrainingArguments(**args_dict)
         else:
             training_args = TrainingArguments(
@@ -337,14 +365,14 @@ class TransformersSegModel(BaseSegmentationModel):
                 save_total_limit=3,
                 load_best_model_at_end=True,
                 seed=config.seed,
-                report_to=["tensorboard"] if config.tensorboard else None,
+                report_to=report_to,
                 run_name=run_name,
-                fp16=(config.mixed_precision == "fp16"),
-                bf16=(config.mixed_precision == "bf16"),
+                fp16=(mixed_precision == "fp16"),
+                bf16=(mixed_precision == "bf16"),
                 remove_unused_columns=False,
             )
 
-        from nectar.ai.detection.models.dataset import collate_fn
+        from nectar.ai.segmentation.models.dataset import instance_seg_collate_fn
 
         trainer = Trainer(
             model=self.model,
@@ -352,7 +380,7 @@ class TransformersSegModel(BaseSegmentationModel):
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
             processing_class=self.processor,
-            data_collator=collate_fn,
+            data_collator=instance_seg_collate_fn,
             callbacks=callbacks,
         )
 
@@ -429,7 +457,7 @@ class TransformersSegModel(BaseSegmentationModel):
             save_total_limit=3,
             load_best_model_at_end=True,
             seed=config.seed,
-            report_to=["tensorboard"] if config.tensorboard else None,
+            report_to=["tensorboard"] if config.tensorboard else [],
             run_name=run_name,
             fp16=(config.mixed_precision == "fp16"),
             remove_unused_columns=False,
@@ -490,10 +518,8 @@ class TransformersSegModel(BaseSegmentationModel):
         except Exception as e:
             raise TrainingError(str(e)) from e
 
-    def _load_coco_dataset(self, config: SegTrainingConfig):
-        """Load COCO format dataset for instance segmentation training."""
-        from nectar.ai.detection.models.dataset import CocoDetectionDataset
-
+    def _resolve_coco_split_dirs(self, config: SegTrainingConfig):
+        """Locate train/val COCO-seg split directories and annotation files."""
         dataset_path = Path(config.dataset_path)
 
         train_dir = dataset_path / "train"
@@ -513,10 +539,45 @@ class TransformersSegModel(BaseSegmentationModel):
             )
 
         if not val_dir.exists() or not val_annotations.exists():
+            self.logger.warning(
+                "Validation data not found at %s, using training data for validation",
+                val_dir,
+            )
             val_dir = train_dir
             val_annotations = train_annotations
 
-        train_dataset = CocoDetectionDataset(
+        return train_dir, train_annotations, val_dir, val_annotations
+
+    def _peek_coco_labels(self, config: SegTrainingConfig):
+        """Read COCO categories and remap to contiguous 0-indexed id2label/label2id."""
+        import json
+
+        _, train_annotations, _, _ = self._resolve_coco_split_dirs(config)
+        with open(train_annotations, encoding="utf-8") as f:
+            coco_data = json.load(f)
+
+        categories = coco_data["categories"]
+        id2label_raw = {cat["id"]: cat["name"] for cat in categories}
+        cat_ids = sorted(id2label_raw.keys())
+        id2label = {new: id2label_raw[old] for new, old in enumerate(cat_ids)}
+        label2id = {v: k for k, v in id2label.items()}
+        return id2label, label2id
+
+    def _load_coco_dataset(self, config: SegTrainingConfig):
+        """Load COCO-seg as MaskFormer instance maps (not DETR box annotations)."""
+        from nectar.ai.segmentation.models.dataset import CocoInstanceSegDataset
+
+        if self.processor is None:
+            raise TrainingError(
+                "Image processor must be loaded before building the training dataset. "
+                "Call load_model() first."
+            )
+
+        train_dir, train_annotations, val_dir, val_annotations = self._resolve_coco_split_dirs(
+            config
+        )
+
+        train_dataset = CocoInstanceSegDataset(
             img_dir=str(train_dir),
             annotations_file=str(train_annotations),
             image_processor=self.processor,
@@ -525,7 +586,7 @@ class TransformersSegModel(BaseSegmentationModel):
             seed=config.seed,
         )
 
-        val_dataset = CocoDetectionDataset(
+        val_dataset = CocoInstanceSegDataset(
             img_dir=str(val_dir),
             annotations_file=str(val_annotations),
             image_processor=self.processor,

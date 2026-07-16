@@ -1,17 +1,26 @@
-"""Segmentation dataset loader for evaluation.
+"""Segmentation dataset loaders.
 
-Loads YOLO-seg (polygon labels) and COCO (with segmentation field) into
-``sv.Detections`` that carry both ``xyxy`` and ``mask`` arrays.
+- Evaluation: YOLO-seg / COCO-seg → ``sv.Detections`` with masks
+- Training (MaskFormer / Mask2Former): COCO polygons → instance maps for
+  HuggingFace image processors (``segmentation_maps`` + ``instance_id_to_semantic_id``)
 """
 
 import json
 import logging
+import random
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
 from PIL import Image
+
+try:
+    import torch
+    from torch.utils.data import Dataset
+except ImportError:
+    torch = None
+    Dataset = object
 
 try:
     import supervision as sv
@@ -19,6 +28,9 @@ except ImportError:
     sv = None
 
 logger = logging.getLogger(__name__)
+
+# Background / void in MaskFormer instance maps (processor ``ignore_index``).
+_IGNORE_INDEX = 255
 
 
 class SegmentationDataset:
@@ -292,3 +304,198 @@ def _load_coco_seg_dataset(dataset_path: Path, split: str) -> SegmentationDatase
         annotations.append(det)
 
     return SegmentationDataset(images, annotations, classes)
+
+
+# ---------------------------------------------------------------------------
+# COCO → MaskFormer / Mask2Former training dataset
+# ---------------------------------------------------------------------------
+
+
+def instance_seg_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Collate MaskFormer-style batches (variable-length mask / class labels)."""
+    encoding: Dict[str, Any] = {
+        "pixel_values": torch.stack([x["pixel_values"] for x in batch]),
+        "mask_labels": [x["mask_labels"] for x in batch],
+        "class_labels": [x["class_labels"] for x in batch],
+    }
+    if "pixel_mask" in batch[0] and batch[0]["pixel_mask"] is not None:
+        encoding["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
+    return encoding
+
+
+class CocoInstanceSegDataset(Dataset):
+    """
+    COCO-seg dataset for MaskFormer / Mask2Former training.
+
+    Converts polygon (or RLE) annotations into an instance segmentation map and
+    feeds ``segmentation_maps`` + ``instance_id_to_semantic_id`` to the HuggingFace
+    image processor
+
+    Parameters
+    ----------
+    img_dir : str
+        Directory containing images (or an ``images/`` subdirectory).
+    annotations_file : str
+        Path to COCO JSON with a ``segmentation`` field per annotation.
+    image_processor : Any
+        HuggingFace MaskFormer / Mask2Former image processor.
+    train : bool, optional
+        Unused flag kept for API parity with ``CocoDetectionDataset``.
+    max_samples : int, optional
+        Cap on the number of images.
+    seed : int, optional
+        Sampling seed when ``max_samples`` is set.
+    ignore_index : int, optional
+        Background / void label passed to the processor (default 255).
+    """
+
+    def __init__(
+        self,
+        img_dir: str,
+        annotations_file: str,
+        image_processor: Any,
+        train: bool = True,
+        max_samples: Optional[int] = None,
+        seed: int = 42,
+        ignore_index: int = _IGNORE_INDEX,
+    ):
+        self.img_dir = Path(img_dir)
+        self.image_processor = image_processor
+        self.train = train
+        self.seed = seed
+        self.ignore_index = ignore_index
+
+        with open(annotations_file, encoding="utf-8") as f:
+            coco_data = json.load(f)
+
+        self.images = coco_data["images"]
+        self.annotations = coco_data["annotations"]
+        self.categories = coco_data["categories"]
+
+        self.id2label = {cat["id"]: cat["name"] for cat in self.categories}
+        self.label2id = {cat["name"]: cat["id"] for cat in self.categories}
+
+        cat_ids = sorted(self.id2label.keys())
+        self.old_to_new_id = {old: new for new, old in enumerate(cat_ids)}
+        self.id2label = {new: self.id2label[old] for old, new in self.old_to_new_id.items()}
+        self.label2id = {v: k for k, v in self.id2label.items()}
+
+        self.img_id_to_anns: Dict[int, list] = {}
+        for ann in self.annotations:
+            self.img_id_to_anns.setdefault(ann["image_id"], []).append(ann)
+
+        self.images = [img for img in self.images if img["id"] in self.img_id_to_anns]
+
+        if max_samples and max_samples < len(self.images):
+            random.seed(seed)
+            self.images = random.sample(self.images, max_samples)
+
+        logger.info(
+            "Loaded %d images with %d classes for instance segmentation",
+            len(self.images),
+            len(self.categories),
+        )
+
+    def __len__(self) -> int:
+        return len(self.images)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        img_info = self.images[idx]
+        img_id = img_info["id"]
+        img_path = self._find_image_path(img_info["file_name"])
+        image = Image.open(img_path).convert("RGB")
+        width = int(img_info.get("width") or image.width)
+        height = int(img_info.get("height") or image.height)
+
+        instance_map, instance_id_to_semantic_id = self._build_instance_map(
+            self.img_id_to_anns.get(img_id, []), height, width
+        )
+
+        encoded = self.image_processor(
+            images=image,
+            segmentation_maps=instance_map,
+            instance_id_to_semantic_id=instance_id_to_semantic_id,
+            return_tensors="pt",
+            ignore_index=self.ignore_index,
+        )
+
+        item: Dict[str, Any] = {
+            "pixel_values": encoded["pixel_values"][0],
+            "mask_labels": encoded["mask_labels"][0],
+            "class_labels": encoded["class_labels"][0],
+        }
+        if "pixel_mask" in encoded:
+            item["pixel_mask"] = encoded["pixel_mask"][0]
+        return item
+
+    def _build_instance_map(
+        self, anns: List[dict], height: int, width: int
+    ) -> tuple[np.ndarray, Dict[int, int]]:
+        """Rasterize COCO polygons/RLE into an instance map (ignore_index = background)."""
+        instance_map = np.full((height, width), self.ignore_index, dtype=np.int32)
+        instance_id_to_semantic_id: Dict[int, int] = {}
+        next_instance_id = 1
+
+        for ann in anns:
+            if ann.get("iscrowd", 0):
+                continue
+            mask = self._ann_to_mask(ann, height, width)
+            if mask is None or not mask.any():
+                continue
+
+            class_id = self.old_to_new_id.get(ann["category_id"], 0)
+            # Later instances win on overlaps (standard for dense instance maps).
+            instance_map[mask] = next_instance_id
+            instance_id_to_semantic_id[next_instance_id] = class_id
+            next_instance_id += 1
+
+        return instance_map, instance_id_to_semantic_id
+
+    @staticmethod
+    def _ann_to_mask(ann: dict, height: int, width: int) -> Optional[np.ndarray]:
+        """Convert a COCO segmentation field to a boolean mask."""
+        seg = ann.get("segmentation")
+        if not seg:
+            return None
+
+        mask = np.zeros((height, width), dtype=np.uint8)
+
+        if isinstance(seg, list):
+            # Polygon(s): list of flat [x1,y1,...] rings
+            for poly in seg:
+                if not isinstance(poly, (list, tuple)) or len(poly) < 6:
+                    continue
+                pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
+                pts = np.round(pts).astype(np.int32)
+                cv2.fillPoly(mask, [pts], 1)
+            return mask.astype(bool)
+
+        if isinstance(seg, dict) and "counts" in seg:
+            try:
+                from pycocotools import mask as mask_utils
+
+                rle = seg
+                if isinstance(rle.get("counts"), list):
+                    rle = mask_utils.frPyObjects(rle, height, width)
+                return mask_utils.decode(rle).astype(bool)
+            except ImportError:
+                logger.warning("pycocotools required to decode RLE segmentations; skipping ann")
+                return None
+
+        return None
+
+    def _find_image_path(self, filename: str) -> Path:
+        """Resolve an image path under ``img_dir``."""
+        direct_path = self.img_dir / filename
+        if direct_path.exists():
+            return direct_path
+
+        images_path = self.img_dir / "images" / filename
+        if images_path.exists():
+            return images_path
+
+        name_only = Path(filename).name
+        for path in self.img_dir.rglob(name_only):
+            return path
+
+        raise FileNotFoundError(f"Image not found: {filename}")

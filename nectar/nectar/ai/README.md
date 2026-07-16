@@ -226,7 +226,7 @@ from nectar.ai.paths import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR
 |-----------|-----------|--------------|----------------|
 | Ultralytics (YOLO) | Train, Eval, Predict | Train, Eval, Predict | Train, Eval, Predict |
 | RF-DETR | Train, Eval, Predict | Train, Eval, Predict | — |
-| HuggingFace Transformers | Train, Eval, Predict | Predict (training WIP) | Train, Eval, Predict |
+| HuggingFace Transformers | Train, Eval, Predict | Train, Eval, Predict | Train, Eval, Predict |
 
 ## Device Management
 

@@ -4,7 +4,8 @@
 #
 # Tests: download -> analyze -> train -> eval -> predict
 #
-# Frameworks: Ultralytics (YOLO26n-seg), RF-DETR (Seg Nano)
+# Frameworks: Ultralytics (YOLO26n-seg), RF-DETR (Seg Nano),
+#             Transformers (MaskFormer Swin-Tiny)
 #
 # Each training run uses a YAML config, TensorBoard logging, post-train
 # evaluation, and HuggingFace Hub upload.
@@ -98,10 +99,16 @@ run_experiment() {
     "$run_dir/weights/best.pt" \
     "$run_dir/checkpoint_best_total.pth" \
     "$run_dir/checkpoint_best_ema.pth" \
+    "$run_dir/$name/model.safetensors" \
     "$run_dir/$name/pytorch_model.bin" \
     "$run_dir/$name"; do
     if [ -e "$candidate" ]; then
-      best=$candidate
+      # Prefer the HF directory (config.json + weights) over a bare weight file.
+      if [ -f "$candidate" ] && [ -f "$(dirname "$candidate")/config.json" ]; then
+        best="$(dirname "$candidate")"
+      else
+        best=$candidate
+      fi
       break
     fi
   done
@@ -170,6 +177,11 @@ run_experiment "crackseg-yolo26n-seg" "$CONFIGS/crackseg_yolo26n_seg.yaml" "ultr
 run_experiment "crackseg-rfdetr-seg-nano" "$CONFIGS/crackseg_rfdetr_seg_nano.yaml" "rfdetr"
 
 # ------------------------------------------------------------------
+# 5. Transformers (MaskFormer Swin-Tiny)
+# ------------------------------------------------------------------
+run_experiment "crackseg-maskformer" "$CONFIGS/crackseg_mask2former.yaml" "transformers"
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 sep "ALL EXPERIMENTS COMPLETED"
@@ -177,7 +189,7 @@ sep "ALL EXPERIMENTS COMPLETED"
 echo "Data:    $DATA_DIR/crack-seg/"
 echo ""
 echo "Runs:"
-for run in crackseg-yolo26n-seg crackseg-rfdetr-seg-nano; do
+for run in crackseg-yolo26n-seg crackseg-rfdetr-seg-nano crackseg-maskformer; do
   if [ -d "$OUTPUT_DIR/$run" ]; then
     echo "  $run/"
     [ -f "$OUTPUT_DIR/$run/eval-standalone/metrics_summary.json" ] && \

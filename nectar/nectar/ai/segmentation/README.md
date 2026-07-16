@@ -441,13 +441,13 @@ export HF_TOKEN=<your-hf-token>
 pip install -e ".[ai]"
 ```
 
-### Run all segmentation tests (Ultralytics + RF-DETR)
+### Run all segmentation tests (Ultralytics + RF-DETR + Transformers)
 
 ```bash
 bash nectar/nectar/ai/segmentation/scripts/e2e_cli_test.sh
 ```
 
-This script: downloads crack-seg dataset -> analyzes -> trains YOLO26n-seg (3 epochs) -> trains RF-DETR Seg Nano (10 epochs) -> evaluates + predicts each -> verifies TensorBoard + HF upload -> prints summary.
+This script: downloads crack-seg dataset -> analyzes -> trains YOLO26n-seg (3 epochs) -> trains RF-DETR Seg Nano (10 epochs) -> trains MaskFormer Swin-Tiny (2 epochs) -> evaluates + predicts each -> verifies TensorBoard + HF upload -> prints summary.
 
 ### Run individual frameworks
 
@@ -462,6 +462,9 @@ nectar-ai segment train --config nectar/nectar/ai/segmentation/configs/crackseg_
 
 # 3. Train RF-DETR Seg Nano (full dataset, 10 epochs, 312px)
 nectar-ai segment train --config nectar/nectar/ai/segmentation/configs/crackseg_rfdetr_seg_nano.yaml
+
+# 4. Train MaskFormer Swin-Tiny (50 train samples, 2 epochs, 320px, fp32)
+nectar-ai segment train --config nectar/nectar/ai/segmentation/configs/crackseg_mask2former.yaml
 ```
 
 ### Run all detection tests (Ultralytics + RF-DETR + Transformers)
@@ -507,7 +510,7 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 |-----------|-------|------|---------|-----------|-------------|-------|
 | Ultralytics (YOLO26n-seg) | OK | OK | OK | Per-epoch | OK | Full pipeline |
 | RF-DETR Seg Nano | OK | OK | OK | Per-epoch (PTL) | OK (PTL) | Uses Custom Training API |
-| Transformers (MaskFormer) | WIP | - | OK (pretrained) | Native | OK | Training needs MaskFormer-specific dataset class |
+| Transformers (MaskFormer) | OK | OK | OK | Native | OK | Instance maps via `CocoInstanceSegDataset`; use fp32 (fp16 matcher NaNs) |
 
 ### Ultralytics (YOLO26n-seg) -- Full pipeline
 
@@ -526,11 +529,16 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 - COCO format auto-conversion from YOLO-seg via `SegFormatConverter`
 - **Training note**: DETR-style models need sufficient epochs for confidence calibration. Recommended: 10+ epochs with `lr=5e-5`, `cosine` scheduler, `warmup_epochs=2`.
 
-### Transformers (MaskFormer) -- Needs work
+### Transformers (MaskFormer) -- Full pipeline
 
-- Pretrained inference works correctly
-- Training fails: `CocoDetectionDataset` passes `annotations=target` to the image processor, but MaskFormer expects `segmentation_maps`
-- Fix needed: MaskFormer-specific dataset class that creates segmentation maps from COCO polygons
+- Pretrained and fine-tuned inference work via CLI / `Segmentor`
+- Training uses `CocoInstanceSegDataset`: COCO polygons → instance maps + `instance_id_to_semantic_id` for the MaskFormer image processor (not DETR-style `annotations=`)
+- Collate returns `mask_labels` / `class_labels` (variable-length per image)
+- Processor resized to fixed `imgsz` (default 320 in the crack-seg config) for small-GPU VRAM
+- **fp16 is auto-disabled** for instance training: MaskFormer's Hungarian matcher produces NaNs under autocast
+- TensorBoard logs under the Trainer run directory; per-epoch + final HF upload via shared transformers callback when `push_to_hub: true`
+- Validated on crack-seg (GTX 1650 ~1 GB peak at 320px / batch 2; Colab T4 recommended for larger subsets)
+- **Eval tip**: early checkpoints are under-confident — use `conf_threshold: 0.01`. PR-curve AP and `box_map50` move first; mask mAP@0.25 stays near zero until scores calibrate (same DETR-style note as RF-DETR)
 
 ### Key implementation details
 
@@ -539,6 +547,7 @@ Tested end-to-end on the [Crack Segmentation Dataset](https://docs.ultralytics.c
 - **RF-DETR dependency**: Pinned to `rfdetr==1.7.1` (PyPI) for PTL training support and segmentation fixes
 - **COCO category IDs**: `SegFormatConverter` uses standard 1-indexed IDs (YOLO 0-indexed classes map to COCO `category_id = class_id + 1`)
 - **Evaluation metrics**: `SegmentationEvaluator` uses `supervision.metrics` with `MetricTarget.MASKS` when masks are present; falls back to `MetricTarget.BOXES` otherwise
+- **MaskFormer dataset**: `CocoInstanceSegDataset` + `instance_seg_collate_fn` in `segmentation/models/dataset.py`
 
 ## Config Files
 
@@ -548,7 +557,7 @@ Example training configs in `configs/`:
 |--------|-----------|-------------|
 | `crackseg_yolo26n_seg.yaml` | Ultralytics | YOLO26n-seg, 3 epochs, 320px, 500 train samples |
 | `crackseg_rfdetr_seg_nano.yaml` | RF-DETR | RF-DETR Seg Nano, 10 epochs, 312px, cosine LR |
-| `crackseg_mask2former.yaml` | Transformers | MaskFormer Swin-Tiny, 2 epochs, 320px |
+| `crackseg_mask2former.yaml` | Transformers | MaskFormer Swin-Tiny, 5 epochs, 320px, fp32, Hub upload |
 
 ## Layout
 
