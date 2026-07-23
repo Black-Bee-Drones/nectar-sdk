@@ -379,7 +379,7 @@ class FitEllipse(ILineEstimationMethod):
 
                 if len(approx_contour) >= 5:
                     ellipse = cv2.fitEllipse(approx_contour)
-                    (xc, yc), (d1, d2), angle = ellipse
+                    (xc, yc), (d1, d2), ellipse_angle = ellipse
                     xc += offset[0]
                     yc += offset[1]
                     center_x = xc
@@ -387,8 +387,28 @@ class FitEllipse(ILineEstimationMethod):
                     _direction = np.sign(d2 - d1)
                     _curvature = np.abs(d1 - d2) / max(d1, d2)
 
-                if draw:
-                    cv2.ellipse(img_out, ((xc, yc), (d1, d2), angle), (0, 255, 0), 2)
+                    # fitEllipse angle is in [0, 180). Map to the same
+                    # signed guidance range (-90, 90] used by RotatedRect / Hough /
+                    # RANSAC (undirected axis: θ ≡ θ+180). Keep ellipse_angle for drawing.
+                    angle = (float(ellipse_angle) + 90.0) % 180.0 - 90.0
+
+                    if draw:
+                        line_color = draw_color if draw_color is not None else (0, 255, 0)
+                        cv2.ellipse(
+                            img_out,
+                            ((xc, yc), (d1, d2), ellipse_angle),
+                            line_color,
+                            2,
+                        )
+                        if draw_color is not None:
+                            center_color = (
+                                min(255, draw_color[0] + 50),
+                                min(255, draw_color[1] + 50),
+                                min(255, draw_color[2] + 50),
+                            )
+                        else:
+                            center_color = (255, 0, 0)
+                        cv2.circle(img_out, (int(xc), int(yc)), 2, center_color, 3)
 
         width, height, x, y, w, h, rotated_box = calc_width_height(img_detect)
 
