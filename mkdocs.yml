@@ -155,6 +155,7 @@ nav:
       - Fly a drone: get-started/control.md
       - See with a camera: get-started/vision.md
       - Detect, segment & classify: get-started/ai.md
+      - With and without Nectar: get-started/with-without.md
   - Setup:
       - Installation: setup/index.md
       - Drone drivers: setup/drivers.md

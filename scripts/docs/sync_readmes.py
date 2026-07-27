@@ -66,6 +66,8 @@ MANIFEST: dict[str, str] = {
     # Simulation / interfaces
     "nectar/simulation/README.md": "modules/simulation.md",
     "nectar_interfaces/README.md": "modules/interfaces.md",
+    # With/without
+    "with-without.md": "get-started/with-without.md",
 }
 
 LINK_RE = re.compile(r'(!?)\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)\s*(?:"[^"]*")?\)')

@@ -39,6 +39,7 @@ ArduPilot and PX4 over MAVROS, direct MAVLink, or uXRCE-DDS, plus Bebop and Craz
 - **[Simulation](https://black-bee-drones.github.io/nectar-sdk/setup/simulation/)** — ArduPilot/PX4 SITL with Gazebo
 
 End-to-end architecture and design patterns: [Architecture](https://black-bee-drones.github.io/nectar-sdk/concepts/architecture/).
+With/without API comparisons: [with-without.md](with-without.md).
 
 ## Quick start
 

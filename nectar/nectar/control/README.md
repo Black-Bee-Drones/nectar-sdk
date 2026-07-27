@@ -37,6 +37,10 @@ nectar.shutdown()
 Pick a backend by key — `mavros`, `mavlink`, `px4`, `px4_mavlink`, `px4_dds`, `bebop`,
 `crazyflie` — with its matching config; the flight calls stay the same.
 
+Side-by-side with raw MAVROS / pymavlink:
+[With and without Nectar](https://black-bee-drones.github.io/nectar-sdk/get-started/with-without/)
+([with-without.md](../../../with-without.md)).
+
 ## Concepts
 
 ArduPilot and PX4 share one firmware-agnostic core (`VehicleDrone`) and reach the FCU

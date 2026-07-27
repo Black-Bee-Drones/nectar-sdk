@@ -94,6 +94,10 @@ for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
 ```
 
+Side-by-side with raw framework APIs:
+[With and without Nectar](https://black-bee-drones.github.io/nectar-sdk/get-started/with-without/)
+([with-without.md](../../../with-without.md)).
+
 ### Segmentation
 
 ```python

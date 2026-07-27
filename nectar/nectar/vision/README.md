@@ -27,6 +27,10 @@ frame = cam.get_frame()
 cam.close()
 ```
 
+Side-by-side with OpenCV / ROS subscribers:
+[With and without Nectar](https://black-bee-drones.github.io/nectar-sdk/get-started/with-without/)
+([with-without.md](../../../with-without.md)).
+
 ## Documentation
 
 | Page | Scope |

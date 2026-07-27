@@ -17,6 +17,10 @@ for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
 ```
 
+Side-by-side with Ultralytics / Transformers / RF-DETR:
+[With and without Nectar](https://black-bee-drones.github.io/nectar-sdk/get-started/with-without/)
+([with-without.md](../../../../with-without.md)).
+
 ## Tutorial (Colab)
 
 Interactive end-to-end detection walkthrough (dataset → train → TensorBoard → eval):
