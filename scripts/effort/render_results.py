@@ -37,8 +37,11 @@ def render_loc_table(report: Dict[str, Any]) -> str:
         "Counting: non-blank, non-full-line-comment, non-docstring Python SLOC",
         "inside `@loc:boilerplate` / `@loc:core` regions. Nectar package internals",
         "are never counted. Cases with `effort_with` / `effort_without` in SPEC.md",
-        "aggregate only those files. `metric_role: swap_only` rows are listed",
-        "separately and omitted from the T-reduction summary.",
+        "aggregate only those files.",
+        "",
+        "**Two outputs:** `loc_table.md` = size of each case’s primary With/Without",
+        "scripts (B/C/T). `swap_delta.md` = lines that *change* when switching",
+        "stack variants (A→B). Do not read C columns as swap edit cost.",
         "",
         "## Effort cases",
         "",
@@ -74,7 +77,12 @@ def render_loc_table(report: Dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "## Swap-only cases (not in T-reduction summary)",
+                "## Swap-only cases (diagnostic sizes; not T-reduction)",
+                "",
+                "Primary With/Without **file sizes** for cases whose main metric is",
+                "interchange (`metric_role: swap_only`). B/C/T here are still LoC",
+                "counts of Stack A scripts—not the A→B diff. For port cost see",
+                "[`swap_delta.md`](swap_delta.md).",
                 "",
                 "| Case | With B | With C | With T | Without B | Without C | Without T |",
                 "|------|-------:|-------:|-------:|----------:|----------:|----------:|",
@@ -90,7 +98,8 @@ def render_loc_table(report: Dict[str, Any]) -> str:
             )
         lines.append("")
         lines.append(
-            "These cases measure interchange cost (see `swap_delta.md`), not paired Total reduction."
+            "Core (C) can differ when one side inlines mission logic and the other "
+            "puts helpers in boilerplate; that does not mean With costs more to port."
         )
     return "\n".join(lines).rstrip() + "\n"
 

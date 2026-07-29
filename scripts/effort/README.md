@@ -33,7 +33,7 @@ Lines are tagged in fixtures:
 - Package code under `nectar/nectar/**` is never counted
 - Core parity: `|C_with − C_without| / max(C) ≤ 25%` unless `parity_waiver:` is set in the case `SPEC.md`
 - Cases with transport/camera variants declare `effort_with` / `effort_without` in `SPEC.md` so swap variants are not summed into effort totals
-- `metric_role: swap_only` cases appear in interchange results, not in the default T-reduction summary
+- `metric_role: swap_only` — listed in `loc_table.md` for size diagnostics only; **port cost** is in `swap_delta.md` (lines that change A→B), not the C column
 
 ## Interchange (paired swap delta)
 
@@ -43,7 +43,8 @@ Stack switches are declared in [`swaps.yaml`](swaps.yaml). Each entry has:
 - `axes:` — e.g. `[transport]`, `[camera]`, `[transport, pose, camera, detector]`
 
 `compute_swap_delta.py` diffs the With variant pair and the Without variant pair
-and reports files/lines changed on each side. A pair needs two **distinct**
+and reports files/lines changed on each side. That is separate from B/C/T in
+`loc_table.md` (how large each primary script is). A pair needs two **distinct**
 files; use `without: []` when there is no Without sibling (renders as `—`, not
 `0`). Results split into single-axis and multi-axis tables.
 
