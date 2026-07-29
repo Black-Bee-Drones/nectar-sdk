@@ -40,6 +40,7 @@ ArduPilot and PX4 over MAVROS, direct MAVLink, or uXRCE-DDS, plus Bebop and Craz
 
 End-to-end architecture and design patterns: [Architecture](https://black-bee-drones.github.io/nectar-sdk/concepts/architecture/).
 With/without API comparisons: [with-without.md](with-without.md).
+Tagged fixtures and LoC / swap counts: [scripts/effort/](scripts/effort/).
 
 ## Quick start
 

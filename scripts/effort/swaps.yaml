@@ -1,0 +1,221 @@
+# Declarative swap pairs for compute_swap_delta.py
+# Paths are relative to scripts/effort/cases/.
+# kind: single | multi
+# axes: transport | firmware | pose | camera | detector
+
+swaps:
+  - name: "Transport MAVROS → MAVLink (position nav)"
+    case: "A1→A2"
+    kind: single
+    axes: [transport]
+    stays_fixed: "takeoff / move_to / land"
+    with:
+      - A1_mavros_position/with_nectar.py
+      - A2_mavlink_position/with_nectar.py
+    without:
+      - A1_mavros_position/without_nectar.py
+      - A2_mavlink_position/without_nectar.py
+
+  - name: "Firmware path ArduPilot MAVROS → PX4 DDS"
+    case: "A1→A3"
+    kind: single
+    axes: [firmware, transport]
+    stays_fixed: "takeoff / move_to / land"
+    with:
+      - A1_mavros_position/with_nectar.py
+      - A3_px4_dds_position/with_nectar.py
+    without:
+      - A1_mavros_position/without_nectar.py
+      - A3_px4_dds_position/without_nectar.py
+
+  - name: "Transport MAVLink → PX4 DDS (position nav)"
+    case: "A2→A3"
+    kind: single
+    axes: [firmware, transport]
+    stays_fixed: "takeoff / move_to / land"
+    with:
+      - A2_mavlink_position/with_nectar.py
+      - A3_px4_dds_position/with_nectar.py
+    without:
+      - A2_mavlink_position/without_nectar.py
+      - A3_px4_dds_position/without_nectar.py
+
+  - name: "PoseSource GPS → VISION (A4)"
+    case: "A4_pose_source"
+    kind: single
+    axes: [pose]
+    stays_fixed: "takeoff / land call sites"
+    with:
+      - A4_pose_source/with_gps.py
+      - A4_pose_source/with_vision.py
+    # Without: single vision-pose relay only (not a GPS↔VISION pair).
+    # C4 covers asymmetric GPS-patrol ↔ vision-relay Without interchange.
+    without: []
+
+  - name: "Camera source webcam → ROS topic"
+    case: "A5→A6"
+    kind: single
+    axes: [camera]
+    stays_fixed: "get_frame / read mission body"
+    with:
+      - A5_webcam/with_nectar.py
+      - A6_ros_image/with_nectar.py
+    without:
+      - A5_webcam/without_nectar.py
+      - A6_ros_image/without_nectar.py
+
+  - name: "Camera webcam → RealSense"
+    case: "A5→A10"
+    kind: single
+    axes: [camera]
+    stays_fixed: "get_frame / read / close"
+    with:
+      - A5_webcam/with_nectar.py
+      - A10_realsense/with_nectar.py
+    without:
+      - A5_webcam/without_nectar.py
+      - A10_realsense/without_nectar.py
+
+  - name: "Camera ROS image → OAK-D"
+    case: "A6→A11"
+    kind: single
+    axes: [camera]
+    stays_fixed: "get_frame / read / close"
+    with:
+      - A6_ros_image/with_nectar.py
+      - A11_oakd/with_nectar.py
+    without:
+      - A6_ros_image/without_nectar.py
+      - A11_oakd/without_nectar.py
+
+  - name: "Detector framework YOLO → Transformers"
+    case: "A8_framework_swap"
+    kind: single
+    axes: [detector]
+    stays_fixed: "detector.load(); detector.detect(...) call sites"
+    with:
+      - A8_framework_swap/with_yolo.py
+      - A8_framework_swap/with_transformers.py
+    without:
+      - A8_framework_swap/without_transformers.py
+      - A8_framework_swap/without_rfdetr.py
+
+  - name: "Learning task detect → segment"
+    case: "A9_task_flip"
+    kind: single
+    axes: [detector]
+    stays_fixed: "load + iterate/print pattern per task"
+    with:
+      - A9_task_flip/with_detect.py
+      - A9_task_flip/with_segment.py
+    without:
+      - A9_task_flip/without_segment.py
+      - A9_task_flip/without_classify.py
+
+  - name: "PoseSource GPS → VISION (patrol)"
+    case: "C4_pose_portable"
+    kind: single
+    axes: [pose]
+    stays_fixed: "takeoff / move_to / land mission body"
+    with:
+      - C4_pose_portable/with_gps.py
+      - C4_pose_portable/with_vision.py
+    without:
+      - C4_pose_portable/without_gps_patrol.py
+      - C4_pose_portable/without_vision_patrol.py
+
+  - name: "Transport MAVLink → MAVROS (gate sequence)"
+    case: "C1_gate_sequence"
+    kind: single
+    axes: [transport]
+    stays_fixed: "SEARCH / ALIGN / PASS phases and constants"
+    with:
+      - C1_gate_sequence/with_mavlink.py
+      - C1_gate_sequence/with_mavros.py
+    without:
+      - C1_gate_sequence/without_mavlink.py
+      - C1_gate_sequence/without_mavros.py
+
+  - name: "Transport MAVLink → PX4 DDS (gate sequence)"
+    case: "C1_gate_sequence"
+    kind: single
+    axes: [firmware, transport]
+    stays_fixed: "SEARCH / ALIGN / PASS phases and constants"
+    with:
+      - C1_gate_sequence/with_mavlink.py
+      - C1_gate_sequence/with_px4_dds.py
+    without:
+      - C1_gate_sequence/without_mavlink.py
+      - C1_gate_sequence/without_px4_dds.py
+
+  - name: "Detector YOLO → Transformers (gate sequence)"
+    case: "C1_gate_sequence"
+    kind: single
+    axes: [detector]
+    stays_fixed: "SEARCH / ALIGN / PASS phases and constants"
+    with:
+      - C1_gate_sequence/with_mavlink.py
+      - C1_gate_sequence/with_mavlink_transformers.py
+    without:
+      - C1_gate_sequence/without_mavlink.py
+      - C1_gate_sequence/without_mavlink_transformers.py
+
+  - name: "Camera webcam → ROS (outdoor survey)"
+    case: "C3_outdoor_survey"
+    kind: single
+    axes: [camera]
+    stays_fixed: "waypoint loop / hover / detect+log phases"
+    with:
+      - C3_outdoor_survey/with_webcam.py
+      - C3_outdoor_survey/with_ros_cam.py
+    without:
+      - C3_outdoor_survey/without_webcam.py
+      - C3_outdoor_survey/without_ros_cam.py
+
+  - name: "Camera webcam → RealSense (outdoor survey)"
+    case: "C3_outdoor_survey"
+    kind: single
+    axes: [camera]
+    stays_fixed: "waypoint loop / hover / detect+log phases"
+    with:
+      - C3_outdoor_survey/with_webcam.py
+      - C3_outdoor_survey/with_realsense.py
+    without:
+      - C3_outdoor_survey/without_webcam.py
+      - C3_outdoor_survey/without_realsense.py
+
+  - name: "Camera webcam → OAK-D (line follow)"
+    case: "C6_line_follow"
+    kind: single
+    axes: [camera]
+    stays_fixed: "ACQUIRE / FOLLOW / END phases"
+    with:
+      - C6_line_follow/with_nectar.py
+      - C6_line_follow/with_oakd.py
+    without:
+      - C6_line_follow/without_nectar.py
+      - C6_line_follow/without_oakd.py
+
+  - name: "Multi-axis stack A → B (detect-and-center)"
+    case: "C7_stack_portable"
+    kind: multi
+    axes: [firmware, transport, pose, camera, detector]
+    stays_fixed: "takeoff / detect-and-center PID loop / land"
+    with:
+      - C7_stack_portable/with_stack_a.py
+      - C7_stack_portable/with_stack_b.py
+    without:
+      - C7_stack_portable/without_stack_a.py
+      - C7_stack_portable/without_stack_b.py
+
+  - name: "Multi-axis stack A → B (segment→confirm→approach→release)"
+    case: "C8_segment_approach_release"
+    kind: multi
+    axes: [firmware, transport, pose, camera, segmentor, classifier, range]
+    stays_fixed: "CENTER / CONFIRM / APPROACH / HOLD-RELEASE / land"
+    with:
+      - C8_segment_approach_release/with_stack_a.py
+      - C8_segment_approach_release/with_stack_b.py
+    without:
+      - C8_segment_approach_release/without_stack_a.py
+      - C8_segment_approach_release/without_stack_b.py

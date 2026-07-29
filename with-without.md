@@ -1280,6 +1280,12 @@ Short missions that combine control, vision, and (when needed) learning. The
 centering loop is the same on both pairs; only factory key, pose config, and
 camera source change to match the stack.
 
+Longer multi-state fragments, Boilerplate/Core/Total counts, and stack-swap
+deltas live under [`scripts/effort/`](scripts/effort/)
+([how counting works](scripts/effort/README.md),
+[LoC table](scripts/effort/results/loc_table.md),
+[swap deltas](scripts/effort/results/swap_delta.md)).
+
 | Pair | Firmware / transport | Pose | Camera | Perception |
 |------|----------------------|------|--------|------------|
 | [Detect and center](#detect-and-center) | ArduPilot · MAVLink | Vision | Webcam | `Detector` |
