@@ -13,6 +13,8 @@ _LAZY_ATTRS = {
     "UltralyticsSegModel": "nectar.ai.segmentation.models.ultralytics",
     "SegmentationDataset": "nectar.ai.segmentation.models.dataset",
     "load_segmentation_dataset": "nectar.ai.segmentation.models.dataset",
+    "CocoInstanceSegDataset": "nectar.ai.segmentation.models.dataset",
+    "instance_seg_collate_fn": "nectar.ai.segmentation.models.dataset",
 }
 
 
@@ -31,7 +33,9 @@ def __dir__():
 
 if TYPE_CHECKING:
     from nectar.ai.segmentation.models.dataset import (
+        CocoInstanceSegDataset,
         SegmentationDataset,
+        instance_seg_collate_fn,
         load_segmentation_dataset,
     )
     from nectar.ai.segmentation.models.rfdetr import RFDETRSegModel
@@ -45,4 +49,6 @@ __all__ = [
     "RFDETRSegModel",
     "SegmentationDataset",
     "load_segmentation_dataset",
+    "CocoInstanceSegDataset",
+    "instance_seg_collate_fn",
 ]

@@ -53,6 +53,12 @@ first (it takes only the modules you choose). Each topic below lists the one mod
 
     [Detect & segment](ai.md)
 
+-   **With and without Nectar**
+
+    Same mission behaviors with the SDK and with complete underlying-stack scripts.
+
+    [With and without Nectar](with-without.md)
+
 </div>
 
 Each page is independent and shares the runtime, so you can compose them into a single

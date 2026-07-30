@@ -94,6 +94,10 @@ for det in result:
     print(f"{det.class_name}: {det.confidence:.2f}")
 ```
 
+Side-by-side with raw framework APIs:
+[With and without Nectar](https://black-bee-drones.github.io/nectar-sdk/get-started/with-without/)
+([with-without.md](../../../with-without.md)).
+
 ### Segmentation
 
 ```python
@@ -226,7 +230,7 @@ from nectar.ai.paths import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR
 |-----------|-----------|--------------|----------------|
 | Ultralytics (YOLO) | Train, Eval, Predict | Train, Eval, Predict | Train, Eval, Predict |
 | RF-DETR | Train, Eval, Predict | Train, Eval, Predict | — |
-| HuggingFace Transformers | Train, Eval, Predict | Predict (training WIP) | Train, Eval, Predict |
+| HuggingFace Transformers | Train, Eval, Predict | Train, Eval, Predict | Train, Eval, Predict |
 
 ## Device Management
 

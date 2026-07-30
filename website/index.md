@@ -19,6 +19,7 @@ control, computer vision, and AI behind one consistent set of interfaces, so a m
 write once runs across different vehicles, sensors, and simulators with little change.
 
 [Get started](get-started/index.md){ .md-button .md-button--primary }
+[With / without](get-started/with-without.md){ .md-button }
 [Architecture](concepts/architecture.md){ .md-button }
 
 ## See it in action
