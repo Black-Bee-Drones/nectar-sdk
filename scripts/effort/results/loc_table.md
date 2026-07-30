@@ -16,14 +16,16 @@ stack variants (A→B). Do not read C columns as swap edit cost.
 |------|-------:|-------:|-------:|----------:|----------:|----------:|------------:|------------:|
 | `A10_realsense` | 4 | 4 | 8 | 12 | 5 | 17 | 66.7% | 52.9% |
 | `A11_oakd` | 4 | 4 | 8 | 13 | 4 | 17 | 69.2% | 52.9% |
+| `A12_bebop_hover` | 6 | 3 | 9 | 40 | 4 | 44 | 85.0% | 79.5% |
+| `A13_crazyflie_position` | 8 | 3 | 11 | 53 | 4 | 57 | 84.9% | 80.7% |
 | `A1_mavros_position` | 8 | 3 | 11 | 129 | 3 | 132 | 93.8% | 91.7% |
 | `A2_mavlink_position` | 8 | 3 | 11 | 162 | 3 | 165 | 95.1% | 93.3% |
 | `A3_px4_dds_position` | 8 | 3 | 11 | 165 | 4 | 169 | 95.2% | 93.5% |
 | `A5_webcam` | 4 | 4 | 8 | 8 | 4 | 12 | 50.0% | 33.3% |
 | `A6_ros_image` | 7 | 4 | 11 | 28 | 3 | 31 | 75.0% | 64.5% |
 | `A7_yolo` | 1 | 5 | 6 | 10 | 6 | 16 | 90.0% | 62.5% |
-| `A8_framework_swap` | 2 | 10 | 12 | 30 | 11 | 41 | 93.3% | 70.7% |
-| `A9_task_flip` | 4 | 12 | 16 | 21 | 15 | 36 | 81.0% | 55.6% |
+| `A8_framework_swap` | 1 | 5 | 6 | 10 | 6 | 16 | 90.0% | 62.5% |
+| `A9_task_flip` | 1 | 5 | 6 | 10 | 6 | 16 | 90.0% | 62.5% |
 | `B1_detect_center` | 14 | 42 | 56 | 164 | 45 | 209 | 91.5% | 73.2% |
 | `B2_aruco_center` | 13 | 39 | 52 | 200 | 36 | 236 | 93.5% | 78.0% |
 | `C1_gate_sequence` | 18 | 74 | 92 | 182 | 65 | 247 | 90.1% | 62.8% |
@@ -46,6 +48,6 @@ counts of Stack A scripts—not the A→B diff. For port cost see
 | `A4_pose_source` | 9 | 2 | 11 | 32 | 0 | 32 |
 | `C4_pose_portable` | 8 | 4 | 12 | 122 | 4 | 126 |
 | `C7_stack_portable` | 18 | 39 | 57 | 164 | 45 | 209 |
-| `C8_segment_approach_release` | 29 | 95 | 124 | 211 | 69 | 280 |
+| `C8_segment_approach_release` | 29 | 95 | 124 | 177 | 103 | 280 |
 
 Core (C) can differ when one side inlines mission logic and the other puts helpers in boilerplate; that does not mean With costs more to port.

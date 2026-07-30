@@ -70,6 +70,8 @@ Results: [`results/loc_table.md`](results/loc_table.md), [`results/swap_delta.md
 | A7–A9 | YOLO detect / framework swap / task flip | effort + learning swap |
 | A10 | RealSense color frame | effort + camera swap |
 | A11 | OAK-D color frame | effort + camera swap |
+| A12 | Bebop takeoff → velocity → land | effort (capability-limited) |
+| A13 | Crazyflie takeoff → position → land | effort (capability-limited) |
 | B1–B2 | Detect-and-center / ArUco-center compositions | effort |
 | C1_gate_sequence | Sequential gate search → align → pass | effort + transport / detector swap |
 | C2_marker_station | Marker search → center → approach → settle | effort |

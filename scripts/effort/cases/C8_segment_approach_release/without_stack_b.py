@@ -258,6 +258,8 @@ class StackBPilot(Node):
         cm = 2200.0 / max(float(pixel_h), 1.0)
         return cm / 100.0
 
+    # @loc:boilerplate:end
+    # @loc:core:begin
     def read_target(self):
         rclpy.spin_once(self, timeout_sec=0.05)
         frame = self.frame
@@ -312,8 +314,6 @@ class StackBPilot(Node):
         name = self.cls_model.config.id2label[pred]
         return name == CONFIRM_LABEL
 
-    # @loc:boilerplate:end
-    # @loc:core:begin
     def run(self) -> None:
         self.pid_x.reset()
         self.pid_y.reset()

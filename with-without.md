@@ -16,6 +16,15 @@ Module reference: [Control](nectar/nectar/control/README.md),
 [AI](nectar/nectar/ai/README.md).
 Composition builds a short mission from all three.
 
+!!! note "Effort counts"
+    Tagged fixtures report application-side Boilerplate / Core / Total SLOC and
+    stack-swap edit cost for longer mission fragments:
+
+    - [scripts/effort/](https://github.com/Black-Bee-Drones/nectar-sdk/tree/main/scripts/effort)
+      ([counting rules](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/scripts/effort/README.md))
+    - [LoC table](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/scripts/effort/results/loc_table.md)
+    - [Swap deltas](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/scripts/effort/results/swap_delta.md)
+
 ---
 
 ## [Control](nectar/nectar/control/README.md)
@@ -1279,12 +1288,6 @@ if __name__ == "__main__":
 Short missions that combine control, vision, and (when needed) learning. The
 centering loop is the same on both pairs; only factory key, pose config, and
 camera source change to match the stack.
-
-Longer multi-state fragments, Boilerplate/Core/Total counts, and stack-swap
-deltas live under [`scripts/effort/`](scripts/effort/)
-([how counting works](scripts/effort/README.md),
-[LoC table](scripts/effort/results/loc_table.md),
-[swap deltas](scripts/effort/results/swap_delta.md)).
 
 | Pair | Firmware / transport | Pose | Camera | Perception |
 |------|----------------------|------|--------|------------|

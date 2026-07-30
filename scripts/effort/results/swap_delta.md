@@ -17,8 +17,10 @@ Incomplete Without pairs (none declared, or same file twice) show `—` rather t
 | Camera source webcam → ROS topic | `A5→A6` | camera | 1 | 5 | 1 | 28 | get_frame / read mission body |
 | Camera webcam → RealSense | `A5→A10` | camera | 1 | 1 | 1 | 14 | get_frame / read / close |
 | Camera ROS image → OAK-D | `A6→A11` | camera | 1 | 5 | 1 | 32 | get_frame / read / close |
-| Detector framework YOLO → Transformers | `A8_framework_swap` | detector | 1 | 2 | 1 | 15 | detector.load(); detector.detect(...) call sites |
-| Learning task detect → segment | `A9_task_flip` | detector | 1 | 5 | 1 | 11 | load + iterate/print pattern per task |
+| Detector framework YOLO → Transformers | `A8_framework_swap` | detector | 1 | 2 | 1 | 18 | detector.load(); detector.detect(...) call sites |
+| Detector framework YOLO → RF-DETR | `A8_framework_swap` | detector | 1 | 2 | 1 | 11 | detector.load(); detector.detect(...) call sites |
+| Learning task detect → segment | `A9_task_flip` | task | 1 | 5 | 1 | 8 | load + iterate/print pattern per task |
+| Learning task segment → classify | `A9_task_flip` | task | 1 | 5 | 1 | 11 | load + iterate/print pattern per task |
 | PoseSource GPS → VISION (patrol) | `C4_pose_portable` | pose | 1 | 1 | 1 | 22 | takeoff / move_to / land mission body |
 | Transport MAVLink → MAVROS (gate sequence) | `C1_gate_sequence` | transport | 1 | 2 | 1 | 172 | SEARCH / ALIGN / PASS phases and constants |
 | Transport MAVLink → PX4 DDS (gate sequence) | `C1_gate_sequence` | firmware, transport | 1 | 2 | 1 | 167 | SEARCH / ALIGN / PASS phases and constants |

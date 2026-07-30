@@ -199,6 +199,8 @@ class StackAPilot(Node):
             return None
         return mm / 1000.0
 
+    # @loc:boilerplate:end
+    # @loc:core:begin
     def read_target(self):
         packet = self._q_rgb.tryGet()
         if packet is None:
@@ -235,8 +237,6 @@ class StackAPilot(Node):
         top1 = int(out.probs.top1)
         return out.names[top1] == CONFIRM_LABEL
 
-    # @loc:boilerplate:end
-    # @loc:core:begin
     def run(self) -> None:
         self.pid_x.reset()
         self.pid_y.reset()

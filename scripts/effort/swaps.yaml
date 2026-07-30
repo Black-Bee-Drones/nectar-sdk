@@ -97,17 +97,41 @@ swaps:
       - A8_framework_swap/with_yolo.py
       - A8_framework_swap/with_transformers.py
     without:
+      - A8_framework_swap/without_yolo.py
       - A8_framework_swap/without_transformers.py
+
+  - name: "Detector framework YOLO → RF-DETR"
+    case: "A8_framework_swap"
+    kind: single
+    axes: [detector]
+    stays_fixed: "detector.load(); detector.detect(...) call sites"
+    with:
+      - A8_framework_swap/with_yolo.py
+      - A8_framework_swap/with_rfdetr.py
+    without:
+      - A8_framework_swap/without_yolo.py
       - A8_framework_swap/without_rfdetr.py
 
   - name: "Learning task detect → segment"
     case: "A9_task_flip"
     kind: single
-    axes: [detector]
+    axes: [task]
     stays_fixed: "load + iterate/print pattern per task"
     with:
       - A9_task_flip/with_detect.py
       - A9_task_flip/with_segment.py
+    without:
+      - A9_task_flip/without_detect.py
+      - A9_task_flip/without_segment.py
+
+  - name: "Learning task segment → classify"
+    case: "A9_task_flip"
+    kind: single
+    axes: [task]
+    stays_fixed: "load + iterate/print pattern per task"
+    with:
+      - A9_task_flip/with_segment.py
+      - A9_task_flip/with_classify.py
     without:
       - A9_task_flip/without_segment.py
       - A9_task_flip/without_classify.py
