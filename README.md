@@ -1,9 +1,8 @@
-
-# Nectar SDK
+<div align="center">
+  <img src="assets/readme/hero_banner.jpg" alt="Nectar SDK — Black Bee Drones" width="100%" />
+</div>
 
 <div align="center">
-
-<img align="left" width="35" height="35" src="https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/1f41d.gif" alt="Bee">
 
 ROS 2 software development kit for autonomous aerial systems. Unified interfaces for flight control, computer vision, and AI — one mission across vehicles, sensors, and simulators.
 
@@ -28,7 +27,13 @@ Please visit the **[Nectar SDK documentation](https://black-bee-drones.github.io
 
 ## Features
 
-ArduPilot and PX4 over MAVROS, direct MAVLink, or uXRCE-DDS, plus Bebop and Crazyflie — modular install via [uv](https://github.com/astral-sh/uv). Depth for each area lives on the docs site:
+ArduPilot and PX4 over MAVROS, direct MAVLink, or uXRCE-DDS, plus Bebop and Crazyflie — modular install via [uv](https://github.com/astral-sh/uv). The same stack across indoor and outdoor competition missions (IMAV, CBR, SAE), with perception overlays and matched sim-to-real frames:
+
+<div align="center">
+  <img src="assets/readme/validation_mosaic.png" alt="Nectar SDK features across indoor and outdoor missions: perception overlays and sim-to-real" width="100%" />
+</div>
+
+Depth for each area lives on the docs site:
 
 - **[Control](https://black-bee-drones.github.io/nectar-sdk/modules/control/)** — firmware-agnostic flight interface, navigation, PID, obstacles, GPS
 - **[Vision](https://black-bee-drones.github.io/nectar-sdk/modules/vision/)** — cameras, ArUco, color, line, distance, optical flow, MediaPipe
