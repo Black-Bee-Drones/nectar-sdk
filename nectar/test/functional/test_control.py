@@ -97,6 +97,59 @@ def test_frame_transform():
     )
 
 
+def test_is_airborne_prefers_fcu_landed_state():
+    """Grounded altitude near 0.5 m must not skip takeoff when FCU reports landed.
+
+    Reproduces the CBR re-takeoff failure: after touchdown the rangefinder /
+    vision Z can sit at ~0.51 m (elevated pad or body height) while the FCU
+    has land_complete (MAV_STATE_STANDBY) or has already disarmed.
+    """
+    from types import SimpleNamespace
+
+    from nectar.control.vehicle.sequencer import FlightSequencer
+    from nectar.control.vehicle.types import VehicleState
+
+    class _FakeDrone:
+        def __init__(self) -> None:
+            self.is_indoor = True
+            self._armed = False
+            self._transport = SimpleNamespace(
+                state=VehicleState(),
+                rangefinder=0.51,
+                local_pose=None,
+                rel_alt=None,
+            )
+
+        @property
+        def is_armed(self):
+            return self._armed
+
+    drone = _FakeDrone()
+    seq = FlightSequencer(drone)
+
+    # Disarmed on the ground with a grounded-looking rangefinder reading.
+    drone._armed = False
+    drone._transport.state = VehicleState(armed=False, system_status=seq._MAV_STATE_STANDBY)
+    assert seq.is_airborne() is False
+
+    # Still armed after land() returns early, but FCU land_complete → STANDBY.
+    drone._armed = True
+    drone._transport.state = VehicleState(armed=True, system_status=seq._MAV_STATE_STANDBY)
+    assert seq.is_airborne() is False
+
+    # Flying: ArduCopter reports ACTIVE.
+    drone._armed = True
+    drone._transport.state = VehicleState(armed=True, system_status=seq._MAV_STATE_ACTIVE)
+    assert seq.is_airborne() is True
+
+    # No MAVLink flight state (e.g. PX4 DDS): altitude fallback, 0.51 m is grounded.
+    drone._armed = True
+    drone._transport.state = VehicleState(armed=True, system_status=2)
+    assert seq.is_airborne() is False
+    drone._transport.rangefinder = 1.5
+    assert seq.is_airborne() is True
+
+
 def test_mavlink_loopback(fake_fcu):
     """The SDK MAVLink connection completes a heartbeat handshake with a loopback FCU."""
     pytest.importorskip("pymavlink", reason="pymavlink not installed (make python-sensors)")

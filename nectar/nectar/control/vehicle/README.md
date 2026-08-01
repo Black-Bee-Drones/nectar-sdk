@@ -168,6 +168,12 @@ Climb progress (altitude, gain, vertical velocity) is logged at roughly 1 Hz so 
 - Settled but `height_gain < _LIFTOFF_DELTA` while `is_airborne` reports flight: accept (sensor-glitch tolerance).
 - Liftoff never detected after `timeout`: disarm and retry; on the last attempt, fail.
 
+**`is_airborne`** (used by the takeoff short-circuit):
+
+1. Disarmed → not airborne.
+2. Else FCU `HEARTBEAT.system_status` when it is real MAVLink state: ArduCopter reports `MAV_STATE_STANDBY` when `land_complete` and `MAV_STATE_ACTIVE` when flying — that is the primary signal.
+3. Else altitude fallback (rangefinder / local pose / `rel_alt`) against `_AIRBORNE_THRESHOLD` (1.0 m). A tighter absolute gate false-triggers on grounded airframes: rangefinder body height, elevated pads, or vision Z relative to a lower takeoff origin can sit near 0.5 m while landed.
+
 **Tunables** (class constants on `FlightSequencer`):
 
 | Constant | Default | Meaning |
@@ -180,6 +186,7 @@ Climb progress (altitude, gain, vertical velocity) is logged at roughly 1 Hz so 
 | `_SETTLE_LOG_INTERVAL` | 1.0 s | Throttle for the climb-progress log |
 | `_SETTLE_ALT_TOLERANCE` | 0.5 m | Maximum settle band below target |
 | `_SETTLE_ALT_FRACTION` | 0.3 | Fraction of the climb used as the settle band |
+| `_AIRBORNE_THRESHOLD` | 0.9 m | Altitude fallback for `is_airborne` when FCU state is unavailable |
 
 If detection still times out (very noisy lidar, slow climb that never fully stops), raise `_SETTLE_VELOCITY` or shorten `_SETTLE_WINDOW`. The end-of-takeoff adjustment still pulls the drone to within `precision`, so a permissive velocity threshold costs nothing in final altitude accuracy.
 
