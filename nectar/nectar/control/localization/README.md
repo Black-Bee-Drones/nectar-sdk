@@ -22,12 +22,13 @@ flowchart LR
     rs --> vslam
   end
   subgraph sdk [SDK container or host]
-    bridge[vision_pose_node backend mavros/mavlink]
+    bridge[vision_pose_node backend mavros/mavlink/dds]
     mavros[MAVROS indoor]
   end
   vslam -->|"/visual_slam/tracking/vo_pose_covariance"| bridge
   bridge -->|"mavros: /mavros/vision_pose/pose_cov"| mavros
   bridge -->|"mavlink: VISION_POSITION_ESTIMATE"| fcu[FCU]
+  bridge -->|"dds: VehicleOdometry"| fcu
   mavros --> fcu
 ```
 
@@ -40,6 +41,8 @@ flowchart LR
 | MAVROS relay | `control/localization/vision_pose_bridge.py` (`MavrosVisionRelay`) | republish pose to `/mavros/vision_pose/pose_cov` |
 | MAVLink bridge | reused from `nectar.control.mavlink.VisionPoseBridge` | send `VISION_POSITION_ESTIMATE` |
 | DDS bridge | `control/px4/vision_bridge.py` (`Px4VisionOdometryBridge`) | publish `px4_msgs/VehicleOdometry` to `/fmu/in/vehicle_visual_odometry` |
+| Velocity (optional) | `MavrosVisionSpeedRelay`, `nectar.control.mavlink.VisionSpeedBridge`, `speed_topic` on the DDS bridge | see [Velocity](#velocity-optional) |
+| Frame conversions | `control/localization/frames.py` | body twist -> world -> NED |
 | Node | `control/localization/nodes/vision_pose_node.py` | select backend, wire the bridge |
 | VSLAM params | `control/localization/config/vslam_realsense.yaml` | RealSense + Visual SLAM tuning |
 | MAVROS config | `control/mavros/config/indoor_mavros.yaml`, `indoor_pluginlists.yaml` | indoor MAVROS profile |
@@ -78,6 +81,69 @@ ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0
 ros2 launch nectar vision_pose.launch.py backend:=dds
 ```
 
+Add `send_speed:=true` to any of the three to also feed the VSLAM velocity —
+see [Velocity](#velocity-optional).
+
+## Velocity (optional)
+
+By default the bridges send **position only**. `send_speed:=true` adds the VSLAM
+velocity on the selected backend; the pose feed is unchanged and keeps running,
+because EKF3 does not initialise on velocity alone
+([ardupilot#23485](https://github.com/ArduPilot/ardupilot/issues/23485)).
+
+| Backend | Velocity carrier |
+|---------|------------------|
+| `mavros` | `geometry_msgs/TwistStamped` on `/mavros/vision_speed/speed_twist`; the [`vision_speed`](https://github.com/mavlink/mavros/blob/ros2/mavros_extras/src/plugins/vision_speed_estimate.cpp) plugin converts ENU -> NED and sends [`VISION_SPEED_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_SPEED_ESTIMATE) |
+| `mavlink` | `VISION_SPEED_ESTIMATE` (#103) over the same pymavlink link as the pose |
+| `dds` | `velocity` + `velocity_frame = VELOCITY_FRAME_NED` on the `VehicleOdometry` already published for the pose |
+
+```bash
+ros2 launch nectar vision_pose.launch.py backend:=mavros send_speed:=true
+ros2 launch nectar vision_pose.launch.py backend:=mavlink send_speed:=true \
+    mavlink_url:=udp:127.0.0.1:14551
+```
+
+Arguments: `speed_topic` (default `/visual_slam/tracking/odometry`) and, on the
+node, `speed_output_topic` and `speed_timeout_s`.
+
+### What cuVSLAM actually provides
+
+cuVSLAM estimates **pose and pose covariance**; it has no velocity state. The
+twist on `/visual_slam/tracking/odometry` is produced by the ROS wrapper as a
+finite difference over the last 10 poses,
+`dp = pose(t0)⁻¹ · pose(t1)`
+([`PoseCache::GetVelocity`](https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_visual_slam/blob/main/isaac_ros_visual_slam/src/impl/pose_cache.cpp)).
+It is therefore derived from the same pose we already send, not an independent
+measurement. Acceleration is an *input* (RealSense IMU, `tracking_mode:=1`), not
+an output.
+
+That form of `dp` makes the twist **body-frame** (`child_frame_id`, FLU), as
+`nav_msgs/Odometry` requires. `VISION_SPEED_ESTIMATE` carries no attitude, so the
+FCU cannot rotate it: the bridges rotate body -> world with the attitude of the
+same odometry sample before the ENU -> NED swap (`frames.py`). `ODOMETRY` is the
+counter-example — it carries the quaternion and ArduPilot rotates the body-FRD
+velocity itself.
+
+### FCU setup for velocity
+
+ArduPilot lists the velocity as optional alongside the position
+([Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html)).
+It is only fused once the source is selected:
+
+- `EK3_SRC1_VELXY = 6`, `EK3_SRC1_VELZ = 6` (ExternalNav). With `0` the messages
+  are received and logged but not fused.
+- `VISO_VEL_M_NSE` sets the velocity measurement noise. ArduPilot **ignores** the
+  covariance field of `VISION_SPEED_ESTIMATE` and always uses this parameter
+  ([`AP_VisualOdom_MAV.cpp`](https://github.com/ArduPilot/ardupilot/blob/master/libraries/AP_VisualOdom/AP_VisualOdom_MAV.cpp)),
+  so it is the only knob for how much the EKF trusts this input. Because the
+  twist is differentiated from the position we already send, starting
+  conservative (the `0.1` m/s default) avoids double-counting one measurement as
+  two independent ones.
+- PX4: `EKF2_EV_CTRL` bit 2 enables 3D velocity fusion.
+
+Check `XKFS`/`XKF3` innovations in the logs before and after enabling; leave it
+off if Loiter does not improve.
+
 ## FCU setup
 
 The bridge only delivers the pose — the FCU's estimator still has to be told to
@@ -87,11 +153,13 @@ different minimum rate**. Both backends send MAVLink
 (#102); the EKF fuses it once configured. With no GPS, the **EKF origin must be
 set** before position control engages.
 
-> Our indoor flights to date are on **ArduPilot 4.6.x / 4.8-dev**. The PX4 set
-> below is for our planned move to PX4 on Pixhawk: it is grounded in the PX4
-> docs and matches the reference pipeline (the same MAVROS relay) used by the
+> Our indoor **hardware** flights to date are on **ArduPilot 4.6.x / 4.8-dev**.
+> The PX4 set below is grounded in the PX4 docs and matches the reference
+> pipeline (the same MAVROS relay) used by the
 > [VSLAM-UAV tutorial](https://www.andrewbernas.com/docs/tutorials/robots/vslam/setup)
-> on PX4 v1.15.4, but we have not yet flown it on our own hardware.
+> on PX4 v1.15.4. **SITL** already exercises this path
+> (`ENV=indoor` → `indoor_room_px4` + `gz_vision_source`); validate on your
+> Pixhawk before competition use.
 
 ### ArduPilot (EKF3)
 
@@ -99,9 +167,9 @@ set** before position control engages.
 |-----------|-------|---------|
 | `VISO_TYPE` | `1` (MAVLink) | Enable the external-nav backend that consumes `VISION_POSITION_ESTIMATE` from a companion (the T265 path uses `2`, see [Hardware notes](#hardware-notes)) |
 | `EK3_SRC1_POSXY` | `6` (ExternalNav) | Horizontal position from VSLAM |
-| `EK3_SRC1_VELXY` | `6` or `0` | Horizontal velocity (cuVSLAM provides it) or none |
+| `EK3_SRC1_VELXY` | `6` or `0` | Horizontal velocity — `6` only with `send_speed:=true`, see [Velocity](#velocity-optional) |
 | `EK3_SRC1_POSZ` | `6` (ExternalNav) | Height — see [Height source](#height-source) |
-| `EK3_SRC1_VELZ` | `6` or `0` | Vertical velocity or none |
+| `EK3_SRC1_VELZ` | `6` or `0` | Vertical velocity, same condition as `VELXY` |
 | `EK3_SRC1_YAW` | `6` (ExternalNav) | Yaw from VSLAM (with `COMPASS_USE=0`), or `1` to keep the compass |
 | `VISO_POS_X/Y/Z` | camera offset (m) | Camera position in the body frame |
 | `GPS1_TYPE` | `0` | Disable GPS indoors (renamed from `GPS_TYPE` in 4.5+) |
@@ -172,6 +240,59 @@ VELXY / YAW) on vision:
   publishes `px4_msgs/VehicleOdometry` on `/fmu/in/vehicle_visual_odometry`
   (PX4 native uXRCE-DDS). Needs a running `MicroXRCEAgent` and `px4_msgs`; set
   `px4_namespace` to match a namespaced client.
+
+Each backend gains a velocity path with `send_speed:=true`
+([Velocity](#velocity-optional)); the pose path above is unaffected.
+
+## One feeder rule
+
+Exactly **one** process may feed external vision into the FCU at a time:
+
+| Transport | Who feeds the FCU |
+|-----------|-------------------|
+| MAVROS | `vision_pose_node` (`backend:=mavros`) → `/mavros/vision_pose/pose_cov` |
+| Direct pymavlink | `PymavlinkTransport` auto-starts `VisionPoseBridge` when `PoseSource.VISION` **or** a standalone `vision_pose_node backend:=mavlink` — never both on the same link |
+| uXRCE-DDS | `vision_pose_node backend:=dds` → `/fmu/in/vehicle_visual_odometry` |
+
+`PymavlinkTransport` starts the **pose** bridge only. Velocity still needs
+`vision_pose_node … send_speed:=true` (or a manual `VisionSpeedBridge`) — and that
+node must share the mission's link carefully (prefer the mission-owned bridge for
+pose, and only add speed on the same connection, not a second `VISION_*` sender).
+
+Indoor `./setup.sh driver … --env indoor` starts the standalone consumer for
+mavros/mavlink. If the mission also opens `PoseSource.VISION` on pymavlink, skip
+the driver vision node (or use MAVROS, where the transport only *subscribes*).
+
+## SITL
+
+Gazebo indoor mirrors the hardware pipeline: ground-truth pose → the same
+canonical VSLAM topics → the same backends → EKF3 / EKF2.
+
+| Firmware | Terminal 1 | Terminal 2 | Feeder |
+|----------|------------|------------|--------|
+| ArduPilot | `make sim-start FIRMWARE=ardupilot ENV=indoor` | `make sim-bridge … PROTOCOL=mavros\|mavlink` | `gz_vision_source` (iris) → mavros node or mission `VisionPoseBridge` |
+| PX4 | `make sim-start FIRMWARE=px4 ENV=indoor` | `make sim-bridge FIRMWARE=px4 ENV=indoor PROTOCOL=mavros\|mavlink\|dds` | `gz_vision_source` (x500_nectar) → mavros / mission bridge / dds |
+
+Shared arena: ArduPilot composes `nectar_indoor` (world Pose_V → TFMessage);
+PX4 uses scenery-only `indoor_room_px4` + `x500_nectar` with **model-level**
+PosePublisher at **50 Hz** (feeds `/world/indoor_room_px4/dynamic_pose/info`;
+spawned model name is `x500_nectar_0`). Gazebo 8 rejects world-attached
+PosePublisher. Params: ArduPilot `indoor.parm`; PX4 `px4_indoor.env`
+(`EKF2_EV_CTRL=11` pose+yaw, `EKF2_GPS_CTRL=0`, `EKF2_HGT_REF=3`,
+`EKF2_MAG_TYPE=5`).
+
+Stock PX4 onboard VIO (`x500_vision`) remains available only as an explicit
+override: `make sim-start FIRMWARE=px4 ENV=indoor ARGS='--model x500_vision'`
+(not the Nectar external-nav path).
+
+Verify:
+
+```bash
+ros2 topic hz /visual_slam/tracking/vo_pose_covariance   # ~50 Hz
+ros2 topic echo /mavros/vision_pose/pose_cov --once        # PROTOCOL=mavros
+```
+
+See [simulation README](../../../../simulation/README.md) for the full matrix.
 
 ## Visualization
 
