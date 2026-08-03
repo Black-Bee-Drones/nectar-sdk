@@ -14,6 +14,12 @@ from __future__ import annotations
 import os
 import sys
 
+# pymavlink picks its dialect at import time and defaults to MAVLink 1, upgrading
+# only when it receives a v2 frame. Real FCU links negotiate v2, which the tests
+# have to match: fields added as v2 extensions (e.g. VISION_POSITION_ESTIMATE's
+# covariance) do not exist on the v1 wire format. Set before any pymavlink import.
+os.environ.setdefault("MAVLINK20", "1")
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import helpers  # noqa: E402  (resolved via the sys.path insert above)
