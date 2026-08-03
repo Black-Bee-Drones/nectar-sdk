@@ -30,6 +30,7 @@ from typing import Optional, Union
 
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
+from nectar.control.localization.frames import enu_to_ned, yaw_enu_to_ned
 from nectar.control.px4.modes import MODE_TO_PX4
 from nectar.control.vehicle.transport import VehicleTransport
 from nectar.control.vehicle.types import (
@@ -155,34 +156,14 @@ class Px4DdsTransport(VehicleTransport):
     def _now_us(self) -> int:
         return self._node.get_clock().now().nanoseconds // 1000
 
-    # Frame helpers (PX4 NED/FRD <-> core ENU/FLU)
-
-    @staticmethod
-    def _enu_to_ned(x: float, y: float, z: float) -> tuple:
-        # ENU (East, North, Up) -> NED (North, East, Down)
-        return (y, x, -z)
-
-    @staticmethod
-    def _ned_to_enu(x: float, y: float, z: float) -> tuple:
-        # NED (North, East, Down) -> ENU (East, North, Up)
-        return (y, x, -z)
-
-    @staticmethod
-    def _yaw_enu_to_ned(yaw_enu: float) -> float:
-        # ENU yaw (0=East, CCW) -> NED yaw (0=North, CW)
-        return math.pi / 2.0 - yaw_enu
-
-    @staticmethod
-    def _yaw_ned_to_enu(yaw_ned: float) -> float:
-        return math.pi / 2.0 - yaw_ned
-
     # Subscriber callbacks
 
     def _on_local(self, msg) -> None:
-        ex, ey, ez = self._ned_to_enu(msg.x, msg.y, msg.z)
+        # enu_to_ned / yaw_enu_to_ned are involutions, so NED->ENU uses the same.
+        ex, ey, ez = enu_to_ned((msg.x, msg.y, msg.z))
         self._local_plain = LocalPose(
             position=Vec3(ex, ey, ez),
-            yaw=self._yaw_ned_to_enu(msg.heading),
+            yaw=yaw_enu_to_ned(msg.heading),
         )
         self._rel_alt_val = -float(msg.z)
         # Compass heading in degrees (NED, 0=North).
@@ -347,7 +328,7 @@ class Px4DdsTransport(VehicleTransport):
             vu = vz
         else:
             ve, vn, vu = vx, vy, vz
-        nx, ny, nz = self._enu_to_ned(ve, vn, vu)
+        nx, ny, nz = enu_to_ned((ve, vn, vu))
 
         self._publish_offboard_mode(position=False, velocity=True)
         sp = TrajectorySetpoint()
@@ -359,12 +340,12 @@ class Px4DdsTransport(VehicleTransport):
         self._setpoint_pub.publish(sp)
 
     def send_local_target(self, target: LocalTarget) -> None:
-        nx, ny, nz = self._enu_to_ned(target.position.x, target.position.y, target.position.z)
+        nx, ny, nz = enu_to_ned((target.position.x, target.position.y, target.position.z))
         self._publish_offboard_mode(position=True, velocity=False)
         sp = TrajectorySetpoint()
         sp.position = [float(nx), float(ny), float(nz)]
         sp.velocity = [float("nan"), float("nan"), float("nan")]
-        sp.yaw = float(self._yaw_enu_to_ned(target.yaw))
+        sp.yaw = float(yaw_enu_to_ned(target.yaw))
         sp.yawspeed = float("nan")
         sp.timestamp = self._now_us()
         self._setpoint_pub.publish(sp)
