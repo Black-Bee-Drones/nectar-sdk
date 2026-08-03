@@ -13,9 +13,9 @@
 #   --dir <path>     PX4-Autopilot directory (default: ~/PX4-Autopilot)
 #   --model <name>   Gazebo vehicle model (default: x500). Other examples:
 #                    x500_depth (front depth cam), x500_lidar_down (down lidar),
-#                    x500_nectar (Nectar SDK matched sensor suite — outdoor world).
+#                    x500_nectar (Nectar SDK matched sensor suite).
 #   --world <name>   PX4 Gazebo world (default: PX4 default). e.g. walls, baylands,
-#                    outdoor_field_px4 (Nectar shared outdoor scenery).
+#                    outdoor_field_px4, indoor_room_px4 (Nectar shared arenas).
 #   --speedup <N>    Simulation speed factor (default: 1)
 #   --home <lat,lon,alt>   Custom home/takeoff location
 #   --headless       Run Gazebo without the GUI
@@ -26,6 +26,11 @@
 #                    direct invocation of build/px4_sitl_default/bin/px4 with the
 #                    requested model+world env (still uses standard rcS).
 #                    Use 4001 for any x500 derivative.
+#   --params <file>  Indoor/outdoor param env file under nectar/simulation/params/
+#                    (or an absolute path). Lines are NAME=VALUE; each becomes
+#                    PX4_PARAM_NAME=VALUE. Example: px4_indoor.env
+#   --pose <x,y,z[,r,p,y]>  Gazebo spawn pose (PX4_GZ_MODEL_POSE). Indoor
+#                    default for indoor_room_px4 is -5,0,0.2
 #   --extra <args>   Extra arguments appended to the make command
 #
 # Examples:
@@ -34,10 +39,16 @@
 #   ./scripts/simulation/start_px4.sh --world walls --headless
 #   ./scripts/simulation/start_px4.sh --home -22.001,-47.001,850
 #   ./scripts/simulation/start_px4.sh --model x500_nectar --world outdoor_field_px4 --autostart 4001
+#   ./scripts/simulation/start_px4.sh --model x500_nectar --world indoor_room_px4 \
+#       --autostart 4001 --params px4_indoor.env
 # =============================================================================
 set -euo pipefail
 
 unset MAKEFLAGS MAKEOVERRIDES MFLAGS MAKELEVEL 2>/dev/null || true
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+PARAMS_DIR="${PROJECT_DIR}/nectar/simulation/params"
 
 PX4_DIR="${PX4_AUTOPILOT_DIR:-${HOME}/PX4-Autopilot}"
 MODEL="x500"
@@ -48,6 +59,8 @@ FOLLOW_VAL="0"
 HOME_POS=""
 EXTRA_ARGS=""
 AUTOSTART=""
+PARAMS_FILE=""
+MODEL_POSE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -59,9 +72,11 @@ while [[ $# -gt 0 ]]; do
         --headless)  HEADLESS_VAL="1"; shift ;;
         --follow)    FOLLOW_VAL="1"; shift ;;
         --autostart) AUTOSTART="$2"; shift 2 ;;
+        --params)    PARAMS_FILE="$2"; shift 2 ;;
+        --pose)      MODEL_POSE="$2"; shift 2 ;;
         --extra)     EXTRA_ARGS="$2"; shift 2 ;;
         -h|--help)
-            head -n 30 "$0" | tail -n +2 | sed 's/^# //' | sed 's/^#//'
+            head -n 40 "$0" | tail -n +2 | sed 's/^# //' | sed 's/^#//'
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -96,6 +111,49 @@ export PX4_SIM_SPEED_FACTOR="${SPEEDUP}"
 export PX4_PARAM_NAV_DLL_ACT=0
 export PX4_PARAM_NAV_RCL_ACT=0
 
+# Indoor shared room: spawn in the open area (same x=-5 as ArduPilot iris).
+if [ -z "${MODEL_POSE}" ] && [ "${WORLD}" = "indoor_room_px4" ]; then
+    MODEL_POSE="-5,0,0.2"
+fi
+if [ -n "${MODEL_POSE}" ]; then
+    export PX4_GZ_MODEL_POSE="${MODEL_POSE}"
+fi
+
+# Apply optional param env file (NAME=VALUE → PX4_PARAM_NAME=VALUE).
+_apply_params_file() {
+    local file="$1"
+    local path="$file"
+    if [ ! -f "${path}" ] && [ -f "${PARAMS_DIR}/${file}" ]; then
+        path="${PARAMS_DIR}/${file}"
+    fi
+    if [ ! -f "${path}" ]; then
+        echo "[ERROR] Params file not found: ${file}"
+        echo "        Looked at ${file} and ${PARAMS_DIR}/${file}"
+        exit 1
+    fi
+    echo "  Params:   ${path}"
+    local line name value
+    while IFS= read -r line || [ -n "${line}" ]; do
+        # Strip comments and blank lines
+        line="${line%%#*}"
+        line="$(echo "${line}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -z "${line}" ] && continue
+        name="${line%%=*}"
+        value="${line#*=}"
+        name="$(echo "${name}" | sed 's/[[:space:]]*$//')"
+        value="$(echo "${value}" | sed 's/^[[:space:]]*//')"
+        [ -z "${name}" ] && continue
+        export "PX4_PARAM_${name}=${value}"
+    done < "${path}"
+}
+
+if [ -z "${PARAMS_FILE}" ] && [ "${WORLD}" = "indoor_room_px4" ]; then
+    PARAMS_FILE="px4_indoor.env"
+fi
+if [ -n "${PARAMS_FILE}" ]; then
+    _apply_params_file "${PARAMS_FILE}"
+fi
+
 # PX4 treats ANY non-empty HEADLESS value (even "0") as headless: it gates the
 # GUI with `[ -z "$HEADLESS" ]`. So only export it when headless is requested,
 # and unset it otherwise so the Gazebo GUI window opens.
@@ -122,6 +180,7 @@ echo "╚═══════════════════════�
 echo ""
 echo "  Model:    ${MODEL}"
 echo "  World:    ${WORLD:-default}"
+echo "  Pose:     ${MODEL_POSE:-PX4 default}"
 echo "  Speedup:  ${SPEEDUP}x"
 echo "  Headless: $([ "${HEADLESS_VAL}" = "1" ] && echo "yes (no GUI)" || echo "no (GUI window)")"
 echo "  Camera:   $([ "${FOLLOW_VAL}" = "1" ] && echo "follow drone" || echo "free (orbit/zoom)")"

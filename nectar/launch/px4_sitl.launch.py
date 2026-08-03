@@ -2,9 +2,10 @@
 ROS-side bridge for a running PX4 SITL instance.
 
 Brings up MAVROS (PX4 offboard MAVLink API on UDP 14540) plus, optionally, the
-Gazebo sensor (camera) bridges and an external-vision relay. PX4 starts Gazebo
-itself, so this launch only adds the ROS side. Set ``mavros:=false`` for the
-direct-pymavlink ``px4_mavlink`` backend, which connects to UDP 14540 itself.
+Gazebo sensor (camera) bridges and the indoor external-vision pipeline
+(gz_vision_source → canonical VSLAM topics → vision_pose_node). PX4 starts
+Gazebo itself, so this launch only adds the ROS side. Set ``mavros:=false`` for
+the direct-pymavlink ``px4_mavlink`` backend, which connects to UDP 14540 itself.
 
 Prerequisites:
     PX4 SITL must be running (which also starts Gazebo):
@@ -14,9 +15,10 @@ Usage:
     ros2 launch nectar px4_sitl.launch.py
     ros2 launch nectar px4_sitl.launch.py fcu_url:=udp://:14540@127.0.0.1:14580
     ros2 launch nectar px4_sitl.launch.py gcs_url:=udp://@192.168.1.100:14550
-    ros2 launch nectar px4_sitl.launch.py vision:=true   # relay an external pose to PX4 EKF2
-    ros2 launch nectar px4_sitl.launch.py gz_bridge:=true # bridge Nectar cameras (matches sitl_gazebo)
-    ros2 launch nectar px4_sitl.launch.py mavros:=false gz_bridge:=true  # direct-pymavlink (px4_mavlink): cameras only, no MAVROS
+    ros2 launch nectar px4_sitl.launch.py vision:=true   # indoor external-nav
+    ros2 launch nectar px4_sitl.launch.py gz_bridge:=true # bridge Nectar cameras
+    ros2 launch nectar px4_sitl.launch.py mavros:=false gz_bridge:=true  # px4_mavlink
+    ros2 launch nectar px4_sitl.launch.py vision:=true mavros:=false backend:=dds
 """
 
 import os
@@ -28,16 +30,20 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 
 
+def _truthy(value: str) -> bool:
+    return value.lower() in ("true", "1", "yes")
+
+
 def _launch_setup(context: LaunchContext) -> list:
     fcu_url = LaunchConfiguration("fcu_url").perform(context)
     gcs_url = LaunchConfiguration("gcs_url").perform(context)
-    use_mavros = LaunchConfiguration("mavros").perform(context).lower() in ("true", "1", "yes")
-    use_vision = LaunchConfiguration("vision").perform(context).lower() in ("true", "1", "yes")
-    use_gz_bridge = LaunchConfiguration("gz_bridge").perform(context).lower() in (
-        "true",
-        "1",
-        "yes",
-    )
+    use_mavros = _truthy(LaunchConfiguration("mavros").perform(context))
+    use_vision = _truthy(LaunchConfiguration("vision").perform(context))
+    use_gz_bridge = _truthy(LaunchConfiguration("gz_bridge").perform(context))
+    backend = LaunchConfiguration("backend").perform(context).strip().lower()
+    send_speed = _truthy(LaunchConfiguration("send_speed").perform(context))
+    world_name = LaunchConfiguration("world_name").perform(context).strip()
+    model_name = LaunchConfiguration("model_name").perform(context).strip()
 
     actions = []
 
@@ -76,7 +82,7 @@ def _launch_setup(context: LaunchContext) -> list:
     # Optional: bridge the Nectar cameras from Gazebo to ROS. Same topics and
     # message types as sitl_gazebo.launch.py (ArduPilot side), so downstream
     # nodes are firmware-agnostic. Enable when running the shared Nectar world
-    # with x500_nectar (start_px4.sh --model x500_nectar --world outdoor_field_px4).
+    # with x500_nectar (start_px4.sh --model x500_nectar --world …).
     # The lidar is NOT bridged here — it reaches ROS as /mavros/rangefinder/
     # rangefinder via PX4's DISTANCE_SENSOR stream (see px4_config_sitl.yaml).
     if use_gz_bridge:
@@ -93,21 +99,66 @@ def _launch_setup(context: LaunchContext) -> list:
         )
         actions.append(gz_bridge_node)
 
-    # Optional: relay an external pose source to PX4's EKF2 (indoor / GPS-denied).
-    # Provide the pose on the canonical VSLAM topic; the node forwards it to
-    # /mavros/vision_pose/pose_cov, which MAVROS sends to PX4.
+    # Indoor external-nav: Gazebo GT → canonical VSLAM topics → FCU (same pattern
+    # as sitl_gazebo.launch.py indoor). PosePublisher on x500_nectar feeds
+    # /world/<world>/dynamic_pose/info (Pose_V). PX4 names the spawned model
+    # ``x500_nectar_0``. Producer always runs; the consumer node is started for
+    # mavros/dds. For mavlink, Px4MavlinkDrone's VisionPoseBridge is the single
+    # feeder (avoid double-feeding the EKF).
     if use_vision:
-        vision_pose_node = Node(
-            package="nectar",
-            executable="vision_pose_node.py",
-            name="vision_pose_node",
-            parameters=[
-                {"backend": "mavros"},
-                {"input_topic": "/visual_slam/tracking/vo_pose_covariance"},
+        gz_pose_topic = f"/world/{world_name}/dynamic_pose/info"
+        vslam_topic = "/visual_slam/tracking/vo_pose_covariance"
+        vslam_odom_topic = "/visual_slam/tracking/odometry"
+
+        gz_pose_bridge = Node(
+            package="ros_gz_bridge",
+            executable="parameter_bridge",
+            name="gz_pose_bridge",
+            arguments=[
+                f"{gz_pose_topic}@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+                "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
             ],
             output="screen",
         )
-        actions.append(vision_pose_node)
+
+        gz_vision_source = Node(
+            package="nectar",
+            executable="gz_vision_source.py",
+            name="gz_vision_source",
+            parameters=[
+                {"model_name": model_name},
+                {"gz_pose_topic": gz_pose_topic},
+                {"input_type": "tf"},
+                {"output_topic": vslam_topic},
+                {"odometry_topic": vslam_odom_topic},
+            ],
+            output="screen",
+        )
+        actions.extend([gz_pose_bridge, gz_vision_source])
+
+        start_consumer = backend in ("mavros", "dds")
+        if backend == "mavros" and not use_mavros:
+            # Producer-only when MAVROS is off (mavlink PROTOCOL path).
+            start_consumer = False
+        if start_consumer:
+            vision_params = {
+                "backend": backend,
+                "input_topic": vslam_topic,
+                "send_speed": send_speed,
+                "speed_topic": vslam_odom_topic,
+            }
+            if backend == "mavlink":
+                # SITL offboard API; only used if someone forces backend:=mavlink
+                # with mavros still up (unusual — prefer mission-owned bridge).
+                vision_params["mavlink_url"] = "udp:127.0.0.1:14540"
+            vision_pose_node = Node(
+                package="nectar",
+                executable="vision_pose_node.py",
+                name="vision_pose_node",
+                parameters=[vision_params],
+                output="screen",
+            )
+            actions.append(vision_pose_node)
 
     return actions
 
@@ -134,7 +185,32 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vision",
                 default_value="false",
-                description="Relay an external pose to PX4 EKF2 (indoor / GPS-denied)",
+                description="Indoor external-nav: gz_vision_source + optional "
+                "vision_pose_node (GPS-denied / EKF2 EV).",
+            ),
+            DeclareLaunchArgument(
+                "backend",
+                default_value="mavros",
+                description="vision_pose_node backend when vision:=true: "
+                "mavros | mavlink | dds. mavlink PROTOCOL usually leaves the "
+                "consumer to Px4MavlinkDrone (producer-only).",
+            ),
+            DeclareLaunchArgument(
+                "send_speed",
+                default_value="false",
+                description="Also feed VSLAM velocity (requires EKF2_EV_CTRL bit 2).",
+            ),
+            DeclareLaunchArgument(
+                "world_name",
+                default_value="indoor_room_px4",
+                description="Gazebo world name for PosePublisher topic "
+                "(/world/<name>/dynamic_pose/info).",
+            ),
+            DeclareLaunchArgument(
+                "model_name",
+                default_value="x500_nectar_0",
+                description="Gazebo model name for gz_vision_source (PX4 spawns "
+                "x500_nectar as x500_nectar_0).",
             ),
             DeclareLaunchArgument(
                 "gz_bridge",

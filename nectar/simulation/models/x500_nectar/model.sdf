@@ -158,5 +158,17 @@
       <child>lidar_sensor_link</child>
     </joint>
 
+    <!-- Ground-truth pose for indoor external-nav (gz_vision_source). Gazebo 8
+         requires PosePublisher on a model, not the world. 50 Hz for PX4 EKF2 EV. -->
+    <plugin filename="gz-sim-pose-publisher-system"
+      name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>false</publish_link_pose>
+      <publish_collision_pose>false</publish_collision_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_model_pose>true</publish_model_pose>
+      <publish_nested_model_pose>false</publish_nested_model_pose>
+      <update_frequency>50</update_frequency>
+    </plugin>
+
   </model>
 </sdf>
