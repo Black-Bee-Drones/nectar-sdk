@@ -257,9 +257,14 @@ def _launch_setup(context: LaunchContext) -> list:
             name="gz_pose_bridge",
             arguments=[
                 f"{gz_pose_topic}@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+                # The Pose_V -> TFMessage bridge drops the stamp, so the velocity
+                # emulation needs sim time from here to stay clock-consistent.
+                "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
             ],
             output="screen",
         )
+
+        vslam_odom_topic = "/visual_slam/tracking/odometry"
 
         gz_vision_source = Node(
             package="nectar",
@@ -269,6 +274,7 @@ def _launch_setup(context: LaunchContext) -> list:
                 {"model_name": "iris"},
                 {"gz_pose_topic": gz_pose_topic},
                 {"output_topic": vslam_topic},
+                {"odometry_topic": vslam_odom_topic},
             ],
             output="screen",
         )
@@ -283,6 +289,8 @@ def _launch_setup(context: LaunchContext) -> list:
                 parameters=[
                     {"backend": "mavros"},
                     {"input_topic": vslam_topic},
+                    {"send_speed": _truthy(LaunchConfiguration("send_speed").perform(context))},
+                    {"speed_topic": vslam_odom_topic},
                 ],
                 output="screen",
             )
@@ -326,6 +334,11 @@ def generate_launch_description():
                     "Indoor vision-pose pipeline: 'auto' (on for world:=indoor), "
                     "'true', or 'false'."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "send_speed",
+                default_value="false",
+                description="Also send VISION_SPEED_ESTIMATE from the emulated VSLAM twist.",
             ),
             DeclareLaunchArgument(
                 "resource_path",

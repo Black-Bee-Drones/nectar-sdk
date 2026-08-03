@@ -45,7 +45,7 @@
       name="gz::sim::systems::PosePublisher">
       <publish_model_pose>true</publish_model_pose>
       <publish_nested_model_pose>false</publish_nested_model_pose>
-      <update_frequency>30</update_frequency>
+      <update_frequency>50</update_frequency>
     </plugin>
 
     <!-- ── GUI — camera feeds + topic echo inside Gazebo window ──── -->
