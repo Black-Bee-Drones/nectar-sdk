@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 _LAZY_ATTRS = {
     "MavrosVisionRelay": "nectar.control.localization.vision_pose_bridge",
+    "MavrosVisionSpeedRelay": "nectar.control.localization.vision_pose_bridge",
 }
 
 
@@ -20,7 +21,10 @@ def __dir__():
 
 
 if TYPE_CHECKING:
-    from nectar.control.localization.vision_pose_bridge import MavrosVisionRelay
+    from nectar.control.localization.vision_pose_bridge import (
+        MavrosVisionRelay,
+        MavrosVisionSpeedRelay,
+    )
 
 
-__all__ = ["MavrosVisionRelay"]
+__all__ = ["MavrosVisionRelay", "MavrosVisionSpeedRelay"]

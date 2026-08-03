@@ -170,7 +170,9 @@ class PymavlinkTransport(VehicleTransport):
         )
 
         # Indoor: feed the EKF external nav (companion VSLAM pose -> FCU), since
-        # there is no MAVROS doing it. Started before the drone waits on sensors.
+        # there is no MAVROS doing it. Pose only — velocity still requires a
+        # separate vision_pose_node with send_speed:=true (do not also run
+        # backend:=mavlink vision_pose_node on the same link: one feeder rule).
         if self._pose_source == PoseSource.VISION:
             from nectar.control.mavlink.vision_bridge import VisionPoseBridge
 

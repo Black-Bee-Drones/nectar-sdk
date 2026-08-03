@@ -154,10 +154,11 @@
     tf.rate_limit: 10.0
 
 # vision_speed_estimate
-/**/vision_speed:
-  ros__parameters:
-    listen_twist: true    # enable listen to twist topic, else listen to vec3d topic
-    twist_cov: true       # enable listen to twist with covariance topic
+# The ROS 2 plugin takes no parameters: it always subscribes ~/speed_twist,
+# ~/speed_twist_cov and ~/speed_vector, and converts ENU -> NED before sending
+# VISION_SPEED_ESTIMATE. The listen_twist / twist_cov keys were ROS 1 only.
+# Nectar publishes on ~/speed_twist when vision_pose.launch.py runs with
+# send_speed:=true
 
 # camera
 /**/camera:

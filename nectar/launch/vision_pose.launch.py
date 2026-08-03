@@ -8,17 +8,22 @@ the VSLAM pose reaches the FCU:
     backend:=dds      publish px4_msgs/VehicleOdometry on
                       /fmu/in/vehicle_visual_odometry (PX4 native uXRCE-DDS)
 
+send_speed:=true additionally feeds the VSLAM velocity to the estimator; it only
+does anything once the FCU is configured to fuse it
+
 Usage::
 
     ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
     ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14551
     ros2 launch nectar vision_pose.launch.py backend:=dds
+    ros2 launch nectar vision_pose.launch.py backend:=mavros send_speed:=true
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from launch_xml.launch_description_sources import XMLLaunchDescriptionSource
 
@@ -43,6 +48,8 @@ def generate_launch_description():
     mavlink_url = LaunchConfiguration("mavlink_url")
     odometry_topic = LaunchConfiguration("odometry_topic")
     px4_namespace = LaunchConfiguration("px4_namespace")
+    send_speed = ParameterValue(LaunchConfiguration("send_speed"), value_type=bool)
+    speed_topic = LaunchConfiguration("speed_topic")
 
     cfg = os.path.join(get_package_share_directory("nectar"), "control", "mavros", "config")
     pluginlists = os.path.join(cfg, "indoor_pluginlists.yaml")
@@ -75,7 +82,14 @@ def generate_launch_description():
         name="vision_pose_node",
         output="screen",
         condition=is_mavros,
-        parameters=[{"backend": "mavros", "input_topic": input_topic}],
+        parameters=[
+            {
+                "backend": "mavros",
+                "input_topic": input_topic,
+                "send_speed": send_speed,
+                "speed_topic": speed_topic,
+            }
+        ],
     )
 
     bridge_mavlink = Node(
@@ -89,6 +103,8 @@ def generate_launch_description():
                 "backend": "mavlink",
                 "input_topic": input_topic,
                 "mavlink_url": mavlink_url,
+                "send_speed": send_speed,
+                "speed_topic": speed_topic,
             }
         ],
     )
@@ -105,6 +121,8 @@ def generate_launch_description():
                 "input_topic": input_topic,
                 "odometry_topic": odometry_topic,
                 "px4_namespace": px4_namespace,
+                "send_speed": send_speed,
+                "speed_topic": speed_topic,
             }
         ],
     )
@@ -126,6 +144,8 @@ def generate_launch_description():
                 "odometry_topic", default_value="/fmu/in/vehicle_visual_odometry"
             ),
             DeclareLaunchArgument("px4_namespace", default_value=""),
+            DeclareLaunchArgument("send_speed", default_value="false"),
+            DeclareLaunchArgument("speed_topic", default_value="/visual_slam/tracking/odometry"),
             mavros_include,
             bridge_mavros,
             bridge_mavlink,
