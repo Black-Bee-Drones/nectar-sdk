@@ -1,5 +1,12 @@
 # Localization (control/localization)
 
+## Documentation Index
+
+| Doc | Scope |
+|-----|-------|
+| This README | Architecture, backends, FCU setup, SITL, RViz |
+| [flight.md](flight.md) | Indoor flight command card (Jetson + bridge + `vision_fcu_check` + RViz) |
+
 ## Role
 
 External-navigation integration for GPS-denied (indoor) flight. Feeds a Visual
