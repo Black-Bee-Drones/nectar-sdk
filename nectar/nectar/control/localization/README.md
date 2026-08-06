@@ -4,8 +4,10 @@
 
 | Doc | Scope |
 |-----|-------|
-| This README | Architecture, backends, FCU setup, SITL, RViz |
-| [flight.md](flight.md) | Indoor flight command card (Jetson + bridge + `vision_fcu_check` + RViz) |
+| This README | Architecture, Run commands, backends, FCU setup, SITL, RViz |
+| [concepts.md](concepts.md) | SLAM / VIO / V-SLAM theory, math, FCU fusion, T265 vs cuVSLAM |
+| [flight.md](flight.md) | Practical indoor SOP: mounting, warm-up, preflight, triage |
+| [legacy.md](legacy.md) | 2023–2024 T265 + `vision_to_mavros` history and versions |
 
 ## Role
 
@@ -148,8 +150,7 @@ It is only fused once the source is selected:
   two independent ones.
 - PX4: `EKF2_EV_CTRL` bit 2 enables 3D velocity fusion.
 
-Check `XKFS`/`XKF3` innovations in the logs before and after enabling; leave it
-off if Loiter does not improve.
+Check `XKFS`/`XKF3` innovations in the logs before and after enabling
 
 ## FCU setup
 
@@ -303,6 +304,10 @@ See [simulation README](../../../../simulation/README.md) for the full matrix.
 
 ## Visualization
 
+Path overlays show the **SLAM / odometry estimate** so you can judge tracking
+quality and loop closure — they are not a calibration step. Warm-up motion and
+day-of-flight checks are in [Indoor flight](flight.md#visualization-and-map-warm-up).
+
 Pre-flight check from the laptop (same `ROS_DOMAIN_ID` as the Jetson): move the
 drone by hand and confirm the pose tracks, is low-noise, and that the path snaps
 back on return (loop closure). NVIDIA recommends running RViz on a remote PC, not
@@ -354,26 +359,22 @@ nectar-vslam enable_visualization:=true
 
 ## Hardware notes
 
-Current rig: Intel RealSense **D435i** + **Isaac ROS Visual SLAM (cuVSLAM)** on a
-Jetson Orin; pose output ~90 Hz. This is the producer the launch files target
-(`make isaac-run` to build/enter the Isaac container, then `nectar-vslam` to
-start the camera and SLAM; the bridge runs in a second terminal).
+**Current:** Intel RealSense **D435i** + **Isaac ROS Visual SLAM (cuVSLAM)** on a
+Jetson Orin Nano; pose ~90 Hz. Producer: `make isaac-run` then `nectar-vslam`;
+consumer: [Run](#run). Procedure: [Indoor flight](flight.md).
 
-Legacy / fallback: Intel RealSense **T265** +
-[`vision_to_mavros`](https://github.com/Black-Bee-Drones/vision_to_mavros) (our
-ROS 2 port of [thien94/vision_to_mavros](https://github.com/thien94/vision_to_mavros)),
-which aligns the T265 `/tf` to ENU and publishes `/mavros/vision_pose/pose`
-(`VISO_TYPE=2`). Black Bee flew the T265 in 2023 (3rd place indoor at IMAV 2023,
-our first indoor drone). We moved to the D435i + cuVSLAM after 2024: the T265 is
-discontinued and needs legacy `librealsense`/`realsense-ros`, is sensitive to
-vibration and to the environment, and a crash that cracked its lens cover left it
-tracking less reliably. The T265 path still works and remains a fallback. The
-companion-side setup we started from is LuckyBird's T265 series
-([part 1](https://discuss.ardupilot.org/t/integration-of-ardupilot-and-vio-tracking-camera-part-1-getting-started-with-the-intel-realsense-t265-on-rasberry-pi-3b/43162))
-and the ArduPilot [ROS VIO](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
-and [Intel T265](https://ardupilot.org/copter/docs/common-vio-tracking-camera.html) pages.
+**Legacy / fallback:** RealSense **T265** +
+[`vision_to_mavros`](https://github.com/Black-Bee-Drones/vision_to_mavros)
+(`VISO_TYPE=2`). Full history, versions, and bring-up:
+[Legacy T265](legacy.md). Conceptual comparison:
+[Concepts](concepts.md#two-systems-we-use).
 
 ## References
 
+Module theory and a fuller bibliography: [Concepts → References](concepts.md#references).
+
 - [Isaac ROS Visual SLAM (isaac_ros_visual_slam)](https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_visual_slam/isaac_ros_visual_slam/index.html)
+- [cuVSLAM](https://nvidia-isaac-ros.github.io/concepts/visual_slam/cuvslam/index.html)
 - [Isaac ROS Development Environment](https://nvidia-isaac-ros.github.io/v/release-3.2/concepts/docker_devenv/index.html)
+- [ArduPilot: Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html)
+- [PX4: External Position Estimation](https://docs.px4.io/main/en/ros/external_position_estimation.html)

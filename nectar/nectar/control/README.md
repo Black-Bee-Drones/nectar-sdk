@@ -13,7 +13,10 @@ Protocol-based drone control for ROS 2. `DroneFactory` builds a drone by key beh
 | [PX4](px4/README.md) | PX4 specialization: OFFBOARD setpoint streaming, AUTO.LAND/RTL; MAVROS / direct-MAVLink / uXRCE-DDS backends |
 | [MAVROS transport](mavros/README.md) | MAVROS transport (`MavrosDrone`, `Px4MavrosDrone`) |
 | [MAVLink transport](mavlink/README.md) | Firmware-neutral pymavlink transport (`MavlinkDrone`, `Px4MavlinkDrone`) |
-| [Localization](localization/README.md) | Indoor VSLAM external-nav: Isaac producer + vision-pose bridge |
+| [Localization](localization/README.md) | Indoor VSLAM external-nav: architecture and commands |
+| [Localization concepts](localization/concepts.md) | SLAM / VIO / V-SLAM theory and FCU fusion |
+| [Indoor flight](localization/flight.md) | Practical indoor SOP (D435i + cuVSLAM) |
+| [Legacy T265](localization/legacy.md) | T265 + `vision_to_mavros` history |
 | [Obstacles](obstacles/README.md) | Obstacle detection + avoidance strategies |
 | [PID](pid/README.md) | PID controller and tuning |
 | [Bebop](bebop/README.md) | Parrot Bebop 2 (`BebopDrone`) |

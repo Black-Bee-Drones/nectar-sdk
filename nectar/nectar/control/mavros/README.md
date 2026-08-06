@@ -151,10 +151,10 @@ MAVROS command services report [MAVLink MAV_RESULT](https://mavlink.io/en/messag
 
 With MAVROS, the FCU's EKF (ArduPilot EKF3 / PX4 EKF2) receives external navigation through MAVROS' own vision plugin: an external pose source publishes to `/mavros/vision_pose/pose_cov` (or `/pose`), and MAVROS converts ENU→NED and sends [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) to the FCU. The transport only **subscribes** to the same topic to expose `vision_pose` for companion-side PID navigation.
 
-- **D435i + Isaac ROS Visual SLAM** (current): `D435i → isaac_ros_visual_slam → relay → /mavros/vision_pose/pose_cov`
-- **T265 + [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)** (legacy/fallback): `T265 VIO → /tf → vision_to_mavros (ENU alignment) → /mavros/vision_pose/pose`
+- **D435i + Isaac ROS Visual SLAM** (current): `D435i → isaac_ros_visual_slam → relay → /mavros/vision_pose/pose_cov` — [Localization](../localization/README.md), [Indoor flight](../localization/flight.md)
+- **T265 + [vision_to_mavros](https://github.com/Black-Bee-Drones/vision_to_mavros)** (legacy/fallback): `T265 VIO → /tf → vision_to_mavros (ENU alignment) → /mavros/vision_pose/pose` — [Legacy T265](../localization/legacy.md)
 
-Per-firmware FCU parameters (sources, rate, height source) and the EKF-origin step are documented in [Localization → FCU setup](../localization/README.md#fcu-setup) (ArduPilot EKF-origin detail: [EKF Origin](../ardupilot/README.md#ekf-origin-indoor-requirement)). The direct [MAVLink transport](../mavlink/README.md) replaces this MAVROS relay with a built-in `VisionPoseBridge`.
+Per-firmware FCU parameters (sources, rate, height source) and the EKF-origin step are documented in [Localization → FCU setup](../localization/README.md#fcu-setup) (ArduPilot EKF-origin detail: [EKF Origin](../ardupilot/README.md#ekf-origin-indoor-requirement)). Theory: [Concepts](../localization/concepts.md). The direct [MAVLink transport](../mavlink/README.md) replaces this MAVROS relay with a built-in `VisionPoseBridge`.
 
 ## References
 
