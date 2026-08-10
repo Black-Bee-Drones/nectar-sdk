@@ -6,8 +6,8 @@ Raspberry Pi), MAVROS, and [`vision_to_mavros`](https://github.com/Black-Bee-Dro
 
 This page is for understanding older logs, fallback hardware, and how the
 current Nectar bridge evolved. For the **current** stack, use the
-[Localization README](README.md) and [Indoor flight](flight.md). Concepts:
-[Concepts](concepts.md).
+[Localization README](README.md) ([indoor procedure](README.md#indoor-procedure),
+[EKF origin](README.md#ekf-origin)). Concepts: [Concepts](concepts.md).
 
 ## Timeline
 
@@ -112,8 +112,9 @@ page and team bring-up notes:
 | `GPS1_TYPE` | `0` | Optional: disable GPS indoors |
 | Serial to companion | e.g. `SERIAL2_PROTOCOL=2`, `SERIAL2_BAUD=921` | MAVLink to the RPi (port depends on wiring) |
 
-Reboot the FCU after changing these. Set **EKF origin** in the GCS before
-position modes (same requirement as today).
+Reboot the FCU after changing these. On ArduPilot with no GPS fix, set **EKF
+origin** before position modes — same rules as today
+([EKF origin](README.md#ekf-origin)).
 
 ## Historical bring-up (ROS 2 era)
 
@@ -127,12 +128,14 @@ Summarized public procedure (LuckyBird + team ROS 2 adaptation):
    `t265_tf_to_mavros_launch.py`) as in LuckyBird part 2.
 4. Verify `/mavros/vision_pose/pose` rate (~30 Hz) and
    `VISION_POSITION_ESTIMATE` in the GCS MAVLink Inspector.
-5. Set EKF origin on the map.
+5. Set EKF origin on the map when ArduPilot has no GPS-derived origin
+   ([EKF origin](README.md#ekf-origin)).
 6. **Scale check:** lift the vehicle ~**1 m** and set it down again (ArduPilot /
    team guidance for T265 vertical scale), then hand-move and confirm the GCS
    icon tracks.
 7. First flight: Stabilize/AltHold → gentle motion → Loiter with immediate
-   revert if tracking fails — same pattern as [Indoor flight](flight.md#first-flight).
+   revert if tracking fails — same pattern as
+   [Indoor procedure](README.md#indoor-procedure).
 
 ROS 1 used `roslaunch` equivalents (`rs_t265.launch`,
 `t265_tf_to_mavros.launch`, `t265_all_nodes.launch`); the graph was the same.
@@ -141,7 +144,8 @@ ROS 1 used `roslaunch` equivalents (`rs_t265.launch`,
 
 **Still true today**
 
-- EKF origin required without GPS.
+- ArduPilot: EKF origin required when no GPS provides a fix (unless 4.7+
+  recorded-origin restore is enabled) — [EKF origin](README.md#ekf-origin).
 - Hand-move / GCS icon check before Loiter.
 - Soft-mount and vibration care.
 - One vision feeder into the FCU.

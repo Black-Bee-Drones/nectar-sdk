@@ -3,8 +3,9 @@
 Foundations for GPS-denied (indoor) flight with external visual navigation.
 This page explains **what** SLAM / VIO / V-SLAM are and **how** the flight
 controller fuses that pose. For SDK commands and FCU parameter tables, see the
-[Localization README](README.md). For day-of-flight procedure, see
-[Indoor flight](flight.md). For the older T265 path, see [Legacy T265](legacy.md).
+[Localization README](README.md) (including [indoor procedure](README.md#indoor-procedure)
+and [EKF origin](README.md#ekf-origin)). For the older T265 path, see
+[Legacy T265](legacy.md).
 
 > Sections marked *Black Bee practice* are operational guidance from our flights.
 > Everything else is grounded in the cited vendor and firmware documentation.
@@ -22,9 +23,11 @@ Two consequences follow:
 
 1. **Someone must produce a pose** — a visual-inertial tracker or V-SLAM stack
    on the companion (or on a dedicated tracking camera).
-2. **Someone must set the EKF origin** when no GPS is attached, otherwise the
-   filter has no world frame to express position in. See
-   [FCU setup](README.md#fcu-setup) and
+2. **On ArduPilot, someone must set the EKF origin** when no GPS provides a
+   fix (or rely on 4.7+ recorded-origin restore, or
+   `set_ekf_origin:=true` on the vision feeder); PX4 local EV fusion does not
+   need that for Position-style modes. Detail:
+   [EKF origin](README.md#ekf-origin),
    [vehicle coordinate frames](../vehicle/README.md#coordinate-frames).
 
 Nectar's localization module is the **bridge**: it takes a ROS pose from the
@@ -62,7 +65,8 @@ pipeline on-device and published pose / TF (now discontinued; see
 RViz path overlays (green SLAM path vs purple VO path in our light profile)
 **visualize the estimate**. They are not a calibration step. Warm-up motion
 that builds map coverage is still useful — that is operational practice, not
-sensor extrinsic calibration. See [Indoor flight](flight.md#visualization-and-map-warm-up).
+sensor extrinsic calibration. See [Indoor procedure](README.md#indoor-procedure)
+and [Visualization](README.md#visualization).
 
 ## Basic mathematics
 
@@ -144,7 +148,7 @@ Monocular VO has an unobservable metric scale; stereo and VIO (with IMU
 excitation) make scale observable. Stereo RealSense infra pairs and IMU-aided
 pipelines are the usual indoor choices for metric Loiter. Historically, T265
 bring-up guidance included lifting the vehicle ~1 m before flight so vertical
-motion exercised scale — see [Indoor flight](flight.md#scale-and-vertical-check)
+motion exercised scale — see [Indoor procedure](README.md#indoor-procedure)
 and [Legacy T265](legacy.md).
 
 ## VIO / V-SLAM components
@@ -198,8 +202,8 @@ flowchart LR
    SLAM).
 2. Bridge converts frames if needed and forwards to the FCU
    ([Backends](README.md#backends)).
-3. EKF fuses when sources and origin are configured
-   ([FCU setup](README.md#fcu-setup)).
+3. EKF fuses when sources are configured (and origin, when required —
+   [FCU setup](README.md#fcu-setup), [EKF origin](README.md#ekf-origin)).
 4. Position modes (Loiter, GUIDED, OFFBOARD) use the fused local pose — the
    same pose the vehicle core reads for indoor `PoseSource.VISION` navigation.
 
@@ -219,8 +223,7 @@ Exactly **one** process may feed vision into the FCU at a time
 | **Status** | Discontinued camera; fallback | Current indoor path |
 
 Detail for the old stack: [Legacy T265](legacy.md).
-Detail for running the new stack: [Localization README](README.md) and
-[Indoor flight](flight.md).
+Detail for running the new stack: [Localization README](README.md).
 
 ## References
 

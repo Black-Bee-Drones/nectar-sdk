@@ -67,9 +67,9 @@ For ArduPilot and PX4 the **environment** selects the pose source on the config:
 
 !!! note "Indoor flight"
     A vision-pose feed into the FCU's EKF is required indoors; see
-    [Localization](../modules/control/localization.md) (architecture) and
-    [Indoor flight](../modules/control/localization-flight.md) (procedure).
-    Bebop and Crazyflie fly indoors without GPS and ignore this setting.
+    [Localization](../modules/control/localization/) (architecture, Run,
+    EKF origin, indoor procedure). Bebop and Crazyflie fly indoors without GPS
+    and ignore this setting.
 
 ## 3. Start the driver
 
@@ -313,7 +313,6 @@ vision pose source):
   capabilities, and the full backend matrix.
 - [Vehicle core](../modules/control/vehicle.md) · [Transports](../modules/control/mavlink.md) ·
   [PID tuning](../modules/control/pid.md) · [Obstacles](../modules/control/obstacles.md) ·
-  [Localization](../modules/control/localization.md) ·
-  [Indoor flight](../modules/control/localization-flight.md).
+  [Localization](../modules/control/localization/).
 - [Control examples](../modules/examples/control.md): navigation suite, interactive REPL,
   servo test.

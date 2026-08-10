@@ -40,9 +40,8 @@ over MAVROS or direct MAVLink.
 
 | Doc | Scope |
 |-----|-------|
-| [Localization](../../nectar/nectar/control/localization/README.md) | Architecture, Run, FCU params, backends |
+| [Localization](../../nectar/nectar/control/localization/README.md) | Architecture, Run, FCU, EKF origin, indoor SOP |
 | [Concepts](../../nectar/nectar/control/localization/concepts.md) | SLAM / VIO / V-SLAM theory |
-| [Indoor flight](../../nectar/nectar/control/localization/flight.md) | Practical SOP |
 | [Legacy T265](../../nectar/nectar/control/localization/legacy.md) | T265 + `vision_to_mavros` |
 
 The Isaac producer runs in its own container (`make isaac-run`). See the

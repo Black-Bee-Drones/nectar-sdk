@@ -175,10 +175,9 @@ nav:
           - MAVROS transport: modules/control/mavros.md
           - MAVLink transport: modules/control/mavlink.md
           - Localization:
-              - Overview: modules/control/localization.md
-              - Concepts: modules/control/localization-concepts.md
-              - Indoor flight: modules/control/localization-flight.md
-              - Legacy T265: modules/control/localization-legacy.md
+              - modules/control/localization/index.md
+              - Concepts: modules/control/localization/concepts.md
+              - Legacy T265: modules/control/localization/legacy.md
           - Obstacles: modules/control/obstacles.md
           - PID: modules/control/pid.md
           - Bebop: modules/control/bebop.md

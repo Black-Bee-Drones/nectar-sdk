@@ -121,7 +121,10 @@ The SDK's `MoveReference` enum maps to a wire `TargetFrame`:
 | **WORLD** | LOCAL (FRAME_LOCAL_NED) | vx=east, vy=north, vz=up (absolute directions) |
 | **TAKEOFF** | BODY (FRAME_BODY_NED) | Velocities in takeoff heading, rotated to current body frame |
 
-> **Note:** the EKF local frame needs an origin — outdoors GPS sets it automatically; indoors it must be set manually before flight (firmware-specific — see [ArduPilot](../ardupilot/README.md#ekf-origin-indoor-requirement)). Without it, the local pose is not published and `FRAME_LOCAL_NED` commands won't work.
+> **Note:** the EKF local frame needs an origin — outdoors GPS usually sets it;
+> indoors without a GPS fix ArduPilot needs a manual (or 4.7+ recorded) origin
+> before local pose / `FRAME_LOCAL_NED` commands work. Detail:
+> [Localization → EKF origin](../localization/README.md#ekf-origin).
 
 ## Distance Sensors
 
