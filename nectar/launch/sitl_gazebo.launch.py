@@ -1,8 +1,9 @@
 """
-Gazebo + MAVROS launch for ArduPilot SITL.
+Gazebo launch for ArduPilot SITL.
 
-Starts Gazebo Harmonic with an ArduPilot-enabled world (iris + Nectar cameras)
-and MAVROS. Mission packages supply scenery only; Nectar owns the vehicle stack.
+Starts Gazebo Harmonic with an ArduPilot-enabled world (iris + Nectar cameras).
+Direct MAVLink is the default (mavros:=false); set mavros:=true for MAVROS.
+Mission packages supply scenery only; Nectar owns the vehicle stack.
 
 World modes:
     - world:=outdoor / indoor — compose from vehicle templates + stock scenery
@@ -281,6 +282,9 @@ def _launch_setup(context: LaunchContext) -> list:
 
         actions.extend([gz_pose_bridge, gz_vision_source])
 
+        # mavros: feeder via MAVROS on SERIAL0; else vision_pose_node on SERIAL0,
+        # mission uses SERIAL1 (see MAVLINK_SITL_VISION_CONFIG).
+        send_speed = _truthy(LaunchConfiguration("send_speed").perform(context))
         if use_mavros:
             vision_pose_node = Node(
                 package="nectar",
@@ -289,7 +293,22 @@ def _launch_setup(context: LaunchContext) -> list:
                 parameters=[
                     {"backend": "mavros"},
                     {"input_topic": vslam_topic},
-                    {"send_speed": _truthy(LaunchConfiguration("send_speed").perform(context))},
+                    {"send_speed": send_speed},
+                    {"speed_topic": vslam_odom_topic},
+                ],
+                output="screen",
+            )
+            actions.append(vision_pose_node)
+        else:
+            vision_pose_node = Node(
+                package="nectar",
+                executable="vision_pose_node.py",
+                name="vision_pose_node",
+                parameters=[
+                    {"backend": "mavlink"},
+                    {"input_topic": vslam_topic},
+                    {"mavlink_url": "tcp:127.0.0.1:5760"},
+                    {"send_speed": send_speed},
                     {"speed_topic": vslam_odom_topic},
                 ],
                 output="screen",
@@ -355,10 +374,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "mavros",
-                default_value="true",
+                default_value="false",
                 description=(
-                    "Start MAVROS (true) or only Gazebo physics (false) for "
-                    "direct MAVLink control via MavlinkDrone"
+                    "Start MAVROS (true) or only Gazebo + vision feeder (false) "
+                    "for direct MAVLink control via MavlinkDrone"
                 ),
             ),
             DeclareLaunchArgument(

@@ -99,12 +99,8 @@ def _launch_setup(context: LaunchContext) -> list:
         )
         actions.append(gz_bridge_node)
 
-    # Indoor external-nav: Gazebo GT → canonical VSLAM topics → FCU (same pattern
-    # as sitl_gazebo.launch.py indoor). PosePublisher on x500_nectar feeds
-    # /world/<world>/dynamic_pose/info (Pose_V). PX4 names the spawned model
-    # ``x500_nectar_0``. Producer always runs; the consumer node is started for
-    # mavros/dds. For mavlink, Px4MavlinkDrone's VisionPoseBridge is the single
-    # feeder (avoid double-feeding the EKF).
+    # Indoor: GT → VSLAM topics. Consumer for mavros/dds via vision_pose_node;
+    # mavlink leaves feed to the mission (single PX4 offboard UDP).
     if use_vision:
         gz_pose_topic = f"/world/{world_name}/dynamic_pose/info"
         vslam_topic = "/visual_slam/tracking/vo_pose_covariance"
@@ -138,7 +134,6 @@ def _launch_setup(context: LaunchContext) -> list:
 
         start_consumer = backend in ("mavros", "dds")
         if backend == "mavros" and not use_mavros:
-            # Producer-only when MAVROS is off (mavlink PROTOCOL path).
             start_consumer = False
         if start_consumer:
             vision_params = {
@@ -147,10 +142,6 @@ def _launch_setup(context: LaunchContext) -> list:
                 "send_speed": send_speed,
                 "speed_topic": vslam_odom_topic,
             }
-            if backend == "mavlink":
-                # SITL offboard API; only used if someone forces backend:=mavlink
-                # with mavros still up (unusual — prefer mission-owned bridge).
-                vision_params["mavlink_url"] = "udp:127.0.0.1:14540"
             vision_pose_node = Node(
                 package="nectar",
                 executable="vision_pose_node.py",

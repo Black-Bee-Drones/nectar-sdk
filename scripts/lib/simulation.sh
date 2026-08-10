@@ -18,6 +18,15 @@ _source_ros_env() {
     if [ -f "${WORKSPACE_DIR}/install/setup.bash" ]; then
         source "${WORKSPACE_DIR}/install/setup.bash"
     fi
+    # ros2 launch console_scripts use #!/usr/bin/python3 (system interpreter),
+    # so expose the shared uv venv site-packages (pymavlink, etc.) via PYTHONPATH.
+    if [ -x "${NECTAR_VENV}/bin/python" ]; then
+        local _nectar_sp
+        _nectar_sp="$("${NECTAR_VENV}/bin/python" -c 'import site; print(":".join(site.getsitepackages()))' 2>/dev/null || true)"
+        if [ -n "${_nectar_sp}" ]; then
+            export PYTHONPATH="${_nectar_sp}${PYTHONPATH:+:${PYTHONPATH}}"
+        fi
+    fi
 }
 
 # ── Unified simulation CLI ──────────────────────────────────────────────────
@@ -25,16 +34,17 @@ _source_ros_env() {
 # autopilot SITL and the ROS stack are separate processes), so it is made
 # symmetric:
 #   sim-start  = Terminal 1: the simulator (ArduPilot SITL; for PX4 also Gazebo)
-#   sim-bridge = Terminal 2: the ROS stack (Gazebo+MAVROS for ArduPilot; MAVROS
-#                for PX4). ENV must match between the two terminals.
+#   sim-bridge = Terminal 2: the ROS stack (Gazebo + bridges for ArduPilot;
+#                MAVROS / DDS / camera bridge for PX4). ENV must match between
+#                the two terminals.
 #
-# Axes (defaults): FIRMWARE=ardupilot  ENV=outdoor  PROTOCOL=mavros
+# Axes (defaults): FIRMWARE=ardupilot  ENV=outdoor  PROTOCOL=mavlink
 # Any non-flag tokens are forwarded to the underlying script/launch (ARGS=...).
 
 _sim_parse() {
     _SIM_FIRMWARE="ardupilot"
     _SIM_ENV="outdoor"
-    _SIM_PROTOCOL="mavros"
+    _SIM_PROTOCOL="mavlink"
     _SIM_EXTRA=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -157,9 +167,7 @@ cmd_sim_bridge() {
                     fi
                     ;;
                 mavlink)
-                    # Direct-pymavlink (drone "px4_mavlink"): the drone connects
-                    # to UDP 14540 itself, so skip MAVROS. Indoor still needs the
-                    # gz_vision_source producer; VisionPoseBridge is the feeder.
+                    # px4_mavlink: mission owns UDP 14540. Indoor: producer only.
                     if [ "$_SIM_ENV" = "indoor" ]; then
                         ros2 launch nectar px4_sitl.launch.py \
                             vision:=true mavros:=false gz_bridge:=true \

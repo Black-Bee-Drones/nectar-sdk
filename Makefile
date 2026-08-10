@@ -121,7 +121,7 @@ format:             ; @cd nectar && ruff format .
 # with make variables; both firmwares follow the same two-terminal pattern.
 #   FIRMWARE = ardupilot | px4         (sim-install also accepts: all)
 #   ENV      = outdoor   | indoor
-#   PROTOCOL = mavros    | mavlink     (mavlink is ArduPilot-only; px4 also: dds)
+#   PROTOCOL = mavlink   | mavros      (mavlink default; px4 also: dds)
 #   ARGS     = extra tokens forwarded to the underlying script/launch
 #
 # Example:
@@ -129,7 +129,7 @@ format:             ; @cd nectar && ruff format .
 #   make sim-bridge FIRMWARE=px4 ENV=outdoor          # Terminal 2
 FIRMWARE ?= ardupilot
 ENV      ?= outdoor
-PROTOCOL ?= mavros
+PROTOCOL ?= mavlink
 
 sim-install: ; @$(SETUP) sim-install --firmware $(FIRMWARE) $(ARGS)
 sim-start:   ; @$(SETUP) sim-start --firmware $(FIRMWARE) --env $(ENV) $(ARGS)

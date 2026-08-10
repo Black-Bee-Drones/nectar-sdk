@@ -14,9 +14,12 @@ does anything once the FCU is configured to fuse it
 Usage::
 
     ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
-    ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14551
+    ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14552
     ros2 launch nectar vision_pose.launch.py backend:=dds
     ros2 launch nectar vision_pose.launch.py backend:=mavros send_speed:=true
+
+``mavlink_url`` is any pymavlink endpoint (override the default). Use a dedicated
+link from the mission process (see localization README: one feeder rule).
 """
 
 import os
@@ -139,7 +142,7 @@ def generate_launch_description():
             DeclareLaunchArgument("tgt_system", default_value="1"),
             DeclareLaunchArgument("tgt_component", default_value="1"),
             DeclareLaunchArgument("namespace", default_value="mavros"),
-            DeclareLaunchArgument("mavlink_url", default_value="udp:127.0.0.1:14551"),
+            DeclareLaunchArgument("mavlink_url", default_value="udp:127.0.0.1:14552"),
             DeclareLaunchArgument(
                 "odometry_topic", default_value="/fmu/in/vehicle_visual_odometry"
             ),
