@@ -16,7 +16,7 @@ nectar.spin()
 nectar.shutdown()
 ```
 
-Need a single frame instead of a stream?
+Single frame (no stream):
 
 ```python
 from nectar.vision import CameraFactory

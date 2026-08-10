@@ -1,4 +1,4 @@
-# Detect & segment & classify
+# Detect, segment & classify
 
 Run object detection, instance segmentation, or image classification across Ultralytics
 YOLO, HuggingFace Transformers, and RF-DETR (detect/seg only) behind one
@@ -143,7 +143,7 @@ End-to-end workflows in Google Colab:
 - **Classification:** [Open in Colab](https://colab.research.google.com/drive/1mEo05wfYJRsuxKodxbFwBuxRSRh43f-X?usp=sharing)
 - **Segmentation:** [Open in Colab](https://colab.research.google.com/drive/1qZzAF_iD2sZyuWPin48XpxaY6dtak_gV?usp=sharing)
 
-## Go deeper
+## See also
 
 - [AI overview](../modules/ai/index.md) · [Detection](../modules/ai/detection.md) ·
   [Segmentation](../modules/ai/segmentation.md) · [Classification](../modules/ai/classification.md).

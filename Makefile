@@ -153,16 +153,34 @@ driver-stop:      ; @$(SETUP) driver-stop
 # Full setup from zero
 full-install:       ; @$(SETUP) full-install
 
-# Documentation site (Zensical). Edit website/ (authored pages), the module
-# READMEs, and docs/*.md; everything generated is assembled under build/.
-# Mermaid diagrams are rendered natively by Zensical (client-side, theme-aware).
+# Documentation site (Zensical). Edit website/ (authored EN pages), i18n/pt/
+# (Portuguese), the module READMEs, and docs/*.md; everything generated is
+# under build/. Mermaid is rendered client-side by Zensical.
 #   make docs-install   create .venv-docs and install the Python doc toolchain
-#   make docs-sync      assemble build/docs/ from website/ + READMEs + docs/*.md
-#   make docs           sync, then compile the HTML into build/site/
-#   make docs-serve     sync, then live preview at http://localhost:8000
-.PHONY: docs-install docs-sync docs docs-serve
+#   make docs-sync      assemble build/docs/ (EN) and build/docs-pt/ (PT)
+#   make docs           sync, build EN + PT, merge PT into build/site/pt/
+#   make docs-serve     full bilingual build, then serve at
+#                       http://localhost:8000/nectar-sdk/  (and .../pt/)
+#   make docs-serve-en  English-only live reload (language switcher 404s for PT)
+.PHONY: docs-install docs-sync docs docs-serve docs-serve-en
 DOCS_VENV := .venv-docs
-docs-install: ; @[ -d $(DOCS_VENV) ] || uv venv $(DOCS_VENV); uv pip install --python $(DOCS_VENV)/bin/python -r scripts/docs/requirements.txt
-docs-sync:    ; @$(DOCS_VENV)/bin/python scripts/docs/sync_readmes.py
-docs:         ; @$(MAKE) docs-sync && $(DOCS_VENV)/bin/zensical build --clean
-docs-serve:   ; @$(MAKE) docs-sync && $(DOCS_VENV)/bin/zensical serve
+# Absolute paths: docs-serve cds into build/serve/, so relative .venv-docs breaks.
+DOCS_PYTHON := $(CURDIR)/$(DOCS_VENV)/bin/python
+DOCS_ZENSICAL := $(CURDIR)/$(DOCS_VENV)/bin/zensical
+docs-install:
+	@[ -d $(DOCS_VENV) ] || uv venv $(DOCS_VENV)
+	@uv pip install --python $(DOCS_PYTHON) -r scripts/docs/requirements.txt
+docs-sync:
+	@$(DOCS_PYTHON) scripts/docs/sync_readmes.py
+	@$(DOCS_PYTHON) scripts/docs/sync_i18n.py
+docs: docs-sync
+	@$(DOCS_ZENSICAL) build --clean -f mkdocs.yml
+	@$(DOCS_ZENSICAL) build --clean -f mkdocs.pt.yml
+	@rm -rf build/site/pt && mkdir -p build/site/pt && cp -a build/site-pt/. build/site/pt/
+docs-serve: docs
+	@rm -rf build/serve && mkdir -p build/serve/nectar-sdk
+	@cp -a build/site/. build/serve/nectar-sdk/
+	@echo "Bilingual docs: http://localhost:8000/nectar-sdk/  and  http://localhost:8000/nectar-sdk/pt/"
+	@cd $(CURDIR)/build/serve && $(DOCS_PYTHON) -m http.server 8000
+docs-serve-en: docs-sync
+	@$(DOCS_ZENSICAL) serve -f mkdocs.yml
