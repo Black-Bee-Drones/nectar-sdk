@@ -28,7 +28,7 @@ class VisionPoseNode(Node):
         self.declare_parameter("output_topic", "/mavros/vision_pose/pose_cov")
         self.declare_parameter("frame_id", "")
 
-        self.declare_parameter("mavlink_url", "udp:127.0.0.1:14551")
+        self.declare_parameter("mavlink_url", "udp:127.0.0.1:14552")
         self.declare_parameter("mavlink_baud", 921600)
         self.declare_parameter("source_system", 1)
         self.declare_parameter("source_component", 191)
@@ -84,7 +84,17 @@ class VisionPoseNode(Node):
             self._speed_relay.start()
 
     def _start_mavlink(self) -> None:
-        from nectar.control.mavlink import MavlinkConnection, VisionPoseBridge, VisionSpeedBridge
+        try:
+            from nectar.control.mavlink import (
+                MavlinkConnection,
+                VisionPoseBridge,
+                VisionSpeedBridge,
+            )
+        except ImportError as exc:
+            raise ImportError(
+                "mavlink backend requires pymavlink — run `nectar-activate` "
+                "(or install the nectar venv) before launching vision_pose"
+            ) from exc
 
         url = self.get_parameter("mavlink_url").value
         baud = int(self.get_parameter("mavlink_baud").value)

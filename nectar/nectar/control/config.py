@@ -122,6 +122,10 @@ class _MavlinkLinkConfig(DroneConfig):
     heartbeat_hz: float = 1.0
     stream_rates: Optional[Dict[str, float]] = None
     vision_pose_topic: str = "/visual_slam/tracking/vo_pose_covariance"
+    # False: external vision_pose_node feeds the FCU; True: mission sends VISION_*.
+    auto_vision_feed: bool = False
+    vision_send_speed: bool = False
+    vision_speed_topic: str = "/visual_slam/tracking/odometry"
     pid_config_file: Optional[str] = None
     # Setpoint speed/accel/jerk limits (WPNAV on ArduPilot, MPC_* on PX4).
     # Applied to the FCU when apply_setpoint_params=True.
@@ -238,7 +242,10 @@ MAVLINK_SITL_VISION_CONFIG = MavlinkConfig(
     expect_lidar=False,
     vision_pose_topic="/visual_slam/tracking/vo_pose_covariance",
 )
-"""MavlinkConfig preset for SITL + Gazebo indoor (vision pose)."""
+"""MavlinkConfig preset for SITL + Gazebo indoor (vision pose).
+
+Mission on SERIAL1 (tcp 5762). With ``mavros:=false``, sim-bridge feeds SERIAL0
+(tcp 5760) via ``vision_pose_node``; leave ``auto_vision_feed`` at default False."""
 
 # PX4 SITL presets (PX4 over MAVROS, offboard via udp:14540)
 
@@ -325,12 +332,12 @@ PX4_MAVLINK_SITL_VISION_CONFIG = Px4MavlinkConfig(
     name="px4_mavlink_sitl_drone",
     pose_source=PoseSource.VISION,
     expect_lidar=True,
+    auto_vision_feed=True,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_indoor.yaml"),
     setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_indoor.yaml"),
     apply_setpoint_params=True,
 )
 """Px4MavlinkConfig preset for PX4 SITL indoor over direct pymavlink.
 
-gz_vision_source publishes VSLAM topics; Px4MavlinkDrone auto-starts
-VisionPoseBridge (VISION_POSITION_ESTIMATE). Do not also run vision_pose_node
-backend:=mavlink on the same link (one feeder)."""
+Single offboard UDP (14540) → ``auto_vision_feed=True``. Prefer an external
+feeder on a second endpoint when available (``auto_vision_feed=False``)."""

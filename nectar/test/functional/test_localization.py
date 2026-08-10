@@ -257,6 +257,41 @@ def test_vision_pose_mavlink_without_covariance_sends_zeros(ros_node, fake_fcu):
     assert list(capture.covariance) == [0.0] * 21
 
 
+def test_vision_pose_subscriber_updates_without_sending(ros_node, fake_fcu):
+    """Subscribe-only companion path updates pose and emits no VISION_POSITION_ESTIMATE."""
+    pytest.importorskip("pymavlink", reason="pymavlink not installed (make python-sensors)")
+    import helpers
+    from geometry_msgs.msg import PoseStamped
+    from rclpy.qos import qos_profile_sensor_data
+
+    from nectar.control.mavlink import VisionPoseSubscriber
+
+    topic = "/nectar_test/vo_pose_sub_only"
+    received: dict = {}
+    got = threading.Event()
+
+    def _on_pose(pose) -> None:
+        received["x"] = pose.position.x
+        received["yaw"] = pose.yaw
+        got.set()
+
+    sub = VisionPoseSubscriber(node=ros_node, topic=topic, on_pose=_on_pose)
+    sub.start()
+
+    pub = ros_node.create_publisher(PoseStamped, topic, qos_profile_sensor_data)
+    msg = PoseStamped()
+    msg.pose.position.x = 2.5
+    msg.pose.orientation.w = 1.0
+
+    ok = helpers.publish_until(pub, msg, got, timeout=5.0)
+    assert ok, "VisionPoseSubscriber did not receive the VSLAM pose"
+    assert abs(received.get("x", 0.0) - 2.5) < 1e-3
+
+    # No sender on this link — the loopback FCU must stay quiet.
+    capture = fake_fcu.wait_for("VISION_POSITION_ESTIMATE", timeout=0.5)
+    assert capture is None, "subscribe-only path must not emit VISION_POSITION_ESTIMATE"
+
+
 def _yaw_quaternion(yaw: float):
     """Return ``(x, y, z, w)`` for a rotation of ``yaw`` radians about the ENU z-axis."""
     return (0.0, 0.0, math.sin(yaw / 2.0), math.cos(yaw / 2.0))

@@ -2,6 +2,9 @@
 
 For >= 4 Hz Non-GPS feeds see
 https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html.
+
+``VisionPoseSubscriber`` updates companion ENU pose only.
+``VisionPoseBridge`` / ``VisionSpeedBridge`` also send to the FCU.
 """
 
 import time
@@ -28,6 +31,52 @@ PoseCallback = Callable[[LocalPose], None]
 _POSE_COVARIANCE_ZERO = [0.0] * 21
 # ArduPilot ignores VISION_SPEED covariance and uses VISO_VEL_M_NSE.
 _COVARIANCE_UNKNOWN = [float("nan")] + [0.0] * 8
+
+
+def _local_pose_from_msg(pose) -> LocalPose:
+    p = pose.position
+    q = pose.orientation
+    _, _, yaw_enu = euler_from_quaternion([q.x, q.y, q.z, q.w])
+    return LocalPose(position=Vec3(p.x, p.y, p.z), yaw=yaw_enu)
+
+
+class VisionPoseSubscriber:
+    """Subscribe to a VSLAM pose topic for companion nav (no FCU send)."""
+
+    def __init__(
+        self,
+        node: Node,
+        topic: str,
+        on_pose: PoseCallback,
+    ) -> None:
+        self._node = node
+        self._topic = topic
+        self._on_pose = on_pose
+        self._sub = None
+
+    def start(self) -> None:
+        if self._sub is not None:
+            return
+        if "pose_cov" in self._topic:
+            self._sub = self._node.create_subscription(
+                PoseWithCovarianceStamped, self._topic, self._on_cov, qos_profile_sensor_data
+            )
+        else:
+            self._sub = self._node.create_subscription(
+                PoseStamped, self._topic, self._on_pose_stamped, qos_profile_sensor_data
+            )
+        self._node.get_logger().info(f"VisionPoseSubscriber: {self._topic}")
+
+    def stop(self) -> None:
+        if self._sub is not None:
+            self._node.destroy_subscription(self._sub)
+            self._sub = None
+
+    def _on_cov(self, msg: PoseWithCovarianceStamped) -> None:
+        self._on_pose(_local_pose_from_msg(msg.pose.pose))
+
+    def _on_pose_stamped(self, msg: PoseStamped) -> None:
+        self._on_pose(_local_pose_from_msg(msg.pose))
 
 
 class VisionPoseBridge:
@@ -83,12 +132,12 @@ class VisionPoseBridge:
         self._send(msg.pose, None)
 
     def _send(self, pose, covariance) -> None:
+        if self._on_pose is not None:
+            self._on_pose(_local_pose_from_msg(pose))
+
         p = pose.position
         q = pose.orientation
         roll_enu, pitch_enu, yaw_enu = euler_from_quaternion([q.x, q.y, q.z, q.w])
-
-        if self._on_pose is not None:
-            self._on_pose(LocalPose(position=Vec3(p.x, p.y, p.z), yaw=yaw_enu))
 
         x_ned, y_ned, z_ned = enu_to_ned((p.x, p.y, p.z))
         roll_ned, pitch_ned, yaw_ned = euler_enu_to_ned(roll_enu, pitch_enu, yaw_enu)

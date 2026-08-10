@@ -111,6 +111,8 @@ class PymavlinkTransport(VehicleTransport):
         self._rx_timer = None
         self._hb_timer = None
         self._vision_bridge = None
+        self._vision_speed_bridge = None
+        self._vision_subscriber = None
         self._link_timeout = 3.0
         self._last_heartbeat = 0.0
 
@@ -169,25 +171,49 @@ class PymavlinkTransport(VehicleTransport):
             hb_period, self._send_heartbeat, callback_group=group
         )
 
-        # Indoor: feed the EKF external nav (companion VSLAM pose -> FCU), since
-        # there is no MAVROS doing it. Pose only — velocity still requires a
-        # separate vision_pose_node with send_speed:=true (do not also run
-        # backend:=mavlink vision_pose_node on the same link: one feeder rule).
         if self._pose_source == PoseSource.VISION:
-            from nectar.control.mavlink.vision_bridge import VisionPoseBridge
+            self._start_vision(config)
 
+    def _start_vision(self, config) -> None:
+        from nectar.control.mavlink.vision_bridge import (
+            VisionPoseBridge,
+            VisionPoseSubscriber,
+            VisionSpeedBridge,
+        )
+
+        topic = getattr(config, "vision_pose_topic", "/visual_slam/tracking/vo_pose_covariance")
+        if bool(getattr(config, "auto_vision_feed", False)):
             self._vision_bridge = VisionPoseBridge(
                 self._node,
                 self._connection,
-                getattr(config, "vision_pose_topic", "/visual_slam/tracking/vo_pose_covariance"),
+                topic,
                 on_pose=self.update_vision_pose,
             )
             self._vision_bridge.start()
+            if bool(getattr(config, "vision_send_speed", False)):
+                self._vision_speed_bridge = VisionSpeedBridge(
+                    self._node,
+                    self._connection,
+                    getattr(config, "vision_speed_topic", "/visual_slam/tracking/odometry"),
+                )
+                self._vision_speed_bridge.start()
+            self._node.get_logger().info("Vision: auto_vision_feed=True (mission sends VISION_*)")
+        else:
+            self._vision_subscriber = VisionPoseSubscriber(
+                self._node, topic, on_pose=self.update_vision_pose
+            )
+            self._vision_subscriber.start()
 
     def close(self) -> None:
         if self._vision_bridge is not None:
             self._vision_bridge.stop()
             self._vision_bridge = None
+        if self._vision_speed_bridge is not None:
+            self._vision_speed_bridge.stop()
+            self._vision_speed_bridge = None
+        if self._vision_subscriber is not None:
+            self._vision_subscriber.stop()
+            self._vision_subscriber = None
         for timer in (self._rx_timer, self._hb_timer):
             if timer is not None:
                 try:
