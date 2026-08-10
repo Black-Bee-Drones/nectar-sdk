@@ -17,9 +17,13 @@ Usage::
     ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14552
     ros2 launch nectar vision_pose.launch.py backend:=dds
     ros2 launch nectar vision_pose.launch.py backend:=mavros send_speed:=true
+    ros2 launch nectar vision_pose.launch.py backend:=mavlink set_ekf_origin:=true
 
 ``mavlink_url`` is any pymavlink endpoint (override the default). Use a dedicated
 link from the mission process (see localization README: one feeder rule).
+
+``set_ekf_origin:=true`` sends ``SET_GPS_GLOBAL_ORIGIN`` once if the FCU has no
+origin yet (lab lat/lon defaults; see localization README).
 """
 
 import os
@@ -53,6 +57,11 @@ def generate_launch_description():
     px4_namespace = LaunchConfiguration("px4_namespace")
     send_speed = ParameterValue(LaunchConfiguration("send_speed"), value_type=bool)
     speed_topic = LaunchConfiguration("speed_topic")
+    set_ekf_origin = ParameterValue(LaunchConfiguration("set_ekf_origin"), value_type=bool)
+    origin_lat = LaunchConfiguration("origin_lat")
+    origin_lon = LaunchConfiguration("origin_lon")
+    origin_alt_m = LaunchConfiguration("origin_alt_m")
+    origin_timeout_s = LaunchConfiguration("origin_timeout_s")
 
     cfg = os.path.join(get_package_share_directory("nectar"), "control", "mavros", "config")
     pluginlists = os.path.join(cfg, "indoor_pluginlists.yaml")
@@ -91,6 +100,12 @@ def generate_launch_description():
                 "input_topic": input_topic,
                 "send_speed": send_speed,
                 "speed_topic": speed_topic,
+                "set_ekf_origin": set_ekf_origin,
+                "origin_lat": ParameterValue(origin_lat, value_type=float),
+                "origin_lon": ParameterValue(origin_lon, value_type=float),
+                "origin_alt_m": ParameterValue(origin_alt_m, value_type=float),
+                "origin_timeout_s": ParameterValue(origin_timeout_s, value_type=float),
+                "mavros_namespace": namespace,
             }
         ],
     )
@@ -108,6 +123,11 @@ def generate_launch_description():
                 "mavlink_url": mavlink_url,
                 "send_speed": send_speed,
                 "speed_topic": speed_topic,
+                "set_ekf_origin": set_ekf_origin,
+                "origin_lat": ParameterValue(origin_lat, value_type=float),
+                "origin_lon": ParameterValue(origin_lon, value_type=float),
+                "origin_alt_m": ParameterValue(origin_alt_m, value_type=float),
+                "origin_timeout_s": ParameterValue(origin_timeout_s, value_type=float),
             }
         ],
     )
@@ -126,6 +146,11 @@ def generate_launch_description():
                 "px4_namespace": px4_namespace,
                 "send_speed": send_speed,
                 "speed_topic": speed_topic,
+                "set_ekf_origin": set_ekf_origin,
+                "origin_lat": ParameterValue(origin_lat, value_type=float),
+                "origin_lon": ParameterValue(origin_lon, value_type=float),
+                "origin_alt_m": ParameterValue(origin_alt_m, value_type=float),
+                "origin_timeout_s": ParameterValue(origin_timeout_s, value_type=float),
             }
         ],
     )
@@ -149,6 +174,11 @@ def generate_launch_description():
             DeclareLaunchArgument("px4_namespace", default_value=""),
             DeclareLaunchArgument("send_speed", default_value="false"),
             DeclareLaunchArgument("speed_topic", default_value="/visual_slam/tracking/odometry"),
+            DeclareLaunchArgument("set_ekf_origin", default_value="false"),
+            DeclareLaunchArgument("origin_lat", default_value="-22.41434308754571"),
+            DeclareLaunchArgument("origin_lon", default_value="-45.44843145453864"),
+            DeclareLaunchArgument("origin_alt_m", default_value="0.0"),
+            DeclareLaunchArgument("origin_timeout_s", default_value="2.0"),
             mavros_include,
             bridge_mavros,
             bridge_mavlink,

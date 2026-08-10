@@ -513,3 +513,19 @@ def test_gz_vision_source_body_twist_from_world_delta():
     q = _yaw_quaternion(yaw)
     vx, vy, vz = rotate_by_quaternion(world, (-q[0], -q[1], -q[2], q[3]))
     assert [round(v, 6) for v in (vx, vy, vz)] == [1.0, 0.0, 0.0]
+
+
+def test_send_mavlink_origin_once(fake_fcu):
+    """Enabled path emits one SET_GPS_GLOBAL_ORIGIN on the loopback FCU."""
+    pytest.importorskip("pymavlink", reason="pymavlink not installed (make python-sensors)")
+    import helpers
+
+    from nectar.control.localization.ekf_origin import send_mavlink_origin
+
+    conn = helpers.mavlink_connection_to(fake_fcu.port)
+    send_mavlink_origin(conn, -22.41434308754571, -45.44843145453864, 0.0)
+    msg = fake_fcu.wait_for("SET_GPS_GLOBAL_ORIGIN", timeout=3.0)
+    assert msg is not None, "no SET_GPS_GLOBAL_ORIGIN on loopback FCU"
+    assert msg.latitude == -224143431
+    assert msg.longitude == -454484315
+    assert msg.altitude == 0

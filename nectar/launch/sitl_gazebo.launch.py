@@ -33,6 +33,7 @@ import re
 import tempfile
 
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 from launch import LaunchContext, LaunchDescription
 from launch.actions import (
@@ -285,16 +286,29 @@ def _launch_setup(context: LaunchContext) -> list:
         # mavros: feeder via MAVROS on SERIAL0; else vision_pose_node on SERIAL0,
         # mission uses SERIAL1 (see MAVLINK_SITL_VISION_CONFIG).
         send_speed = _truthy(LaunchConfiguration("send_speed").perform(context))
+        set_ekf_origin = ParameterValue(LaunchConfiguration("set_ekf_origin"), value_type=bool)
+        origin_params = {
+            "set_ekf_origin": set_ekf_origin,
+            "origin_lat": ParameterValue(LaunchConfiguration("origin_lat"), value_type=float),
+            "origin_lon": ParameterValue(LaunchConfiguration("origin_lon"), value_type=float),
+            "origin_alt_m": ParameterValue(LaunchConfiguration("origin_alt_m"), value_type=float),
+            "origin_timeout_s": ParameterValue(
+                LaunchConfiguration("origin_timeout_s"), value_type=float
+            ),
+        }
         if use_mavros:
             vision_pose_node = Node(
                 package="nectar",
                 executable="vision_pose_node.py",
                 name="vision_pose_node",
                 parameters=[
-                    {"backend": "mavros"},
-                    {"input_topic": vslam_topic},
-                    {"send_speed": send_speed},
-                    {"speed_topic": vslam_odom_topic},
+                    {
+                        "backend": "mavros",
+                        "input_topic": vslam_topic,
+                        "send_speed": send_speed,
+                        "speed_topic": vslam_odom_topic,
+                        **origin_params,
+                    }
                 ],
                 output="screen",
             )
@@ -305,11 +319,14 @@ def _launch_setup(context: LaunchContext) -> list:
                 executable="vision_pose_node.py",
                 name="vision_pose_node",
                 parameters=[
-                    {"backend": "mavlink"},
-                    {"input_topic": vslam_topic},
-                    {"mavlink_url": "tcp:127.0.0.1:5760"},
-                    {"send_speed": send_speed},
-                    {"speed_topic": vslam_odom_topic},
+                    {
+                        "backend": "mavlink",
+                        "input_topic": vslam_topic,
+                        "mavlink_url": "tcp:127.0.0.1:5760",
+                        "send_speed": send_speed,
+                        "speed_topic": vslam_odom_topic,
+                        **origin_params,
+                    }
                 ],
                 output="screen",
             )
@@ -358,6 +375,30 @@ def generate_launch_description():
                 "send_speed",
                 default_value="false",
                 description="Also send VISION_SPEED_ESTIMATE from the emulated VSLAM twist.",
+            ),
+            DeclareLaunchArgument(
+                "set_ekf_origin",
+                default_value="false",
+                description=(
+                    "Send SET_GPS_GLOBAL_ORIGIN once if the FCU has no origin "
+                    "(needed for ArduPilot indoor position modes)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "origin_lat",
+                default_value="-22.41434308754571",
+            ),
+            DeclareLaunchArgument(
+                "origin_lon",
+                default_value="-45.44843145453864",
+            ),
+            DeclareLaunchArgument(
+                "origin_alt_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "origin_timeout_s",
+                default_value="2.0",
             ),
             DeclareLaunchArgument(
                 "resource_path",

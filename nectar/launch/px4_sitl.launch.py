@@ -24,6 +24,7 @@ Usage:
 import os
 
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 from launch import LaunchContext, LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -141,6 +142,17 @@ def _launch_setup(context: LaunchContext) -> list:
                 "input_topic": vslam_topic,
                 "send_speed": send_speed,
                 "speed_topic": vslam_odom_topic,
+                "set_ekf_origin": ParameterValue(
+                    LaunchConfiguration("set_ekf_origin"), value_type=bool
+                ),
+                "origin_lat": ParameterValue(LaunchConfiguration("origin_lat"), value_type=float),
+                "origin_lon": ParameterValue(LaunchConfiguration("origin_lon"), value_type=float),
+                "origin_alt_m": ParameterValue(
+                    LaunchConfiguration("origin_alt_m"), value_type=float
+                ),
+                "origin_timeout_s": ParameterValue(
+                    LaunchConfiguration("origin_timeout_s"), value_type=float
+                ),
             }
             vision_pose_node = Node(
                 package="nectar",
@@ -190,6 +202,30 @@ def generate_launch_description():
                 "send_speed",
                 default_value="false",
                 description="Also feed VSLAM velocity (requires EKF2_EV_CTRL bit 2).",
+            ),
+            DeclareLaunchArgument(
+                "set_ekf_origin",
+                default_value="false",
+                description=(
+                    "Send SET_GPS_GLOBAL_ORIGIN once if unset "
+                    "(useful for PX4 global/auto modes; local EV hover does not need it)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "origin_lat",
+                default_value="-22.41434308754571",
+            ),
+            DeclareLaunchArgument(
+                "origin_lon",
+                default_value="-45.44843145453864",
+            ),
+            DeclareLaunchArgument(
+                "origin_alt_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "origin_timeout_s",
+                default_value="2.0",
             ),
             DeclareLaunchArgument(
                 "world_name",
