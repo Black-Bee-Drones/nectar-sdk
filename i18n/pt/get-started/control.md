@@ -1,16 +1,16 @@
-# Fly a drone
+# Voar um drone
 
-Take off, fly a square, and land with the same code on any supported platform. You pick a
-**backend** (a firmware plus a transport), start its **driver** (or a simulator), set a **pose
-source**, and run a mission. Only the factory key and its config change between platforms; the
-flight calls stay identical.
+Decole, voe um quadrado e pouse com o mesmo código em qualquer plataforma suportada. Você
+escolhe um **backend** (firmware mais um transporte), inicia o **driver** (ou um simulador),
+define uma **fonte de pose** e roda uma missão. Só a chave da factory e o config mudam entre
+plataformas; as chamadas de voo permanecem idênticas.
 
-Pick your backend in the tab below and it stays selected through install, driver, and mission
-code. New to the workspace? Do the [Installation](../setup/index.md) first.
+Escolha o backend na aba abaixo; a seleção vale para instalação, driver e código da missão.
+Novo no workspace? Faça a [Instalação](../setup/index.md) primeiro.
 
-## 1. Install the backend
+## 1. Instale o backend
 
-Install `control`, then add the driver your vehicle uses:
+Instale `control` e depois o driver que o veículo usa:
 
 ```bash
 make setup           # pick: control
@@ -24,8 +24,8 @@ make setup           # pick: control
 
 === "ArduPilot · MAVLink"
 
-    No extra install: `pymavlink` ships with the core SDK. `make drone-mavros` adds the
-    geoid data used for GPS altitude.
+    Sem instalação extra: `pymavlink` já vem com o SDK core. `make drone-mavros` adiciona os
+    dados geoid usados na altitude GPS.
 
 === "PX4 · MAVROS"
 
@@ -35,8 +35,8 @@ make setup           # pick: control
 
 === "PX4 · MAVLink"
 
-    No extra install: `pymavlink` ships with the core SDK. `make drone-mavros` adds the
-    geoid data used for GPS altitude.
+    Sem instalação extra: `pymavlink` já vem com o SDK core. `make drone-mavros` adiciona os
+    dados geoid usados na altitude GPS.
 
 === "PX4 · uXRCE-DDS"
 
@@ -56,26 +56,26 @@ make setup           # pick: control
     make drone-bebop
     ```
 
-## 2. Set the pose source
+## 2. Defina a fonte de pose
 
-For ArduPilot and PX4 the **environment** selects the pose source on the config:
+Para ArduPilot e PX4 o **ambiente** seleciona a fonte de pose no config:
 
-| Environment | Pose source | Config argument |
-|-------------|-------------|-----------------|
+| Ambiente | Fonte de pose | Argumento no config |
+|----------|---------------|---------------------|
 | Outdoor | GPS | `pose_source=PoseSource.GPS` |
-| Indoor (GPS-denied) | Vision (VSLAM) | `pose_source=PoseSource.VISION` |
+| Indoor (sem GPS) | Visão (VSLAM) | `pose_source=PoseSource.VISION` |
 
-!!! note "Indoor flight"
-    A vision-pose feed into the FCU's EKF is required indoors; see
-    [Localization](../modules/control/localization/) (architecture, Run,
-    EKF origin, indoor procedure). Bebop and Crazyflie fly indoors without GPS
-    and ignore this setting.
+!!! note "Voo indoor"
+    Indoor exige um feed de vision-pose no EKF do FCU; veja
+    [Localização](../modules/control/localization/) (arquitetura, Run,
+    origem EKF, procedimento indoor). Bebop e Crazyflie voam indoor sem GPS e ignoram
+    essa configuração.
 
-## 3. Start the driver
+## 3. Inicie o driver
 
-Start the driver or bridge your mission connects to **before** running it (examples default
-to `start_driver=False`). Connection overrides go through env vars (`FCU_URL`, `DEV`, `BAUD`,
-`IP`).
+Inicie o driver ou a ponte a que a missão se conecta **antes** de rodá-la (os exemplos usam
+`start_driver=False` por padrão). Overrides de conexão passam por variáveis de ambiente
+(`FCU_URL`, `DEV`, `BAUD`, `IP`).
 
 === "ArduPilot · MAVROS"
 
@@ -85,8 +85,8 @@ to `start_driver=False`). Connection overrides go through env vars (`FCU_URL`, `
 
 === "ArduPilot · MAVLink"
 
-    Outdoor needs no bridge; the mission opens the link itself. Indoor starts the
-    vision-pose bridge:
+    Outdoor não precisa de ponte; a missão abre o link. Indoor inicia a ponte de
+    vision-pose:
 
     ```bash
     make driver DRONE=mavlink ENV=indoor
@@ -100,8 +100,8 @@ to `start_driver=False`). Connection overrides go through env vars (`FCU_URL`, `
 
 === "PX4 · MAVLink"
 
-    Outdoor needs no bridge; the mission opens the link itself. Indoor starts the
-    vision-pose bridge:
+    Outdoor não precisa de ponte; a missão abre o link. Indoor inicia a ponte de
+    vision-pose:
 
     ```bash
     make driver DRONE=px4_mavlink ENV=indoor
@@ -125,19 +125,19 @@ to `start_driver=False`). Connection overrides go through env vars (`FCU_URL`, `
     make driver-bebop IP=192.168.42.1
     ```
 
-!!! tip "No hardware yet? Fly in simulation"
+!!! tip "Sem hardware ainda? Voe em simulação"
     ```bash
     make sim-install FIRMWARE=ardupilot   # one-time (use FIRMWARE=px4 for PX4)
     make sim-start                        # terminal 1
     make sim-bridge                       # terminal 2
     ```
-    For direct MAVLink or uXRCE-DDS add `PROTOCOL=mavlink` / `PROTOCOL=dds` on `sim-bridge`. Full
-    matrix: [Simulation](../setup/simulation.md).
+    Para MAVLink direto ou uXRCE-DDS, acrescente `PROTOCOL=mavlink` / `PROTOCOL=dds` em
+    `sim-bridge`. Matriz completa: [Simulação](../setup/simulation.md).
 
-## 4. Write the mission
+## 4. Escreva a missão
 
-Build the drone with your backend's factory key and config. The flight calls after it are the
-same for every backend.
+Monte o drone com a chave e o config do backend. As chamadas de voo depois disso são as
+mesmas para todos os backends.
 
 === "ArduPilot · MAVROS"
 
@@ -209,7 +209,7 @@ same for every backend.
     drone = DroneFactory.create("bebop", BebopConfig())
     ```
 
-Fly a 2 m square, then land:
+Voe um quadrado de 2 m e depois pouse:
 
 ```python
 drone.takeoff(altitude=2.0)
@@ -221,10 +221,10 @@ drone.land()
 nectar.shutdown()
 ```
 
-The bundled examples fly the same box on any backend, flown by the PID navigator where the
-backend supports it. Each tab is the exact command for that platform (outdoor GPS shown; for
-indoor flight swap `--mode indoor` on `navigation.py` or `--env indoor` on `basic.py` to the
-vision pose source):
+Os exemplos do repositório voam o mesmo box em qualquer backend, com o navegador PID quando
+o backend permite. Cada aba é o comando exato da plataforma (GPS outdoor; para indoor use
+`--mode indoor` em `navigation.py` ou `--env indoor` em `basic.py` para a fonte de pose de
+visão):
 
 === "ArduPilot · MAVROS"
 
@@ -245,7 +245,7 @@ vision pose source):
         --test rectangle --altitude 2.0 --distance 2.0 --precision 0.15
     ```
 
-    On hardware, pass your serial link instead, e.g. `--connection /dev/ttyUSB0`.
+    No hardware, passe o link serial, por exemplo `--connection /dev/ttyUSB0`.
 
 === "PX4 · MAVROS"
 
@@ -258,7 +258,7 @@ vision pose source):
 
 === "PX4 · MAVLink"
 
-    `navigation.py` does not cover this backend; the position box in `basic.py` does:
+    `navigation.py` não cobre este backend; o box em posição de `basic.py` cobre:
 
     ```bash
     nectar-activate
@@ -287,16 +287,16 @@ vision pose source):
 
 === "Bebop"
 
-    Bebop has no onboard position control, so it flies the velocity box:
+    Bebop não tem controle de posição a bordo, então voa o box em velocidade:
 
     ```bash
     nectar-activate
     python3 nectar/nectar/examples/control/basic.py --drone bebop --mode velocity
     ```
 
-!!! success "Expected result"
-    The drone arms, climbs to the target altitude, flies a 2 m box (0.6 m for Crazyflie) with
-    0.15 m arrival precision, then lands and disarms.
+!!! success "Resultado esperado"
+    O drone arma, sobe até a altitude alvo, voa um box de 2 m (0,6 m no Crazyflie) com
+    precisão de chegada de 0,15 m, depois pousa e desarma.
 
 <figure class="nectar-shot">
   <div class="nectar-shot__media" data-src="../assets/media/basic-square.mp4">
@@ -304,15 +304,15 @@ vision pose source):
       <source src="../assets/media/basic-square.mp4" type="video/mp4">
     </video>
   </div>
-  <figcaption>Our drone flying the square example on real hardware. Click to enlarge.</figcaption>
+  <figcaption>Nosso drone voando o exemplo do quadrado em hardware real. Clique para ampliar.</figcaption>
 </figure>
 
-## See also
+## Ver também
 
-- [Control reference](../modules/control/index.md): the factory, the `Drone` protocol,
-  capabilities, and the full backend matrix.
-- [Vehicle core](../modules/control/vehicle.md) · [Transports](../modules/control/mavlink.md) ·
-  [PID tuning](../modules/control/pid.md) · [Obstacles](../modules/control/obstacles.md) ·
-  [Localization](../modules/control/localization/).
-- [Control examples](../modules/examples/control.md): navigation suite, interactive REPL,
-  servo test.
+- [Referência de Control](../modules/control/index.md): a factory, o protocolo
+  `Drone`, capacidades e a matriz completa de backends.
+- [Vehicle core](../modules/control/vehicle/) · [Transports](../modules/control/mavlink/) ·
+  [PID](../modules/control/pid/) · [Obstacles](../modules/control/obstacles/) ·
+  [Localization](../modules/control/localization/index.md).
+- [Exemplos de Control](../modules/examples/control.md): suíte de navegação,
+  REPL interativo, teste de servo.

@@ -23,7 +23,7 @@ ROS 2 software development kit for autonomous aerial systems. Unified interfaces
 
 ## Documentation
 
-Please visit the **[Nectar SDK documentation](https://black-bee-drones.github.io/nectar-sdk/)** for installation, tutorials, module reference, Python API, simulation, and Docker.
+Please visit the **Nectar SDK documentation** ([en](https://black-bee-drones.github.io/nectar-sdk/) | [pt-BR](https://black-bee-drones.github.io/nectar-sdk/pt/)) for installation, tutorials, module reference, Python API, simulation, and Docker.
 
 ## Features
 

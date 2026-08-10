@@ -1,9 +1,8 @@
 # Get started
 
-Nectar SDK gives you one Python interface for three things a mission needs: **flying**,
-**seeing**, and **detecting**, all sharing a single ROS 2 runtime. Pick a topic below, follow
-the steps for your platform, camera, or model, and follow the links when you want the full
-reference.
+Nectar SDK gives you one Python interface for **flight control**, **computer vision**, and
+**AI**, all sharing a single ROS 2 runtime. Pick a topic below, follow the steps for your
+platform, camera, or model, and follow the links when you want the full reference.
 
 ## The mental model
 
@@ -46,12 +45,13 @@ first (it takes only the modules you choose). Each topic below lists the one mod
 
     [See with a camera](vision.md)
 
--   **Detect & segment**
+-   **Detect, segment & classify**
 
-    Load a detection or segmentation model across Ultralytics YOLO, HuggingFace DETR, or
-    RF-DETR behind one `Detector` / `Segmentor`, and run it on a frame.
+    Load a detection, segmentation, or classification model across Ultralytics YOLO,
+    HuggingFace DETR, or RF-DETR behind one `Detector` / `Segmentor` / `Classifier`, and run
+    it on a frame.
 
-    [Detect & segment](ai.md)
+    [Detect, segment & classify](ai.md)
 
 -   **With and without Nectar**
 
@@ -61,5 +61,5 @@ first (it takes only the modules you choose). Each topic below lists the one mod
 
 </div>
 
-Each page is independent and shares the runtime, so you can compose them into a single
-mission that flies, sees, and detects.
+Each page is independent and shares the runtime, so you can compose control, vision, and AI
+in a single mission.

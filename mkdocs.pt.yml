@@ -1,0 +1,193 @@
+site_name: Nectar SDK
+site_url: https://black-bee-drones.github.io/nectar-sdk/pt/
+site_description: >-
+  Kit de desenvolvimento ROS 2 para sistemas aéreos autônomos — interfaces
+  unificadas para controle de voo, visão computacional e detecção de objetos.
+site_author: Black Bee Drones
+copyright: Copyright &copy; Black Bee Drones — Apache-2.0
+
+repo_url: https://github.com/Black-Bee-Drones/nectar-sdk
+repo_name: Black-Bee-Drones/nectar-sdk
+
+extra:
+  alternate:
+    - name: English
+      link: /nectar-sdk/
+      lang: en
+    - name: Português
+      link: /nectar-sdk/pt/
+      lang: pt
+  social:
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/blackbeedrones/
+      name: Black Bee Drones on LinkedIn
+    - icon: fontawesome/brands/instagram
+      link: https://www.instagram.com/blackbeedrones/
+      name: Black Bee Drones on Instagram
+    - icon: fontawesome/brands/github
+      link: https://github.com/Black-Bee-Drones
+      name: Black Bee Drones on GitHub
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/u/blackbeedrones
+      name: Black Bee Drones on Docker Hub
+    - icon: simple/huggingface
+      link: https://huggingface.co/blackbeedrones
+      name: Black Bee Drones on Hugging Face
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mermaid.mjs
+  - javascripts/diagram-zoom.js
+  - javascripts/showcase.js
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/i18n-switch.js
+
+# Edit i18n/pt/ only. Everything under build/ is generated.
+docs_dir: build/docs-pt
+site_dir: build/site-pt
+
+theme:
+  name: material
+  language: pt-BR
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Montserrat
+  features:
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: amber
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Alternar para modo escuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: amber
+      toggle:
+        icon: material/toggle-switch
+        name: Alternar para modo claro
+
+plugins:
+  - search
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:zensical.extensions.emoji.twemoji
+      emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["build/docs-pt/includes"]
+      auto_append:
+        - abbreviations.md
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - zensical.extensions.glightbox:
+      auto_caption: true
+
+nav:
+  - Início: index.md
+  - Começar:
+      - Visão geral: get-started/index.md
+      - Voar um drone: get-started/control.md
+      - Ver com uma câmera: get-started/vision.md
+      - Detectar, segmentar e classificar: get-started/ai.md
+      - Com e sem Nectar: get-started/with-without.md
+  - Instalação:
+      - Instalação: setup/index.md
+      - Drivers de drone: setup/drivers.md
+      - Simulação: setup/simulation.md
+      - RealSense e indoor: setup/realsense.md
+      - Docker: setup/docker.md
+      - Configuração: setup/configuration.md
+      - Compatibilidade: setup/compatibility.md
+  - Conceitos:
+      - Arquitetura: concepts/architecture.md
+  - Módulos:
+      - Control:
+          - Visão geral: modules/control/index.md
+          - Núcleo do veículo: modules/control/vehicle.md
+          - ArduPilot: modules/control/ardupilot.md
+          - PX4: modules/control/px4.md
+          - Transporte MAVROS: modules/control/mavros.md
+          - Transporte MAVLink: modules/control/mavlink.md
+          - Localização:
+              - modules/control/localization/index.md
+              - Conceitos: modules/control/localization/concepts.md
+              - T265 legado: modules/control/localization/legacy.md
+          - Obstáculos: modules/control/obstacles.md
+          - PID: modules/control/pid.md
+          - Bebop: modules/control/bebop.md
+          - Crazyflie: modules/control/crazyflie.md
+      - Vision:
+          - Visão geral: modules/vision/index.md
+          - Câmeras: modules/vision/camera.md
+          - Algoritmos: modules/vision/algorithms.md
+          - Nós ROS 2: modules/vision/nodes.md
+      - AI:
+          - Visão geral: modules/ai/index.md
+          - Detecção: modules/ai/detection.md
+          - Segmentação: modules/ai/segmentation.md
+          - Classificação: modules/ai/classification.md
+      - Sensors: modules/sensors.md
+      - Interface (GUI): modules/interface.md
+      - Simulation: modules/simulation.md
+      - Messages (nectar_interfaces): modules/interfaces.md
+      - Utils: modules/utils.md
+  - Exemplos:
+      - Visão geral: modules/examples/index.md
+      - Control: modules/examples/control.md
+      - Vision: modules/examples/vision.md
+      - AI: modules/examples/ai.md
+      - Sensors: modules/examples/sensors.md
+  - Desenvolvimento:
+      - Comandos e Makefile: development/commands.md
+      - Contribuindo: project/contributing.md
+      - Releases: project/releasing.md
+  - Projetos: projects/index.md
+  - Comunidade:
+      - Visão geral: community/index.md
+      - Código de conduta: project/code-of-conduct.md
+      - Segurança: project/security.md
