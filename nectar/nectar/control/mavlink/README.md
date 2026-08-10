@@ -93,20 +93,31 @@ A rate `<= 0` disables a stream. `GPS_RAW_INT` and a few others are requested fo
 
 The single-RX-reader rule is what lets a `RangefinderPublisher` and a `VisionPoseBridge` share the same `MavlinkConnection` safely — they only *send*, through the lock.
 
-### `VisionPoseBridge`
+### Vision pose (indoor)
 
-[`vision_bridge.py`](vision_bridge.py) — indoor external-navigation feed. With MAVROS gone, the FCU's EKF3 still needs an external position source. When `pose_source=VISION`, `PymavlinkTransport.start()` constructs and starts this bridge automatically: it subscribes to `MavlinkConfig.vision_pose_topic` and forwards **each received sample** to the FCU as [`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE) (ArduPilot [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html) wants ≥ 4 Hz). It also exposes the same pose as `vision_pose` so companion-side PID navigation works. This is the MAVLink-side equivalent of the MAVROS `MavrosVisionRelay`; the end-to-end indoor pipeline (Isaac VSLAM producer, both backends, FCU setup) is documented in [Localization](../localization/README.md).
+[`vision_bridge.py`](vision_bridge.py) — GPS-denied external navigation. With
+`pose_source=VISION`, `PymavlinkTransport` always fills `vision_pose` from
+`vision_pose_topic` for companion PID. Who sends
+[`VISION_POSITION_ESTIMATE`](https://mavlink.io/en/messages/common.html#VISION_POSITION_ESTIMATE)
+to the FCU (ArduPilot [Non-GPS Position Estimation](https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html)
+wants ≥ 4 Hz) is controlled by `auto_vision_feed`:
+
+| `auto_vision_feed` | FCU feed | Companion pose |
+| --- | --- | --- |
+| `False` (default) | Separate `vision_pose_node backend:=mavlink` on **another** MAVLink endpoint | `VisionPoseSubscriber` |
+| `True` | Mission-owned `VisionPoseBridge` (optional `vision_send_speed` → `VisionSpeedBridge`) | same bridge `on_pose` |
+
+Never run both senders on the same endpoint. End-to-end pipeline (producer,
+backends, FCU setup): [Localization](../localization/README.md).
 
 **Which topic to point at** (`vision_pose_topic`):
 
 | Scenario | Topic | Why |
 | --- | --- | --- |
-| Real hardware | the VSLAM output, `/visual_slam/tracking/vo_pose_covariance` (default) | The bridge *is* the relay; subscribe directly to the estimator, no MAVROS involved. |
-| Gazebo sim (indoor) | `/visual_slam/tracking/vo_pose_covariance` | `gz_vision_source` publishes Gazebo ground-truth pose on the same canonical topic, so the sim path matches real hardware. The `MAVLINK_SITL_VISION_CONFIG` preset sets this. |
+| Real hardware | VSLAM output, `/visual_slam/tracking/vo_pose_covariance` (default) | Subscribe directly to the estimator |
+| Gazebo sim (indoor) | same | `gz_vision_source` republishes ground truth on the canonical topic (`MAVLINK_SITL_VISION_CONFIG`) |
 
-The forwarding rate equals the subscription rate — the bridge does not resample.
-
-> **Warning:** `MavlinkConfig.vision_rate_hz` exists but is **not currently wired** into the bridge; do not rely on it to throttle or pad the feed.
+Forwarding rate equals the subscription rate. `vision_rate_hz` is **not** wired — do not rely on it to throttle.
 
 ## Quick start
 
@@ -130,18 +141,20 @@ config = MavlinkConfig(connection_string="/dev/ttyTHS1", baud=921600)
 drone = DroneFactory.create("mavlink", config)
 ```
 
-**Indoor, vision-based** (`VisionPoseBridge` feeds the EKF automatically):
+**Indoor, vision-based** (external feeder by default):
 
 ```python
 config = MavlinkConfig(
     pose_source=PoseSource.VISION,
-    connection_string="/dev/ttyUSB0",
+    connection_string="/dev/ttyUSB0",  # or a router UDP endpoint for the mission
     vision_pose_topic="/visual_slam/tracking/vo_pose_covariance",
 )
 drone = DroneFactory.create("mavlink", config)
 ```
 
-Ready-made presets ([`config.py`](../config.py)): `MAVLINK_SITL_CONFIG` (SITL on tcp `5760`), `MAVLINK_SITL_GAZEBO_CONFIG` (SITL+Gazebo on the secondary port tcp `5762`, so a direct link can run alongside MAVROS on `5760`), and `MAVLINK_SITL_VISION_CONFIG` (indoor, `vision_pose_topic=/visual_slam/tracking/vo_pose_covariance`).
+Ready-made presets ([`config.py`](../config.py)): `MAVLINK_SITL_CONFIG` (tcp `5760`),
+`MAVLINK_SITL_GAZEBO_CONFIG` / `MAVLINK_SITL_VISION_CONFIG` (mission on SERIAL1 tcp `5762`;
+indoor feeder on SERIAL0 tcp `5760` when `mavros:=false`).
 
 ### Connection string format
 
@@ -169,7 +182,7 @@ pub.start()
 | --- | --- | --- |
 | Link | requires a running `mavros_node` | owns the FCU endpoint directly |
 | Deps | ROS MAVROS stack | pymavlink only |
-| Indoor vision feed | `vision_to_mavros` + MAVROS | built-in `VisionPoseBridge` |
+| Indoor vision feed | `vision_pose` → MAVROS | external `vision_pose_node` (default) or `auto_vision_feed=True` |
 | Best for | full ROS deployments, existing MAVROS tooling | minimal companion stacks, single serial owner |
 
 Both expose the identical `Drone` API and capabilities.

@@ -111,32 +111,32 @@ One pattern for both firmwares. The two-terminal split is unavoidable (the
 autopilot SITL and the ROS stack are separate processes), so it is symmetric:
 
 - **Terminal 1 — `sim-start`**: the simulator (ArduPilot SITL; for PX4 also Gazebo).
-- **Terminal 2 — `sim-bridge`**: the ROS stack (Gazebo + MAVROS for ArduPilot; for PX4, MAVROS, MicroXRCE-DDS, or camera-only depending on `PROTOCOL`).
+- **Terminal 2 — `sim-bridge`**: the ROS stack (Gazebo + bridges for ArduPilot; for PX4, MAVROS, MicroXRCE-DDS, or camera-only depending on `PROTOCOL`).
 
 Choose the scenario with three variables (defaults `ardupilot` / `outdoor` /
-`mavros`, so bare `make sim-start` + `make sim-bridge` = ArduPilot outdoor over
-MAVROS). `ENV` must match between the two terminals.
+`mavlink`, so bare `make sim-start` + `make sim-bridge` = ArduPilot outdoor over
+direct MAVLink). `ENV` must match between the two terminals.
 
 - `FIRMWARE` = `ardupilot` | `px4`
 - `ENV` = `outdoor` | `indoor`
-- `PROTOCOL` = `mavros` | `mavlink` (direct pymavlink). For PX4, `dds` selects the native uXRCE-DDS agent.
+- `PROTOCOL` = `mavlink` (direct pymavlink, **default**) | `mavros`. For PX4, `dds` selects the native uXRCE-DDS agent.
 
 | Scenario                          | Terminal 1                                      | Terminal 2                                                        | Mission config                                       |
 | --------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
-| ArduPilot outdoor, MAVROS         | `make sim-start FIRMWARE=ardupilot ENV=outdoor` | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor`                  | `MavrosDrone` / `SITL_GAZEBO_CONFIG` |
-| ArduPilot outdoor, direct MAVLink | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor PROTOCOL=mavlink` | `MavlinkDrone` / `MAVLINK_SITL_GAZEBO_CONFIG` |
-| ArduPilot indoor, MAVROS          | `make sim-start FIRMWARE=ardupilot ENV=indoor`  | `make sim-bridge FIRMWARE=ardupilot ENV=indoor`                   | `MavrosDrone` / `SITL_VISION_CONFIG`                 |
-| ArduPilot indoor, direct MAVLink  | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=indoor PROTOCOL=mavlink`  | `MavlinkDrone` / `MAVLINK_SITL_VISION_CONFIG`        |
-| PX4 outdoor, MAVROS               | `make sim-start FIRMWARE=px4 ENV=outdoor`       | `make sim-bridge FIRMWARE=px4 ENV=outdoor`                        | `Px4MavrosDrone` / `PX4_SITL_GAZEBO_CONFIG`          |
-| PX4 outdoor, direct MAVLink       | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=mavlink`       | `Px4MavlinkDrone` / `PX4_MAVLINK_SITL_GAZEBO_CONFIG` |
+| ArduPilot outdoor, direct MAVLink | `make sim-start FIRMWARE=ardupilot ENV=outdoor` | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor`                  | `MavlinkDrone` / `MAVLINK_SITL_GAZEBO_CONFIG` |
+| ArduPilot outdoor, MAVROS         | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=outdoor PROTOCOL=mavros`  | `MavrosDrone` / `SITL_GAZEBO_CONFIG` |
+| ArduPilot indoor, direct MAVLink  | `make sim-start FIRMWARE=ardupilot ENV=indoor`  | `make sim-bridge FIRMWARE=ardupilot ENV=indoor`                   | `MavlinkDrone` / `MAVLINK_SITL_VISION_CONFIG`        |
+| ArduPilot indoor, MAVROS          | (same Terminal 1)                               | `make sim-bridge FIRMWARE=ardupilot ENV=indoor PROTOCOL=mavros`   | `MavrosDrone` / `SITL_VISION_CONFIG`                 |
+| PX4 outdoor, direct MAVLink       | `make sim-start FIRMWARE=px4 ENV=outdoor`       | `make sim-bridge FIRMWARE=px4 ENV=outdoor`                        | `Px4MavlinkDrone` / `PX4_MAVLINK_SITL_GAZEBO_CONFIG` |
+| PX4 outdoor, MAVROS               | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=mavros`        | `Px4MavrosDrone` / `PX4_SITL_GAZEBO_CONFIG`          |
 | PX4 outdoor, uXRCE-DDS            | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=outdoor PROTOCOL=dds`           | `Px4DdsDrone` / `PX4_DDS_SITL_CONFIG`            |
-| PX4 indoor, MAVROS (external-nav) | `make sim-start FIRMWARE=px4 ENV=indoor`        | `make sim-bridge FIRMWARE=px4 ENV=indoor`                         | `Px4MavrosDrone` / `PX4_SITL_VISION_CONFIG`          |
-| PX4 indoor, direct MAVLink        | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=indoor PROTOCOL=mavlink`        | `Px4MavlinkDrone` / `PX4_MAVLINK_SITL_VISION_CONFIG` |
+| PX4 indoor, direct MAVLink        | `make sim-start FIRMWARE=px4 ENV=indoor`        | `make sim-bridge FIRMWARE=px4 ENV=indoor`                         | `Px4MavlinkDrone` / `PX4_MAVLINK_SITL_VISION_CONFIG` |
+| PX4 indoor, MAVROS (external-nav) | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=indoor PROTOCOL=mavros`         | `Px4MavrosDrone` / `PX4_SITL_VISION_CONFIG`          |
 | PX4 indoor, uXRCE-DDS             | (same Terminal 1)                               | `make sim-bridge FIRMWARE=px4 ENV=indoor PROTOCOL=dds`            | `Px4DdsDrone` / `PX4_DDS_SITL_VISION_CONFIG`         |
 
-- **ArduPilot**: Terminal 1 runs the SITL physics; Terminal 2 launches the Gazebo world + `ros_gz_bridge` + (unless `PROTOCOL=mavlink`) MAVROS. `mavros` uses SERIAL0 (tcp `5760`); direct MAVLink connects a `MavlinkDrone` on SERIAL1 (tcp `5762`), which `start_sitl.sh` always exposes.
+- **ArduPilot**: Terminal 1 runs the SITL physics; Terminal 2 launches Gazebo + `ros_gz_bridge`. Default `PROTOCOL=mavlink` starts `vision_pose_node` on SERIAL0 (tcp `5760`) indoors; the mission uses SERIAL1 (tcp `5762`). Activate the nectar venv (`nectar-activate`) before Terminal 2 so pymavlink is available — otherwise the feeder exits and `5762` stays closed. `PROTOCOL=mavros` adds MAVROS on SERIAL0 plus `vision_pose_node`.
 - **Connection strings differ by transport**: MAVROS uses a URL (`tcp://host:port`, `udp://...`); the direct-MAVLink `MavlinkDrone` (pymavlink) uses a bare string (`tcp:127.0.0.1:5762`, `udp:host:port`, or a serial path like `/dev/ttyUSB0`). The `tcp://` URL form is also accepted for `MavlinkDrone` and normalized.
-- **PX4**: Terminal 1 (`start_px4.sh`) runs PX4 **and** its Gazebo. `ENV=outdoor` spawns `x500_nectar` into the shared `outdoor_field_px4.sdf` (matched sensors); `ENV=indoor` spawns `x500_nectar` into `indoor_room_px4.sdf` (same room as ArduPilot, GPS-denied via `gz_vision_source` → EKF2 external vision — see [localization SITL](../nectar/control/localization/README.md#sitl)). Stock onboard VIO (`x500_vision`) is only an explicit override: `ARGS='--model x500_vision'`. Terminal 2 runs MAVROS (+ camera bridges; + the external-vision pipeline for indoor). PX4 exposes the offboard MAVLink API on UDP `14540`. With `PROTOCOL=mavlink`, Terminal 2 skips MAVROS (cameras + indoor GT producer only) and a `Px4MavlinkDrone` connects to UDP `14540` directly (pymavlink `udp:0.0.0.0:14540`); the rangefinder then arrives as MAVLink `DISTANCE_SENSOR`, no MAVROS.
+- **PX4**: Terminal 1 (`start_px4.sh`) runs PX4 **and** its Gazebo. Terminal 2 runs bridges. Offboard API is UDP `14540`. Indoor `PROTOCOL=mavlink` uses mission-owned feed (`auto_vision_feed` on `PX4_MAVLINK_SITL_VISION_CONFIG`) because SITL exposes a single offboard endpoint.
 - **PX4 uXRCE-DDS** (`PROTOCOL=dds`): Terminal 2 runs `MicroXRCEAgent` (udp4 :8888); outdoor leaves the agent in the foreground. Indoor also starts `px4_sitl.launch.py vision:=true backend:=dds` so GT→VSLAM→`VehicleOdometry` reaches EKF2. One-time setup: `make sim-install FIRMWARE=px4 ARGS=--native` (builds `px4_msgs` + the agent). `px4_msgs` must match the PX4 firmware (topics are versioned, e.g. `vehicle_status_v4`).
 - **Indoor**: both firmwares use `gz_vision_source` → vision bridges (see
   [localization SITL](../nectar/control/localization/README.md#sitl)).
@@ -160,9 +160,9 @@ make sim-bridge FIRMWARE=ardupilot ENV=indoor \
 | `scenery:=model://name` | Replace stock scenery with a mission model |
 | `spawn_pose:="x y z r p y"` | Iris pose (degrees); empty = template default |
 | `resource_path:=a:b` | Extra dirs on `GZ_SIM_RESOURCE_PATH` (mission `simulation/models`) |
-| `world:=/abs/path.sdf` | Escape hatch: full custom world (must embed drone/sensors yourself) |
+| `world:=/abs/path.sdf` | Escape hatch: full custom world (must embed drone/sensors yourself). Pass `vision:=true` for indoor ExternalNav — path worlds do **not** auto-enable vision. |
 
-Composed worlds use fixed names `nectar_indoor` / `nectar_outdoor` (pose topic `/world/<name>/dynamic_pose/info`). Mission packages must **not** hard-code iris/cameras in their SDF.
+Composed worlds use fixed names `nectar_indoor` / `nectar_outdoor` (pose topic `/world/<name>/dynamic_pose/info`). Full custom worlds use the SDF `<world name="...">`. Mission packages that only supply scenery must **not** hard-code iris/cameras in their SDF.
 
 - Headless ArduPilot without Gazebo (pure MAVROS): run `./scripts/simulation/start_sitl.sh` then `ros2 launch nectar sitl.launch.py` directly.
 
@@ -260,13 +260,13 @@ Defined in `nectar/control/config.py`:
 | `SITL_VISION_CONFIG`         | mavros    | 5760  | VISION     | Yes   | Gazebo indoor                                                                       |
 | `MAVLINK_SITL_CONFIG`        | mavlink   | 5760  | GPS        | No    | Headless SITL, direct pymavlink                                                     |
 | `MAVLINK_SITL_GAZEBO_CONFIG` | mavlink   | 5762  | GPS        | No    | Gazebo outdoor, direct (SERIAL1, alongside MAVROS)                                  |
-| `MAVLINK_SITL_VISION_CONFIG` | mavlink   | 5762  | VISION     | No    | Gazebo indoor, direct (vision feed from `/visual_slam/tracking/vo_pose_covariance`) |
+| `MAVLINK_SITL_VISION_CONFIG` | mavlink   | 5762  | VISION     | No    | Gazebo indoor; feeder SERIAL0 / 5760                                             |
 | `PX4_SITL_CONFIG`            | px4       | 14540 | GPS        | No    | PX4 SITL headless (offboard over MAVROS)                                            |
 | `PX4_SITL_GAZEBO_CONFIG`     | px4         | 14540 | GPS        | Yes   | PX4 SITL + Gazebo (x500_nectar, outdoor)                                            |
 | `PX4_SITL_VISION_CONFIG`     | px4         | 14540 | VISION     | Yes   | PX4 SITL indoor (indoor_room_px4 + gz_vision_source → EKF2)                         |
 | `PX4_MAVLINK_SITL_CONFIG`        | px4_mavlink | 14540 | GPS        | No    | PX4 SITL headless, direct pymavlink                                              |
 | `PX4_MAVLINK_SITL_GAZEBO_CONFIG` | px4_mavlink | 14540 | GPS        | Yes   | PX4 SITL + Gazebo (x500_nectar, outdoor), direct pymavlink                       |
-| `PX4_MAVLINK_SITL_VISION_CONFIG` | px4_mavlink | 14540 | VISION     | Yes   | PX4 SITL indoor, direct pymavlink (VISION_POSITION_ESTIMATE)                     |
+| `PX4_MAVLINK_SITL_VISION_CONFIG` | px4_mavlink | 14540 | VISION     | Yes   | PX4 SITL indoor; mission-owned vision feed (single offboard UDP)              |
 | `PX4_DDS_SITL_CONFIG`            | px4_dds     | 8888  | GPS        | Yes   | PX4 SITL native uXRCE-DDS (MicroXRCEAgent on 8888), outdoor                      |
 | `PX4_DDS_SITL_VISION_CONFIG`     | px4_dds     | 8888  | VISION     | No    | PX4 SITL indoor uXRCE-DDS (VehicleOdometry EV)                                   |
 

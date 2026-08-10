@@ -58,47 +58,35 @@ flowchart LR
 
 ## Run
 
-> **Prerequisite:** both sides must share `ROS_DOMAIN_ID` (default `14`, see `scripts/lib/config.sh`).
+> **Prerequisite:** producer and consumer share `ROS_DOMAIN_ID` (default `14`, see `scripts/lib/config.sh`).
 
-1. Producer (Isaac container). One self-contained command clones `isaac_ros_common`
-   (`release-3.2`), pulls the prebuilt NVCR base, builds the Nectar layer, and
-   drops you into the Isaac container with the workspace mounted:
+### 1. Producer (Isaac container)
 
 ```bash
 make isaac-run          # or: ./docker/isaac_vslam/run_docker.sh
-# inside the container, start the producer with the baked helper:
+# inside:
 nectar-vslam            # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
 ```
 
-2. Consumer (SDK container or host), pick the transport you fly with:
+### 2. Consumer — vision feeder (keep running)
 
-**MAVROS transport**:
+| Backend | Command |
+|---------|---------|
+| MAVROS | `ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=…` |
+| Direct MAVLink | `ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=…` |
+| PX4 DDS | `ros2 launch nectar vision_pose.launch.py backend:=dds` |
 
-```bash
-ros2 launch nectar vision_pose.launch.py backend:=mavros fcu_url:=/dev/ttyTHS1:921600
-```
+Or: `make driver DRONE=mavlink ENV=indoor`. Verify with [Indoor flight](flight.md), then start the mission on a **different** MAVLink endpoint than the feeder.
 
-**Direct pymavlink transport** (no MAVROS):
+`mavlink_url` / `fcu_url` are free-form — match your serial line or router fan-out. Example Black Bee Jetson MAVProxy layout (GCS / mission / feeder): `14550` / `14551` / `14552`.
 
-```bash
-ros2 launch nectar vision_pose.launch.py backend:=mavlink mavlink_url:=udp:127.0.0.1:14551
-```
+### 3. Mission
 
-**Native uXRCE-DDS** (PX4 only; needs a running `MicroXRCEAgent` + `px4_msgs`):
-
-```bash
-ros2 launch nectar vision_pose.launch.py backend:=dds
-```
-
-Add `send_speed:=true` to any of the three to also feed the VSLAM velocity —
-see [Velocity](#velocity-optional).
+`PoseSource.VISION` with `auto_vision_feed=False` (default): mission **subscribes** to the VSLAM topic for companion nav and does **not** send `VISION_*`. Opt-in `auto_vision_feed=True` for a single-process feed (do not also run the standalone mavlink feeder on the same endpoint). Optional velocity on that path: `vision_send_speed=True`.
 
 ## Velocity (optional)
 
-By default the bridges send **position only**. `send_speed:=true` adds the VSLAM
-velocity on the selected backend; the pose feed is unchanged and keeps running,
-because EKF3 does not initialise on velocity alone
-([ardupilot#23485](https://github.com/ArduPilot/ardupilot/issues/23485)).
+By default feeders send **position only**. `send_speed:=true` on `vision_pose.launch.py` (or `vision_send_speed=True` with `auto_vision_feed`) also sends VSLAM velocity; pose keeps running. EKF3 does not initialise on velocity alone ([ardupilot#23485](https://github.com/ArduPilot/ardupilot/issues/23485)).
 
 | Backend | Velocity carrier |
 |---------|------------------|
@@ -108,12 +96,10 @@ because EKF3 does not initialise on velocity alone
 
 ```bash
 ros2 launch nectar vision_pose.launch.py backend:=mavros send_speed:=true
-ros2 launch nectar vision_pose.launch.py backend:=mavlink send_speed:=true \
-    mavlink_url:=udp:127.0.0.1:14551
+ros2 launch nectar vision_pose.launch.py backend:=mavlink send_speed:=true mavlink_url:=…
 ```
 
-Arguments: `speed_topic` (default `/visual_slam/tracking/odometry`) and, on the
-node, `speed_output_topic` and `speed_timeout_s`.
+Arguments: `speed_topic` (default `/visual_slam/tracking/odometry`); node also has `speed_output_topic`, `speed_timeout_s`.
 
 ### What cuVSLAM actually provides
 
@@ -254,53 +240,36 @@ Each backend gains a velocity path with `send_speed:=true`
 
 ## One feeder rule
 
-Exactly **one** process may feed external vision into the FCU at a time:
+Exactly **one** process may send external vision into the FCU:
 
-| Transport | Who feeds the FCU |
-|-----------|-------------------|
-| MAVROS | `vision_pose_node` (`backend:=mavros`) → `/mavros/vision_pose/pose_cov` |
-| Direct pymavlink | `PymavlinkTransport` auto-starts `VisionPoseBridge` when `PoseSource.VISION` **or** a standalone `vision_pose_node backend:=mavlink` — never both on the same link |
-| uXRCE-DDS | `vision_pose_node backend:=dds` → `/fmu/in/vehicle_visual_odometry` |
+| Transport | Default feeder | Mission role |
+|-----------|----------------|--------------|
+| MAVROS | `vision_pose_node backend:=mavros` | Subscribes to `/mavros/vision_pose/…` |
+| Direct pymavlink | standalone `vision_pose_node backend:=mavlink` on a dedicated endpoint | `PoseSource.VISION`, `auto_vision_feed=False` (subscribe-only) |
+| uXRCE-DDS | `vision_pose_node backend:=dds` | Reads fused pose from PX4 DDS topics |
 
-`PymavlinkTransport` starts the **pose** bridge only. Velocity still needs
-`vision_pose_node … send_speed:=true` (or a manual `VisionSpeedBridge`) — and that
-node must share the mission's link carefully (prefer the mission-owned bridge for
-pose, and only add speed on the same connection, not a second `VISION_*` sender).
-
-Indoor `./setup.sh driver … --env indoor` starts the standalone consumer for
-mavros/mavlink. If the mission also opens `PoseSource.VISION` on pymavlink, skip
-the driver vision node (or use MAVROS, where the transport only *subscribes*).
+Opt-in `auto_vision_feed=True`: mission sends `VISION_*` (optional `vision_send_speed`). Never also run the standalone mavlink feeder on the same endpoint.
 
 ## SITL
 
-Gazebo indoor mirrors the hardware pipeline: ground-truth pose → the same
-canonical VSLAM topics → the same backends → EKF3 / EKF2.
+Gazebo indoor: ground-truth → canonical VSLAM topics → same backends → EKF3 / EKF2.
 
-| Firmware | Terminal 1 | Terminal 2 | Feeder |
-|----------|------------|------------|--------|
-| ArduPilot | `make sim-start FIRMWARE=ardupilot ENV=indoor` | `make sim-bridge … PROTOCOL=mavros\|mavlink` | `gz_vision_source` (iris) → mavros node or mission `VisionPoseBridge` |
-| PX4 | `make sim-start FIRMWARE=px4 ENV=indoor` | `make sim-bridge FIRMWARE=px4 ENV=indoor PROTOCOL=mavros\|mavlink\|dds` | `gz_vision_source` (x500_nectar) → mavros / mission bridge / dds |
+| Firmware | Terminal 1 | Terminal 2 (`sim-bridge`) | Feeder | Mission |
+|----------|------------|---------------------------|--------|---------|
+| ArduPilot `PROTOCOL=mavlink` (default) | `sim-start … ENV=indoor` | Gazebo + `vision_pose_node` on SERIAL0 (`tcp:…:5760`) | mavlink node | SERIAL1 (`tcp:…:5762`) |
+| ArduPilot `PROTOCOL=mavros` | same | Gazebo + MAVROS + `vision_pose_node` | mavros node | SERIAL0 |
+| PX4 `mavros` / `dds` | `sim-start FIRMWARE=px4 ENV=indoor` | producer + consumer | mavros / dds node | matching preset |
+| PX4 `PROTOCOL=mavlink` | same | producer only (single offboard UDP) | mission `auto_vision_feed=True` | `PX4_MAVLINK_SITL_VISION_CONFIG` |
 
-Shared arena: ArduPilot composes `nectar_indoor` (world Pose_V → TFMessage);
-PX4 uses scenery-only `indoor_room_px4` + `x500_nectar` with **model-level**
-PosePublisher at **50 Hz** (feeds `/world/indoor_room_px4/dynamic_pose/info`;
-spawned model name is `x500_nectar_0`). Gazebo 8 rejects world-attached
-PosePublisher. Params: ArduPilot `indoor.parm`; PX4 `px4_indoor.env`
-(`EKF2_EV_CTRL=11` pose+yaw, `EKF2_GPS_CTRL=0`, `EKF2_HGT_REF=3`,
-`EKF2_MAG_TYPE=5`).
-
-Stock PX4 onboard VIO (`x500_vision`) remains available only as an explicit
-override: `make sim-start FIRMWARE=px4 ENV=indoor ARGS='--model x500_vision'`
-(not the Nectar external-nav path).
-
-Verify:
+Shared arena: ArduPilot composes `nectar_indoor`; PX4 uses `indoor_room_px4` +
+`x500_nectar` (PosePublisher ~50 Hz). Params: ArduPilot `indoor.parm`; PX4
+`px4_indoor.env`. Stock PX4 `x500_vision` only via explicit override. Full matrix:
+[simulation README](../../../../simulation/README.md).
 
 ```bash
 ros2 topic hz /visual_slam/tracking/vo_pose_covariance   # ~50 Hz
 ros2 topic echo /mavros/vision_pose/pose_cov --once        # PROTOCOL=mavros
 ```
-
-See [simulation README](../../../../simulation/README.md) for the full matrix.
 
 ## Visualization
 
