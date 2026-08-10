@@ -10,7 +10,7 @@ cells advance as more setups are exercised
 
 ## Legend
 
-Each cell's symbol reflects the deepest verification tier reached (see [How it's verified](#how-its-verified)). Rows with a footnote marker carry a caveat at the bottom of the page.
+Each cell's symbol reflects the deepest verification tier reached (see [How it's verified](#how-its-verified)).
 
 | Symbol | Meaning |
 |:---:|---|
@@ -51,7 +51,7 @@ Install: `make python-vision` (algorithms) / camera extras as needed.
 |---|:---:|:---:|:---:|:---:|
 | ArUco / color / line / distance (algorithms) | ● | ● | ● | ● |
 | ROS-topic camera (`CameraFactory`) | ● | ● | ● | ● |
-| USB / OpenCV camera[^usb] | ● | ● | ● | ● |
+| USB / OpenCV camera | ● | ● | ● | ● |
 | RealSense D4xx (librealsense from source)[^realsense] | ● | ● | ◐ | ● |
 | OAK-D (`depthai`)[^oakd] | ● | ● | ◐ | ● |
 | MediaPipe hand / face[^mediapipe] | ● | ● | ● | ◐ |
@@ -64,7 +64,7 @@ Install: `make python-control`; backends are opt-in (`make drone-<x>`).
 |---|:---:|:---:|:---:|:---:|
 | Vehicle core (PID, navigator, frame transforms) | ● | ● | ● | ● |
 | Direct MAVLink (`pymavlink`) transport[^mavlink] | ● | ● | ● | ● |
-| MAVROS backend (ArduPilot / PX4)[^mavros] | ◐ | ● | ● | ◐ |
+| MAVROS backend (ArduPilot / PX4) | ◐ | ● | ● | ◐ |
 | PX4 native uXRCE-DDS[^px4dds] | ● | ● | ● | ◐ |
 | Crazyflie / Crazyswarm2[^crazyflie] | ● | ● | ● | ○ |
 | Bebop driver[^bebop] | ● | ◐ | ◐ | — |

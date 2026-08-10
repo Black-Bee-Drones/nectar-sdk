@@ -6,16 +6,20 @@ on:
     paths:
       - "website/**"
       - "docs/**"
+      - "i18n/**"
       - "scripts/docs/**"
       - "mkdocs.yml"
+      - "mkdocs.pt.yml"
       - "**/README.md"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "website/**"
       - "docs/**"
+      - "i18n/**"
       - "scripts/docs/**"
       - "mkdocs.yml"
+      - "mkdocs.pt.yml"
       - "**/README.md"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -39,10 +43,15 @@ jobs:
           python-version: "3.12"
       - name: Install toolchain
         run: pip install -r scripts/docs/requirements.txt
-      - name: Generate reference pages from READMEs
-        run: python scripts/docs/sync_readmes.py
-      - name: Build site
-        run: zensical build --clean
+      - name: Assemble English and Portuguese docs
+        run: |
+          python scripts/docs/sync_readmes.py
+          python scripts/docs/sync_i18n.py
+      - name: Build bilingual site
+        run: |
+          zensical build --clean -f mkdocs.yml
+          zensical build --clean -f mkdocs.pt.yml
+          rm -rf build/site/pt && mkdir -p build/site/pt && cp -a build/site-pt/. build/site/pt/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/site

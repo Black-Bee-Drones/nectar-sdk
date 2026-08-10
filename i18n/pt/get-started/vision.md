@@ -1,23 +1,26 @@
-# See with a camera
+# Ver com uma câmera
 
-Open any camera behind one factory, turn it into a callback-driven stream with an
-`ImageHandler`, and run an algorithm on each frame. Only the source changes between cameras;
-the pipeline stays the same.
+Abra qualquer câmera por meio de uma factory, transforme-a em um stream orientado a callback
+com um `ImageHandler` e rode um algoritmo em cada frame. Só a fonte muda entre câmeras; o
+pipeline permanece o mesmo.
 
-Pick your camera in the tab below and it stays selected through every step. New to the
-workspace? Do the [Installation](../setup/index.md) first; depth cameras also need the
-[RealSense setup](../setup/realsense.md).
+Escolha a câmera na aba abaixo; a seleção vale para todos os passos. Novo no workspace?
+Faça a [Instalação](../setup/index.md) primeiro; câmeras de profundidade também precisam da
+[configuração RealSense](../setup/realsense.md).
 
-## 1. Install the vision module
+## 1. Instale o módulo de visão
 
 ```bash
 make setup            # pick: vision
+
 # or: make python-vision
+
 ```
 
-## 2. Open the camera
+## 2. Abra a câmera
 
-`CameraFactory.from_source(...)` returns the matching driver for any key it understands:
+`CameraFactory.from_source(...)` devolve o driver correspondente a qualquer chave que
+entenda:
 
 === "Webcam"
 
@@ -47,31 +50,32 @@ make setup            # pick: vision
     camera = CameraFactory.from_source("/camera/image_raw")
     ```
 
-A one-off frame is `camera.get_frame()`; depth cameras add `get_depth_frame()` and
-`get_distance()`.
+Um frame avulso é `camera.get_frame()`; câmeras de profundidade acrescentam
+`get_depth_frame()` e `get_distance()`.
 
-The tabs above cover the common four. `from_source` accepts every key below; see the
-[Cameras reference](../modules/vision/camera.md) for each driver's config dataclass:
+As abas acima cobrem as quatro mais comuns. `from_source` aceita todas as chaves abaixo;
+veja a [referência de Cameras](../modules/vision/camera.md) para o dataclass
+de config de cada driver:
 
-| Key | Camera | Notes |
-|-----|--------|-------|
-| `webcam` / `opencv` | Generic USB webcam | `OpenCVConfig` (resolution, fps, focus) |
-| `realsense` | Intel RealSense D4xx | Color + depth |
-| `t265` | Intel RealSense T265 | Fisheye + host stereo depth + 6DOF pose |
-| `oakd` | Luxonis OAK-D | Color + depth |
-| `c920` | Logitech C920/C920e | Profile-based `OpenCVCam` |
+| Chave | Câmera | Notas |
+|-------|--------|-------|
+| `webcam` / `opencv` | Webcam USB genérica | `OpenCVConfig` (resolução, fps, foco) |
+| `realsense` | Intel RealSense D4xx | Cor + profundidade |
+| `t265` | Intel RealSense T265 | Fisheye + profundidade estéreo no host + pose 6DOF |
+| `oakd` | Luxonis OAK-D | Cor + profundidade |
+| `c920` | Logitech C920/C920e | `OpenCVCam` por perfil |
 | `imx219` | Raspberry Pi Camera v2 | Jetson (GStreamer) |
-| `ros` | ROS 2 image topic | Any `sensor_msgs/Image` topic |
-| `ros_depth` | ROS 2 color + depth topics | Depth-capable |
-| `file` | Static image file | A path resolves to this automatically |
+| `ros` | Tópico de imagem ROS 2 | Qualquer tópico `sensor_msgs/Image` |
+| `ros_depth` | Tópicos ROS 2 cor + profundidade | Com profundidade |
+| `file` | Arquivo de imagem estático | Um caminho resolve para isto automaticamente |
 
-A file path resolves to `file` and a source starting with `/` to `ros`, so those two need no
-explicit key.
+Um caminho de arquivo resolve para `file` e uma fonte que começa com `/` para `ros`, então
+essas duas não precisam de chave explícita.
 
-## 3. Stream frames through an ImageHandler
+## 3. Transmita frames por um ImageHandler
 
-`ImageHandler` wraps the source in a timer-driven ROS 2 node and calls your callback on every
-frame:
+`ImageHandler` envolve a fonte em um nó ROS 2 acionado por timer e chama seu callback a
+cada frame:
 
 === "Webcam"
 
@@ -137,21 +141,21 @@ frame:
     nectar.shutdown()
     ```
 
-## 4. Run an algorithm
+## 4. Rode um algoritmo
 
-Construct an algorithm and call it inside the callback. Each one follows the same shape:
+Construa um algoritmo e chame-o dentro do callback. Todos seguem a mesma forma:
 
-| Algorithm | Class | Use it for |
-|-----------|-------|------------|
-| ArUco markers | `Aruco` | Fiducial detection and 6-DoF pose (`detect`, `pose_estimate`) |
-| Color | `ColorDetector` | HSV/LAB color filtering (calibrate, then `mode="preset"`) |
-| Line | `LineDetector` | Line following with Hough / RANSAC / ellipse methods |
-| Distance | `DistanceEstimator` | Pixel-size to distance regression |
-| Hand / face | `HandTracker`, `FaceMeshTracker` | MediaPipe landmark tracking |
-| Optical flow | `OpticalFlowEstimator` | Frame-to-frame motion |
+| Algoritmo | Classe | Use para |
+|-----------|--------|----------|
+| Marcadores ArUco | `Aruco` | Detecção fiducial e pose 6-DoF (`detect`, `pose_estimate`) |
+| Cor | `ColorDetector` | Filtro de cor HSV/LAB (calibre e depois `mode="preset"`) |
+| Linha | `LineDetector` | Seguimento de linha com Hough / RANSAC / elipse |
+| Distância | `DistanceEstimator` | Regressão de tamanho em pixels para distância |
+| Mão / face | `HandTracker`, `FaceMeshTracker` | Tracking de landmarks MediaPipe |
+| Optical flow | `OpticalFlowEstimator` | Movimento frame a frame |
 
-ArUco pose estimation returns the marker id, translation, and yaw and draws the axes on the
-frame. Swap `Aruco` for any class above; the source stays whatever you picked in step 2:
+A estimativa de pose ArUco devolve o id do marcador, a translação e o yaw, e desenha os eixos
+no frame. Troque `Aruco` por qualquer classe acima; a fonte continua a escolhida no passo 2:
 
 === "Webcam"
 
@@ -225,22 +229,23 @@ frame. Swap `Aruco` for any class above; the source stays whatever you picked in
     nectar.shutdown()
     ```
 
-Exact constructor arguments and return types are in the [Vision reference](../modules/vision/index.md).
+Argumentos exatos do construtor e tipos de retorno estão na
+[referência de Vision](../modules/vision/index.md).
 
-!!! success "Expected result"
-    The preview window shows the live stream with the algorithm's overlay (for ArUco, the
-    marker axes and id).
+!!! success "Resultado esperado"
+    A janela de preview mostra o stream ao vivo com o overlay do algoritmo (no ArUco, os
+    eixos e o id do marcador).
 
 <figure class="nectar-shot">
   <div class="nectar-shot__media">
-    <img src="../assets/media/aruco-ex.jpg" alt="ArUco detection overlaying axes and ids on 15 markers in one frame">
+    <img src="../assets/media/aruco-ex.jpg" alt="Overlay ArUco com eixos e ids em 15 marcadores em um frame">
   </div>
-  <figcaption>ArUco pose estimation detecting 15 markers in a single frame, each with its id and axes.</figcaption>
+  <figcaption>Estimativa de pose ArUco detectando 15 marcadores em um único frame, cada um com id e eixos.</figcaption>
 </figure>
 
-## See also
+## Ver também
 
-- [Vision reference](../modules/vision/index.md): camera drivers, algorithm APIs, ROS 2 nodes,
-  and camera/color calibration.
-- [Vision examples](../modules/examples/vision.md): camera capture and depth examples.
-- [Detect, segment & classify](ai.md).
+- [Referência de Vision](../modules/vision/index.md): drivers de câmera, APIs dos
+  algoritmos, nós ROS 2 e calibração de câmera/cor.
+- [Exemplos de Vision](../modules/examples/vision.md): captura e profundidade.
+- [Detectar, segmentar e classificar](ai.md).

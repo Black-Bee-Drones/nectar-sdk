@@ -118,9 +118,10 @@ See [Docker](../../docker/README.md).
 | Command | Does |
 |---|---|
 | `make docs-install` | Create `.venv-docs` and install the doc toolchain |
-| `make docs-sync` | Assemble `build/docs/` from `website/` + READMEs + `docs/*.md` |
-| `make docs` | Sync, then build the HTML into `build/site/` |
-| `make docs-serve` | Sync, then live-preview at `http://localhost:8000` |
+| `make docs-sync` | Assemble `build/docs/` (EN) and `build/docs-pt/` (PT) |
+| `make docs` | Sync, build EN + PT, merge into `build/site/` (+ `build/site/pt/`) |
+| `make docs-serve` | Bilingual preview at `http://localhost:8000/nectar-sdk/` and `.../pt/` |
+| `make docs-serve-en` | English-only live reload (PT language links 404) |
 
 Edit the authored pages under `website/`, the module READMEs, and `docs/*.md`; everything under
 `build/` is generated. Conventions are in [Contributing](../CONTRIBUTING.md).

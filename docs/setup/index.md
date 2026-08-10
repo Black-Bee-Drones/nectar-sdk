@@ -110,7 +110,7 @@ deactivate                 # leave it (shell built-in)
 uv pip install <package>   # add a package (fast); plain `pip install` also works
 ```
 
-Prefer it always active? Add one line to `~/.bashrc`:
+To activate the env in every new shell, add one line to `~/.bashrc`:
 
 ```bash
 source ~/ros2_ws/.venv/bin/activate

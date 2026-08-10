@@ -10,6 +10,13 @@ repo_url: https://github.com/Black-Bee-Drones/nectar-sdk
 repo_name: Black-Bee-Drones/nectar-sdk
 
 extra:
+  alternate:
+    - name: English
+      link: /nectar-sdk/
+      lang: en
+    - name: Português
+      link: /nectar-sdk/pt/
+      lang: pt
   social:
     - icon: fontawesome/brands/linkedin
       link: https://www.linkedin.com/company/blackbeedrones/
@@ -32,15 +39,17 @@ extra_css:
 
 # mermaid.mjs registers the ELK layout engine for the native Mermaid runtime;
 # diagram-zoom.js adds fullscreen pan/zoom to the rendered diagrams.
+# i18n-switch.js rewrites the language selector to the sibling page when available.
 extra_javascript:
   - javascripts/mermaid.mjs
   - javascripts/diagram-zoom.js
   - javascripts/showcase.js
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/i18n-switch.js
 
-# edit only: the module README.md files, docs/*.md, and the authored pages in
-# website/
+# edit only: the module README.md files, docs/*.md, authored pages in website/,
+# and Portuguese pages in i18n/pt/
 # Everything under build/ is generated — never edit it.
 docs_dir: build/docs
 site_dir: build/site
