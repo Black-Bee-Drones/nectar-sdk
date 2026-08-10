@@ -14,10 +14,14 @@ if TYPE_CHECKING:
 class FlightSequencer:
     """Liftoff/touchdown detection with size-agnostic velocity gating."""
 
-    # The FCU sets HEARTBEAT.system_status = MAV_STATE_ACTIVE only when
-    # armed AND not landed; useful for in-flight detection.
+    # MAVLink HEARTBEAT.system_status. ArduCopter reports STANDBY when
+    # land_complete and ACTIVE once flying (see GCS_MAVLINK_Copter).
+    _MAV_STATE_STANDBY = 3
     _MAV_STATE_ACTIVE = 4
-    _AIRBORNE_THRESHOLD = 0.5  # m, altitude fallback for is_airborne
+    # Altitude fallback only (when FCU landed/flying state is unavailable).
+    # Must clear typical grounded readings: body/mount height, elevated pads,
+    # and vision Z relative to a lower takeoff origin.
+    _AIRBORNE_THRESHOLD = 0.9  # m
 
     # Takeoff settle. Velocity-based detection absorbs sensor spikes that
     # would otherwise reset an absolute-spread check on real airframes.
@@ -44,26 +48,40 @@ class FlightSequencer:
         return self._SPIN_UP_DELAY
 
     def is_airborne(self) -> bool:
-        """True when altitude clears ``_AIRBORNE_THRESHOLD``.
+        """True when the vehicle is flying (not on the ground).
 
-        Prefers the rangefinder when available (ground-truth proximity);
-        falls back to vision/EKF and GPS ``rel_alt`` with a looser threshold
-        to absorb their on-ground noise.
+        Prefers FCU landed/flying state from ``HEARTBEAT.system_status`` when
+        it carries real MAVLink semantics (ArduPilot/PX4 MAVLink): STANDBY
+        means on the ground, ACTIVE means in flight. Disarmed is never
+        airborne. Altitude is only a fallback for transports that do not
+        expose that status (e.g. PX4 DDS maps arming_state into the same
+        field); the fallback uses a single threshold for every source so a
+        grounded rangefinder reading body height or an elevated pad cannot
+        false-trigger the takeoff short-circuit.
         """
-        transport = self._drone._transport
+        drone = self._drone
+        if drone.is_armed is False:
+            return False
+
+        status = drone._transport.state.system_status
+        if status == self._MAV_STATE_STANDBY:
+            return False
+        if status == self._MAV_STATE_ACTIVE:
+            return True
+
+        transport = drone._transport
         thr = self._AIRBORNE_THRESHOLD
 
         rng = transport.rangefinder
         if rng is not None:
             return rng > thr
 
-        looser = max(thr, 1.0)
         local = transport.local_pose
-        if local is not None and local.position.z > looser:
+        if local is not None and local.position.z > thr:
             return True
-        if not self._drone.is_indoor:
+        if not drone.is_indoor:
             rel = transport.rel_alt
-            if rel is not None and rel > looser:
+            if rel is not None and rel > thr:
                 return True
         return False
 

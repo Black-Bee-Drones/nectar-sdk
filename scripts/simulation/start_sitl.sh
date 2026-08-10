@@ -132,17 +132,18 @@ echo "  Model:    ${MODEL}"
 echo "  Indoor:   ${USE_INDOOR}"
 echo "  Location: ${LOCATION:-default}"
 echo "  Speedup:  ${SPEEDUP}x"
-echo "  MAVROS:   tcp://127.0.0.1:5760  (SERIAL0)"
-echo "  MAVLink:  tcp://127.0.0.1:5762  (SERIAL1, direct pymavlink)"
+echo "  SERIAL0:  tcp://127.0.0.1:5760  (vision feeder / optional MAVROS)"
+echo "  SERIAL1:  tcp://127.0.0.1:5762  (mission / MavlinkDrone)"
 echo ""
 
 if [ "${USE_GAZEBO}" = true ]; then
-    echo "  Gazebo mode — launch Gazebo + MAVROS separately:"
-    echo "    ros2 launch nectar sitl_gazebo.launch.py"
+    echo "  Gazebo mode — launch Gazebo + bridges separately:"
+    echo "    make sim-bridge FIRMWARE=ardupilot ENV=indoor|outdoor"
+    echo "    # or: ros2 launch nectar sitl_gazebo.launch.py"
 else
-    echo "  Connect MAVROS with:"
-    echo "    ros2 launch nectar sitl.launch.py"
-    echo "    # or: ros2 launch mavros apm.launch fcu_url:=tcp://127.0.0.1:5760"
+    echo "  Connect with:"
+    echo "    make sim-bridge FIRMWARE=ardupilot   # direct mavlink default"
+    echo "    # or MAVROS: make sim-bridge PROTOCOL=mavros"
 fi
 echo ""
 

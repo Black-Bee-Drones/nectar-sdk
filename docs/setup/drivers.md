@@ -40,12 +40,15 @@ defined in `scripts/lib/drones.sh`.
         --connection serial:///dev/ttyUSB0:921600
     ```
 
-    Indoor (GPS-denied) starts the vision-pose bridge first:
+    Indoor (GPS-denied): start the vision feeder first, then the mission on a
+    different MAVLink endpoint (Black Bee MAVProxy example: feeder `14552`,
+    mission `14551`):
 
     ```bash
-    make driver DRONE=mavlink ENV=indoor          # terminal 1: VISION_POSITION_ESTIMATE -> FCU
+    make driver DRONE=mavlink ENV=indoor          # terminal 1: vision feeder
     python3 nectar/nectar/examples/control/basic.py \
-        --drone mavlink --mode position --side 2.0 --env indoor    # terminal 2
+        --drone mavlink --mode position --side 2.0 --env indoor \
+        --connection udp:127.0.0.1:14551           # terminal 2: mission
     ```
 
 === "PX4 · MAVROS"

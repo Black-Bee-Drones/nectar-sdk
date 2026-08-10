@@ -72,13 +72,14 @@ _driver_px4_dds() {
     fi
 }
 
-# Direct pymavlink (drone "mavlink" / "px4_mavlink"): the mission opens the link
-# itself, so outdoor needs no bridge. Indoor still needs the vision-pose feed.
+# Direct pymavlink: outdoor needs no bridge (mission owns the link). Indoor starts
+# vision_pose on mavlink_url (override with FCU_URL); keep the mission on another endpoint.
 _driver_mavlink() {
     if [ "$_DRV_ENV" = "indoor" ]; then
-        log_info "Indoor: vision-pose bridge (MAVLink backend)"
+        local url="${FCU_URL:-udp:127.0.0.1:14552}"
+        log_info "Indoor: vision-pose bridge (MAVLink) mavlink_url:=${url}"
         ros2 launch nectar vision_pose.launch.py backend:=mavlink \
-            ${FCU_URL:+mavlink_url:="$FCU_URL"} "${_DRV_EXTRA[@]}"
+            mavlink_url:="$url" "${_DRV_EXTRA[@]}"
     else
         log_info "Direct MAVLink: no bridge needed — the mission connects itself."
         log_info "Run it directly, e.g.:"

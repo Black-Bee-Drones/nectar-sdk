@@ -122,6 +122,10 @@ class _MavlinkLinkConfig(DroneConfig):
     heartbeat_hz: float = 1.0
     stream_rates: Optional[Dict[str, float]] = None
     vision_pose_topic: str = "/visual_slam/tracking/vo_pose_covariance"
+    # False: external vision_pose_node feeds the FCU; True: mission sends VISION_*.
+    auto_vision_feed: bool = False
+    vision_send_speed: bool = False
+    vision_speed_topic: str = "/visual_slam/tracking/odometry"
     pid_config_file: Optional[str] = None
     # Setpoint speed/accel/jerk limits (WPNAV on ArduPilot, MPC_* on PX4).
     # Applied to the FCU when apply_setpoint_params=True.
@@ -238,7 +242,10 @@ MAVLINK_SITL_VISION_CONFIG = MavlinkConfig(
     expect_lidar=False,
     vision_pose_topic="/visual_slam/tracking/vo_pose_covariance",
 )
-"""MavlinkConfig preset for SITL + Gazebo indoor (vision pose)."""
+"""MavlinkConfig preset for SITL + Gazebo indoor (vision pose).
+
+Mission on SERIAL1 (tcp 5762). With ``mavros:=false``, sim-bridge feeds SERIAL0
+(tcp 5760) via ``vision_pose_node``; leave ``auto_vision_feed`` at default False."""
 
 # PX4 SITL presets (PX4 over MAVROS, offboard via udp:14540)
 
@@ -266,12 +273,17 @@ republishes (see simulation/config/px4_config_sitl.yaml)."""
 PX4_SITL_VISION_CONFIG = Px4MavrosConfig(
     name="px4_sitl_drone",
     pose_source=PoseSource.VISION,
-    expect_lidar=False,
+    expect_lidar=True,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_indoor.yaml"),
     setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_indoor.yaml"),
     apply_setpoint_params=True,
 )
-"""Px4MavrosConfig preset for PX4 SITL + Gazebo indoor (EKF2 external vision)."""
+"""Px4MavrosConfig preset for PX4 SITL indoor (EKF2 external vision).
+
+Uses the shared indoor_room_px4 arena + x500_nectar. Gazebo GT is published on
+the canonical VSLAM topics by gz_vision_source; vision_pose_node (mavros) feeds
+EKF2. Rangefinder arrives as DISTANCE_SENSOR → /mavros/rangefinder/rangefinder
+(same outdoor path)."""
 
 PX4_DDS_SITL_CONFIG = Px4DdsConfig(
     name="px4_dds_sitl_drone",
@@ -279,6 +291,20 @@ PX4_DDS_SITL_CONFIG = Px4DdsConfig(
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_outdoor.yaml"),
 )
 """Px4DdsConfig preset for PX4 SITL over native uXRCE-DDS (MicroXRCEAgent on 8888)."""
+
+PX4_DDS_SITL_VISION_CONFIG = Px4DdsConfig(
+    name="px4_dds_sitl_drone",
+    pose_source=PoseSource.VISION,
+    expect_lidar=False,
+    pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_indoor.yaml"),
+)
+"""Px4DdsConfig preset for PX4 SITL indoor over uXRCE-DDS.
+
+vision_pose_node backend:=dds publishes VehicleOdometry on
+/fmu/in/vehicle_visual_odometry. Lidar still arrives as MAVLink DISTANCE_SENSOR
+on the offboard link when MAVROS is not running — leave expect_lidar=False unless
+a DDS distance bridge is added. DDS cannot set_param; apply EKF2 / MPC_* via
+px4_indoor.env or QGC."""
 
 # PX4 SITL presets (PX4 over direct pymavlink, offboard MAVLink on udp 14540)
 
@@ -305,9 +331,13 @@ The downward rangefinder arrives as MAVLink DISTANCE_SENSOR on the offboard link
 PX4_MAVLINK_SITL_VISION_CONFIG = Px4MavlinkConfig(
     name="px4_mavlink_sitl_drone",
     pose_source=PoseSource.VISION,
-    expect_lidar=False,
+    expect_lidar=True,
+    auto_vision_feed=True,
     pid_config_file=os.path.join(_PX4_CONFIG_DIR, "position_sim_indoor.yaml"),
     setpoint_config_file=os.path.join(_PX4_CONFIG_DIR, "setpoint_sim_indoor.yaml"),
     apply_setpoint_params=True,
 )
-"""Px4MavlinkConfig preset for PX4 SITL indoor over direct pymavlink (VISION_POSITION_ESTIMATE)."""
+"""Px4MavlinkConfig preset for PX4 SITL indoor over direct pymavlink.
+
+Single offboard UDP (14540) → ``auto_vision_feed=True``. Prefer an external
+feeder on a second endpoint when available (``auto_vision_feed=False``)."""

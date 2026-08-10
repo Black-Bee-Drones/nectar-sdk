@@ -88,7 +88,9 @@ link_nectar_asset() {
 
 link_nectar_asset "${NECTAR_SIM_DIR}/models/x500_nectar"             "${PX4_MODELS_DIR}/x500_nectar"
 link_nectar_asset "${NECTAR_SIM_DIR}/models/outdoor_field_scenery"   "${PX4_MODELS_DIR}/outdoor_field_scenery"
+link_nectar_asset "${NECTAR_SIM_DIR}/models/indoor_room_scenery"     "${PX4_MODELS_DIR}/indoor_room_scenery"
 link_nectar_asset "${NECTAR_SIM_DIR}/worlds/outdoor_field_px4.sdf"   "${PX4_WORLDS_DIR}/outdoor_field_px4.sdf"
+link_nectar_asset "${NECTAR_SIM_DIR}/worlds/indoor_room_px4.sdf"     "${PX4_WORLDS_DIR}/indoor_room_px4.sdf"
 
 # ── Native uXRCE-DDS path (optional) ────────────────────────────────────────
 # Shares the same implementation as `make drone-px4-dds` (px4_msgs + agent),

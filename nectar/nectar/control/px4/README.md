@@ -88,7 +88,11 @@ Unlike ArduPilot's single `GUIDED` mode, PX4 separates offboard control from the
 
 ## Indoor / external vision (EKF2)
 
-For GPS-denied flight, `pose_source=PoseSource.VISION` makes the SDK read the FCU's fused local pose for companion-side PID navigation. The external pose itself is fed to the FCU by the separate [localization](../localization/README.md) bridge (`vision_pose.launch.py backend:=mavros|mavlink`), which sends `VISION_POSITION_ESTIMATE`. PX4's EKF2 fuses it once `EKF2_EV_CTRL` / `EKF2_HGT_REF` are set, GNSS is disabled (`EKF2_GPS_CTRL=0`), and the stream is 30–50 Hz (PX4 rejects rates that are too low — much stricter than ArduPilot's ≥4 Hz). The full parameter set, the ArduPilot equivalents, and current flight status are in [Localization → FCU setup](../localization/README.md#fcu-setup).
+For GPS-denied flight, `pose_source=PoseSource.VISION` makes the SDK read the FCU's fused local pose for companion-side PID navigation. The external pose itself is fed to the FCU by the separate [localization](../localization/README.md) bridge (`vision_pose.launch.py backend:=mavros|mavlink|dds`), which sends `VISION_POSITION_ESTIMATE` (or `VehicleOdometry` on DDS). PX4's EKF2 fuses it once `EKF2_EV_CTRL` / `EKF2_HGT_REF` are set, GNSS is disabled (`EKF2_GPS_CTRL=0`), and the stream is 30–50 Hz (PX4 rejects rates that are too low — much stricter than ArduPilot's ≥4 Hz).
+
+**SITL:** `ENV=indoor` flies `x500_nectar` in the shared `indoor_room_px4` arena with `gz_vision_source` mirroring hardware cuVSLAM topics (same pattern as ArduPilot indoor). Params load from `simulation/params/px4_indoor.env`. See [Localization → SITL](../localization/README.md#sitl).
+
+**Hardware:** competition flights to date are on ArduPilot; the PX4 parameter table is grounded in the PX4 docs / VSLAM-UAV tutorial and is ready for a Pixhawk move — validate on your airframe before competition use. Full parameter set and ArduPilot equivalents: [Localization → FCU setup](../localization/README.md#fcu-setup).
 
 ## Configuration
 
@@ -108,7 +112,7 @@ drone = DroneFactory.create("px4", config)
 
 `Px4MavrosConfig` carries the MAVROS topic names (identical to `MavrosConfig`), `connection_string` (a MAVROS `fcu_url`), `offboard_rate_hz`, `mavros_launch` (default `px4.launch`), and the setpoint-config fields `setpoint_config_file` / `apply_setpoint_params` (see below).
 
-**SITL presets** (in [`config.py`](../config.py)): `PX4_SITL_CONFIG`, `PX4_SITL_GAZEBO_CONFIG`, `PX4_SITL_VISION_CONFIG`.
+**SITL presets** (in [`config.py`](../config.py)): `PX4_SITL_CONFIG`, `PX4_SITL_GAZEBO_CONFIG`, `PX4_SITL_VISION_CONFIG`, `PX4_MAVLINK_SITL_VISION_CONFIG`, `PX4_DDS_SITL_VISION_CONFIG`.
 
 ## Setpoint configuration (speed / acceleration)
 

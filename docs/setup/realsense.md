@@ -34,10 +34,15 @@ Per-distro `realsense-ros` / `librealsense` versions are auto-selected from
 
 ## Indoor navigation
 
-Indoor (GPS-denied) navigation is built into the SDK's
-[Localization module](../../nectar/nectar/control/localization/README.md): a RealSense feeds
-Isaac ROS Visual SLAM on a Jetson, which feeds pose to the FCU over MAVROS or direct MAVLink.
+Indoor (GPS-denied) navigation is built into the SDK's Localization module: a
+RealSense feeds Isaac ROS Visual SLAM on a Jetson, which feeds pose to the FCU
+over MAVROS or direct MAVLink.
+
+| Doc | Scope |
+|-----|-------|
+| [Localization](../../nectar/nectar/control/localization/README.md) | Architecture, Run, FCU, EKF origin, indoor SOP |
+| [Concepts](../../nectar/nectar/control/localization/concepts.md) | SLAM / VIO / V-SLAM theory |
+| [Legacy T265](../../nectar/nectar/control/localization/legacy.md) | T265 + `vision_to_mavros` |
 
 The Isaac producer runs in its own container (`make isaac-run`). See the
-[Docker guide](../../docker/README.md) for the container and the
-[Localization module](../../nectar/nectar/control/localization/README.md) for the full pipeline.
+[Docker guide](../../docker/README.md) for the container.

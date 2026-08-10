@@ -18,6 +18,15 @@ _source_ros_env() {
     if [ -f "${WORKSPACE_DIR}/install/setup.bash" ]; then
         source "${WORKSPACE_DIR}/install/setup.bash"
     fi
+    # ros2 launch console_scripts use #!/usr/bin/python3 (system interpreter),
+    # so expose the shared uv venv site-packages (pymavlink, etc.) via PYTHONPATH.
+    if [ -x "${NECTAR_VENV}/bin/python" ]; then
+        local _nectar_sp
+        _nectar_sp="$("${NECTAR_VENV}/bin/python" -c 'import site; print(":".join(site.getsitepackages()))' 2>/dev/null || true)"
+        if [ -n "${_nectar_sp}" ]; then
+            export PYTHONPATH="${_nectar_sp}${PYTHONPATH:+:${PYTHONPATH}}"
+        fi
+    fi
 }
 
 # ── Unified simulation CLI ──────────────────────────────────────────────────
@@ -25,16 +34,17 @@ _source_ros_env() {
 # autopilot SITL and the ROS stack are separate processes), so it is made
 # symmetric:
 #   sim-start  = Terminal 1: the simulator (ArduPilot SITL; for PX4 also Gazebo)
-#   sim-bridge = Terminal 2: the ROS stack (Gazebo+MAVROS for ArduPilot; MAVROS
-#                for PX4). ENV must match between the two terminals.
+#   sim-bridge = Terminal 2: the ROS stack (Gazebo + bridges for ArduPilot;
+#                MAVROS / DDS / camera bridge for PX4). ENV must match between
+#                the two terminals.
 #
-# Axes (defaults): FIRMWARE=ardupilot  ENV=outdoor  PROTOCOL=mavros
+# Axes (defaults): FIRMWARE=ardupilot  ENV=outdoor  PROTOCOL=mavlink
 # Any non-flag tokens are forwarded to the underlying script/launch (ARGS=...).
 
 _sim_parse() {
     _SIM_FIRMWARE="ardupilot"
     _SIM_ENV="outdoor"
-    _SIM_PROTOCOL="mavros"
+    _SIM_PROTOCOL="mavlink"
     _SIM_EXTRA=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -103,8 +113,12 @@ cmd_sim_start() {
                         --world outdoor_field_px4 --autostart 4001 "${_SIM_EXTRA[@]}"
                     ;;
                 indoor)
-                    # PX4's built-in vision model flies GPS-denied via onboard VIO.
-                    _sim_script start_px4.sh --model x500_vision "${_SIM_EXTRA[@]}"
+                    # Shared indoor room + x500_nectar; external vision via
+                    # gz_vision_source (same pattern as ArduPilot indoor).
+                    # Override with ARGS='--model x500_vision' for stock onboard VIO.
+                    _sim_script start_px4.sh --model x500_nectar \
+                        --world indoor_room_px4 --autostart 4001 \
+                        --params px4_indoor.env "${_SIM_EXTRA[@]}"
                     ;;
             esac
             ;;
@@ -144,19 +158,23 @@ cmd_sim_bridge() {
             case "$_SIM_PROTOCOL" in
                 mavros)
                     if [ "$_SIM_ENV" = "indoor" ]; then
-                        ros2 launch nectar px4_sitl.launch.py vision:=true "${_SIM_EXTRA[@]}"
+                        ros2 launch nectar px4_sitl.launch.py \
+                            vision:=true gz_bridge:=true backend:=mavros \
+                            "${_SIM_EXTRA[@]}"
                     else
-                        ros2 launch nectar px4_sitl.launch.py gz_bridge:=true "${_SIM_EXTRA[@]}"
+                        ros2 launch nectar px4_sitl.launch.py gz_bridge:=true \
+                            "${_SIM_EXTRA[@]}"
                     fi
                     ;;
                 mavlink)
-                    # Direct-pymavlink (drone "px4_mavlink"): the drone connects
-                    # to UDP 14540 itself, so skip MAVROS and bridge cameras only.
+                    # px4_mavlink: mission owns UDP 14540. Indoor: producer only.
                     if [ "$_SIM_ENV" = "indoor" ]; then
-                        ros2 launch nectar px4_sitl.launch.py mavros:=false "${_SIM_EXTRA[@]}"
+                        ros2 launch nectar px4_sitl.launch.py \
+                            vision:=true mavros:=false gz_bridge:=true \
+                            backend:=mavlink "${_SIM_EXTRA[@]}"
                     else
-                        ros2 launch nectar px4_sitl.launch.py mavros:=false gz_bridge:=true \
-                            "${_SIM_EXTRA[@]}"
+                        ros2 launch nectar px4_sitl.launch.py mavros:=false \
+                            gz_bridge:=true "${_SIM_EXTRA[@]}"
                     fi
                     ;;
                 dds)
@@ -166,9 +184,19 @@ cmd_sim_bridge() {
                         exit 1
                     fi
                     log_info "Starting Micro XRCE-DDS Agent on udp4 :8888..."
-
-                    LD_LIBRARY_PATH="${HOME}/.local/lib:${LD_LIBRARY_PATH:-}" \
-                        MicroXRCEAgent udp4 -p 8888 "${_SIM_EXTRA[@]}"
+                    if [ "$_SIM_ENV" = "indoor" ]; then
+                        # Agent + GT→VSLAM→VehicleOdometry consumer.
+                        LD_LIBRARY_PATH="${HOME}/.local/lib:${LD_LIBRARY_PATH:-}" \
+                            MicroXRCEAgent udp4 -p 8888 &
+                        _SIM_DDS_AGENT_PID=$!
+                        ros2 launch nectar px4_sitl.launch.py \
+                            vision:=true mavros:=false gz_bridge:=true \
+                            backend:=dds "${_SIM_EXTRA[@]}"
+                        kill "${_SIM_DDS_AGENT_PID}" 2>/dev/null || true
+                    else
+                        LD_LIBRARY_PATH="${HOME}/.local/lib:${LD_LIBRARY_PATH:-}" \
+                            MicroXRCEAgent udp4 -p 8888 "${_SIM_EXTRA[@]}"
+                    fi
                     ;;
                 *)
                     log_error "Unknown PROTOCOL '$_SIM_PROTOCOL' for px4 (valid: mavros, mavlink, dds)"

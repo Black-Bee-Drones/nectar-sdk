@@ -69,7 +69,12 @@ The [EKF](https://ardupilot.org/copter/docs/common-apm-navigation-extended-kalma
 
 ### EKF Origin (Indoor Requirement)
 
-The EKF local frame needs an origin — the (0,0,0) reference point. Outdoors, GPS sets this automatically. **Indoors, set it manually before flight** via Mission Planner ("Set EKF Origin Here") or the [`SET_GPS_GLOBAL_ORIGIN`](https://mavlink.io/en/messages/common.html#SET_GPS_GLOBAL_ORIGIN) message. The actual lat/lon don't matter — the EKF just needs a defined origin to fuse vision data. Without it, the local pose is not published and `FRAME_LOCAL_NED` commands won't work.
+The EKF local frame needs an origin — the (0,0,0) reference for NED. Outdoors,
+GPS usually sets it. Indoors without a GPS fix, set it manually (Mission Planner
+"Set EKF Origin Here" or [`SET_GPS_GLOBAL_ORIGIN`](https://mavlink.io/en/messages/common.html#SET_GPS_GLOBAL_ORIGIN)).
+Home (RTL) is a different concept. Full rules (ArduPilot vs PX4, 4.7+ persistence,
+why the GCS map icon appears, what Nectar does not send):
+[Localization → EKF origin](../localization/README.md#ekf-origin).
 
 ### Vision Systems (Indoor Position Source)
 
