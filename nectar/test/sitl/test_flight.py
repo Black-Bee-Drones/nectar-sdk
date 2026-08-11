@@ -28,6 +28,18 @@ _PARAMS = [
     for k in sim_helpers.SIM_KEYS
 ]
 
+# FCU backends that exercise land → takeoff again (landed_state / airborne gate).
+_FCU_RETAKEOFF = [
+    pytest.param(k, marks=getattr(pytest.mark, sim_helpers.SIM_SPECS[k].firmware), id=k)
+    for k in (
+        "ardupilot-mavros",
+        "ardupilot-mavlink",
+        "px4-mavros",
+        "px4-mavlink",
+        "px4-dds",
+    )
+]
+
 
 @pytest.mark.parametrize("sim_session", _PARAMS, indirect=True)
 def test_smoke_flight(sim_session):
@@ -56,3 +68,42 @@ def test_smoke_flight(sim_session):
 
     landed = drone.land(timeout=45.0)
     assert landed is None or landed, f"{spec.key}: land failed"
+
+
+@pytest.mark.parametrize("sim_session", _FCU_RETAKEOFF, indirect=True)
+def test_land_retakeoff_handshake(sim_session):
+    """Land, then take off again without the airborne short-circuit.
+
+    After ``land()``, ``is_airborne`` must be false so the next ``takeoff()``
+    runs the full arm/climb path. MAVROS and direct MAVLink request
+    ``EXTENDED_SYS_STATE`` (``landed_state``); PX4 DDS uses HEARTBEAT /
+    rangefinder fallbacks.
+    """
+    from nectar.control.vehicle.types import LandedState
+
+    drone, spec = sim_session
+    assert drone is not None, f"{spec.key}: SDK never connected to the simulator"
+
+    assert drone.takeoff(altitude=spec.alt, precision=spec.precision, timeout=60.0), (
+        f"{spec.key}: first takeoff failed"
+    )
+    drone.delay(1.0)
+
+    assert drone.land(timeout=60.0), f"{spec.key}: land failed"
+    state = drone._transport.state
+    if spec.drone_type in ("mavros", "mavlink", "px4", "px4_mavlink"):
+        assert state.landed_state is not None, (
+            f"{spec.key}: landed_state never received (EXTENDED_SYS_STATE not streaming?)"
+        )
+        assert state.landed_state == LandedState.ON_GROUND, (
+            f"{spec.key}: expected ON_GROUND after land, got {state.landed_state}"
+        )
+    assert drone._sequencer.is_airborne() is False, (
+        f"{spec.key}: still airborne after land "
+        f"(landed_state={state.landed_state}, status={state.system_status})"
+    )
+
+    assert drone.takeoff(altitude=spec.alt, precision=spec.precision, timeout=60.0), (
+        f"{spec.key}: second takeoff failed"
+    )
+    assert drone.land(timeout=60.0), f"{spec.key}: final land failed"

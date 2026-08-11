@@ -140,7 +140,7 @@ A configuração do sensor é feita do lado do FCU (por exemplo, `RNGFNDx_*` do 
 
 ## Decolagem e Pouso
 
-A detecção de levantamento/toque no solo vive em [`FlightSequencer`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/control/vehicle/sequencer.py). A detecção é **baseada em velocidade**: uma aeronave pairando ou no solo tem `|dz/dt| ≈ 0` mesmo quando o rangefinder/EKF/visão oscilam ±0,2–0,3 m por uma fração de segundo. Isso é agnóstico ao tamanho do drone — rastreia a taxa de variação, não a altitude absoluta — então funciona independentemente de onde o rangefinder lê zero (altura do corpo, offset de gancho/payload).
+[`FlightSequencer`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/control/vehicle/sequencer.py) trata estabilização de subida/descida e a checagem de voo. A estabilização usa velocidade vertical `|dz/dt|` numa janela curta para que picos de rangefinder/EKF/visão (±0,2–0,3 m) não reiniciem a detecção. Após o toque por velocidade, `land()` espera confirmação de pouso do FCU antes de retornar, para que um `takeoff()` seguinte não seja curto-circuitado com o veículo ainda no solo.
 
 ### Decolagem
 
@@ -149,50 +149,61 @@ drone.takeoff(altitude=1.5)  # defaults: max_retries=2, adjust_altitude=True, pr
 drone.takeoff(altitude=2.0, adjust_altitude=False)
 ```
 
-**Sequência** (por tentativa):
+```mermaid
+flowchart TD
+  T0{is_airborne?} -->|yes| TSkip[return success]
+  T0 -->|no| T1[arm]
+  T1 --> T2[spin-up delay]
+  T2 --> T3["_command_takeoff(alt)"]
+  T3 --> T4[wait_takeoff_settle]
+  T4 -->|settled| T5{adjust_altitude?}
+  T5 -->|yes| T6["move_to(z, TAKEOFF)"]
+  T5 -->|no| TOk[return success]
+  T6 --> TOk
+  T4 -->|timeout / disarm| TRetry[disarm and retry]
+```
 
-1. **Arme**: entra no modo offboard/guided do firmware e arma, verificando o estado do veículo a cada passo (GUIDED para ArduPilot, OFFBOARD para PX4 — veja os READMEs de firmware).
-2. **Aquecimento (spin-up)**: pequeno delay de segurança de hardware (`_SPIN_UP_DELAY`).
-3. **Posição de takeoff**: capturada apenas na primeira tentativa (usada por `MoveReference.TAKEOFF` e RTL).
-4. **Comando de takeoff**: `_command_takeoff(altitude)` (comando de takeoff do FCU no ArduPilot, um setpoint de subida em offboard no PX4).
-5. **Espera pelo levantamento + estabilização**: `wait_takeoff_settle(start_alt, start_alt + altitude, timeout)`. Sem sleep fixo.
-6. **Ajuste** (se `adjust_altitude=True` e fora do alvo por mais que `precision`): `move_to(z=altitude, reference=TAKEOFF, method=PID)`.
+Por tentativa: arme (guided/offboard do firmware), `_SPIN_UP_DELAY`, captura da pose de takeoff só na primeira tentativa, `_command_takeoff` (comando FCU no ArduPilot; setpoint de subida offboard no PX4), depois `wait_takeoff_settle`. Ajuste opcional com `move_to(z=altitude, reference=TAKEOFF)` se `adjust_altitude=True`. Progresso da subida ~1 Hz.
 
-**Detecção de estabilização** — a subida é declarada estabilizada quando **todas** as condições valem:
+**Estabilização** exige: subida ≥ `_LIFTOFF_DELTA`; altitude ≥ `target_alt - min(_SETTLE_ALT_TOLERANCE, _SETTLE_ALT_FRACTION × climb)`; `|vz|` médio em `_SETTLE_WINDOW` abaixo de `_SETTLE_VELOCITY`.
 
-- **Levantado**: a altitude subiu `_LIFTOFF_DELTA` acima de `start_alt`.
-- **Critério de proximidade ao alvo**: a altitude está em ou acima de `floor = target_alt - _settle_band`, onde `_settle_band = min(_SETTLE_ALT_TOLERANCE, _SETTLE_ALT_FRACTION × climb)`. Isso evita que um levantamento inicial lento (velocidade baixa, ainda perto do solo) seja confundido com um takeoff concluído. A faixa escala com a subida comandada, então voos curtos usam um critério rígido e subidas altas não são forçadas a acertar o alvo exatamente (o ajuste pós-estabilização refina o restante).
-- **Velocidade**: a velocidade vertical média sobre `_SETTLE_WINDOW` está abaixo de `_SETTLE_VELOCITY`.
+**Retries**: sem levantamento (ou desarme no meio) → desarma e tenta de novo. Estabilizado com `height_gain < _LIFTOFF_DELTA` e `is_airborne` verdadeiro é aceito.
 
-O progresso da subida (altitude, ganho, velocidade vertical) é logado a aproximadamente 1 Hz, para que um takeoff longo permaneça observável.
+### Checagem de voo (`is_airborne`)
 
-**Atalhos**:
+Usada pelo atalho de takeoff. Prioridade alinhada ao [MAVSDK `Telemetry::in_air`](https://mavsdk.mavlink.io/) ([`MAV_LANDED_STATE`](https://mavlink.io/en/messages/common.html#MAV_LANDED_STATE)):
 
-- Já em voo (`is_airborne`): pula o fluxo e retorna sucesso.
-- Estabilizado, mas `height_gain < _LIFTOFF_DELTA` enquanto `is_airborne` reporta voo: aceita (tolerância a falha de sensor).
-- Levantamento nunca detectado após `timeout`: desarma e tenta de novo; na última tentativa, falha.
+```mermaid
+flowchart TD
+  A1{disarmed?} -->|yes| ANo[false]
+  A1 -->|no| A2{landed_state}
+  A2 -->|ON_GROUND| ANo
+  A2 -->|IN_AIR / TAKEOFF / LANDING| AYes[true]
+  A2 -->|unknown| A3{system_status}
+  A3 -->|STANDBY| ANo
+  A3 -->|ACTIVE| A4{"rangefinder < threshold?"}
+  A4 -->|yes| ANo
+  A4 -->|no / none| AYes
+  A3 -->|other| A5{rangefinder}
+  A5 -->|above threshold| AYes
+  A5 -->|else| ANo
+```
 
-**`is_airborne`** (usado pelo atalho de takeoff):
-
-1. Desarmado → não está em voo.
-2. Senão, `HEARTBEAT.system_status` do FCU quando é estado MAVLink real: o ArduCopter reporta `MAV_STATE_STANDBY` quando `land_complete` e `MAV_STATE_ACTIVE` quando em voo — este é o sinal primário.
-3. Senão, fallback de altitude (rangefinder / pose local / `rel_alt`) contra `_AIRBORNE_THRESHOLD` (1,0 m). Um critério absoluto mais rígido dispara falsos positivos em aeronaves no solo: altura de corpo do rangefinder, plataformas elevadas, ou Z de visão relativo a uma origem de takeoff mais baixa podem ficar perto de 0,5 m mesmo pousados.
-
-**Parâmetros ajustáveis** (constantes de classe em `FlightSequencer`):
+MAVROS / MAVLink direto pedem `EXTENDED_SYS_STATE` via `SET_MESSAGE_INTERVAL` (o ArduPilot não publica por padrão). Sem `landed_state`, só o rangefinder entra no gate — não visão nem `rel_alt`.
 
 | Constante | Padrão | Significado |
 |---|---|---|
-| `_SPIN_UP_DELAY` | 2,7 s | Delay de segurança de hardware pós-arme, antes do comando de takeoff |
+| `_SPIN_UP_DELAY` | 2,7 s | Delay pós-arme antes do comando de takeoff |
 | `_LIFTOFF_DELTA` | 0,08 m | Subida acima de `start_alt` para considerar levantado |
-| `_SETTLE_WINDOW` | 0,8 s | Janela móvel sobre a qual a velocidade vertical é calculada em média |
-| `_SETTLE_VELOCITY` | 0,25 m/s | Velocidade vertical abaixo da qual o hover é declarado estabilizado |
-| `_SETTLE_POLL` | 0,1 s | Intervalo de poll para os loops de estabilização/pouso |
-| `_SETTLE_LOG_INTERVAL` | 1,0 s | Throttle do log de progresso de subida |
-| `_SETTLE_ALT_TOLERANCE` | 0,5 m | Faixa máxima de estabilização abaixo do alvo |
-| `_SETTLE_ALT_FRACTION` | 0,3 | Fração da subida usada como faixa de estabilização |
-| `_AIRBORNE_THRESHOLD` | 0,9 m | Fallback de altitude para `is_airborne` quando o estado do FCU não está disponível |
+| `_SETTLE_WINDOW` | 0,8 s | Janela da velocidade vertical média |
+| `_SETTLE_VELOCITY` | 0,25 m/s | Magnitude da velocidade vertical abaixo da qual a subida estabilizou |
+| `_SETTLE_POLL` | 0,1 s | Intervalo de poll dos loops |
+| `_SETTLE_LOG_INTERVAL` | 1,0 s | Throttle do log de subida |
+| `_SETTLE_ALT_TOLERANCE` | 0,5 m | Faixa máxima abaixo do alvo |
+| `_SETTLE_ALT_FRACTION` | 0,3 | Fração da subida usada como faixa |
+| `_AIRBORNE_THRESHOLD` | 0,9 m | Gate AGL de lidar sem `landed_state` e status ACTIVE |
 
-Se a detecção ainda expirar (lidar muito ruidoso, subida lenta que nunca para completamente), aumente `_SETTLE_VELOCITY` ou diminua `_SETTLE_WINDOW`. O ajuste de fim de takeoff ainda leva o drone a `precision`, então um limiar de velocidade permissivo não custa nada em precisão final de altitude.
+Lidar ruidoso ou subida lenta: aumente `_SETTLE_VELOCITY` ou reduza `_SETTLE_WINDOW`.
 
 ### Pouso
 
@@ -201,26 +212,36 @@ drone.land()              # default timeout=60s
 drone.land(timeout=45.0)
 ```
 
-**Sequência**:
+```mermaid
+flowchart TD
+  L1["_command_land()"]
+  L1 --> L2[velocity touchdown]
+  L2 --> L3{is_fcu_landed?}
+  L3 -->|yes / disarmed| LOk[return success]
+  L3 -->|timeout| LFail[return false]
+```
 
-1. Captura `start_alt`.
-2. Envia `_command_land()` (comando de land do FCU no ArduPilot, `AUTO.LAND` no PX4).
-3. **Espera pelo toque no solo** (`wait_landed`): o drone desceu (`start_alt - alt > _LIFTOFF_DELTA` ou `alt < _LANDED_THRESHOLD`) **e** sua velocidade de descida sobre `_LAND_SETTLE_WINDOW` caiu abaixo de `_LAND_STOP_VELOCITY`, **ou** o FCU reporta `armed=False`.
+1. Captura `start_alt`, envia `_command_land()` (land FCU no ArduPilot, `AUTO.LAND` no PX4).
+2. **Toque por velocidade**: desceu (`start_alt - alt > _LIFTOFF_DELTA` ou `alt < _LANDED_THRESHOLD`) e taxa de descida em `_LAND_SETTLE_WINDOW` abaixo de `_LAND_STOP_VELOCITY`, ou desarmado.
+3. **Confirmação FCU** (`is_fcu_landed`): `landed_state == ON_GROUND`, ou `STANDBY`, ou desarmado. Transportes sem estado de voo MAVLink aceitam o toque. Não espera `DISARM_DELAY`.
 
-> **Nota:** `land()` retorna `True` no toque no solo sem esperar pelo delay de desarme do autopiloto, então quem chamou é desbloqueado assim que o drone está no solo. Verifique `drone.is_armed` para confirmar que os motores estão desligados.
+`land()` pode retornar `True` ainda armado (`ON_GROUND` / `STANDBY` durante `DISARM_DELAY`). Um `takeoff()` seguinte é válido porque `is_airborne` é falso. Use `drone.is_armed` se o chamador precisar dos motores desligados.
 
 | Constante | Padrão | Significado |
 |---|---|---|
-| `_LANDED_THRESHOLD` | 0,3 m | Fallback absoluto de "já baixo" para o critério de descida |
-| `_LAND_SETTLE_WINDOW` | 1,2 s | Janela móvel para o cálculo de velocidade de descida |
-| `_LAND_STOP_VELOCITY` | 0,05 m/s | Taxa de descida abaixo da qual o toque no solo é declarado |
+| `_LANDED_THRESHOLD` | 0,3 m | Fallback absoluto de “já baixo” |
+| `_LAND_SETTLE_WINDOW` | 1,2 s | Janela da taxa de descida |
+| `_LAND_STOP_VELOCITY` | 0,05 m/s | Taxa que conta como toque |
 
 | Sintoma | Ajuste |
 |---|---|
-| `Land timed out` em descida muito lenta (< 0,1 m/s) | reduza `_LAND_STOP_VELOCITY` (por exemplo, 0,03) |
-| Detecção dispara ainda em descida rápida | aumente `_LAND_STOP_VELOCITY` (por exemplo, 0,08) |
-| Lidar ruidoso no solo (prop wash) causa falsos negativos | aumente `_LAND_SETTLE_WINDOW` (por exemplo, 2,0) |
-| Drone real — quer detecção mais rápida | reduza `_LAND_SETTLE_WINDOW` (por exemplo, 0,8) |
+| Timeout em descida muito lenta (< 0,1 m/s) | baixe `_LAND_STOP_VELOCITY` |
+| Toque com descida ainda rápida | suba `_LAND_STOP_VELOCITY` |
+| Ruído de propwash no solo | suba `_LAND_SETTLE_WINDOW` |
+| Detecção mais rápida com sensor estável | baixe `_LAND_SETTLE_WINDOW` |
+| Timeout esperando pouso FCU após o toque | suba `land(timeout=...)`; cheque o land detector do FCU |
+
+ACK de arme/takeoff no MAVLink direto: [transporte MAVLink](mavlink.md#command-acknowledgements).
 
 ## Navegação
 

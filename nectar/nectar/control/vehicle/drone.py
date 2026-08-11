@@ -568,8 +568,12 @@ class VehicleDrone(BaseDrone):
             True if takeoff successful, False if all retries exhausted.
         """
         if self._sequencer.is_airborne():
+            alt = self.get_altitude() or 0.0
+            state = self._transport.state
             self._node.get_logger().warn(
-                f"{WARN} Already airborne at {self.get_altitude() or 0.0:.2f}m, skipping takeoff"
+                f"{WARN} Already airborne at {alt:.2f}m "
+                f"(landed_state={state.landed_state}, status={state.system_status}, "
+                f"armed={self.is_armed}), skipping takeoff"
             )
             if self._takeoff_position is None:
                 self._set_takeoff_position()
@@ -591,9 +595,14 @@ class VehicleDrone(BaseDrone):
                 return False
 
             start_alt = self.get_altitude() or 0.0
+            alt_source = self._resolve_altitude_source_name()
+            self._node.get_logger().info(
+                f"{ARROW} Takeoff start_alt={start_alt:.2f}m (source={alt_source})"
+            )
 
             try:
                 if not self._command_takeoff(float(altitude)):
+                    self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
                     return False
             except TimeoutError as e:
                 self._node.get_logger().error(f"{ERR} Takeoff service timeout: {e}")
@@ -632,15 +641,19 @@ class VehicleDrone(BaseDrone):
                 )
                 return True
 
+            abort = "disarmed" if not armed else "timeout"
             if attempt < max_retries - 1:
                 self._node.get_logger().warn(
-                    f"{WARN} No liftoff (gain {height_gain:.2f}m, armed={armed}), "
-                    f"disarming for retry"
+                    f"{WARN} No liftoff (gain {height_gain:.2f}m, abort={abort}, "
+                    f"armed={armed}), disarming for retry"
                 )
                 self.disarm()
                 self.delay(1.5)
             else:
-                self._node.get_logger().error(f"{ERR} Takeoff failed after {max_retries} attempts")
+                self._node.get_logger().error(
+                    f"{ERR} Takeoff failed after {max_retries} attempts "
+                    f"(gain {height_gain:.2f}m, abort={abort})"
+                )
 
         return False
 
@@ -648,9 +661,9 @@ class VehicleDrone(BaseDrone):
         """
         Execute landing at current position.
 
-        Sends the land command and waits for touchdown (descent velocity has
-        settled) or full disarm, whichever happens first. Returning on
-        touchdown avoids blocking for ArduPilot's ``DISARM_DELAY``.
+        Sends the land command, waits for velocity touchdown, then for FCU
+        landed confirmation (``HEARTBEAT.system_status`` STANDBY / ``land_complete``)
+        or disarm. Does not wait for ArduPilot's full ``DISARM_DELAY``.
 
         Parameters
         ----------
@@ -661,7 +674,8 @@ class VehicleDrone(BaseDrone):
         Returns
         -------
         bool
-            True on touchdown or disarm, False on command failure or timeout.
+            True on FCU landed/disarm confirmation, False on command failure or
+            timeout.
         """
         try:
             start_alt = self.get_altitude() or 0.0
@@ -669,15 +683,30 @@ class VehicleDrone(BaseDrone):
                 return False
 
             if self._sequencer.wait_landed(start_alt, timeout):
+                alt = self.get_altitude() or 0.0
+                state = self._transport.state
                 self._node.get_logger().info(
-                    f"{OK} Landed at {self.get_altitude() or 0.0:.2f}m (armed={self.is_armed})"
+                    f"{OK} Landed at {alt:.2f}m "
+                    f"(armed={self.is_armed}, landed_state={state.landed_state}, "
+                    f"status={state.system_status})"
                 )
                 return True
-            self._node.get_logger().warn(f"{WARN} Land timed out before touchdown")
+            self._node.get_logger().warn(f"{WARN} Land timed out before FCU landed confirmation")
             return False
         except TimeoutError as e:
             self._node.get_logger().error(f"{ERR} Land service timeout: {e}")
             return False
+
+    def _resolve_altitude_source_name(self) -> str:
+        """Name of the sensor ``get_altitude(AUTO)`` would use right now."""
+        transport = self._transport
+        if transport.rangefinder is not None:
+            return AltitudeSource.LIDAR.name
+        if transport.vision_pose is not None:
+            return AltitudeSource.VISION.name
+        if not self.is_indoor and transport.rel_alt is not None:
+            return AltitudeSource.REL_ALT.name
+        return AltitudeSource.AUTO.name
 
     # Movement
 

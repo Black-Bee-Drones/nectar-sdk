@@ -90,7 +90,7 @@ Unlike ArduPilot's single `GUIDED` mode, PX4 separates offboard control from the
 
 For GPS-denied flight, `pose_source=PoseSource.VISION` makes the SDK read the FCU's fused local pose for companion-side PID navigation. The external pose itself is fed to the FCU by the separate [localization](../localization/README.md) bridge (`vision_pose.launch.py backend:=mavros|mavlink|dds`), which sends `VISION_POSITION_ESTIMATE` (or `VehicleOdometry` on DDS). PX4's EKF2 fuses it once `EKF2_EV_CTRL` / `EKF2_HGT_REF` are set, GNSS is disabled (`EKF2_GPS_CTRL=0`), and the stream is 30–50 Hz (PX4 rejects rates that are too low — much stricter than ArduPilot's ≥4 Hz).
 
-**SITL:** `ENV=indoor` flies `x500_nectar` in the shared `indoor_room_px4` arena with `gz_vision_source` mirroring hardware cuVSLAM topics (same pattern as ArduPilot indoor). Params load from `simulation/params/px4_indoor.env`. See [Localization → SITL](../localization/README.md#sitl).
+**SITL:** `ENV=indoor` flies `x500_nectar` in the shared `indoor_room_px4` arena with `gz_vision_source` mirroring hardware cuVSLAM topics (same pattern as ArduPilot indoor). Params load from `simulation/params/px4_indoor.env`. Outdoor loads `px4_outdoor.env` so GNSS EKF defaults are restored after indoor `EKF2_*` values persist in SITL `parameters.bson`. See [Localization → SITL](../localization/README.md#sitl).
 
 **Hardware:** competition flights to date are on ArduPilot; the PX4 parameter table is grounded in the PX4 docs / VSLAM-UAV tutorial and is ready for a Pixhawk move — validate on your airframe before competition use. Full parameter set and ArduPilot equivalents: [Localization → FCU setup](../localization/README.md#fcu-setup).
 
@@ -167,6 +167,8 @@ ros2 launch mavros px4.launch fcu_url:=<connection_string>
 ```
 
 For PX4 SITL the offboard MAVLink API is on UDP 14540 (`udp://:14540@127.0.0.1:14580`); on hardware use the appropriate serial/UDP `fcu_url`.
+
+`make sim-start FIRMWARE=px4` sets SITL-only RC/GCS loss exceptions so headless OFFBOARD can arm without a transmitter or QGC (`NAV_DLL_ACT=0`, `NAV_RCL_ACT=0`, `COM_RCL_EXCEPT=4`). Do not copy those onto real hardware.
 
 ## Simulation
 

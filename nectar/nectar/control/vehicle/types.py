@@ -76,11 +76,34 @@ class Attitude:
     yaw: float = 0.0
 
 
+class LandedState(Enum):
+    """FCU landed detector state from ``EXTENDED_SYS_STATE.landed_state``.
+
+    Values match ``MAV_LANDED_STATE`` in the MAVLink common dialect
+    (https://mavlink.io/en/messages/common.html#MAV_LANDED_STATE).
+    """
+
+    UNDEFINED = 0
+    ON_GROUND = 1
+    IN_AIR = 2
+    TAKEOFF = 3
+    LANDING = 4
+
+    @classmethod
+    def from_mavlink(cls, value: int) -> "LandedState":
+        try:
+            return cls(int(value))
+        except ValueError:
+            return cls.UNDEFINED
+
+
 @dataclass
 class VehicleState:
-    """Connection / arming / flight-mode summary.
+    """Connection / arming / flight-mode / landed summary.
 
-    Mirrors the subset of ``mavros_msgs/State`` the core relies on.
+    ``system_status`` mirrors ``HEARTBEAT.system_status``. ``landed_state``
+    mirrors ``EXTENDED_SYS_STATE.landed_state`` (:class:`LandedState`) when the
+    transport has received that message; ``None`` means not yet known.
     """
 
     connected: bool = False
@@ -88,6 +111,7 @@ class VehicleState:
     guided: bool = False
     mode: str = ""
     system_status: int = 0
+    landed_state: Optional[LandedState] = None
 
 
 @dataclass

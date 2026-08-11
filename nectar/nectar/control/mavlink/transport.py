@@ -32,6 +32,7 @@ from nectar.control.vehicle.types import (
     DistanceReading,
     GeoPoint,
     GlobalTarget,
+    LandedState,
     LocalPose,
     LocalTarget,
     SensorOrientation,
@@ -39,7 +40,7 @@ from nectar.control.vehicle.types import (
     Vec3,
     VehicleState,
 )
-from nectar.utils.log import OK
+from nectar.utils.log import OK, WARN
 
 _M = mavutil.mavlink
 
@@ -260,12 +261,26 @@ class PymavlinkTransport(VehicleTransport):
         self._last_heartbeat = time.monotonic()
         armed = bool(msg.base_mode & _M.MAV_MODE_FLAG_SAFETY_ARMED)
         mode = self._mode_codec.decode_mode(msg)
+        prev = self._vehicle_state
         self._vehicle_state = VehicleState(
             connected=True,
             armed=armed,
             guided=self._mode_codec.is_guided(mode),
             mode=mode,
             system_status=msg.system_status,
+            landed_state=prev.landed_state,
+        )
+
+    def _on_extended_sys_state(self, msg) -> None:
+        """Update ``landed_state`` from ``EXTENDED_SYS_STATE`` (MAVSDK in_air source)."""
+        prev = self._vehicle_state
+        self._vehicle_state = VehicleState(
+            connected=prev.connected,
+            armed=prev.armed,
+            guided=prev.guided,
+            mode=prev.mode,
+            system_status=prev.system_status,
+            landed_state=LandedState.from_mavlink(msg.landed_state),
         )
 
     def _on_global_position_int(self, msg) -> None:
@@ -351,6 +366,7 @@ class PymavlinkTransport(VehicleTransport):
 
     _HANDLERS = {
         "HEARTBEAT": _on_heartbeat,
+        "EXTENDED_SYS_STATE": _on_extended_sys_state,
         "GLOBAL_POSITION_INT": _on_global_position_int,
         "LOCAL_POSITION_NED": _on_local_position_ned,
         "ATTITUDE": _on_attitude,
@@ -376,7 +392,9 @@ class PymavlinkTransport(VehicleTransport):
                 _M.MAV_TYPE_ONBOARD_CONTROLLER, _M.MAV_AUTOPILOT_INVALID, 0, 0, 0
             )
 
-    def _command_long(self, command: int, *params: float, want_ack: bool = False) -> bool:
+    def _command_long(
+        self, command: int, *params: float, want_ack: bool = False, ack_timeout: float = 3.0
+    ) -> bool:
         master = self._connection.master
         values = [float(p) for p in params[:7]]
         values += [0.0] * (7 - len(values))
@@ -388,10 +406,17 @@ class PymavlinkTransport(VehicleTransport):
             )
         if not want_ack:
             return True
-        result = self._poll(lambda: self._acks.get(int(command)), timeout=1.0)
+        result = self._poll(lambda: self._acks.get(int(command)), timeout=ack_timeout)
+        logger = self._node.get_logger()
         if result is None:
-            return True  # No ACK observed; assume accepted (best-effort).
-        return result in (_M.MAV_RESULT_ACCEPTED, _M.MAV_RESULT_IN_PROGRESS)
+            logger.warn(f"{WARN} COMMAND_ACK timeout for command {int(command)}")
+            return False
+        accepted = result in (_M.MAV_RESULT_ACCEPTED, _M.MAV_RESULT_IN_PROGRESS)
+        if accepted:
+            logger.info(f"{OK} COMMAND_ACK accepted for command {int(command)}")
+        else:
+            logger.warn(f"{WARN} COMMAND_ACK rejected for command {int(command)} (result={result})")
+        return accepted
 
     def _poll(self, getter, timeout: float, interval: float = 0.02):
         """Poll ``getter()`` until it returns non-None or ``timeout`` elapses."""
@@ -427,6 +452,7 @@ class PymavlinkTransport(VehicleTransport):
             guided=s.guided,
             mode=s.mode,
             system_status=s.system_status,
+            landed_state=s.landed_state,
         )
 
     @property
@@ -476,13 +502,17 @@ class PymavlinkTransport(VehicleTransport):
         return self._mode_codec.set_mode(self, mode)
 
     def arm(self) -> bool:
-        return self._command_long(_M.MAV_CMD_COMPONENT_ARM_DISARM, 1, 0)
+        return self._command_long(_M.MAV_CMD_COMPONENT_ARM_DISARM, 1, 0, want_ack=True)
 
     def disarm(self, force: bool = True) -> bool:
-        return self._command_long(_M.MAV_CMD_COMPONENT_ARM_DISARM, 0, 21196 if force else 0)
+        return self._command_long(
+            _M.MAV_CMD_COMPONENT_ARM_DISARM, 0, 21196 if force else 0, want_ack=True
+        )
 
     def command_takeoff(self, altitude: float) -> bool:
-        return self._command_long(_M.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, float(altitude))
+        return self._command_long(
+            _M.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, float(altitude), want_ack=True
+        )
 
     def command_land(self) -> bool:
         return self.set_mode(self._mode_codec.land_mode)

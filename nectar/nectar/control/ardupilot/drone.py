@@ -144,7 +144,8 @@ class ArduPilotDrone(VehicleDrone):
             if not self._transport.arm():
                 return False
             if not self._wait_until(lambda: self.is_armed, 6.0):
-                self._node.get_logger().warn(f"{WARN} Arm ACKed but state slow to update")
+                self._node.get_logger().error(f"{ERR} Arm command sent but vehicle did not arm")
+                return False
             return True
         except TimeoutError as e:
             self._node.get_logger().error(f"{ERR} Arm failed: {e}")

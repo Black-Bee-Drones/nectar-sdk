@@ -108,9 +108,11 @@ cmd_sim_start() {
             case "$_SIM_ENV" in
                 outdoor)
                     # Shared Nectar outdoor world + x500_nectar (matched sensors),
-                    # so both firmwares fly the same arena.
+                    # so both firmwares fly the same arena. px4_outdoor.env restores
+                    # GNSS EKF after indoor params persist in parameters.bson.
                     _sim_script start_px4.sh --model x500_nectar \
-                        --world outdoor_field_px4 --autostart 4001 "${_SIM_EXTRA[@]}"
+                        --world outdoor_field_px4 --autostart 4001 \
+                        --params px4_outdoor.env "${_SIM_EXTRA[@]}"
                     ;;
                 indoor)
                     # Shared indoor room + x500_nectar; external vision via
@@ -140,8 +142,10 @@ cmd_sim_bridge() {
             fi
             case "$_SIM_PROTOCOL" in
                 mavros)
+                    # sitl_gazebo defaults mavros:=false (direct MAVLink); force it on.
                     ros2 launch nectar sitl_gazebo.launch.py \
-                        world:="$_SIM_ENV" vision:="$_SIM_VISION" "${_SIM_EXTRA[@]}"
+                        world:="$_SIM_ENV" vision:="$_SIM_VISION" mavros:=true \
+                        "${_SIM_EXTRA[@]}"
                     ;;
                 mavlink)
                     ros2 launch nectar sitl_gazebo.launch.py \
