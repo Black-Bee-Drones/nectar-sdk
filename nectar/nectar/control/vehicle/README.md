@@ -246,18 +246,18 @@ Direct MAVLink arm/takeoff ACK behavior: [MAVLink transport](../mavlink/README.m
 
 Navigation lives in [`VehicleNavigator`](navigator.py), keeping the drone classes focused on the firmware/hardware interface, sensor data, and target computation.
 
-`move_to` and `move_to_gps` accept `method: NavigationMethod` (defaults: `move_to` → `PID_EKF`, `move_to_gps` → `PID`). `rtl` accepts `method: RTLMethod` (default `NAVIGATE`, which uses `PID_EKF` internally).
+`move_to` and `move_to_gps` accept `method: NavigationMethod` (defaults: `move_to` → `PID`, `move_to_gps` → `PID`). `rtl` accepts `method: RTLMethod` (default `NAVIGATE`, which uses `PID_EKF` internally).
 
 ### Capability Matrix
 
 | Entry Point | PoseSource | Method | Reference | AltitudeSource | Notes |
 |------------|-----------|--------|-----------|----------------|-------|
-| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | Raw vision pose (SDK velocity PID) |
-| `move_to` | VISION | PID_EKF | BODY, TAKEOFF | AUTO, VISION, LIDAR | **Default** — EKF local pose (unified frame) |
+| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | **Default** — raw vision pose (SDK velocity PID) |
+| `move_to` | VISION | PID_EKF | BODY, TAKEOFF | AUTO, VISION, LIDAR | EKF local pose (unified frame) |
 | `move_to` | VISION | POSITION | BODY, TAKEOFF | N/A | Local setpoint |
 | `move_to` | VISION | POSITION_GLOBAL | — | — | Unsupported (no GPS indoors) |
-| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | Raw GPS (SDK velocity PID) |
-| `move_to` | GPS | PID_EKF | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | **Default** — EKF local pose (unified frame) |
+| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | **Default** — raw GPS (SDK velocity PID) |
+| `move_to` | GPS | PID_EKF | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | EKF local pose (unified frame) |
 | `move_to` | GPS | POSITION | BODY, TAKEOFF | N/A | Local setpoint |
 | `move_to` | GPS | POSITION_GLOBAL | BODY, TAKEOFF | N/A | GPS setpoint with AMSL (long range) |
 | `move_to` | any | any | WORLD | any | Unsupported (raises `CapabilityNotSupportedError`) |

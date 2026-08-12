@@ -763,7 +763,7 @@ class ControlTab(QWidget):
         strat_lbl.setProperty("secondary", True)
         self._pos_strategy_combo = QComboBox()
         self._pos_strategy_combo.addItems(["Position", "Position Global", "PID", "PID EKF"])
-        self._pos_strategy_combo.setCurrentIndex(3)
+        self._pos_strategy_combo.setCurrentIndex(2)
         self._pos_strategy_combo.setFixedWidth(120)
 
         alt_src_lbl = QLabel("Alt:")
@@ -1278,6 +1278,8 @@ class ControlTab(QWidget):
 
         if is_crazyflie:
             self._pos_strategy_combo.setCurrentIndex(0)  # POSITION (onboard goTo)
+        else:
+            self._pos_strategy_combo.setCurrentIndex(2)  # PID
 
     @Slot()
     def _trigger_driver_check(self) -> None:
@@ -1713,7 +1715,7 @@ class ControlTab(QWidget):
         reference = reference_map.get(ref_name, MoveReference.BODY)
         method_name = self._pos_strategy_combo.currentText()
         default_method = (
-            NavigationMethod.PID_EKF if self._is_fcu_vehicle() else NavigationMethod.POSITION
+            NavigationMethod.PID if self._is_fcu_vehicle() else NavigationMethod.POSITION
         )
         method = method_map.get(method_name, default_method)
         alt_name = self._pos_alt_source_combo.currentText()

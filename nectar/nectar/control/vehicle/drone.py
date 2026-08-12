@@ -815,7 +815,7 @@ class VehicleDrone(BaseDrone):
         reference: MoveReference = MoveReference.BODY,
         timeout: Optional[float] = 60.0,
         precision: float = 0.2,
-        method: NavigationMethod = NavigationMethod.PID_EKF,
+        method: NavigationMethod = NavigationMethod.PID,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
     ) -> bool:
         """
@@ -841,9 +841,9 @@ class VehicleDrone(BaseDrone):
             Maximum navigation time in seconds.
         precision : float, default=0.2
             Arrival threshold in meters.
-        method : NavigationMethod, default=PID_EKF
-            PID_EKF: companion-side velocity PID with EKF-fused position.
+        method : NavigationMethod, default=PID
             PID: companion-side velocity PID with raw sensors (vision/GPS).
+            PID_EKF: companion-side velocity PID with EKF-fused position.
             POSITION: onboard position controller (local setpoint).
             POSITION_GLOBAL: onboard GPS position controller (outdoor only).
         altitude_source : AltitudeSource, default=AUTO

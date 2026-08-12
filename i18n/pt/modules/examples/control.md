@@ -94,26 +94,29 @@ ArduPilot ou PX4 — `--drone mavros|mavlink|px4` (padrão `mavros`). `--mode in
 
 ## Navegação Interativa
 
+Não decola na inicialização. Use `takeoff` quando GPS/EKF estiver pronto (`status` para conferir; tente de novo se o arme for rejeitado). `origin` grava a pose de TAKEOFF sem armar (drone na mão). `--no-takeoff` executa `origin` automaticamente no start. O quit só pousa se os motores estiverem armados.
+
 | Caso | Comando |
 |------|---------|
 | Outdoor, PID padrão | `python3 interactive_navigation.py --mode outdoor` |
-| Transporte MAVLink direto | `python3 interactive_navigation.py --drone mavlink --mode outdoor` |
-| Outdoor, EKF, altitude de 3 m | `python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0` |
-| Com o drone na mão (sem armar/decolar) | `python3 interactive_navigation.py --no-takeoff` |
+| MAVLink direto (SITL SERIAL1) | `python3 interactive_navigation.py --drone mavlink --mode outdoor --connection tcp:127.0.0.1:5762` |
+| Outdoor, EKF, subida padrão 3 m | `python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0` |
+| Drone na mão (auto `origin`) | `python3 interactive_navigation.py --no-takeoff` |
 
-Uma vez rodando, digite waypoints no prompt `nav>`:
+No prompt `nav>`:
 
 ```
-nav> 2 0           # 2m forward
-nav> 0 3 0         # 3m left, hold altitude
-nav> -2 -3 0       # back
+nav> status         # GPS, modo, armed — espere se ainda estiver configurando
+nav> takeoff        # arma e sobe (--altitude)
+nav> takeoff 2.5    # altura de subida explícita
+nav> origin         # GUIDED + pose de takeoff, sem armar
+nav> 2 0            # 2m forward
+nav> 0 3 0          # 3m left, hold altitude
 nav> set ref takeoff
-nav> 5 0 0         # 5m forward from takeoff origin
-nav> 0 0 0         # return to takeoff
+nav> 5 0 0          # 5m forward from takeoff origin
+nav> 0 0 0          # return to takeoff
 nav> set method pid-ekf
-nav> 3 2            # now uses PID_EKF
 nav> gps -22.413 -45.449 15
-nav> status         # show drone state + settings
 nav> land
 ```
 

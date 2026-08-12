@@ -247,18 +247,18 @@ ACK de arme/takeoff no MAVLink direto: [transporte MAVLink](mavlink.md#command-a
 
 A navegação vive em [`VehicleNavigator`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/control/vehicle/navigator.py), mantendo as classes de drone focadas na interface de firmware/hardware, nos dados de sensor e na computação de alvo.
 
-`move_to` e `move_to_gps` aceitam `method: NavigationMethod` (padrões: `move_to` → `PID_EKF`, `move_to_gps` → `PID`). `rtl` aceita `method: RTLMethod` (padrão `NAVIGATE`, que usa `PID_EKF` internamente).
+`move_to` e `move_to_gps` aceitam `method: NavigationMethod` (padrões: `move_to` → `PID`, `move_to_gps` → `PID`). `rtl` aceita `method: RTLMethod` (padrão `NAVIGATE`, que usa `PID_EKF` internamente).
 
 ### Matriz de Capacidades
 
 | Ponto de Entrada | PoseSource | Método | Referência | AltitudeSource | Notas |
 |------------|-----------|--------|-----------|----------------|-------|
-| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | Pose de visão bruta (PID de velocidade do SDK) |
-| `move_to` | VISION | PID_EKF | BODY, TAKEOFF | AUTO, VISION, LIDAR | **Padrão** — pose local do EKF (frame unificado) |
+| `move_to` | VISION | PID | BODY, TAKEOFF | AUTO, VISION, LIDAR | **Padrão** — pose de visão bruta (PID de velocidade do SDK) |
+| `move_to` | VISION | PID_EKF | BODY, TAKEOFF | AUTO, VISION, LIDAR | Pose local do EKF (frame unificado) |
 | `move_to` | VISION | POSITION | BODY, TAKEOFF | N/A | Setpoint local |
 | `move_to` | VISION | POSITION_GLOBAL | — | — | Não suportado (sem GPS indoor) |
-| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | GPS bruto (PID de velocidade do SDK) |
-| `move_to` | GPS | PID_EKF | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | **Padrão** — pose local do EKF (frame unificado) |
+| `move_to` | GPS | PID | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | **Padrão** — GPS bruto (PID de velocidade do SDK) |
+| `move_to` | GPS | PID_EKF | BODY, TAKEOFF | AUTO, LIDAR, REL_ALT | Pose local do EKF (frame unificado) |
 | `move_to` | GPS | POSITION | BODY, TAKEOFF | N/A | Setpoint local |
 | `move_to` | GPS | POSITION_GLOBAL | BODY, TAKEOFF | N/A | Setpoint GPS com AMSL (longo alcance) |
 | `move_to` | qualquer | qualquer | WORLD | qualquer | Não suportado (lança `CapabilityNotSupportedError`) |
