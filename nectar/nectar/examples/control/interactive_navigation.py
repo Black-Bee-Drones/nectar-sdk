@@ -49,19 +49,25 @@ REF_MAP = {
 
 HELP_TEXT = """
 Commands:
+  takeoff [alt]       Arm and climb (default: --altitude / set altitude)
+  origin              Stamp TAKEOFF pose, no arm (hand-held)
   x y [z]             Move to relative position (current reference frame)
   gps lat lon [alt]   Move to GPS coordinate
   set ref body|takeoff       Change reference frame
   set method pid|pid-ekf|position|position-global
   set precision <meters>
   set timeout <seconds>
+  set altitude <meters>
   status              Show drone state and current settings
   land                Land the drone
   rtl                 Return to launch
   help                Show this help
-  quit / exit         Land and exit
+  quit / exit         Land if armed, then exit
 
 Examples:
+  takeoff             climb to default altitude
+  takeoff 2.5         climb to 2.5 m
+  origin              hand-held: GUIDED + takeoff pose, no arm
   2 0                 2m forward
   2 1 0               2m forward, 1m left, hold altitude
   0 0                 Return to origin (TAKEOFF ref) or hold (BODY ref)
@@ -100,23 +106,33 @@ class InteractiveNav:
         self.reference = MoveReference.BODY
         self.precision = args.precision
         self.timeout = args.timeout
+        self.altitude = args.altitude
         self.is_outdoor = args.mode == "outdoor"
         self._no_takeoff = args.no_takeoff
 
-    def setup(self, altitude: float) -> bool:
-        if self._no_takeoff:
-            is_px4 = self._drone_type.startswith("px4")
-            if not is_px4 and not self.drone.set_mode("GUIDED"):
-                log.error("Failed to set GUIDED mode")
-                return False
-            self.drone.delay(1.0)
-            self.drone.set_takeoff_position()
-            log.info("No-takeoff mode: takeoff position set to current")
+    def setup(self) -> bool:
+        if not self._no_takeoff:
             return True
-        if not self.drone.takeoff(altitude=altitude):
-            log.error("Takeoff failed")
+        return self._do_origin()
+
+    def _is_px4(self) -> bool:
+        return self._drone_type.startswith("px4")
+
+    def _do_origin(self) -> bool:
+        if not self._is_px4() and not self.drone.set_mode("GUIDED"):
+            log.error("Failed to set GUIDED mode")
             return False
-        self.drone.delay(3.0)
+        self.drone.delay(1.0)
+        self.drone.set_takeoff_position()
+        log.info("Origin set (no arm)")
+        return True
+
+    def _do_takeoff(self, altitude: float) -> bool:
+        log.info("Takeoff to %.2fm", altitude)
+        if not self.drone.takeoff(altitude=altitude):
+            log.error("Takeoff failed - check status, wait for GPS/EKF, retry")
+            return False
+        self.drone.delay(1.0)
         return True
 
     def handle_input(self, line: str) -> bool:
@@ -133,6 +149,21 @@ class InteractiveNav:
 
         if cmd == "help":
             print(HELP_TEXT)
+            return True
+
+        if cmd == "takeoff":
+            alt = self.altitude
+            if len(parts) > 1:
+                try:
+                    alt = float(parts[1])
+                except ValueError:
+                    print(f"Invalid altitude: {parts[1]}")
+                    return True
+            self._do_takeoff(alt)
+            return True
+
+        if cmd == "origin":
+            self._do_origin()
             return True
 
         if cmd == "land":
@@ -244,7 +275,7 @@ class InteractiveNav:
 
     def _handle_set(self, parts: list) -> None:
         if len(parts) < 2:
-            print("Usage: set ref|method|precision|timeout <value>")
+            print("Usage: set ref|method|precision|timeout|altitude <value>")
             return
 
         key, val = parts[0].lower(), parts[1].lower()
@@ -277,8 +308,15 @@ class InteractiveNav:
             except ValueError:
                 print(f"Invalid timeout: {val}")
 
+        elif key == "altitude":
+            try:
+                self.altitude = float(val)
+                print(f"Takeoff altitude: {self.altitude}m")
+            except ValueError:
+                print(f"Invalid altitude: {val}")
+
         else:
-            print(f"Unknown setting '{key}'. Options: ref, method, precision, timeout")
+            print(f"Unknown setting '{key}'. Options: ref, method, precision, timeout, altitude")
 
     def _print_status(self) -> None:
         print(f"\n{'─' * 40}")
@@ -286,6 +324,7 @@ class InteractiveNav:
         print(f"  Method    : {self.method.name}")
         print(f"  Precision : {self.precision}m")
         print(f"  Timeout   : {self.timeout}s")
+        print(f"  Takeoff   : {self.altitude}m")
         print(f"  Armed     : {self.drone.is_armed}")
         print(f"  Mode      : {self.drone.flight_mode}")
         if self.is_outdoor:
@@ -305,11 +344,11 @@ def parse_args() -> argparse.Namespace:
         description="Interactive ArduPilot / PX4 navigation REPL (MAVROS / MAVLink / DDS)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Once running, type waypoints directly:\n"
+            "Once running:\n"
+            "  takeoff      → arm and climb\n"
+            "  origin       → stamp TAKEOFF pose, no arm\n"
             "  2 0          → 2m forward\n"
-            "  0 3 0        → 3m left\n"
             "  gps -22.4 -45.4 15\n"
-            "  set method pid-ekf\n"
             "  help         → full command list\n"
         ),
     )
@@ -325,9 +364,16 @@ def parse_args() -> argparse.Namespace:
         help="MAVLink endpoint override (mavlink/px4_mavlink), e.g. tcp:127.0.0.1:5762 "
         "(ArduPilot SITL) or udp:0.0.0.0:14540 (PX4 SITL)",
     )
-    parser.add_argument("--no-takeoff", action="store_true", help="Hand-held testing")
     parser.add_argument(
-        "--altitude", type=float, default=2.0, help="Takeoff altitude. Default: 2.0"
+        "--no-takeoff",
+        action="store_true",
+        help="On start, stamp TAKEOFF pose without arming (same as the origin command)",
+    )
+    parser.add_argument(
+        "--altitude",
+        type=float,
+        default=2.0,
+        help="Default takeoff altitude for the takeoff command. Default: 2.0",
     )
     parser.add_argument("--strategy", choices=list(STRATEGY_MAP.keys()), default="pid")
     parser.add_argument("--precision", type=float, default=0.2)
@@ -342,13 +388,13 @@ def main(args=None):
     parsed = parse_args()
     nav = InteractiveNav(parsed)
 
-    if not nav.setup(parsed.altitude):
+    if not nav.setup():
         nav.drone.cleanup()
         nectar.shutdown()
         return
 
     print(HELP_TEXT)
-    print("Ready. Type waypoints (x y [z]) or 'help'.\n")
+    print("Ready. Type takeoff, origin, waypoints (x y [z]), or 'help'.\n")
 
     try:
         while True:
@@ -361,7 +407,7 @@ def main(args=None):
     except KeyboardInterrupt:
         log.info("Interrupted")
     finally:
-        if not parsed.no_takeoff:
+        if nav.drone.is_armed:
             log.info("Landing...")
             nav.drone.land()
         nav.drone.cleanup()
