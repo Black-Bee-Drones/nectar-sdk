@@ -173,15 +173,18 @@ make drone-bebop            # or: ./scripts/setup.sh drone bebop
 ```
 
 Instala as dependências apt, clona `ros2_parrot_arsdk` e `ros2_bebop_driver` no
-workspace se estiverem faltando, e os builda na ordem correta (aplicando o patch do
-FFmpeg abaixo). Os passos manuais equivalentes são:
+workspace se estiverem faltando, e os builda na ordem correta (aplicando os patches
+abaixo). Os passos manuais equivalentes são:
 
 ```bash
 sudo apt install ros-${ROS_DISTRO}-camera-info-manager ros-${ROS_DISTRO}-image-transport \
   ros-${ROS_DISTRO}-cv-bridge libavdevice-dev libavahi-client-dev python-is-python3
 cd ~/ros2_ws/src
-git clone https://github.com/jeremyfix/ros2_parrot_arsdk.git
-git clone https://github.com/jeremyfix/ros2_bebop_driver.git
+git clone https://github.com/jeremybernard/ros2_parrot_arsdk.git
+git clone https://github.com/jeremybernard/ros2_bebop_driver.git
+# Necessário com o repo do Google ≥2.65: pin do ARSDK 3.14.0 por tag, não SHA nu
+sed -i 's|SET(ARSDK_MANIFEST_HASH 1ff5bdc5458627c12eb22e1dd1814cff25778f31)|SET(ARSDK_MANIFEST_HASH refs/tags/ARSDK3_version_3_14_0)|' \
+  ros2_parrot_arsdk/CMakeLists.txt
 cd ~/ros2_ws
 colcon build --packages-select ros2_parrot_arsdk
 colcon build --packages-select ros2_bebop_driver --symlink-install
@@ -193,6 +196,9 @@ colcon build --packages-select ros2_bebop_driver --symlink-install
   `AVCodec *p_codec_` precisa se tornar `const AVCodec *p_codec_` em
   `include/ros2_bebop_driver/video_decoder.hpp`. O `make drone-bebop` aplica esse patch
   automaticamente.
+- O launcher `repo` do Google (≥2.65) rejeita `repo init -b <sha-nu>`. O upstream
+  `ros2_parrot_arsdk` fixa o ARSDK 3.14.0 por SHA; o `make drone-bebop` reescreve esse pin
+  para `refs/tags/ARSDK3_version_3_14_0` (mesmo commit).
 
 Launch manual (quando `start_driver=False`):
 

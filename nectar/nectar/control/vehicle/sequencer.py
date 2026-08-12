@@ -5,39 +5,39 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Tuple
 
-from nectar.utils.log import ARROW
+from nectar.control.vehicle.types import LandedState
+from nectar.utils.log import ARROW, OK
 
 if TYPE_CHECKING:
     from nectar.control.vehicle.drone import VehicleDrone
 
 
 class FlightSequencer:
-    """Liftoff/touchdown detection with size-agnostic velocity gating."""
+    """Liftoff/touchdown settle and FCU landed-state gating.
 
-    # MAVLink HEARTBEAT.system_status. ArduCopter reports STANDBY when
-    # land_complete and ACTIVE once flying (see GCS_MAVLINK_Copter).
+    Airborne / landed priority matches MAVSDK: ``EXTENDED_SYS_STATE.landed_state``
+    first, then ``HEARTBEAT.system_status``, then rangefinder AGL.
+    https://mavsdk.mavlink.io/ — ``TelemetryImpl::process_extended_sys_state``.
+    """
+
     _MAV_STATE_STANDBY = 3
     _MAV_STATE_ACTIVE = 4
-    # Altitude fallback only (when FCU landed/flying state is unavailable).
-    # Must clear typical grounded readings: body/mount height, elevated pads,
-    # and vision Z relative to a lower takeoff origin.
-    _AIRBORNE_THRESHOLD = 0.9  # m
+    _AIRBORNE_THRESHOLD = 0.9  # m; lidar-only when landed_state unknown
 
-    # Takeoff settle. Velocity-based detection absorbs sensor spikes that
-    # would otherwise reset an absolute-spread check on real airframes.
-    _SPIN_UP_DELAY = 2.7  # s, post-arm delay before takeoff command
-    _LIFTOFF_DELTA = 0.08  # m, altitude rise required to consider lifted
-    _SETTLE_WINDOW = 0.8  # s, rolling window for vertical-velocity check
-    _SETTLE_VELOCITY = 0.25  # m/s, |dz/dt| below which the hover is declared settled
-    _SETTLE_POLL = 0.1  # s, poll period for settle/landed loops
-    _SETTLE_LOG_INTERVAL = 1.0  # s, throttle for takeoff climb progress logs
-    _SETTLE_ALT_TOLERANCE = 0.5  # m, max altitude band below target for settle
-    _SETTLE_ALT_FRACTION = 0.3  # fraction of climb used as the settle band
+    _SPIN_UP_DELAY = 2.7  # s
+    _LIFTOFF_DELTA = 0.08  # m
+    _SETTLE_WINDOW = 0.8  # s
+    _SETTLE_VELOCITY = 0.25  # m/s
+    _SETTLE_POLL = 0.1  # s
+    _SETTLE_LOG_INTERVAL = 1.0  # s
+    _SETTLE_ALT_TOLERANCE = 0.5  # m
+    _SETTLE_ALT_FRACTION = 0.3
 
-    # Landing settle (velocity-based, drone-size agnostic)
-    _LANDED_THRESHOLD = 0.3  # m, absolute "already low" fallback for descent gate
-    _LAND_SETTLE_WINDOW = 1.2  # s, rolling window for descent velocity
-    _LAND_STOP_VELOCITY = 0.05  # m/s, descent rate below which touchdown is declared
+    _LANDED_THRESHOLD = 0.3  # m
+    _LAND_SETTLE_WINDOW = 1.2  # s
+    _LAND_STOP_VELOCITY = 0.05  # m/s
+
+    _IN_AIR_STATES = frozenset({LandedState.IN_AIR, LandedState.TAKEOFF, LandedState.LANDING})
 
     def __init__(self, drone: "VehicleDrone") -> None:
         self._drone = drone
@@ -47,82 +47,128 @@ class FlightSequencer:
         """Post-arm delay before issuing the takeoff command."""
         return self._SPIN_UP_DELAY
 
+    def is_fcu_landed(self) -> bool:
+        """True when the FCU reports on-ground, or landed state is unavailable.
+
+        Priority:
+
+        1. Disarmed → landed.
+        2. ``landed_state == ON_GROUND`` → landed.
+        3. ``landed_state`` in {IN_AIR, TAKEOFF, LANDING} → not landed.
+        4. Fallback: ``HEARTBEAT.system_status == STANDBY``.
+        5. Transports without MAVLink flight state (e.g. PX4 DDS) → true after
+           velocity touchdown so land does not hang.
+        """
+        drone = self._drone
+        if drone.is_armed is False:
+            return True
+
+        landed = drone._transport.state.landed_state
+        if landed == LandedState.ON_GROUND:
+            return True
+        if landed in self._IN_AIR_STATES:
+            return False
+
+        status = drone._transport.state.system_status
+        if status == self._MAV_STATE_STANDBY:
+            return True
+        if status == self._MAV_STATE_ACTIVE:
+            return False
+        # No usable FCU flight/landed signal (e.g. PX4 DDS arming_state mapping).
+        return True
+
     def is_airborne(self) -> bool:
         """True when the vehicle is flying (not on the ground).
 
-        Prefers FCU landed/flying state from ``HEARTBEAT.system_status`` when
-        it carries real MAVLink semantics (ArduPilot/PX4 MAVLink): STANDBY
-        means on the ground, ACTIVE means in flight. Disarmed is never
-        airborne. Altitude is only a fallback for transports that do not
-        expose that status (e.g. PX4 DDS maps arming_state into the same
-        field); the fallback uses a single threshold for every source so a
-        grounded rangefinder reading body height or an elevated pad cannot
-        false-trigger the takeoff short-circuit.
+        Priority (same mapping as MAVSDK ``Telemetry::in_air``):
+
+        1. Disarmed → not airborne.
+        2. ``EXTENDED_SYS_STATE.landed_state`` when known:
+           ON_GROUND → false; IN_AIR / TAKEOFF / LANDING → true.
+        3. Else ``HEARTBEAT.system_status``: STANDBY → false; ACTIVE → true,
+           unless a **rangefinder** reading is available and below
+           ``_AIRBORNE_THRESHOLD`` (AGL-only race net; never vision/rel_alt).
+        4. Else rangefinder AGL vs threshold, or false if no rangefinder.
         """
         drone = self._drone
         if drone.is_armed is False:
             return False
 
+        landed = drone._transport.state.landed_state
+        if landed == LandedState.ON_GROUND:
+            return False
+        if landed in self._IN_AIR_STATES:
+            return True
+
         status = drone._transport.state.system_status
+        rng = drone._transport.rangefinder
+        thr = self._AIRBORNE_THRESHOLD
+
         if status == self._MAV_STATE_STANDBY:
             return False
         if status == self._MAV_STATE_ACTIVE:
+            if rng is not None and rng < thr:
+                return False
             return True
 
-        transport = drone._transport
-        thr = self._AIRBORNE_THRESHOLD
-
-        rng = transport.rangefinder
         if rng is not None:
             return rng > thr
-
-        local = transport.local_pose
-        if local is not None and local.position.z > thr:
-            return True
-        if not drone.is_indoor:
-            rel = transport.rel_alt
-            if rel is not None and rel > thr:
-                return True
         return False
 
     def wait_landed(self, start_alt: float, timeout: float) -> bool:
         """
-        Wait for touchdown after a land command.
+        Wait for touchdown after a land command, then FCU landed confirmation.
 
-        Returns when the drone has descended from ``start_alt`` AND its descent
-        velocity over ``_LAND_SETTLE_WINDOW`` has dropped below
-        ``_LAND_STOP_VELOCITY``, or when the FCU disarms.
+        1. Velocity touchdown: descended from ``start_alt`` and descent rate
+           over ``_LAND_SETTLE_WINDOW`` below ``_LAND_STOP_VELOCITY``, or
+           disarmed.
+        2. FCU confirm: ``landed_state == ON_GROUND``, or ``STANDBY``, or
+           disarmed. Does not wait for ``DISARM_DELAY``.
 
         Returns
         -------
         bool
-            True on touchdown or disarm, False on timeout.
+            True when touchdown and FCU landed/disarm are confirmed, False on
+            timeout.
         """
         drone = self._drone
+        logger = drone._node.get_logger()
         deadline = time.time() + timeout
         last_alt = drone.get_altitude() or start_alt
         history: list = [(time.time(), last_alt)]
         descended = False
+        touchdown = False
+
         while time.time() < deadline:
             time.sleep(self._SETTLE_POLL)
             if not drone.is_armed:
+                logger.info(f"{OK} Land confirmed: disarmed")
                 return True
+
             now = time.time()
             alt = drone.get_altitude() or last_alt
             if start_alt - alt > self._LIFTOFF_DELTA or alt < self._LANDED_THRESHOLD:
                 descended = True
             cutoff = now - self._LAND_SETTLE_WINDOW
-            # Keep the newest sample at least one window old so window_dt spans
-            # the full duration (history[0] <= cutoff <= history[1]).
             while len(history) > 1 and history[1][0] <= cutoff:
                 history.pop(0)
             window_dt = now - history[0][0]
-            if descended and window_dt >= self._LAND_SETTLE_WINDOW:
+            if not touchdown and descended and window_dt >= self._LAND_SETTLE_WINDOW:
                 descent_rate = (history[0][1] - alt) / window_dt
                 if descent_rate < self._LAND_STOP_VELOCITY:
-                    return True
+                    touchdown = True
+                    logger.info(f"{ARROW} Touchdown at {alt:.2f}m, waiting for FCU landed state")
             history.append((now, alt))
             last_alt = alt
+
+            if touchdown and self.is_fcu_landed():
+                state = drone._transport.state
+                logger.info(
+                    f"{OK} Land confirmed: landed_state={state.landed_state} "
+                    f"status={state.system_status} (armed={drone.is_armed})"
+                )
+                return True
+
         return False
 
     def wait_takeoff_settle(
@@ -133,9 +179,7 @@ class FlightSequencer:
         Lifted when altitude rises by ``_LIFTOFF_DELTA`` from ``start_alt``.
         Settled when the drone is within ``_settle_band`` of ``target_alt`` and
         the mean vertical velocity over ``_SETTLE_WINDOW`` falls below
-        ``_SETTLE_VELOCITY``. The target-proximity gate prevents a slow initial
-        liftoff (low velocity, still near the ground) from being mistaken for a
-        completed takeoff. Aborts on disarm.
+        ``_SETTLE_VELOCITY``. Aborts on disarm.
 
         Returns
         -------
@@ -159,8 +203,6 @@ class FlightSequencer:
             if alt - start_alt > self._LIFTOFF_DELTA:
                 lifted = True
             cutoff = now - self._SETTLE_WINDOW
-            # Keep the newest sample at least one window old so window_dt spans
-            # the full duration (history[0] <= cutoff <= history[1]).
             while len(history) > 1 and history[1][0] <= cutoff:
                 history.pop(0)
             window_dt = now - history[0][0]

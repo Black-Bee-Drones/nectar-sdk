@@ -64,6 +64,10 @@ Thin wrapper around `mavutil.mavlink_connection` in [`connection.py`](connection
 
 MAVROS forwards FCU [`STATUSTEXT`](https://mavlink.io/en/messages/common.html#STATUSTEXT) to `/rosout`; the direct transport has no such relay, so `_on_statustext` logs FCU text on the drone's ROS logger at a matching severity (`MAV_SEVERITY_ERROR` → `error`, `WARNING` → `warn`, else `info`). This surfaces the actual reason a command was rejected — most usefully `PreArm: ...` failures — which would otherwise be invisible over a direct link. Consecutive identical messages are de-duplicated.
 
+#### Command acknowledgements
+
+`arm()`, `disarm()`, and `command_takeoff()` send `COMMAND_LONG` with `want_ack=True` and wait up to **3 s** for [`COMMAND_ACK`](https://mavlink.io/en/messages/common.html#COMMAND_ACK). Missing ACK or a result other than `ACCEPTED` / `IN_PROGRESS` returns `False`. The ArduPilot/PX4 vehicle layer then also requires `is_armed` to become true after arm — ACK alone is not enough. Takeoff/land settle semantics (including FCU `STANDBY` after land) live in the [vehicle core](../vehicle/README.md#takeoff-and-landing).
+
 #### Parameter confirmation
 
 `set_param` clears any cached value, sends `PARAM_SET`, then waits up to **0.5 s** for the FCU's `PARAM_VALUE` echo and verifies the echoed value matches (within tolerance) before returning `True`/logging the confirmation. ArduPilot echoes a known parameter within a few milliseconds and stays silent for an unknown one, so the short timeout keeps alias probing (4.6 `WPNAV_*` → 4.8 `WP_*`) responsive without false negatives on a fast link. Unlike the MAVROS service result (which only confirms the request was accepted), this confirms the value actually took.
@@ -80,6 +84,7 @@ Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by
 | --- | --- |
 | `HEARTBEAT` | 1 |
 | `SYS_STATUS` | 2 |
+| `EXTENDED_SYS_STATE` | 2 |
 | `ATTITUDE` | 20 |
 | `GLOBAL_POSITION_INT` | 10 |
 | `LOCAL_POSITION_NED` | 20 |
@@ -88,6 +93,8 @@ Each `DISTANCE_SENSOR` message is decoded into a `DistanceReading` and stored by
 | `DISTANCE_SENSOR` | 10 |
 | `VFR_HUD` | 5 |
 | `HOME_POSITION` | 1 |
+
+`EXTENDED_SYS_STATE` carries [`landed_state`](https://mavlink.io/en/messages/common.html#MAV_LANDED_STATE) (same primary input as [MAVSDK](https://mavsdk.mavlink.io/) `in_air`). ArduPilot does not stream it unless requested; see [Takeoff and Landing](../vehicle/README.md#takeoff-and-landing).
 
 A rate `<= 0` disables a stream. `GPS_RAW_INT` and a few others are requested for completeness even though position is taken from `GLOBAL_POSITION_INT`/`LOCAL_POSITION_NED`.
 

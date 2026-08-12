@@ -218,6 +218,7 @@ _drone_bebop() {
     done
 
     _bebop_patch_ffmpeg
+    _bebop_patch_arsdk_repo_init
 
     cd "$WORKSPACE_DIR"
     source "/opt/ros/${ROS_DISTRO}/setup.bash"
@@ -229,11 +230,18 @@ _drone_bebop() {
         || log_warning "rosdep install reported issues; continuing with apt packages"
 
     log_info "Building ros2_parrot_arsdk (ARSDK 3.14.0, takes a few minutes)..."
-    _bebop_colcon_build ros2_parrot_arsdk
+    if ! _bebop_colcon_build ros2_parrot_arsdk; then
+        log_error "ros2_parrot_arsdk build failed"
+        return 1
+    fi
+    # shellcheck disable=SC1091
     source install/setup.bash
 
     log_info "Building ros2_bebop_driver..."
-    _bebop_colcon_build ros2_bebop_driver
+    if ! _bebop_colcon_build ros2_bebop_driver; then
+        log_error "ros2_bebop_driver build failed"
+        return 1
+    fi
 
     _source_ros_ws
     if ros2 pkg list 2>/dev/null | grep -qx "ros2_bebop_driver"; then
@@ -244,6 +252,27 @@ _drone_bebop() {
     fi
     log_info "Launch: ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:=192.168.42.1"
     _drone_activation_hint
+}
+
+# Google's repo launcher (≥2.65) fails `repo init -b <bare-sha>` with
+# "unparseable HEAD" / missing .repo/manifests. ros2_parrot_arsdk pins ARSDK
+# 3.14.0 by commit SHA; the same revision is tagged ARSDK3_version_3_14_0.
+# Idempotent: only rewrites the known bare-SHA pin.
+_bebop_patch_arsdk_repo_init() {
+    local cmake="${WORKSPACE_DIR}/src/ros2_parrot_arsdk/CMakeLists.txt"
+    local hash="1ff5bdc5458627c12eb22e1dd1814cff25778f31"
+    local tag_ref="refs/tags/ARSDK3_version_3_14_0"
+    [ -f "$cmake" ] || return 0
+    if grep -qF "SET(ARSDK_MANIFEST_HASH ${hash})" "$cmake"; then
+        log_info "Patching ros2_parrot_arsdk: pin ARSDK via ${tag_ref} (repo ≥2.65)..."
+        sed -i "s|SET(ARSDK_MANIFEST_HASH ${hash})|SET(ARSDK_MANIFEST_HASH ${tag_ref})|" "$cmake"
+    fi
+    # A prior failed init leaves a broken .repo that blocks retries.
+    local stale="${WORKSPACE_DIR}/build/ros2_parrot_arsdk/parrot_arsdk"
+    if [ -d "${stale}/.repo" ] && [ ! -f "${stale}/.repo/manifest.xml" ]; then
+        log_info "Removing broken ARSDK .repo from a previous failed init..."
+        rm -rf "${stale}"
+    fi
 }
 
 # ros2_bebop_driver targets FFmpeg 4; on FFmpeg 5/6 (Ubuntu 24.04)

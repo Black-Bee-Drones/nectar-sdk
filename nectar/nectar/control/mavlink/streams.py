@@ -16,6 +16,7 @@ from nectar.control.mavlink.connection import MavlinkConnection
 DEFAULT_STREAM_RATES: Dict[str, float] = {
     "HEARTBEAT": 1.0,
     "SYS_STATUS": 2.0,
+    "EXTENDED_SYS_STATE": 2.0,  # landed_state (not streamed by ArduPilot by default)
     "ATTITUDE": 20.0,
     "GLOBAL_POSITION_INT": 10.0,
     "LOCAL_POSITION_NED": 20.0,

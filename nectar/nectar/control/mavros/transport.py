@@ -11,7 +11,7 @@ from typing import Dict, Optional, Union
 
 from geographic_msgs.msg import GeoPoseStamped
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from mavros_msgs.msg import GlobalPositionTarget, PositionTarget, State
+from mavros_msgs.msg import ExtendedState, GlobalPositionTarget, PositionTarget, State
 from mavros_msgs.srv import CommandBool, CommandHome, CommandLong, CommandTOL, SetMode
 from rcl_interfaces.msg import Parameter, ParameterType
 from rcl_interfaces.srv import SetParameters
@@ -32,17 +32,22 @@ from nectar.control.vehicle.types import (
     DistanceReading,
     GeoPoint,
     GlobalTarget,
+    LandedState,
     LocalPose,
     LocalTarget,
     TargetFrame,
     Vec3,
     VehicleState,
 )
+from nectar.utils.log import ERR, OK
 from nectar.utils.position_utils import PositionUtils
 from nectar.utils.process import ProcessUtils
 
 # sensor_msgs/Range.radiation_type -> MAV_DISTANCE_SENSOR kind.
 _RANGE_TYPE_TO_MAV = {Range.ULTRASOUND: 1, Range.INFRARED: 2}
+# MAVLink common.xml: EXTENDED_SYS_STATE message id (must be requested on ArduPilot).
+_MAVLINK_MSG_ID_EXTENDED_SYS_STATE = 245
+_MAV_CMD_SET_MESSAGE_INTERVAL = 511
 
 # Bitmask: position + yaw active (velocity/accel/yaw-rate ignored).
 _POSITION_MASK = (
@@ -87,6 +92,7 @@ class MavrosTransport(VehicleTransport):
         self._local_pub = None
         self._gps_pub = None
         self._gps_raw_pub = None
+        self._ess_stream_requested = False
 
     # Lifecycle
 
@@ -99,6 +105,26 @@ class MavrosTransport(VehicleTransport):
         self._setup_subscribers()
         self._setup_publishers()
         self._setup_services()
+        # EXTENDED_SYS_STATE requested on first connected() (services may be down here).
+
+    def _request_extended_sys_state(self) -> None:
+        """Request EXTENDED_SYS_STATE stream (ArduPilot does not publish it by default)."""
+        try:
+            req = CommandLong.Request()
+            req.command = _MAV_CMD_SET_MESSAGE_INTERVAL
+            req.param1 = float(_MAVLINK_MSG_ID_EXTENDED_SYS_STATE)
+            req.param2 = 500000.0  # 2 Hz
+            self._drone._call_service(
+                self._command_srv,
+                req,
+                "EXTENDED_SYS_STATE stream",
+                "EXTENDED_SYS_STATE stream request failed",
+                sync=False,
+                timeout=3.0,
+            )
+        except (TimeoutError, AttributeError) as e:
+            self._node.get_logger().warn(f"Could not request EXTENDED_SYS_STATE: {e}")
+            self._ess_stream_requested = False
 
     def close(self) -> None:
         # ROS entities are created via the drone's BaseDrone helpers, which
@@ -127,6 +153,9 @@ class MavrosTransport(VehicleTransport):
             depth=10,
         )
         drone._create_subscriber(State, config.state_topic, self._on_state, state_qos)
+        drone._create_subscriber(
+            ExtendedState, "/mavros/extended_state", self._on_extended_state, state_qos
+        )
         drone._create_subscriber(Range, config.lidar_topic, self._on_range, qos_profile_sensor_data)
         drone._create_subscriber(
             PoseStamped, config.local_position_topic, self._on_local, qos_profile_sensor_data
@@ -190,12 +219,25 @@ class MavrosTransport(VehicleTransport):
     # Subscriber callbacks (convert to plain core types)
 
     def _on_state(self, msg: State) -> None:
+        prev = self._vehicle_state
         self._vehicle_state = VehicleState(
             connected=msg.connected,
             armed=msg.armed,
             guided=msg.guided,
             mode=msg.mode,
             system_status=msg.system_status,
+            landed_state=prev.landed_state,
+        )
+
+    def _on_extended_state(self, msg: ExtendedState) -> None:
+        prev = self._vehicle_state
+        self._vehicle_state = VehicleState(
+            connected=prev.connected,
+            armed=prev.armed,
+            guided=prev.guided,
+            mode=prev.mode,
+            system_status=prev.system_status,
+            landed_state=LandedState.from_mavlink(msg.landed_state),
         )
 
     def _on_local(self, msg: PoseStamped) -> None:
@@ -255,7 +297,11 @@ class MavrosTransport(VehicleTransport):
 
     @property
     def connected(self) -> bool:
-        return self._vehicle_state.connected
+        ok = bool(self._vehicle_state.connected)
+        if ok and not self._ess_stream_requested:
+            self._ess_stream_requested = True
+            self._request_extended_sys_state()
+        return ok
 
     @property
     def state(self) -> VehicleState:
@@ -323,8 +369,16 @@ class MavrosTransport(VehicleTransport):
     def arm(self) -> bool:
         req = CommandBool.Request()
         req.value = True
-        res = self._drone._call_service(self._arm_srv, req, "Armed", "Arm failed", sync=True)
-        return bool(res)
+        # CommandBool.success must be checked — a response object alone is always truthy.
+        res = self._drone._call_service(
+            self._arm_srv, req, success_msg="", fail_msg="Arm failed", sync=True
+        )
+        ok = bool(res) and bool(getattr(res, "success", False))
+        if ok:
+            self._node.get_logger().info(f"{OK} Armed")
+        elif res is not None:
+            self._node.get_logger().error(f"{ERR} Arm rejected by FCU")
+        return ok
 
     def disarm(self, force: bool = True) -> bool:
         try:

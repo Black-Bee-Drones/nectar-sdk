@@ -26,9 +26,9 @@
 #                    direct invocation of build/px4_sitl_default/bin/px4 with the
 #                    requested model+world env (still uses standard rcS).
 #                    Use 4001 for any x500 derivative.
-#   --params <file>  Indoor/outdoor param env file under nectar/simulation/params/
-#                    (or an absolute path). Lines are NAME=VALUE; each becomes
-#                    PX4_PARAM_NAME=VALUE. Example: px4_indoor.env
+#   --params <file>  Param env under nectar/simulation/params/ (or absolute path).
+#                    NAME=VALUE → PX4_PARAM_NAME. Auto: indoor_room_px4 →
+#                    px4_indoor.env, outdoor_field_px4 → px4_outdoor.env.
 #   --pose <x,y,z[,r,p,y]>  Gazebo spawn pose (PX4_GZ_MODEL_POSE). Indoor
 #                    default for indoor_room_px4 is -5,0,0.2
 #   --extra <args>   Extra arguments appended to the make command
@@ -102,14 +102,15 @@ fi
 
 export PX4_SIM_SPEED_FACTOR="${SPEEDUP}"
 
-# Offboard-from-a-companion convenience (SIM ONLY): PX4 blocks arming with
-# "Preflight Fail: No connection to the GCS" when NAV_DLL_ACT>0 and no GCS/RC
-# heartbeat is seen (MAVROS announces itself as a companion, not a GCS). Disable
-# the data-link / RC loss actions so MAVROS offboard can arm and fly headlessly.
-# Real hardware (the `px4` drone) keeps its own failsafes; these only override
-# the SITL parameters via PX4's PX4_PARAM_* mechanism.
+# Offboard-from-a-companion (SIM ONLY). Without these, headless OFFBOARD arms then
+# failsafes on missing RC/GCS ("No manual control stick input") or refuses arm.
+# Documented triad: NAV_DLL_ACT=0, NAV_RCL_ACT=0, COM_RCL_EXCEPT=4 (Offboard bit)
+# https://discuss.px4.io/t/offboard-mode-in-sitl/25727
+# https://github.com/PX4/PX4-Autopilot/issues/19349
+# Real hardware keeps stock failsafes; PX4_PARAM_* only overrides SITL.
 export PX4_PARAM_NAV_DLL_ACT=0
 export PX4_PARAM_NAV_RCL_ACT=0
+export PX4_PARAM_COM_RCL_EXCEPT=4
 
 # Indoor shared room: spawn in the open area (same x=-5 as ArduPilot iris).
 if [ -z "${MODEL_POSE}" ] && [ "${WORLD}" = "indoor_room_px4" ]; then
@@ -147,8 +148,13 @@ _apply_params_file() {
     done < "${path}"
 }
 
-if [ -z "${PARAMS_FILE}" ] && [ "${WORLD}" = "indoor_room_px4" ]; then
-    PARAMS_FILE="px4_indoor.env"
+# Auto-select env params so indoor EV and outdoor GNSS cannot pollute each other
+# via parameters.bson (PX4 stores non-default EKF2_* across SITL restarts).
+if [ -z "${PARAMS_FILE}" ]; then
+    case "${WORLD}" in
+        indoor_room_px4)   PARAMS_FILE="px4_indoor.env" ;;
+        outdoor_field_px4) PARAMS_FILE="px4_outdoor.env" ;;
+    esac
 fi
 if [ -n "${PARAMS_FILE}" ]; then
     _apply_params_file "${PARAMS_FILE}"

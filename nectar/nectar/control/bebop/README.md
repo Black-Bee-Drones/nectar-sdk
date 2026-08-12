@@ -162,14 +162,17 @@ All topics use the configured namespace prefix (default `/bebop`):
 make drone-bebop            # or: ./scripts/setup.sh drone bebop
 ```
 
-Installs the apt dependencies, clones `ros2_parrot_arsdk` and `ros2_bebop_driver` into the workspace if missing, and builds them in order (applying the FFmpeg patch below). The manual steps are equivalent:
+Installs the apt dependencies, clones `ros2_parrot_arsdk` and `ros2_bebop_driver` into the workspace if missing, and builds them in order (applying the patches below). The manual steps are equivalent:
 
 ```bash
 sudo apt install ros-${ROS_DISTRO}-camera-info-manager ros-${ROS_DISTRO}-image-transport \
   ros-${ROS_DISTRO}-cv-bridge libavdevice-dev libavahi-client-dev python-is-python3
 cd ~/ros2_ws/src
-git clone https://github.com/jeremyfix/ros2_parrot_arsdk.git
-git clone https://github.com/jeremyfix/ros2_bebop_driver.git
+git clone https://github.com/jeremybernard/ros2_parrot_arsdk.git
+git clone https://github.com/jeremybernard/ros2_bebop_driver.git
+# Required with Google's repo ≥2.65: pin ARSDK 3.14.0 by tag, not bare SHA
+sed -i 's|SET(ARSDK_MANIFEST_HASH 1ff5bdc5458627c12eb22e1dd1814cff25778f31)|SET(ARSDK_MANIFEST_HASH refs/tags/ARSDK3_version_3_14_0)|' \
+  ros2_parrot_arsdk/CMakeLists.txt
 cd ~/ros2_ws
 colcon build --packages-select ros2_parrot_arsdk
 colcon build --packages-select ros2_bebop_driver --symlink-install
@@ -177,6 +180,7 @@ colcon build --packages-select ros2_bebop_driver --symlink-install
 
 - `python-is-python3` is required because the ARSDK Alchemy build invokes `python`, which is absent by default on Ubuntu 24.04.
 - On Ubuntu 24.04 (FFmpeg 5/6), `avcodec_find_decoder()` returns `const AVCodec*`, so `AVCodec *p_codec_` must become `const AVCodec *p_codec_` in `include/ros2_bebop_driver/video_decoder.hpp`. `make drone-bebop` applies this patch automatically.
+- Google's `repo` launcher (≥2.65) rejects `repo init -b <bare-commit-sha>`. Upstream `ros2_parrot_arsdk` pins ARSDK 3.14.0 by SHA; `make drone-bebop` rewrites that pin to `refs/tags/ARSDK3_version_3_14_0` (same commit).
 
 Manual launch (when `start_driver=False`):
 

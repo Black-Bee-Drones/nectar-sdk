@@ -107,9 +107,9 @@ SIM_SPECS = {
         firmware="ardupilot",
         drone_type="mavlink",
         config_factory=_ardupilot_mavlink,
-        # MAVLINK_SITL_GAZEBO_CONFIG uses SERIAL1 (tcp 5762); ArduPilot only opens it
-        # once SERIAL0 (5760) has a client, so run the mavros bridge alongside to
-        # unblock it (matches `sitl_test.py --mavlink`).
+        # Mission uses SERIAL1 (tcp 5762). Outdoor PROTOCOL=mavlink leaves SERIAL0
+        # without a client, so ArduPilot never opens SERIAL1 — hold SERIAL0 with
+        # MAVROS (same pattern as sitl_test.py --mavlink).
         start_cmds=[_AP_START, _AP_BRIDGE.format(proto="mavros")],
         settle=120.0,
     ),

@@ -188,7 +188,7 @@ my_mission/simulation/models/<arena>/{model.config,model.sdf,meshes/}
 
 No iris, cameras, or Gazebo world plugins in the mission package.
 
-`install_px4.sh` symlinks Nectar assets (`x500_nectar`, outdoor/indoor scenery + worlds) into PX4's `Tools/simulation/gz/{models,worlds}` so PX4's launcher can find them while the source of truth stays in `nectar-sdk/`. `start_px4.sh --autostart` reuses PX4's existing `4001` (x500) airframe via `PX4_SYS_AUTOSTART`, so no PX4-tree airframe file is added. Indoor auto-loads `params/px4_indoor.env` and spawns at `PX4_GZ_MODEL_POSE=-5,0,0.2`.
+`install_px4.sh` symlinks Nectar assets (`x500_nectar`, outdoor/indoor scenery + worlds) into PX4's `Tools/simulation/gz/{models,worlds}` so PX4's launcher can find them while the source of truth stays in `nectar-sdk/`. `start_px4.sh --autostart` reuses PX4's existing `4001` (x500) airframe via `PX4_SYS_AUTOSTART`, so no PX4-tree airframe file is added. Indoor auto-loads `params/px4_indoor.env` and spawns at `PX4_GZ_MODEL_POSE=-5,0,0.2`. Outdoor auto-loads `params/px4_outdoor.env` (restores GNSS EKF after indoor `EKF2_*` values persist in SITL `parameters.bson`). Outdoor SITL also exports `NAV_DLL_ACT=0`, `NAV_RCL_ACT=0`, and `COM_RCL_EXCEPT=4` so headless OFFBOARD can arm without RC/GCS ([PX4 offboard SITL](https://discuss.px4.io/t/offboard-mode-in-sitl/25727)).
 
 ### Stop all
 
@@ -381,7 +381,9 @@ in the pre-flight set because ArduCopter accepts that command only in a nav-capa
 | `VISO_TYPE`      | 1      | Enable visual odometry input      |
 | `ARMING_CHECK`   | 388598 | Disable GPS-related arming checks |
 
-### px4_indoor.env (loaded for PX4 indoor via `PX4_PARAM_*`)
+### px4_indoor.env / px4_outdoor.env (via `PX4_PARAM_*`)
+
+Indoor (`indoor_room_px4`):
 
 | Parameter        | Value | Purpose                                      |
 | ---------------- | ----- | -------------------------------------------- |
@@ -390,6 +392,16 @@ in the pre-flight set because ArduCopter accepts that command only in a nav-capa
 | `EKF2_HGT_REF`   | 3     | Height reference = Vision                    |
 | `EKF2_MAG_TYPE`  | 5     | None (yaw from vision)                       |
 | `COM_ARM_WO_GPS` | 1     | Allow arming without GPS (SITL)              |
+
+Outdoor (`outdoor_field_px4`) restores stock GNSS defaults so a prior indoor run cannot leave `EKF2_GPS_CTRL=0` in `parameters.bson` ([PX4 env overrides](https://docs.px4.io/main/en/simulation/#environment-variables)):
+
+| Parameter        | Value | Purpose                                      |
+| ---------------- | ----- | -------------------------------------------- |
+| `EKF2_GPS_CTRL`  | 7     | Lon/lat + alt + 3D velocity                  |
+| `EKF2_EV_CTRL`   | 0     | No external vision                           |
+| `EKF2_HGT_REF`   | 1     | Height reference = GPS                       |
+| `EKF2_MAG_TYPE`  | 0     | Automatic magnetometer fusion                |
+| `COM_ARM_WO_GPS` | 1     | PX4 default (allow with warning)             |
 
 ## Indoor vision
 
@@ -404,7 +416,7 @@ On Jazzy, `ros_gz` may strip `child_frame_id`; the source falls back to
 
 Simulation assets (`nectar/simulation/`):
 
-- `params/` — SITL parameter files: `gazebo.parm` / `indoor.parm` (ArduPilot), `px4_indoor.env` (PX4 EKF2 EV), `rangefinder_test.parm`
+- `params/` — SITL parameter files: `gazebo.parm` / `indoor.parm` (ArduPilot), `px4_indoor.env` / `px4_outdoor.env` (PX4 EKF2), `rangefinder_test.parm`
 - `config/` — MAVROS bridge profiles: `apm_config_sitl.yaml` / `apm_pluginlists_sitl.yaml` (ArduPilot), `px4_config_sitl.yaml` / `px4_pluginlists_sitl.yaml` (PX4)
 - `models/` — `indoor_room_scenery`, `outdoor_field_scenery`, `iris_with_rangefinders`, `x500_nectar`
 - `templates/` — `indoor_vehicle.sdf.in`, `outdoor_vehicle.sdf.in` (composed by `sitl_gazebo.launch.py`)

@@ -93,26 +93,29 @@ ArduPilot or PX4 — `--drone mavros|mavlink|px4` (default `mavros`). `--mode in
 
 ## Interactive Navigation
 
+Does not take off on start. Use `takeoff` when GPS/EKF is ready (`status` to check; retry if arm is rejected). `origin` stamps the TAKEOFF pose without arming (hand-held). `--no-takeoff` runs `origin` automatically on start. Quit lands only if motors are armed.
+
 | Case | Command |
 |------|---------|
 | Outdoor, default PID | `python3 interactive_navigation.py --mode outdoor` |
-| Direct MAVLink transport | `python3 interactive_navigation.py --drone mavlink --mode outdoor` |
-| Outdoor, EKF, 3 m altitude | `python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0` |
-| Hand-held (no arm/takeoff) | `python3 interactive_navigation.py --no-takeoff` |
+| Direct MAVLink (SITL SERIAL1) | `python3 interactive_navigation.py --drone mavlink --mode outdoor --connection tcp:127.0.0.1:5762` |
+| Outdoor, EKF, 3 m default climb | `python3 interactive_navigation.py --mode outdoor --strategy pid-ekf --altitude 3.0` |
+| Hand-held (auto `origin`) | `python3 interactive_navigation.py --no-takeoff` |
 
-Once running, type waypoints at the `nav>` prompt:
+Once running, at the `nav>` prompt:
 
 ```
-nav> 2 0           # 2m forward
-nav> 0 3 0         # 3m left, hold altitude
-nav> -2 -3 0       # back
+nav> status         # GPS, mode, armed — wait if still configuring
+nav> takeoff        # arm and climb (--altitude)
+nav> takeoff 2.5    # override climb height
+nav> origin         # GUIDED + takeoff pose, no arm
+nav> 2 0            # 2m forward
+nav> 0 3 0          # 3m left, hold altitude
 nav> set ref takeoff
-nav> 5 0 0         # 5m forward from takeoff origin
-nav> 0 0 0         # return to takeoff
+nav> 5 0 0          # 5m forward from takeoff origin
+nav> 0 0 0          # return to takeoff
 nav> set method pid-ekf
-nav> 3 2            # now uses PID_EKF
 nav> gps -22.413 -45.449 15
-nav> status         # show drone state + settings
 nav> land
 ```
 
