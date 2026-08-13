@@ -4,7 +4,7 @@
           only, no extra Jetson load. The two paths are shown as a rolling buffer
           (last ``window_seconds``) via the path_window_node relay run here.
   full  : light + landmarks / loop-closure clouds + pose graph
-          (requires the producer launched with enable_visualization:=true)
+          (requires enable_slam_visualization etc. in vslam_realsense.yaml)
 
 Usage:
     ros2 launch nectar vslam_rviz.launch.py

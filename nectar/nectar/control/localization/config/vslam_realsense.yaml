@@ -1,9 +1,18 @@
-# RealSense + Isaac ROS Visual SLAM parameters
+# RealSense + Isaac ROS Visual SLAM (release-3.2) — single source of truth.
+#
+# Edit this file on the host (ros2_ws/src/nectar-sdk/...) or inside the Isaac
+# container at:
+#   /workspaces/isaac_ros-dev/src/nectar-sdk/nectar/nectar/control/localization/config/vslam_realsense.yaml
+# then restart nectar-vslam
+#
+# SLAM remaps infra1/infra2 (+ IMU). RGB is for detection/AI only
+# (/camera/color/...). Emitter must stay off for cuVSLAM on RealSense.
+
 /camera/camera:
   ros__parameters:
     enable_infra1: true
     enable_infra2: true
-    enable_color: false
+    enable_color: true
     enable_depth: false
     enable_gyro: true
     enable_accel: true
@@ -15,12 +24,17 @@
     depth_module:
       emitter_enabled: 0
       profile: "640x360x90"
+    # rgb_camera.profile omitted → realsense-ros 4.51.1 default "0,0,0"
+    # (device picks; often 1280x720x30 on D435i). Not rgb_camera.color_profile (4.x).
 
 /visual_slam_node:
   ros__parameters:
     enable_image_denoising: true
     rectified_images: true
+    enable_localization_n_mapping: true
     enable_imu_fusion: true
+    # isaac_ros_visual_slam default
+    sync_matching_threshold_ms: 5.0
     gyro_noise_density: 0.000244
     gyro_random_walk: 0.000019393
     accel_noise_density: 0.001862
