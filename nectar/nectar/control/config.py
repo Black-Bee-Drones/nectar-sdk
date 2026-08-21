@@ -53,6 +53,8 @@ class _MavrosTelemetryConfig(DroneConfig):
     pose_source: PoseSource = PoseSource.GPS
     expect_lidar: bool = True
     sensor_timeout: float = 10.0
+    mode_timeout: float = 10.0
+    arm_timeout: float = 6.0
     lidar_topic: str = "/mavros/rangefinder/rangefinder"
     vision_topic: str = "/mavros/vision_pose/pose_cov"
     gps_topic: str = "/mavros/global_position/global"
@@ -91,6 +93,8 @@ class Px4DdsConfig(DroneConfig):
     pose_source: PoseSource = PoseSource.GPS
     expect_lidar: bool = True
     sensor_timeout: float = 10.0
+    mode_timeout: float = 10.0
+    arm_timeout: float = 6.0
     pid_config_file: Optional[str] = None
     # PX4 needs offboard setpoints streamed faster than 2 Hz (500 ms timeout).
     offboard_rate_hz: float = 20.0
@@ -114,6 +118,8 @@ class _MavlinkLinkConfig(DroneConfig):
     pose_source: PoseSource = PoseSource.GPS
     expect_lidar: bool = True
     sensor_timeout: float = 10.0
+    mode_timeout: float = 10.0
+    arm_timeout: float = 6.0
     baud: int = 921600
     source_system: int = 1
     source_component: int = 191  # MAV_COMP_ID_ONBOARD_COMPUTER

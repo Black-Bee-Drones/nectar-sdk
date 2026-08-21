@@ -84,6 +84,8 @@ class VehicleDrone(BaseDrone):
         self._takeoff_local: Optional[LocalTarget] = None
         self._initial_altitude: float = 0.0
         self._initial_heading: float = 0.0
+        self.mode_timeout = float(getattr(config, "mode_timeout", 10.0))
+        self.arm_timeout = float(getattr(config, "arm_timeout", 6.0))
 
         super().__init__(config, executor)
 
@@ -100,7 +102,7 @@ class VehicleDrone(BaseDrone):
     # Firmware hooks (overridden by ArduPilot / PX4 specializations)
 
     @abstractmethod
-    def arm(self) -> bool:
+    def arm(self, timeout: Optional[float] = None) -> bool:
         """Arm the motors in the firmware's offboard/guided control mode."""
 
     @abstractmethod
@@ -1400,7 +1402,7 @@ class VehicleDrone(BaseDrone):
             self._node.get_logger().error(f"Set home failed: {e}")
             return False
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, timeout: Optional[float] = None) -> bool:
         """
         Set the FCU flight mode.
 
@@ -1408,6 +1410,9 @@ class VehicleDrone(BaseDrone):
         ----------
         mode : str
             Flight mode name (e.g. 'GUIDED', 'STABILIZE', 'LOITER', 'RTL', 'LAND').
+        timeout : float, optional
+            Seconds to wait for the FCU to report ``mode``. ``None`` uses
+            ``mode_timeout``.
 
         Returns
         -------
@@ -1422,7 +1427,8 @@ class VehicleDrone(BaseDrone):
         """
         if not self._transport.set_mode(mode):
             return False
-        if self._wait_until(lambda: (self.flight_mode or "").upper() == mode.upper(), 3.0):
+        wait = self.mode_timeout if timeout is None else timeout
+        if self._wait_until(lambda: (self.flight_mode or "").upper() == mode.upper(), wait):
             return True
         self._node.get_logger().error(
             f"{ERR} Mode '{mode}' not confirmed (still '{self.flight_mode}')"
