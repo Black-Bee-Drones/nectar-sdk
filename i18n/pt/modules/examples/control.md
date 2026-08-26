@@ -13,7 +13,7 @@ correspondente.
 | `pid_simulation.py` | Simulação de controlador PID | `--kp --ki --plot` |
 | `navigation.py` | Suíte de teste de navegação ArduPilot/PX4 | `--drone {mavros,mavlink,px4}` · `--mode {indoor,outdoor}` · `--connection` · `--strategy --test --distance` (veja abaixo) |
 | `interactive_navigation.py` | REPL interativo — digite waypoints em tempo real | `--drone {mavros,mavlink,px4,px4_mavlink,px4_dds}` · `--mode {indoor,outdoor}` · `--connection --strategy --altitude --no-takeoff` |
-| `servo_test.py` | REPL interativo — testador de servo/PWM pré-voo via `MAV_CMD_DO_SET_SERVO` | `--channel --hold --release` |
+| `servo_test.py` | REPL interativo — testador de servo/PWM ArduPilot pré-voo via `MAV_CMD_DO_SET_SERVO` | `--drone {mavros,mavlink}` · `--connection` · `--channel --hold --release` |
 | `obstacles.py` | Navegação com desvio de obstáculos por câmera de profundidade (RealSense) | rode diretamente: `python3 obstacles.py` |
 
 > Fonte de pose vs. padrão de voo: em `basic.py`, `--env {outdoor,indoor}` seleciona a **fonte de pose** (outdoor = GPS, indoor = vision — combine com o `ENV=` do simulador) e `--mode` seleciona o **padrão de voo** (`velocity`/`hover`/`position`). Em `navigation.py` / `interactive_navigation.py`, `--mode {indoor,outdoor}` seleciona a fonte de pose. `--connection` sobrescreve a string de conexão para os drones com pymavlink direto `--drone mavlink` (ArduPilot, por exemplo `tcp:127.0.0.1:5762`) e `--drone px4_mavlink` (PX4, por exemplo `udp:0.0.0.0:14540`); `--drone px4` (MAVROS) usa um `fcu_url` como `udp://:14540@127.0.0.1:14580`.
@@ -142,19 +142,18 @@ estratégias.
 
 ## Teste de Servo / PWM
 
-Aciona `MavrosDrone.do_servo` (`MAV_CMD_DO_SET_SERVO`, 183) a partir de um REPL para que você
+Aciona o `do_servo` do ArduPilot (`MAV_CMD_DO_SET_SERVO`, 183) a partir de um REPL para que você
 possa verificar o canal AUX OUT correto e os extremos de PWM (por exemplo, hold/release de um
-hook) na bancada. O script nunca arma o drone e nunca decola — mantenha as hélices retiradas.
+hook) na bancada. `--drone mavros` (padrão) exige o MAVROS já em execução; `--drone mavlink`
+é dono do endpoint serial ou UDP. O script nunca arma o drone e nunca decola — mantenha as
+hélices retiradas.
 
-**Padrões** — canal 3 (FCU ch 11 = AUX OUT 3), hold 1000 us, release 2000 us; MAVROS já em execução:
+**Padrões** — `mavros`, canal 3 (FCU ch 11 = AUX OUT 3), hold 1000 us, release 2000 us:
 
 ```bash
 python3 servo_test.py
-```
-
-**Canal e presets personalizados**
-
-```bash
+python3 servo_test.py --drone mavlink --connection /dev/ttyAMA1
+python3 servo_test.py --drone mavlink --connection tcp:127.0.0.1:5762 --channel 3
 python3 servo_test.py --channel 4 --hold 1100 --release 1900
 ```
 

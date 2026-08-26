@@ -1,42 +1,13 @@
 #!/usr/bin/env python3
-"""Interactive MAVROS servo tester (pre-flight only).
+"""
+Pre-flight ArduPilot servo / PWM tester (MAV_CMD_DO_SET_SERVO).
 
-Drives the FCU's ``MAV_CMD_DO_SET_SERVO`` (183) command via
-``MavrosDrone.do_servo`` so you can verify the correct AUX OUT channel
-and the PWM endpoints (e.g. hook hold / release) before flight. The
-drone is never armed and never takes off — leave the props off.
+Never arms. Keep props off.
 
-Channel mapping
----------------
-``do_servo(aux_out, pwm)`` sends the command with FCU servo number
-``aux_out + 8``. On Pixhawk-style boards that means:
-
-    aux_out=1  ->  FCU ch  9 = AUX OUT 1
-    aux_out=3  ->  FCU ch 11 = AUX OUT 3
-    aux_out=6  ->  FCU ch 14 = AUX OUT 6
-
-Copter recommends AUX OUT 1-4 for hobby servos (50 Hz). MAIN OUT 1-8
-update at 400 Hz and should be avoided.
-https://ardupilot.org/copter/docs/common-servo.html
-
-Prerequisites
--------------
-* MAVROS already running and connected (e.g. ``ros2 launch mavros
-  apm.launch fcu_url:=...``).
-* Safety switch disengaged (or ``BRD_SAFETYENABLE = 0``); the FCU
-  silently drops servo commands while the safety button is solid red.
-* In ArduPilot, ``SERVOx_FUNCTION = 0`` (RCPassThru / unassigned) so
-  ``DO_SET_SERVO`` can drive the channel.
-
-Usage
------
+Usage:
     python3 servo_test.py
-    python3 servo_test.py --channel 3 --hold 1000 --release 2000
-
-References
-----------
-- https://ardupilot.org/copter/docs/common-servo.html
-- https://mavlink.io/en/messages/common.html#MAV_CMD_DO_SET_SERVO
+    python3 servo_test.py --drone mavlink --connection /dev/ttyAMA1
+    python3 servo_test.py --drone mavlink --connection tcp:127.0.0.1:5762 --channel 3
 """
 
 import argparse
@@ -44,7 +15,13 @@ import shlex
 import time
 
 import nectar
-from nectar.control import DroneFactory, MavrosConfig, PoseSource
+from nectar.control import (
+    Capability,
+    DroneFactory,
+    MavlinkConfig,
+    MavrosConfig,
+    PoseSource,
+)
 
 HELP_TEXT = """
 Commands:
@@ -73,17 +50,23 @@ Tips:
 """
 
 
-class ServoTester:
-    """REPL that drives ``MavrosDrone.do_servo`` against a MAVROS-connected FCU."""
+def build_config(args: argparse.Namespace):
+    kwargs = dict(
+        pose_source=PoseSource.GPS,
+        start_driver=False,
+        expect_lidar=False,
+        sensor_timeout=args.sensor_timeout,
+    )
+    if args.connection:
+        kwargs["connection_string"] = args.connection
+    if args.drone == "mavlink":
+        return MavlinkConfig(**kwargs)
+    return MavrosConfig(**kwargs)
 
+
+class ServoTester:
     def __init__(self, args: argparse.Namespace) -> None:
-        config = MavrosConfig(
-            pose_source=PoseSource.GPS,
-            start_driver=False,
-            expect_lidar=False,
-            sensor_timeout=args.sensor_timeout,
-        )
-        self.drone = DroneFactory.create("mavros", config)
+        self.drone = DroneFactory.create(args.drone, build_config(args))
         self.channel: int = args.channel
         self.hold_pwm: int = args.hold
         self.release_pwm: int = args.release
@@ -96,7 +79,6 @@ class ServoTester:
         return ok
 
     def handle_command(self, line: str) -> bool:
-        """Parse and execute one REPL line. Returns False to quit."""
         line = line.strip()
         if not line:
             return True
@@ -142,7 +124,6 @@ class ServoTester:
             self._handle_set(parts[1:])
             return True
 
-        # Bare number -> treat as PWM on the current channel.
         self._handle_pwm(parts)
         return True
 
@@ -235,7 +216,7 @@ class ServoTester:
         print("Cycle done")
 
     def _handle_set(self, parts: list) -> None:
-        if len(parts) < 2:
+        if not parts or len(parts) < 2:
             print("Usage: set hold|release <pwm>")
             return
         key, val = parts[0].lower(), parts[1]
@@ -256,6 +237,7 @@ class ServoTester:
     def _print_status(self) -> None:
         last = self.last_pwm if self.last_pwm >= 0 else "-"
         print(f"\n{'-' * 40}")
+        print(f"  Backend        : {self.drone.config.name}")
         print(f"  Channel        : {self.channel}  (FCU ch {self.channel + 8})")
         print(f"  Last PWM       : {last}")
         print(f"  hold preset    : {self.hold_pwm}")
@@ -268,7 +250,7 @@ class ServoTester:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Interactive MAVROS servo tester (pre-flight only).",
+        description="Pre-flight ArduPilot servo tester (MAV_CMD_DO_SET_SERVO).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "REPL examples:\n"
@@ -279,6 +261,18 @@ def parse_args() -> argparse.Namespace:
             "  cycle 3 0.8\n"
             "  help            -> full command list\n"
         ),
+    )
+    parser.add_argument(
+        "--drone",
+        choices=["mavros", "mavlink"],
+        default="mavros",
+        help="ArduPilot transport (default: mavros)",
+    )
+    parser.add_argument(
+        "--connection",
+        default=None,
+        help="Override connection string. mavlink: /dev/ttyUSB0, /dev/ttyAMA1, "
+        "tcp:127.0.0.1:5762. mavros: MAVROS fcu_url (serial:///dev/ttyUSB0:921600).",
     )
     parser.add_argument(
         "--channel",
@@ -302,25 +296,27 @@ def parse_args() -> argparse.Namespace:
         "--sensor-timeout",
         type=float,
         default=2.0,
-        help="MAVROS sensor wait timeout in seconds (default: 2.0)",
+        help="sensor wait timeout in seconds (default: 2.0)",
     )
     args, _ = parser.parse_known_args()
     return args
 
 
 def main(args=None) -> None:
-    nectar.init()
     parsed = parse_args()
-    tester = ServoTester(parsed)
-
-    print(HELP_TEXT)
-    print(
-        f"Ready. ch={tester.channel} (FCU ch {tester.channel + 8}), "
-        f"hold={tester.hold_pwm}, release={tester.release_pwm}"
-    )
-    print("Type a PWM value or 'help'.\n")
-
+    nectar.init()
+    tester = None
     try:
+        tester = ServoTester(parsed)
+        if not tester.drone.supports(Capability.SERVO):
+            print("This drone has no Capability.SERVO (ArduPilot mavros/mavlink only)")
+            return
+        print(HELP_TEXT)
+        print(
+            f"Ready. {parsed.drone} ch={tester.channel} (FCU ch {tester.channel + 8}), "
+            f"hold={tester.hold_pwm}, release={tester.release_pwm}"
+        )
+        print("Type a PWM value or 'help'.\n")
         while True:
             try:
                 line = input("servo> ")
@@ -331,7 +327,8 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         print("Interrupted")
     finally:
-        tester.drone.cleanup()
+        if tester is not None:
+            tester.drone.cleanup()
         nectar.shutdown()
 
 
