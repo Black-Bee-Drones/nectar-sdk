@@ -11,7 +11,7 @@ from nectar_interfaces.msg import LineInfo
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
-from nectar.vision.algorithms.color import ColorSpace
+from nectar.vision.algorithms.color import ColorSpace, resolve_calibration_path
 from nectar.vision.algorithms.line import (
     AdaptiveHoughLinesP,
     FitEllipse,
@@ -47,6 +47,9 @@ class LineDetectionNode(Node):
         Comma-separated color spaces (hsv, lab).
     cap : int
         Webcam index for OpenCV.
+    calibration_file : str
+        Path to the color calibration JSON. Empty uses
+        ``~/.config/nectar/color_calibration.json``.
 
     Attributes
     ----------
@@ -80,6 +83,7 @@ class LineDetectionNode(Node):
         self.declare_parameter("visualization_name", "Line Detection")
         self.declare_parameter("spaces", "hsv")
         self.declare_parameter("cap", 0)
+        self.declare_parameter("calibration_file", "")
 
         colors_param = self.get_parameter("line_colors").get_parameter_value().string_value
         self.line_colors = [color.strip() for color in colors_param.split(",")]
@@ -94,6 +98,12 @@ class LineDetectionNode(Node):
         )
         spaces = self.get_parameter("spaces").get_parameter_value().string_value
         self.color_spaces = [color_space.strip() for color_space in spaces.split(",")]
+        self.calibration_file = str(
+            resolve_calibration_path(
+                self.get_parameter("calibration_file").get_parameter_value().string_value
+            )
+        )
+        self.get_logger().info(f"Calibration file: {self.calibration_file}")
 
         # If there are fewer color spaces than colors, use the first color space for additional colors
         if len(self.color_spaces) < len(self.line_colors):
@@ -162,6 +172,7 @@ class LineDetectionNode(Node):
                     color_space=(
                         ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
                     ),
+                    file_path=self.calibration_file,
                 )
 
                 color_idx = len(self.line_detectors) - 1
@@ -269,6 +280,7 @@ class LineDetectionNode(Node):
                             color=color,
                             estimation_method=estimation_class,
                             color_space=current_color_space,
+                            file_path=self.calibration_file,
                         )
 
                         color_idx = list(self.line_detectors.keys()).index(color)
@@ -302,6 +314,7 @@ class LineDetectionNode(Node):
                             color=color,
                             estimation_method=self.estimation_class,
                             color_space=color_space_enum,
+                            file_path=self.calibration_file,
                         )
                         color_idx = list(self.line_detectors.keys()).index(color)
                         text_positions = {

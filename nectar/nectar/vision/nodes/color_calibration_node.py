@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import json
-import os
 from typing import List, Optional, Tuple
 
 import cv2
@@ -8,7 +6,12 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 
-from nectar.vision.algorithms.color import ColorSpace
+from nectar.vision.algorithms.color import (
+    ColorSpace,
+    load_calibration_data,
+    resolve_calibration_path,
+    save_calibration_data,
+)
 from nectar.vision.camera import ImageHandler
 
 
@@ -19,7 +22,8 @@ class ColorCalibrationNode(Node):
     Combines click-to-sample and trackbar fine-tuning in a single window.
     Click colored regions to auto-compute HSV/LAB thresholds via flood fill,
     then adjust the trackbars for fine control. Named colors are saved to the
-    shared calibration file consumed by ``ColorDetector(mode="preset")``.
+    calibration file consumed by ``ColorDetector(mode="preset")``. Default:
+    ``~/.config/nectar/color_calibration.json``.
 
     Parameters (ROS)
     ----------------
@@ -29,6 +33,8 @@ class ColorCalibrationNode(Node):
         Initial color space, ``hsv`` or ``lab`` (default: ``hsv``).
     flood_tolerance : int
         Initial flood-fill tolerance for click sampling (default: 15).
+    calibration_file : str
+        Path to the calibration JSON. Empty uses the default home path.
 
     Notes
     -----
@@ -60,10 +66,14 @@ class ColorCalibrationNode(Node):
         self.declare_parameter("image_source", "webcam")
         self.declare_parameter("color_space", "hsv")
         self.declare_parameter("flood_tolerance", 15)
+        self.declare_parameter("calibration_file", "")
 
         image_source = str(self.get_parameter("image_source").value)
         color_space = str(self.get_parameter("color_space").value)
         self.flood_tolerance = int(self.get_parameter("flood_tolerance").value)
+        self.file_path = str(
+            resolve_calibration_path(str(self.get_parameter("calibration_file").value))
+        )
 
         self.color_space = ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
         self.config = self.TRACKBAR_CONFIG[self.color_space]
@@ -73,7 +83,6 @@ class ColorCalibrationNode(Node):
         self.lower = np.array(self.config["init"][::2])
         self.upper = np.array(self.config["init"][1::2])
 
-        self.file_path = self._calibration_file_path()
         self.window_initialized = False
 
         if not self._gui_available():
@@ -89,17 +98,9 @@ class ColorCalibrationNode(Node):
         )
 
         self.get_logger().info(f"Color calibration: {self.color_space.name} mode")
+        self.get_logger().info(f"Calibration file: {self.file_path}")
         self.get_logger().info("Click to sample | r=reset z=undo s=save l=load c=switch q=quit")
         self.image_handler.run()
-
-    @staticmethod
-    def _calibration_file_path() -> str:
-        """Resolve the canonical color calibration file shared with ColorDetector."""
-        import nectar.vision.algorithms.color.color_detector as _cd_mod
-
-        return os.path.join(
-            os.path.dirname(os.path.realpath(_cd_mod.__file__)), "color_calibration.json"
-        )
 
     @staticmethod
     def _gui_available() -> bool:
@@ -282,36 +283,26 @@ class ColorCalibrationNode(Node):
         if not color_name:
             return
 
-        data = {}
-        if os.path.exists(self.file_path):
-            try:
-                with open(self.file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
+        try:
+            data = load_calibration_data(self.file_path)
+        except ValueError:
+            data = {}
 
         data.setdefault(color_name, {})
         data[color_name][self.color_space.name] = [self.lower.tolist(), self.upper.tolist()]
-
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        save_calibration_data(self.file_path, data)
 
         self.get_logger().info(f"Saved '{color_name}' to {self.file_path}")
 
     def _load(self) -> None:
-        if not os.path.exists(self.file_path):
-            self.get_logger().error("No calibration file")
+        try:
+            data = load_calibration_data(self.file_path)
+        except ValueError as e:
+            self.get_logger().error(str(e))
             return
 
         color_name = input("Color name: ").strip()
         if not color_name:
-            return
-
-        try:
-            with open(self.file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            self.get_logger().error(f"Load error: {e}")
             return
 
         if color_name not in data or self.color_space.name not in data[color_name]:

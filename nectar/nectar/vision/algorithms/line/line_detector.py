@@ -672,6 +672,9 @@ class LineDetector:
         Strategy class for line estimation.
     color_space : ColorSpace, optional
         Color space for detection (HSV or LAB).
+    file_path : str or Path, optional
+        Calibration JSON passed to ``ColorDetector``. Empty or omitted uses
+        ``~/.config/nectar/color_calibration.json``.
 
     Attributes
     ----------
@@ -690,6 +693,7 @@ class LineDetector:
         color="blue",
         estimation_method: ILineEstimationMethod = HoughLinesP,
         color_space=None,
+        file_path=None,
     ):
         if color_space is None:
             color_space = ColorSpace.HSV
@@ -699,7 +703,9 @@ class LineDetector:
         self._external_mask = None
 
         if color is not None:
-            self.color_detector = ColorDetector(mode="preset", color=color, color_space=color_space)
+            self.color_detector = ColorDetector(
+                mode="preset", color=color, color_space=color_space, file_path=file_path
+            )
         else:
             self.color_detector = None
 

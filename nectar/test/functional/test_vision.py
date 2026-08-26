@@ -8,6 +8,7 @@ path is exercised end to end by publishing an image and reading it back through
 
 from __future__ import annotations
 
+import json
 import time
 
 import numpy as np
@@ -41,14 +42,18 @@ def test_aruco_synthetic():
     assert int(detected_id) == marker_id, f"wrong id: expected {marker_id}, got {detected_id}"
 
 
-def test_color_filter():
+def test_color_filter(tmp_path):
     """An HSV in-range patch is masked by the color detector."""
     import cv2
 
     from nectar.vision import ColorDetector
 
-    detector = ColorDetector(mode="preset", color="yellow")
-    detector.color_values = [[0, 120, 70], [10, 255, 255]]  # a red HSV band
+    calib = tmp_path / "colors.json"
+    calib.write_text(
+        json.dumps({"yellow": {"HSV": [[0, 120, 70], [10, 255, 255]]}}),
+        encoding="utf-8",
+    )
+    detector = ColorDetector(mode="preset", color="yellow", file_path=calib)
 
     hsv = np.full((120, 160, 3), (5, 200, 200), dtype=np.uint8)  # H=5 inside band
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)

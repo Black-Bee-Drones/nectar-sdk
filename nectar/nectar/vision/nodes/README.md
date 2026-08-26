@@ -76,12 +76,13 @@ ros2 run nectar line_detection_node.py --ros-args \
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `line_colors` | string | teste | Comma-separated color names from `color_calibration.json` (e.g. `blue,red`). The default `teste` is a placeholder — set explicit names that exist in your calibration file, as in the example above. |
+| `line_colors` | string | teste | Comma-separated color names from the calibration JSON (e.g. `blue,red`). The default `teste` is a placeholder — set names that exist in your file. |
 | `method` | string | HoughLinesP | Estimation method |
 | `spaces` | string | hsv | Comma-separated color spaces |
 | `image_source` | string | webcam | Camera source |
 | `show_visualization` | bool | true | Show OpenCV window |
 | `visualization_name` | string | Line Detection | Window title |
+| `calibration_file` | string | (empty) | Calibration JSON. Empty uses `~/.config/nectar/color_calibration.json`. |
 
 Methods: `HoughLinesP`, `RotatedRect`, `FitEllipse`, `RansacLine`, `AdaptiveHoughLinesP`. Per color
 it publishes `/line_state/{color}` (`nectar_interfaces/LineInfo`) and `/line_detect/{color}`
@@ -103,6 +104,7 @@ thresholds via flood fill, then fine-tune with the six channel trackbars. The st
 | `image_source` | string | webcam | Camera source |
 | `color_space` | string | hsv | Initial color space (`hsv` or `lab`) |
 | `flood_tolerance` | int | 15 | Initial flood-fill tolerance for click sampling |
+| `calibration_file` | string | (empty) | Calibration JSON. Empty uses `~/.config/nectar/color_calibration.json`. |
 
 | Key | Action |
 |-----|--------|
@@ -114,8 +116,9 @@ thresholds via flood fill, then fine-tune with the six channel trackbars. The st
 | `r` | Reset |
 | `q` | Quit |
 
-Saved colors are written to the shared `algorithms/color/color_calibration.json` and load via
-`ColorDetector(mode="preset", color=<name>)` and the line detection node.
+Saved colors are written to `~/.config/nectar/color_calibration.json` (or `calibration_file`) and
+load via `ColorDetector(mode="preset", color=<name>)` and the line detection node. Copy that file
+to the same path on the vehicle, or pass `-p calibration_file:=/path/to/colors.json`.
 
 > **Note:** this node requires an OpenCV GUI (mouse + trackbars).
 

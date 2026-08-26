@@ -76,12 +76,13 @@ ros2 run nectar line_detection_node.py --ros-args \
 
 | Parâmetro | Tipo | Padrão | Descrição |
 |-----------|------|---------|-------------|
-| `line_colors` | string | teste | Nomes de cor separados por vírgula, de `color_calibration.json` (por exemplo, `blue,red`). O padrão `teste` é um placeholder — defina nomes explícitos que existam no seu arquivo de calibração, como no exemplo acima. |
+| `line_colors` | string | teste | Nomes de cor separados por vírgula, do JSON de calibração (por exemplo, `blue,red`). O padrão `teste` é um placeholder — defina nomes que existam no seu arquivo. |
 | `method` | string | HoughLinesP | Método de estimação |
 | `spaces` | string | hsv | Espaços de cor separados por vírgula |
 | `image_source` | string | webcam | Fonte de câmera |
 | `show_visualization` | bool | true | Mostra a janela OpenCV |
 | `visualization_name` | string | Line Detection | Título da janela |
+| `calibration_file` | string | (vazio) | JSON de calibração. Vazio usa `~/.config/nectar/color_calibration.json`. |
 
 Métodos: `HoughLinesP`, `RotatedRect`, `FitEllipse`, `RansacLine`, `AdaptiveHoughLinesP`. Por
 cor, publica `/line_state/{color}` (`nectar_interfaces/LineInfo`) e `/line_detect/{color}`
@@ -103,6 +104,7 @@ seis trackbars de canal. A visão empilhada mostra `original | mask | result`.
 | `image_source` | string | webcam | Fonte de câmera |
 | `color_space` | string | hsv | Espaço de cor inicial (`hsv` ou `lab`) |
 | `flood_tolerance` | int | 15 | Tolerância inicial de flood-fill para a amostragem por clique |
+| `calibration_file` | string | (vazio) | JSON de calibração. Vazio usa `~/.config/nectar/color_calibration.json`. |
 
 | Tecla | Ação |
 |-----|--------|
@@ -114,8 +116,9 @@ seis trackbars de canal. A visão empilhada mostra `original | mask | result`.
 | `r` | Reseta |
 | `q` | Sai |
 
-As cores salvas são gravadas no `algorithms/color/color_calibration.json` compartilhado e
-carregadas via `ColorDetector(mode="preset", color=<name>)` e pelo nó de detecção de linha.
+As cores salvas são gravadas em `~/.config/nectar/color_calibration.json` (ou `calibration_file`) e
+carregadas via `ColorDetector(mode="preset", color=<name>)` e pelo nó de detecção de linha. Copie
+esse arquivo para o mesmo caminho no veículo, ou passe `-p calibration_file:=/path/to/colors.json`.
 
 > **Nota:** este nó exige uma GUI do OpenCV (mouse + trackbars).
 

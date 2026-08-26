@@ -2,9 +2,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     pass
-import json
 import logging
-import os
 import time
 
 import cv2
@@ -36,6 +34,11 @@ from nectar.interface.widgets import (
     DualVideoDisplay,
     LabeledSlider,
 )
+from nectar.vision.algorithms.color import (
+    load_calibration_data,
+    resolve_calibration_path,
+    save_calibration_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +53,8 @@ class ColorCalibrationManager:
     Parameters
     ----------
     calibration_path : str, optional
-        Path to calibration JSON file.
+        Path to calibration JSON. Empty or omitted uses
+        ``~/.config/nectar/color_calibration.json``.
 
     Attributes
     ----------
@@ -73,19 +77,7 @@ class ColorCalibrationManager:
     }
 
     def __init__(self, calibration_path: Optional[str] = None) -> None:
-        if calibration_path is None:
-            base_path = os.path.dirname(os.path.realpath(__file__))
-            self._calibration_path = os.path.join(
-                base_path,
-                "..",
-                "..",
-                "vision",
-                "algorithms",
-                "color",
-                "color_calibration.json",
-            )
-        else:
-            self._calibration_path = calibration_path
+        self._calibration_path = str(resolve_calibration_path(calibration_path))
 
         self._color_space = "HSV"
         self._sampled_pixels: List[np.ndarray] = []
@@ -218,48 +210,36 @@ class ColorCalibrationManager:
         return cv2.bitwise_and(frame, frame, mask=mask)
 
     def get_available_presets(self) -> Dict[str, List[str]]:
-        if not os.path.exists(self._calibration_path):
-            return {}
-
         try:
-            with open(self._calibration_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return {name: list(spaces.keys()) for name, spaces in data.items()}
-        except (json.JSONDecodeError, IOError):
+            data = load_calibration_data(self._calibration_path)
+        except ValueError:
             return {}
+        return {name: list(spaces.keys()) for name, spaces in data.items()}
 
     def load_preset(self, name: str, color_space: Optional[str] = None) -> bool:
         if color_space is None:
             color_space = self._color_space
 
-        if not os.path.exists(self._calibration_path):
-            return False
-
         try:
-            with open(self._calibration_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            if name not in data or color_space not in data[name]:
-                return False
-
-            values = data[name][color_space]
-            self._lower = np.array(values[0], dtype=np.uint8)
-            self._upper = np.array(values[1], dtype=np.uint8)
-            self._color_space = color_space
-            self._sampled_pixels.clear()
-            return True
-
-        except (json.JSONDecodeError, IOError):
+            data = load_calibration_data(self._calibration_path)
+        except ValueError:
             return False
+
+        if name not in data or color_space not in data[name]:
+            return False
+
+        values = data[name][color_space]
+        self._lower = np.array(values[0], dtype=np.uint8)
+        self._upper = np.array(values[1], dtype=np.uint8)
+        self._color_space = color_space
+        self._sampled_pixels.clear()
+        return True
 
     def save_preset(self, name: str) -> bool:
-        data = {}
-        if os.path.exists(self._calibration_path):
-            try:
-                with open(self._calibration_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
+        try:
+            data = load_calibration_data(self._calibration_path)
+        except ValueError:
+            data = {}
 
         if name not in data:
             data[name] = {}
@@ -270,11 +250,9 @@ class ColorCalibrationManager:
         ]
 
         try:
-            os.makedirs(os.path.dirname(self._calibration_path), exist_ok=True)
-            with open(self._calibration_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
+            save_calibration_data(self._calibration_path, data)
             return True
-        except IOError:
+        except OSError:
             return False
 
 
