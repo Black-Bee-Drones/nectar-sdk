@@ -137,6 +137,7 @@ class PymavlinkTransport(VehicleTransport):
         self._params: Dict[str, float] = {}
         self._acks: Dict[int, int] = {}
         self._last_statustext: Optional[str] = None
+        self._link_error = False
 
     # Lifecycle
 
@@ -252,12 +253,12 @@ class PymavlinkTransport(VehicleTransport):
                 msg = master.recv_match(blocking=False)
                 if msg is None:
                     return
+                self._link_error = False
                 handler = self._HANDLERS.get(msg.get_type())
                 if handler is not None:
                     handler(self, msg)
         except OSError as e:
-            self._node.get_logger().error(f"MAVLink RX failed: {e}")
-            self._connection.close()
+            self._log_link_error("RX", e)
 
     def _on_heartbeat(self, msg) -> None:
         if msg.type in (_M.MAV_TYPE_GCS, _M.MAV_TYPE_ONBOARD_CONTROLLER):
@@ -387,18 +388,23 @@ class PymavlinkTransport(VehicleTransport):
     def _time_boot_ms() -> int:
         return int(time.monotonic() * 1000) & 0xFFFFFFFF
 
-    def _send_heartbeat(self) -> None:
-        master = self._connection.master
-        if master is None:
+    def _log_link_error(self, where: str, e: OSError) -> None:
+        if self._link_error:
             return
+        self._link_error = True
+        self._node.get_logger().error(f"MAVLink {where} failed: {e}")
+
+    def _send_heartbeat(self) -> None:
         try:
             with self._connection.send_lock:
+                master = self._connection.master
+                if master is None:
+                    return
                 master.mav.heartbeat_send(
                     _M.MAV_TYPE_ONBOARD_CONTROLLER, _M.MAV_AUTOPILOT_INVALID, 0, 0, 0
                 )
         except OSError as e:
-            self._node.get_logger().error(f"MAVLink TX failed: {e}")
-            self._connection.close()
+            self._log_link_error("TX", e)
 
     def _command_long(
         self,
@@ -407,12 +413,14 @@ class PymavlinkTransport(VehicleTransport):
         want_ack: bool = False,
         ack_timeout: Optional[float] = None,
     ) -> bool:
-        master = self._connection.master
         values = [float(p) for p in params[:7]]
         values += [0.0] * (7 - len(values))
         if want_ack:
             self._acks.pop(int(command), None)
         with self._connection.send_lock:
+            master = self._connection.master
+            if master is None:
+                return False
             master.mav.command_long_send(
                 master.target_system, master.target_component, int(command), 0, *values
             )

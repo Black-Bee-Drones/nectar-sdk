@@ -59,7 +59,10 @@ class VisionPoseSubscriber:
             return
         if "pose_cov" in self._topic:
             self._sub = self._node.create_subscription(
-                PoseWithCovarianceStamped, self._topic, self._on_cov, qos_profile_sensor_data
+                PoseWithCovarianceStamped,
+                self._topic,
+                self._on_cov,
+                qos_profile_sensor_data,
             )
         else:
             self._sub = self._node.create_subscription(
@@ -101,7 +104,10 @@ class VisionPoseBridge:
             return
         if "pose_cov" in self._topic:
             self._sub = self._node.create_subscription(
-                PoseWithCovarianceStamped, self._topic, self._on_cov, qos_profile_sensor_data
+                PoseWithCovarianceStamped,
+                self._topic,
+                self._on_cov,
+                qos_profile_sensor_data,
             )
         else:
             self._sub = self._node.create_subscription(

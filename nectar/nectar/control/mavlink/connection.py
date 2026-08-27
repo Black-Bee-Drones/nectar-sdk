@@ -8,6 +8,16 @@ from pymavlink import mavutil
 
 _NET_SCHEMES = ("tcp", "tcpin", "udp", "udpin", "udpout", "udpbcast")
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+try:
+    import serial
+except ImportError:
+    serial = None
+
 
 def normalize_connection_string(device: str) -> str:
     """Accept both ``scheme://host:port`` and pymavlink's ``scheme:host:port``."""
@@ -95,7 +105,11 @@ class MavlinkConnection:
         ------
         TimeoutError
             If no FCU heartbeat is received within ``heartbeat_timeout``.
+        OSError
+            If the serial device is already locked by another process
+            (pyserial ``exclusive=True`` / ``fcntl.LOCK_EX``).
         """
+        self.close()
         device = normalize_connection_string(device)
         self.master = mavutil.mavlink_connection(
             device,
@@ -103,11 +117,15 @@ class MavlinkConnection:
             source_system=self._source_system,
             source_component=self._source_component,
         )
-
-        if not self._await_heartbeat():
-            raise TimeoutError(
-                f"No FCU heartbeat received within {self._heartbeat_timeout}s on {device}"
-            )
+        try:
+            self._lock_serial()
+            if not self._await_heartbeat():
+                raise TimeoutError(
+                    f"No FCU heartbeat received within {self._heartbeat_timeout}s on {device}"
+                )
+        except BaseException:
+            self.close()
+            raise
 
     def close(self) -> None:
         """Close the underlying pymavlink connection."""
@@ -117,6 +135,23 @@ class MavlinkConnection:
                     self.master.close()
                 finally:
                     self.master = None
+
+    def _lock_serial(self) -> None:
+        """POSIX exclusive lock (pyserial ``exclusive=True``). No-op for UDP/TCP."""
+        if fcntl is None or serial is None or self.master is None:
+            return
+        port = getattr(self.master, "port", None)
+        if not isinstance(port, serial.Serial):
+            return
+        try:
+            fcntl.flock(port.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            device = getattr(self.master, "device", getattr(port, "port", "serial"))
+            raise OSError(f"{device} already in use") from e
+        try:
+            port.reset_input_buffer()
+        except OSError:
+            pass
 
     def _await_heartbeat(self) -> bool:
         """Wait for the first non-GCS HEARTBEAT to set target_system/component."""
@@ -128,9 +163,13 @@ class MavlinkConnection:
 
         while time.monotonic() < deadline:
             remaining = deadline - time.monotonic()
-            msg = self.master.recv_match(
-                type="HEARTBEAT", blocking=True, timeout=max(remaining, 0.1)
-            )
+            try:
+                msg = self.master.recv_match(
+                    type="HEARTBEAT", blocking=True, timeout=max(remaining, 0.1)
+                )
+            except OSError:
+                time.sleep(0.1)
+                continue
             if msg is None:
                 continue
             if msg.type in skip_types:

@@ -91,13 +91,6 @@ class _Runtime:
         with self._lock:
             if self._executor is None:
                 return
-            for node in list(self._nodes):
-                try:
-                    self._executor.remove_node(node)
-                    node.destroy_node()
-                except Exception:
-                    pass
-            self._nodes.clear()
             if self._owns_executor:
                 try:
                     self._executor.shutdown()
@@ -105,6 +98,13 @@ class _Runtime:
                     pass
                 if self._thread is not None:
                     self._thread.join(timeout=2.0)
+            for node in list(self._nodes):
+                try:
+                    self._executor.remove_node(node)
+                    node.destroy_node()
+                except Exception:
+                    pass
+            self._nodes.clear()
             self._executor = None
             self._thread = None
             self._owns_executor = False
