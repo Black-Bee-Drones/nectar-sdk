@@ -111,11 +111,12 @@ class MavlinkConnection:
 
     def close(self) -> None:
         """Close the underlying pymavlink connection."""
-        if self.master is not None:
-            try:
-                self.master.close()
-            finally:
-                self.master = None
+        with self._send_lock:
+            if self.master is not None:
+                try:
+                    self.master.close()
+                finally:
+                    self.master = None
 
     def _await_heartbeat(self) -> bool:
         """Wait for the first non-GCS HEARTBEAT to set target_system/component."""

@@ -247,13 +247,17 @@ class PymavlinkTransport(VehicleTransport):
         master = self._connection.master
         if master is None:
             return
-        for _ in range(200):
-            msg = master.recv_match(blocking=False)
-            if msg is None:
-                return
-            handler = self._HANDLERS.get(msg.get_type())
-            if handler is not None:
-                handler(self, msg)
+        try:
+            for _ in range(200):
+                msg = master.recv_match(blocking=False)
+                if msg is None:
+                    return
+                handler = self._HANDLERS.get(msg.get_type())
+                if handler is not None:
+                    handler(self, msg)
+        except OSError as e:
+            self._node.get_logger().error(f"MAVLink RX failed: {e}")
+            self._connection.close()
 
     def _on_heartbeat(self, msg) -> None:
         if msg.type in (_M.MAV_TYPE_GCS, _M.MAV_TYPE_ONBOARD_CONTROLLER):
@@ -387,13 +391,21 @@ class PymavlinkTransport(VehicleTransport):
         master = self._connection.master
         if master is None:
             return
-        with self._connection.send_lock:
-            master.mav.heartbeat_send(
-                _M.MAV_TYPE_ONBOARD_CONTROLLER, _M.MAV_AUTOPILOT_INVALID, 0, 0, 0
-            )
+        try:
+            with self._connection.send_lock:
+                master.mav.heartbeat_send(
+                    _M.MAV_TYPE_ONBOARD_CONTROLLER, _M.MAV_AUTOPILOT_INVALID, 0, 0, 0
+                )
+        except OSError as e:
+            self._node.get_logger().error(f"MAVLink TX failed: {e}")
+            self._connection.close()
 
     def _command_long(
-        self, command: int, *params: float, want_ack: bool = False, ack_timeout: float = 3.0
+        self,
+        command: int,
+        *params: float,
+        want_ack: bool = False,
+        ack_timeout: float = 3.0,
     ) -> bool:
         master = self._connection.master
         values = [float(p) for p in params[:7]]
