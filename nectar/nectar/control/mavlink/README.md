@@ -66,7 +66,7 @@ MAVROS forwards FCU [`STATUSTEXT`](https://mavlink.io/en/messages/common.html#ST
 
 #### Command acknowledgements
 
-`arm()`, `disarm()`, and `command_takeoff()` send `COMMAND_LONG` with `want_ack=True` and wait up to **3 s** for [`COMMAND_ACK`](https://mavlink.io/en/messages/common.html#COMMAND_ACK). Missing ACK or a result other than `ACCEPTED` / `IN_PROGRESS` returns `False`. The ArduPilot/PX4 vehicle layer then also requires `is_armed` to become true after arm — ACK alone is not enough. Takeoff/land settle semantics (including FCU `STANDBY` after land) live in the [vehicle core](../vehicle/README.md#takeoff-and-landing).
+`arm()`, `disarm()`, `command_takeoff()`, and other `COMMAND_LONG` calls (`do_servo`, …) send with `want_ack=True` and wait `MavlinkConfig.ack_timeout` (default **5 s**) for [`COMMAND_ACK`](https://mavlink.io/en/messages/common.html#COMMAND_ACK). The FCU may already have applied the command (e.g. PWM) before the ACK reaches the companion; a timeout log with visible motion is that lag, not a failed servo. Missing ACK or a result other than `ACCEPTED` / `IN_PROGRESS` returns `False`. The ArduPilot/PX4 vehicle layer then also requires `is_armed` to become true after arm — ACK alone is not enough. `set_mode` does not use this ACK wait: it sends `SET_MODE` and then polls HEARTBEAT for `mode_timeout` (default **10 s**). Takeoff/land settle semantics (including FCU `STANDBY` after land) live in the [vehicle core](../vehicle/README.md#takeoff-and-landing).
 
 #### Parameter confirmation
 

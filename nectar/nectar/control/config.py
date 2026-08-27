@@ -120,6 +120,7 @@ class _MavlinkLinkConfig(DroneConfig):
     sensor_timeout: float = 10.0
     mode_timeout: float = 10.0
     arm_timeout: float = 6.0
+    ack_timeout: float = 5.0
     baud: int = 921600
     source_system: int = 1
     source_component: int = 191  # MAV_COMP_ID_ONBOARD_COMPUTER

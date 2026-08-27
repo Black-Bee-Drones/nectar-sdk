@@ -405,7 +405,7 @@ class PymavlinkTransport(VehicleTransport):
         command: int,
         *params: float,
         want_ack: bool = False,
-        ack_timeout: float = 3.0,
+        ack_timeout: Optional[float] = None,
     ) -> bool:
         master = self._connection.master
         values = [float(p) for p in params[:7]]
@@ -418,7 +418,10 @@ class PymavlinkTransport(VehicleTransport):
             )
         if not want_ack:
             return True
-        result = self._poll(lambda: self._acks.get(int(command)), timeout=ack_timeout)
+        wait = float(
+            ack_timeout if ack_timeout is not None else getattr(self._config, "ack_timeout", 5.0)
+        )
+        result = self._poll(lambda: self._acks.get(int(command)), timeout=wait)
         logger = self._node.get_logger()
         if result is None:
             logger.warn(f"{WARN} COMMAND_ACK timeout for command {int(command)}")
