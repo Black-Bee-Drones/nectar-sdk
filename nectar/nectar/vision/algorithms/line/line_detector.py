@@ -9,6 +9,12 @@ import numpy as np
 from nectar.vision.algorithms.color.color_detector import ColorDetector, ColorSpace
 
 
+def _largest_contour(contours):
+    if contours is None or len(contours) == 0:
+        return None
+    return max(contours, key=cv2.contourArea)
+
+
 class ILineEstimationMethod(ABC):
     """
     Abstract interface for line estimation strategies.
@@ -75,10 +81,11 @@ def calc_width_height(
         - box: Rotated bounding box points
     """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
+    largest_contour = None
+    if contours is not None and len(contours) > 0:
+        largest_contour = max(contours, key=cv2.contourArea)
+    if largest_contour is None:
         return 0.0, 0.0, 0, 0, 0, 0, None
-
-    largest_contour = max(contours, key=cv2.contourArea)
 
     rect = cv2.minAreaRect(largest_contour)
     (x_center, y_center), (w_rect, h_rect), angle_rect = rect
@@ -270,11 +277,10 @@ class RotatedRect(ILineEstimationMethod):
         """
 
         contours, _ = cv2.findContours(img_detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        largest_contour = max(contours, key=cv2.contourArea)
-
+        largest_contour = _largest_contour(contours)
         angle = center_x = center_y = float("nan")
 
-        if len(contours) > 0 and cv2.contourArea(largest_contour) > 1500:
+        if largest_contour is not None and cv2.contourArea(largest_contour) > 1500:
             blackbox = cv2.minAreaRect(largest_contour)
             (x_min, y_min), (w_min, h_min), angle_bb = blackbox
 
@@ -368,8 +374,8 @@ class FitEllipse(ILineEstimationMethod):
         angle = center_x = center_y = float("nan")
         _direction = _curvature = None
 
-        if len(contours) > 0:
-            rope_contour = max(contours, key=cv2.contourArea)
+        rope_contour = _largest_contour(contours)
+        if rope_contour is not None:
             if cv2.contourArea(rope_contour) > 2000:
                 M = cv2.moments(rope_contour)
                 center_x = int(M["m10"] / M["m00"])
@@ -623,8 +629,8 @@ class RansacLine(ILineEstimationMethod):
 
         angle = center_x = center_y = float("nan")
 
-        if len(contours) > 0:
-            largest_contour = max(contours, key=cv2.contourArea)
+        largest_contour = _largest_contour(contours)
+        if largest_contour is not None:
             points = largest_contour.reshape(-1, 2)
             moments = cv2.moments(largest_contour)
 
@@ -797,32 +803,13 @@ class LineDetector:
         x = y = w = h = 0
         rotated_box = None
 
+        line_color = draw_color if draw_color is not None else (0, 255, 0)
         try:
-            line_color = draw_color if draw_color is not None else (0, 255, 0)
-            try:
-                center_x, center_y, angle, width, height, x, y, w, h, rotated_box = (
-                    self.estimation_method.estimate(region, img, offset, draw, line_color)
-                )
-            except (TypeError, ValueError):
-                try:
-                    (
-                        center_x,
-                        center_y,
-                        angle,
-                        width,
-                        height,
-                        x,
-                        y,
-                        w,
-                        h,
-                        rotated_box,
-                    ) = self.estimation_method.estimate(region, img, offset, draw)
-                except ValueError:
-                    center_x, center_y, angle, width, height, x, y, w, h = (
-                        self.estimation_method.estimate(region, img, offset, draw)
-                    )
-        except ValueError as e:
-            print(f"Error in estimation method: {e}")
+            estimated = self.estimation_method.estimate(region, img, offset, draw, line_color)
+        except TypeError:
+            estimated = self.estimation_method.estimate(region, img, offset, draw)
+        center_x, center_y, angle, width, height, x, y, w, h = estimated[:9]
+        rotated_box = estimated[9] if len(estimated) > 9 else None
 
         # angle smoothing, exponential moving average
         alpha = 0.1

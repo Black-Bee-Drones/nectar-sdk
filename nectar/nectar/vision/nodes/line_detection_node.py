@@ -45,6 +45,9 @@ class LineDetectionNode(Node):
         Name for visualization window.
     spaces : str
         Comma-separated color spaces (hsv, lab).
+    roi : str
+        Detection window as ``width,height`` (default ``480,280``).
+        Example: ``-p roi:=640,230``.
     cap : int
         Webcam index for OpenCV.
     calibration_file : str
@@ -82,6 +85,7 @@ class LineDetectionNode(Node):
         self.declare_parameter("show_visualization", True)
         self.declare_parameter("visualization_name", "Line Detection")
         self.declare_parameter("spaces", "hsv")
+        self.declare_parameter("roi", "480,280")
         self.declare_parameter("cap", 0)
         self.declare_parameter("calibration_file", "")
 
@@ -98,13 +102,18 @@ class LineDetectionNode(Node):
         )
         spaces = self.get_parameter("spaces").get_parameter_value().string_value
         self.color_spaces = [color_space.strip() for color_space in spaces.split(",")]
+        self.detection_zone = self._parse_roi(
+            self.get_parameter("roi").get_parameter_value().string_value
+        )
+        if self.detection_zone is None:
+            self.get_logger().warning("Invalid roi, using default 480,280.")
+            self.detection_zone = self.DETECTION_ZONE
         self.calibration_file = str(
             resolve_calibration_path(
                 self.get_parameter("calibration_file").get_parameter_value().string_value
             )
         )
         self.get_logger().info(f"Calibration file: {self.calibration_file}")
-
         # If there are fewer color spaces than colors, use the first color space for additional colors
         if len(self.color_spaces) < len(self.line_colors):
             default_space = self.color_spaces[0] if self.color_spaces else "hsv"
@@ -146,12 +155,27 @@ class LineDetectionNode(Node):
             \n - Estimation method: {estimation_method_name} \
             \n - Image source: {self.image_source} \
             \n - Color spaces: {self.color_spaces} \
+            \n - ROI: {self.detection_zone[0]}x{self.detection_zone[1]} \
             \n - Webcam index: {self.cap} \
             \n - Show visualization: {self.show_visualization} \
             \n - Available methods: {method_names}"
         )
 
         self.add_on_set_parameters_callback(self.parameters_callback)
+
+    @staticmethod
+    def _parse_roi(raw):
+        text = str(raw).strip().strip("[]()")
+        parts = [p.strip() for p in text.replace("x", ",").split(",") if p.strip()]
+        if len(parts) != 2:
+            return None
+        try:
+            width, height = int(parts[0]), int(parts[1])
+        except ValueError:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        return (width, height)
 
     def initialize_color_detector(self, color: str, color_space: str):
         """
@@ -329,6 +353,15 @@ class LineDetectionNode(Node):
                         )
                 self.get_logger().info(f"Changed color spaces to {', '.join(self.color_spaces)}")
 
+            elif param.name == "roi":
+                zone = self._parse_roi(param.value)
+                if zone is None:
+                    result.successful = False
+                    result.reason = f"Invalid roi '{param.value}', expected width,height"
+                else:
+                    self.detection_zone = zone
+                    self.get_logger().info(f"Changed ROI to {zone[0]}x{zone[1]}")
+
         return result
 
     def process_image(self, img: np.ndarray) -> None:
@@ -370,7 +403,7 @@ class LineDetectionNode(Node):
                             height,
                         ) = detector.detect_line(
                             img_copy,
-                            region=self.DETECTION_ZONE,
+                            region=self.detection_zone,
                             draw=self.show_visualization,
                             draw_color=bgr_color,
                         )
@@ -388,7 +421,7 @@ class LineDetectionNode(Node):
                             height,
                         ) = detector.detect_line(
                             img_copy,
-                            region=self.DETECTION_ZONE,
+                            region=self.detection_zone,
                             draw=self.show_visualization,
                         )
                     except Exception as e:
@@ -432,7 +465,7 @@ class LineDetectionNode(Node):
                     1,
                 )
 
-                zone_width, zone_height = self.DETECTION_ZONE
+                zone_width, zone_height = self.detection_zone
                 zone_x1 = center_x - zone_width // 2
                 zone_y1 = center_y - zone_height // 2
                 zone_x2 = center_x + zone_width // 2
