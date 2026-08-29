@@ -1620,7 +1620,7 @@ class VehicleDrone(BaseDrone):
                 y=0,
                 z=target_z,
                 precision=precision,
-                method=NavigationMethod.PID_EKF,
+                method=NavigationMethod.PID,
             )
 
         self._node.get_logger().info("Navigating to takeoff position")
@@ -1630,7 +1630,7 @@ class VehicleDrone(BaseDrone):
             z=0,
             reference=MoveReference.TAKEOFF,
             precision=precision,
-            method=NavigationMethod.PID_EKF,
+            method=NavigationMethod.PID,
         )
 
         if land:
