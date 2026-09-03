@@ -200,11 +200,14 @@ camera = CameraFactory.from_source("/path/to/image.jpg")             # file
 
 ## ImageHandler
 
-Interface de câmera baseada em timer, apoiada por um `Node` ROS 2 interno (registrado no
+Interface de câmera apoiada por um `Node` ROS 2 interno (registrado no
 executor de runtime do SDK — veja
 [`nectar.runtime`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/runtime.py)).
-Invoca um callback de processamento em cada frame e, opcionalmente, renderiza em uma janela
-OpenCV.
+`run()` captura frames em uma thread worker (`get_frame(wait_for_new=True)` para tópicos
+ROS e OpenCV threaded). Essa espera não pode rodar no executor: o `EventsExecutor` é
+single-thread, então um timer que espera a próxima imagem ROS trava, e um timer que
+copia o último frame a cada 0.3 ms compete com a subscription e com a inferência.
+A janela OpenCV, se habilitada, permanece em um timer ROS.
 
 ```python
 ImageHandler(
@@ -214,7 +217,7 @@ ImageHandler(
     *,
     config: CameraConfig = None,
     camera: AbstractCam = None,          # pre-configured camera
-    poll_interval: float = 0.01,         # timer period (seconds)
+    poll_interval: float = 0.01,         # sync grab sleep / display timer (seconds)
     frame_timeout: float = 0.1,          # frame wait timeout (async)
     executor: Executor = None,           # defaults to nectar.runtime executor
 )
@@ -222,7 +225,7 @@ ImageHandler(
 
 | Método | Finalidade |
 |--------|---------|
-| `run()` | Inicia a captura contínua de frames com o timer |
+| `run()` | Inicia a captura contínua em uma thread worker |
 | `open()` | Inicialização manual da câmera |
 | `close()` | Interrompe a câmera |
 | `take_photo(timeout_sec=1.0, wait_for_new=True)` | Captura única (single-shot) |

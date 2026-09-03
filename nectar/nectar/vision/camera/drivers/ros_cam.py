@@ -4,6 +4,7 @@ from typing import Optional
 
 import numpy as np
 from cv_bridge import CvBridge
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage as RosCompressedImage
@@ -40,7 +41,9 @@ class ROSCam(AbstractCam):
             self._node = node
         self._config = config
         self._bridge = CvBridge()
+        self._msg = None
         self._frame: Optional[np.ndarray] = None
+        self._decoded_count = -1
         self._sub = None
         self._frame_event = threading.Event()
         self._lock = threading.Lock()
@@ -48,6 +51,7 @@ class ROSCam(AbstractCam):
         self._last_frame_count = -1
 
         self._qos = self._build_qos_profile()
+        self._callback_group = ReentrantCallbackGroup()
 
     def _build_qos_profile(self) -> QoSProfile:
         """
@@ -76,22 +80,23 @@ class ROSCam(AbstractCam):
         )
 
     def _cb(self, msg) -> None:
-        """Subscription callback for image messages."""
+        """Store the latest message. Decode happens in get_frame() on the caller thread."""
+        with self._lock:
+            self._msg = msg
+            self._frame = None
+            self._frame_count += 1
+        self._frame_event.set()
+
+    def _decode(self, msg) -> Optional[np.ndarray]:
         try:
             if self._config.compressed:
-                frame = self._bridge.compressed_imgmsg_to_cv2(
+                return self._bridge.compressed_imgmsg_to_cv2(
                     msg, desired_encoding=self._config.encoding
                 )
-            else:
-                frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding=self._config.encoding)
-
-            with self._lock:
-                self._frame = frame
-                self._frame_count += 1
-            self._frame_event.set()
-
+            return self._bridge.imgmsg_to_cv2(msg, desired_encoding=self._config.encoding)
         except Exception as e:
             self._node.get_logger().error(f"ROSCam: failed to convert image: {e}")
+            return None
 
     def start(self) -> None:
         """
@@ -108,11 +113,19 @@ class ROSCam(AbstractCam):
 
         if self._config.compressed:
             self._sub = self._node.create_subscription(
-                RosCompressedImage, self._config.topic, self._cb, self._qos
+                RosCompressedImage,
+                self._config.topic,
+                self._cb,
+                self._qos,
+                callback_group=self._callback_group,
             )
         else:
             self._sub = self._node.create_subscription(
-                RosImage, self._config.topic, self._cb, self._qos
+                RosImage,
+                self._config.topic,
+                self._cb,
+                self._qos,
+                callback_group=self._callback_group,
             )
         self._is_running = True
 
@@ -135,23 +148,39 @@ class ROSCam(AbstractCam):
         """
         if wait_for_new:
             with self._lock:
-                if self._frame_count > self._last_frame_count and self._frame is not None:
-                    self._last_frame_count = self._frame_count
-                    return self._frame.copy()
+                has_new = self._frame_count > self._last_frame_count and self._msg is not None
+            if not has_new:
+                self._frame_event.clear()
+                if not self._frame_event.wait(timeout=timeout):
+                    return None
 
-            self._frame_event.clear()
-            if not self._frame_event.wait(timeout=timeout):
+        return self._take_frame(require_new=wait_for_new)
+
+    def _take_frame(self, require_new: bool) -> Optional[np.ndarray]:
+        with self._lock:
+            if self._msg is None:
                 return None
+            if require_new and self._frame_count == self._last_frame_count:
+                return None
+            msg = self._msg
+            count = self._frame_count
+            cached = self._frame
+            cached_count = self._decoded_count
+
+        if cached is not None and cached_count == count:
+            frame = cached
+        else:
+            frame = self._decode(msg)
+            if frame is None:
+                return None
+            with self._lock:
+                if self._frame_count == count:
+                    self._frame = frame
+                    self._decoded_count = count
 
         with self._lock:
-            if self._frame is None:
-                return None
-
-            if wait_for_new and self._frame_count == self._last_frame_count:
-                return None
-
-            self._last_frame_count = self._frame_count
-            return self._frame.copy()
+            self._last_frame_count = count
+        return frame.copy()
 
     @property
     def topic(self) -> str:

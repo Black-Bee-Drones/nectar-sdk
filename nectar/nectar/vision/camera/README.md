@@ -198,9 +198,13 @@ camera = CameraFactory.from_source("/path/to/image.jpg")             # file
 
 ## ImageHandler
 
-Timer-based camera interface backed by an internal ROS 2 `Node` (registered with the SDK runtime
-executor — see [`nectar.runtime`](../../runtime.py)). Invokes a processing callback on every frame
-and optionally renders to an OpenCV window.
+Camera interface backed by an internal ROS 2 `Node` (registered with the SDK runtime
+executor — see [`nectar.runtime`](../../runtime.py)). `run()` grabs frames on a worker
+thread (`get_frame(wait_for_new=True)` for ROS topics and threaded OpenCV). That wait
+must not run on the executor: `EventsExecutor` is single-threaded, so a timer that waits
+for the next ROS image deadlocks, and a timer that copies the latest frame every 0.3 ms
+starves both the subscription and inference. Display, if enabled, stays on a ROS timer.
+`open()` / `take_photo()` stay one-shot on the caller thread.
 
 ```python
 ImageHandler(
@@ -210,7 +214,7 @@ ImageHandler(
     *,
     config: CameraConfig = None,
     camera: AbstractCam = None,          # pre-configured camera
-    poll_interval: float = 0.01,         # timer period (seconds)
+    poll_interval: float = 0.01,         # sync grab sleep / display timer (seconds)
     frame_timeout: float = 0.1,          # frame wait timeout (async)
     executor: Executor = None,           # defaults to nectar.runtime executor
 )
@@ -218,7 +222,7 @@ ImageHandler(
 
 | Method | Purpose |
 |--------|---------|
-| `run()` | Start continuous frame capture with the timer |
+| `run()` | Start continuous capture on a worker thread |
 | `open()` | Manual camera initialization |
 | `close()` | Stop the camera |
 | `take_photo(timeout_sec=1.0, wait_for_new=True)` | Single-shot capture |

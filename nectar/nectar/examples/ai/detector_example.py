@@ -6,40 +6,64 @@ Examples::
     python detector_example.py --model yolov8n.pt --confidence 0.5
     python detector_example.py --model facebook/detr-resnet-50 --framework transformers
     python detector_example.py --model rfdetr-medium --framework rfdetr --publish
+    python detector_example.py --camera-source /image_raw/compressed --publish --no-show
 """
 
 import argparse
 import logging
 import os
 import uuid
-from typing import Optional
+from typing import Optional, Tuple
 
 import cv2
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage
 
 import nectar
 from nectar.ai.core import Framework
 from nectar.ai.detection import Detector
-from nectar.vision.camera import ImageHandler, OpenCVConfig, ROSConfig
+from nectar.vision.camera import ImageHandler, ROSConfig
+from nectar.vision.camera.config import CameraConfig
+from nectar.vision.camera.config_builder import ConfigBuilder
 
 log = logging.getLogger("detector_example")
 
+_PUBLISH_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    durability=DurabilityPolicy.VOLATILE,
+)
 
-def _camera_config(source: str):
-    """Return a config matching the camera source kind.
 
-    For non-OpenCV registered sources (realsense, t265, oakd, c920, imx219, ...)
-    we return None so each driver uses its own default config; forwarding an
-    OpenCVConfig to those drivers would crash on missing fields.
-    """
+def _compressed_topic(topic: str, compressed: bool) -> bool:
+    return compressed or topic.rstrip("/").endswith("/compressed")
+
+
+def _camera_config(args: argparse.Namespace) -> Tuple[Optional[CameraConfig], str]:
+    source = args.camera_source
     if source.startswith("/"):
-        return ROSConfig(topic=source)
+        return ROSConfig(
+            topic=source, compressed=_compressed_topic(source, args.compressed)
+        ), source
     if os.path.isfile(source):
-        return None
-    if source.lower() in ("webcam", "opencv"):
-        return OpenCVConfig(device_index=0, width=1280, height=720)
-    return None
+        return None, source
+    key = "ros_depth" if source.lower() == "realsense_ros" else source.lower()
+    if not ConfigBuilder.is_registered(key):
+        return None, source
+    params = {
+        "device_index": args.device_index,
+        "width": args.width,
+        "height": args.height,
+        "topic": args.topic,
+        "compressed": _compressed_topic(args.topic, args.compressed),
+        "color_width": args.width,
+        "color_height": args.height,
+        "depth_width": args.width,
+        "depth_height": args.height,
+    }
+    return ConfigBuilder.build(key, params), key
 
 
 def _resolve_framework(framework_str: str) -> Optional[Framework]:
@@ -85,12 +109,15 @@ class DetectorStream:
                 start_parameter_services=False,
             )
             nectar.add_node(self._pub_node)
-            self._pub = self._pub_node.create_publisher(CompressedImage, args.topic, 1)
-            log.info("Publishing annotated frames on %s", args.topic)
+            self._pub = self._pub_node.create_publisher(
+                CompressedImage, args.publish_topic, _PUBLISH_QOS
+            )
+            log.info("Publishing annotated frames on %s", args.publish_topic)
 
+        config, source = _camera_config(args)
         self.handler = ImageHandler(
-            image_source=args.camera_source,
-            config=_camera_config(args.camera_source),
+            image_source=source,
+            config=config,
             show_result="Detection Stream" if args.show_result else None,
             image_processing_callback=self.process_frame,
         )
@@ -100,8 +127,9 @@ class DetectorStream:
     def process_frame(self, frame) -> None:
         if frame is None:
             return
+        image = frame.copy()
         self.frame_count += 1
-        result = self.detector.detect(frame, conf=self.confidence)
+        result = self.detector.detect(image, conf=self.confidence)
         self.total_detections += len(result)
 
         if len(result) > 0:
@@ -111,8 +139,8 @@ class DetectorStream:
                 len(result),
                 result.inference_time * 1000,
             )
-            annotated = self.detector.draw_detections(
-                image=frame,
+            image = self.detector.draw_detections(
+                image=image,
                 result=result,
                 show_labels=self.show_labels,
                 show_confidence=self.show_confidence,
@@ -121,13 +149,12 @@ class DetectorStream:
                 thickness=2,
                 text_scale=0.6,
             )
-            frame[:] = annotated
 
-        self._overlay(frame, result)
+        self._overlay(image, result)
 
         if self._pub is not None:
             ok, buf = cv2.imencode(
-                ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
+                ".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
             )
             if ok:
                 msg = CompressedImage()
@@ -182,6 +209,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--framework", default="")
     p.add_argument("--confidence", type=float, default=0.25)
     p.add_argument("--camera-source", default="webcam")
+    p.add_argument("--topic", default="/image_raw")
+    p.add_argument("--compressed", action="store_true")
+    p.add_argument("--device-index", type=int, default=0)
+    p.add_argument("--width", type=int, default=1280)
+    p.add_argument("--height", type=int, default=720)
     p.add_argument("--show-result", action="store_true", default=True)
     p.add_argument("--no-show", dest="show_result", action="store_false")
     p.add_argument("--annotator-type", default="color")
@@ -191,7 +223,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", default="auto")
     p.add_argument("--hf-token", default="")
     p.add_argument("--publish", action="store_true")
-    p.add_argument("--topic", default="/inference/compressed")
+    p.add_argument("--publish-topic", default="/inference/compressed")
     p.add_argument("--jpeg-quality", type=int, default=80)
     args, _ = p.parse_known_args()
     return args

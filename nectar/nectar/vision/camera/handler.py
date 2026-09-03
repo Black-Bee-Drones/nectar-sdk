@@ -1,8 +1,10 @@
+import threading
 import time
 import uuid
 from typing import Any, Callable, Optional
 
 import cv2
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import Executor
 from rclpy.node import Node
 
@@ -16,9 +18,9 @@ class ImageHandler:
     """
     High-level camera interface backed by an internal ROS 2 node.
 
-    Manages camera lifecycle, frame polling, and optional image processing.
+    Manages camera lifecycle, frame capture, and optional image processing.
     A dedicated node is created at construction time and registered with the
-    SDK runtime executor; the timer-based capture loop runs on that executor.
+    SDK runtime executor.
 
     Parameters
     ----------
@@ -35,7 +37,8 @@ class ImageHandler:
     camera : AbstractCam, optional
         Pre-built camera instance. Bypasses factory creation.
     poll_interval : float, default=0.01
-        Timer period in seconds for frame polling.
+        Sleep between grabs for synchronous cameras, and display-timer
+        period when ``show_result`` is set.
     frame_timeout : float, optional
         Timeout for async frame waits. Defaults to 0.1 s.
     executor : Executor, optional
@@ -78,6 +81,9 @@ class ImageHandler:
         self.poll_interval = poll_interval
         self._frame_timeout = frame_timeout if frame_timeout is not None else 0.1
         self.cam_timer = None
+        self._timer_group = ReentrantCallbackGroup()
+        self._lock = threading.Lock()
+        self._worker: Optional[threading.Thread] = None
 
     @property
     def node(self) -> Node:
@@ -88,6 +94,15 @@ class ImageHandler:
         if self.camera is not None:
             return self.camera
         return CameraFactory.from_source(self.image_source, config=self.config, node=self._node)
+
+    def _uses_async(self) -> bool:
+        """True when get_frame(wait_for_new=True) waits on a producer that is not this caller."""
+        cam = self.camera
+        if cam is None:
+            return False
+        if getattr(cam, "is_threaded", False) or getattr(cam, "_use_ros_topics", False):
+            return True
+        return cam.__class__.__name__ in ("ROSCam", "ROSDepthCam")
 
     def open(self) -> None:
         """Build the camera (if needed) and start capture."""
@@ -103,51 +118,74 @@ class ImageHandler:
             self.camera.close()
             self._node.get_logger().info(f"Camera [{self.image_source}] closed.")
 
-    def _camera_callback(self) -> None:
+    def _worker_loop(self) -> None:
+        while not self.cleaned:
+            try:
+                if self.camera is None:
+                    time.sleep(self.poll_interval)
+                    continue
+                if self._uses_async():
+                    frame = self.camera.get_frame(wait_for_new=True, timeout=self._frame_timeout)
+                else:
+                    frame = self.camera.get_frame()
+                    if frame is None:
+                        time.sleep(self.poll_interval)
+                        continue
+                if frame is None:
+                    continue
+                with self._lock:
+                    self.img = frame
+                if self.image_processing_callback is not None:
+                    self.image_processing_callback(frame)
+                elif not self._uses_async():
+                    time.sleep(self.poll_interval)
+            except Exception as e:
+                if not self.cleaned:
+                    self._node.get_logger().error(f"Image processing error: {e}")
+
+    def _show(self) -> None:
+        if self.show_result is None:
+            return
+        with self._lock:
+            img = self.img
+        if img is None:
+            return
         try:
-            if self.camera is None:
-                return
-            uses_async = getattr(self.camera, "_use_ros_topics", False) or getattr(
-                self.camera, "is_threaded", False
-            )
-            if uses_async:
-                frame = self.camera.get_frame(wait_for_new=True, timeout=self._frame_timeout)
+            cv2.imshow(self.show_result, img)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                self.cleanup()
+        except cv2.error as e:
+            if "The function is not implemented" in str(e):
+                self._node.get_logger().warn(
+                    "OpenCV GUI not available. Run with show_result:=false or install opencv-python with GUI support",
+                    throttle_duration_sec=10.0,
+                )
+                self.show_result = None
             else:
-                frame = self.camera.get_frame()
-            if frame is None:
-                return
-            self.img = frame
-            self.process()
-        except Exception as e:
-            self._node.get_logger().error(f"Camera polling error: {e}")
+                raise
 
     def process(self) -> None:
         """Run the processing callback and optional OpenCV display on the current frame."""
         if self.image_processing_callback is not None:
             self.image_processing_callback(self.img)
-        if self.show_result is not None and self.img is not None:
-            try:
-                cv2.imshow(self.show_result, self.img)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    self.cleanup()
-            except cv2.error as e:
-                if "The function is not implemented" in str(e):
-                    self._node.get_logger().warn(
-                        "OpenCV GUI not available. Run with show_result:=false or install opencv-python with GUI support",
-                        throttle_duration_sec=10.0,
-                    )
-                    self.show_result = None
-                else:
-                    raise
+        self._show()
 
     def run(self) -> None:
-        """Open the camera and start the timer-based capture loop."""
+        """Open the camera and start the capture loop on a worker thread."""
         self._node.get_logger().info(f"Running image handler [{self.image_source}]")
         if self.camera is None:
             self.camera = self._build_camera_from_source()
         if not self.camera.is_running:
             self.camera.start()
-        self.cam_timer = self._node.create_timer(self.poll_interval, self._camera_callback)
+        if self._worker is None:
+            self._worker = threading.Thread(
+                target=self._worker_loop, name="nectar-image-handler", daemon=True
+            )
+            self._worker.start()
+        if self.show_result is not None:
+            self.cam_timer = self._node.create_timer(
+                self.poll_interval, self._show, callback_group=self._timer_group
+            )
 
     def take_photo(self, timeout_sec: float = 1.0, wait_for_new: bool = True) -> Optional[Any]:
         """
@@ -173,11 +211,7 @@ class ImageHandler:
         if self.camera is None or not self.camera.is_running:
             raise RuntimeError("Camera must be opened before calling take_photo().")
 
-        uses_async = getattr(self.camera, "_use_ros_topics", False) or getattr(
-            self.camera, "is_threaded", False
-        )
-
-        if uses_async:
+        if self._uses_async():
             frame = self.camera.get_frame(wait_for_new=wait_for_new, timeout=timeout_sec)
         else:
             frame = None
@@ -207,6 +241,10 @@ class ImageHandler:
         if self.cam_timer is not None:
             self._node.destroy_timer(self.cam_timer)
             self.cam_timer = None
+        worker = self._worker
+        if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=2.0)
+        self._worker = None
         if self.show_result is not None:
             try:
                 cv2.destroyWindow(self.show_result)

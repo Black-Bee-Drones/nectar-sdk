@@ -103,7 +103,6 @@ def main() -> None:
         image_source=args.source,
         show_result=None if args.no_show else "Optical Flow",
         image_processing_callback=on_frame,
-        poll_interval=0.0003,
     )
     handler.run()
     log.info("Running %s flow on '%s'. Press 'q' or Ctrl+C to quit.", args.method, args.source)

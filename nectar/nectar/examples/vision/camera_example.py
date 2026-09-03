@@ -10,7 +10,7 @@ log = logging.getLogger("camera_example")
 
 
 _CAMERA_PARAMS = {
-    "webcam": {"device_index": 0, "width": 1280, "height": 720, "fps": 30},
+    "webcam": {"device_index": 1, "width": 1280, "height": 720, "fps": 30},
     "imx219": {"sensor_id": 0, "width": 1280, "height": 720, "flip": 2},
     "realsense": {
         "color_width": 1280,
@@ -65,7 +65,6 @@ def main() -> None:
         config=config,
         show_result=None if args.no_show else "Camera Viewer",
         image_processing_callback=on_frame,
-        poll_interval=0.0003,
     )
     handler.run()
     log.info("Started %s camera", args.camera_type)
