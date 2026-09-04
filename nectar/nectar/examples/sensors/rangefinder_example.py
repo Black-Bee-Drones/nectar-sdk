@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Standalone TF-Luna rangefinder bench test (no ROS).
+"""Standalone Benewake TF-series rangefinder bench test (no ROS).
 
-Wires :class:`TFLuna`, :class:`MavlinkConnection`, and
+Wires :class:`BenewakeTF`, :class:`MavlinkConnection`, and
 :class:`RangefinderPublisher` (with optional :class:`ObstacleMaskFilter`)
 into a single process. Useful for verifying the sensor + transport before
 running the full ROS2 node, or for non-ROS deployments.
@@ -17,13 +17,19 @@ import argparse
 import time
 
 from nectar.control import MavlinkConnection
-from nectar.sensors import ObstacleMaskFilter, RangefinderPublisher, TFLuna
+from nectar.sensors import MODELS, BenewakeTF, ObstacleMaskFilter, RangefinderPublisher
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--port", default="/dev/ttyUSB0", help="TF-Luna serial port")
-    parser.add_argument("--baud", type=int, default=115200, help="TF-Luna baud")
+    parser.add_argument("--port", default="/dev/ttyUSB0", help="Benewake TF serial port")
+    parser.add_argument(
+        "--model",
+        default="tfluna",
+        choices=list(MODELS),
+        help="TF-series model (default: tfluna)",
+    )
+    parser.add_argument("--baud", type=int, default=115200, help="UART baud")
     parser.add_argument(
         "--mavlink",
         default="udp:127.0.0.1:14551",
@@ -78,7 +84,7 @@ def build_filter(args: argparse.Namespace):
 def main() -> None:
     args = parse_args()
 
-    sensor = TFLuna(port=args.port, baudrate=args.baud)
+    sensor = BenewakeTF(port=args.port, model=args.model, baudrate=args.baud)
     connection = MavlinkConnection()
     print(f"Connecting to {args.mavlink} ...")
     connection.connect(args.mavlink, baud=args.mavlink_baud)
@@ -91,11 +97,13 @@ def main() -> None:
     publisher = RangefinderPublisher(
         sensor=sensor,
         connection=connection,
+        min_distance_m=sensor.min_range_m,
+        max_distance_m=sensor.max_range_m,
         rate_hz=args.rate,
         filter=build_filter(args),
     )
     publisher.start()
-    print(f"Publishing at {args.rate} Hz. Filter: {args.filter}.")
+    print(f"Publishing {args.model} at {args.rate} Hz. Filter: {args.filter}.")
 
     try:
         deadline = time.monotonic() + args.duration if args.duration > 0 else None
