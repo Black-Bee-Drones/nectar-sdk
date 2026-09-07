@@ -13,7 +13,8 @@
     enable_infra1: true
     enable_infra2: true
     enable_color: true
-    enable_depth: false
+    enable_depth: true
+    align_depth.enable: true
     enable_gyro: true
     enable_accel: true
     gyro_fps: 200
