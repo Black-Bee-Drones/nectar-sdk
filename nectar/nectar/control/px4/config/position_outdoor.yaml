@@ -7,6 +7,7 @@ x:
   output_max: 1.0
   integral_min: -1.0
   integral_max: 1.0
+  output_deadband: 0.05  # zero command below |output| (m/s)
 
 y:
   kp: 0.8
@@ -16,6 +17,7 @@ y:
   output_max: 1.0
   integral_min: -1.0
   integral_max: 1.0
+  output_deadband: 0.05  # zero command below |output| (m/s)
 
 z:
   kp: 0.5
@@ -25,6 +27,7 @@ z:
   output_max: 0.8
   integral_min: -1.0
   integral_max: 1.0
+  output_deadband: 0.05  # zero command below |output| (m/s)
 
 yaw:
   kp: 0.5
@@ -34,3 +37,4 @@ yaw:
   output_max: 0.3
   integral_min: -0.5
   integral_max: 0.5
+  output_deadband: 0.02  # zero command below |output| (rad/s)

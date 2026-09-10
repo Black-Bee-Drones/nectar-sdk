@@ -88,19 +88,21 @@ class PIDController:
         # Proportional term
         self._proportional = self.kp * error
 
-        # Integral term (with anti-windup)
-        self._integral += self.ki * error * dt
-        self._integral = max(min(self._integral, self.integral_limits[1]), self.integral_limits[0])
+        # Integral term (tentative; committed only if output is not deadbanded)
+        new_integral = self._integral + self.ki * error * dt
+        new_integral = max(min(new_integral, self.integral_limits[1]), self.integral_limits[0])
 
         # Derivative term
         error_diff = error - self._last_error
         self._derivative = self.kd * error_diff / dt
 
-        # total output
-        self.output = self._proportional + self._integral + self._derivative
-        self.output = max(min(self.output, self.output_limits[1]), self.output_limits[0])
-        if abs(self.output) < self.output_deadband:
+        output = self._proportional + new_integral + self._derivative
+        output = max(min(output, self.output_limits[1]), self.output_limits[0])
+        if abs(output) < self.output_deadband:
             self.output = 0.0
+        else:
+            self._integral = new_integral
+            self.output = output
 
         # Store state for next iteration
         self._last_error = error

@@ -51,6 +51,7 @@ classDiagram
         +output_max float
         +integral_min float
         +integral_max float
+        +output_deadband float
         +from_yaml(path)$ PIDConfig
         +from_dict(data)$ PIDConfig
         +to_dict() dict
@@ -122,7 +123,8 @@ Where \(r\) is the setpoint (`setpoint`), \(y_k\) is the current measurement,
 \(\mathrm{clamp}(x, a, b) = \min(\max(x, a), b)\).
 
 An optional **output deadband** (`output_deadband`) forces \(u_k = 0\) when
-\(|u_k| < \mathrm{deadband}\) after clamping.
+\(|u_k| < \mathrm{deadband}\) after clamping. While the command is suppressed,
+the integral is frozen so \(k_i\) cannot wind up against the deadband.
 
 ```python
 control_output = pid.update(current_value: float) -> float
@@ -152,7 +154,8 @@ config = PIDConfig(
     output_min=-0.42,
     output_max=0.42,
     integral_min=-0.5,
-    integral_max=0.5
+    integral_max=0.5,
+    output_deadband=0.03,
 )
 ```
 
@@ -167,6 +170,7 @@ output_min: -0.42
 output_max: 0.42
 integral_min: -0.5
 integral_max: 0.5
+output_deadband: 0.03  # zero command below |output|
 ```
 
 ```python
@@ -212,6 +216,7 @@ x:
   output_max: 0.42
   integral_min: -0.5
   integral_max: 0.5
+  output_deadband: 0.03  # zero command below |output| (m/s)
 
 y:
   kp: 0.5
@@ -348,22 +353,26 @@ x:
   kp: 0.5
   output_min: -0.42
   output_max: 0.42
+  output_deadband: 0.03
 
 y:
   kp: 0.5
   output_min: -0.42
   output_max: 0.42
+  output_deadband: 0.03
 
 z:
   kp: 0.22
   output_min: -0.15
   output_max: 0.1
+  output_deadband: 0.02
 
 yaw:
   kp: 0.5
   ki: 0.1
   output_min: -0.2
   output_max: 0.2
+  output_deadband: 0.02
 ```
 
 **Rationale**:
@@ -379,22 +388,26 @@ x:
   kp: 0.8
   output_min: -1.0
   output_max: 1.0
+  output_deadband: 0.05
 
 y:
   kp: 0.8
   output_min: -1.0
   output_max: 1.0
+  output_deadband: 0.05
 
 z:
   kp: 0.5
   output_min: -0.8
   output_max: 0.8
+  output_deadband: 0.05
 
 yaw:
   kp: 0.5
   ki: 0.1
   output_min: -0.3
   output_max: 0.3
+  output_deadband: 0.02
 ```
 
 **Rationale**:

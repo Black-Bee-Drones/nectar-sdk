@@ -568,6 +568,9 @@ class CrazyflieDrone(BaseDrone):
         precision: float = 0.1,
         method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = 0.15,
     ) -> bool:
         """
         Navigate to target position using the onboard high-level commander.
@@ -610,6 +613,8 @@ class CrazyflieDrone(BaseDrone):
             PID, PID_EKF, POSITION_GLOBAL raise CapabilityNotSupportedError.
         altitude_source : AltitudeSource, default=AUTO
             Ignored -- Crazyflie uses fused ToF/flow altitude.
+        precision_z, precision_yaw, settle_time
+            Accepted for API compatibility. Arrival uses ``precision``.
 
         Returns
         -------
@@ -625,6 +630,7 @@ class CrazyflieDrone(BaseDrone):
         """
         if method != NavigationMethod.POSITION:
             raise CapabilityNotSupportedError(f"{method.name} navigation", self._config.name)
+        _ = (precision_z, precision_yaw, settle_time)
         config: CrazyflieConfig = self._config
 
         if self._in_streaming_mode:

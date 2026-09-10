@@ -241,7 +241,11 @@ class BebopDrone(BaseDrone):
         precision: float = 0.2,
         method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = 0.15,
     ) -> bool:
+        _ = (precision_z, precision_yaw, settle_time)
         raise CapabilityNotSupportedError("Position control", "Bebop")
 
     def emergency_stop(self) -> None:

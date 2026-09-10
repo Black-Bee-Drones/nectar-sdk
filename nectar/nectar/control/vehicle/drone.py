@@ -26,7 +26,11 @@ from nectar.control.types import (
     RTLMethod,
 )
 from nectar.control.vehicle.gps_utils import GPSUtils
-from nectar.control.vehicle.navigator import VehicleNavigator
+from nectar.control.vehicle.navigator import (
+    DEFAULT_PRECISION_YAW_DEG,
+    DEFAULT_SETTLE_TIME,
+    VehicleNavigator,
+)
 from nectar.control.vehicle.sequencer import FlightSequencer
 from nectar.control.vehicle.setpoint_config import SetpointConfig
 from nectar.control.vehicle.target_computer import TargetComputer
@@ -828,6 +832,9 @@ class VehicleDrone(BaseDrone):
         precision: float = 0.2,
         method: NavigationMethod = NavigationMethod.PID,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = DEFAULT_SETTLE_TIME,
     ) -> bool:
         """
         Move the drone to a position relative to its current location and heading.
@@ -851,7 +858,7 @@ class VehicleDrone(BaseDrone):
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds.
         precision : float, default=0.2
-            Arrival threshold in meters.
+            Arrival XY radius in meters.
         method : NavigationMethod, default=PID
             PID: companion-side velocity PID with raw sensors (vision/GPS).
             PID_EKF: companion-side velocity PID with EKF-fused position.
@@ -864,6 +871,13 @@ class VehicleDrone(BaseDrone):
             - LIDAR: rangefinder for ground-relative altitude. With BODY
               reference z is a relative offset from the current lidar reading;
               with TAKEOFF reference z is absolute altitude above ground.
+        precision_z : float, optional
+            Arrival Z half-height in meters. None uses ``precision``.
+        precision_yaw : float, optional
+            Arrival yaw tolerance in degrees. None uses 3.0°.
+        settle_time : float, default=0.15
+            Time the vehicle must remain inside the cylinder. 0 exits on
+            the first tick inside.
 
         Returns
         -------
@@ -899,9 +913,12 @@ class VehicleDrone(BaseDrone):
         if z is not None:
             z = self._check_altitude_safety(z, reference)
 
+        z_m = precision if precision_z is None else precision_z
+        yaw_d = DEFAULT_PRECISION_YAW_DEG if precision_yaw is None else precision_yaw
         self._node.get_logger().info(
             f"move_to: x={x} y={y} z={z} yaw={yaw} ref={reference.name} "
-            f"method={method.name} precision={precision}m "
+            f"method={method.name} xy\u2264{precision}m z\u2264{z_m}m "
+            f"yaw\u2264{yaw_d:.1f}\u00b0 settle={settle_time:.2f}s "
             f"alt_source={altitude_source.name}"
         )
         self.delay(0.05)
@@ -928,7 +945,15 @@ class VehicleDrone(BaseDrone):
                 else None
             )
             self._prepare_position_setpoint(precision)
-            return self._navigator.navigate_setpoint(target, timeout, precision, check_alt)
+            return self._navigator.navigate_setpoint(
+                target,
+                timeout,
+                precision,
+                check_alt,
+                precision_z=precision_z,
+                precision_yaw=precision_yaw,
+                settle_time=settle_time,
+            )
 
         # POSITION: local position setpoint
         if method == NavigationMethod.POSITION:
@@ -945,7 +970,14 @@ class VehicleDrone(BaseDrone):
                 takeoff,
             )
             self._prepare_position_setpoint(precision)
-            return self._navigator.navigate_setpoint(target, timeout, precision)
+            return self._navigator.navigate_setpoint(
+                target,
+                timeout,
+                precision,
+                precision_z=precision_z,
+                precision_yaw=precision_yaw,
+                settle_time=settle_time,
+            )
 
         # PID methods (PID or PID_EKF)
         use_local = method == NavigationMethod.PID_EKF
@@ -962,6 +994,9 @@ class VehicleDrone(BaseDrone):
             altitude_source=altitude_source,
             altitude_target=alt_target,
             use_local=use_local,
+            precision_z=precision_z,
+            precision_yaw=precision_yaw,
+            settle_time=settle_time,
         )
 
     def move_to_gps(
@@ -973,6 +1008,9 @@ class VehicleDrone(BaseDrone):
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
         method: NavigationMethod = NavigationMethod.PID,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = DEFAULT_SETTLE_TIME,
     ) -> bool:
         """
         Move the drone to a GPS coordinate.
@@ -990,11 +1028,17 @@ class VehicleDrone(BaseDrone):
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds.
         precision : float, default=0.5
-            Arrival threshold in meters.
+            Arrival XY radius in meters.
         method : NavigationMethod, default=PID
             PID: companion-side velocity PID with raw GPS.
             PID_EKF: companion-side velocity PID with EKF local position.
             POSITION_GLOBAL: onboard GPS position controller.
+        precision_z : float, optional
+            Arrival Z half-height in meters. None uses ``precision``.
+        precision_yaw : float, optional
+            Arrival yaw tolerance in degrees. None uses 3.0°.
+        settle_time : float, default=0.15
+            Time the vehicle must remain inside the cylinder.
 
         Returns
         -------
@@ -1023,7 +1067,8 @@ class VehicleDrone(BaseDrone):
 
         self._node.get_logger().info(
             f"move_to_gps: lat={latitude:.6f} lon={longitude:.6f} alt={alt:.1f}m "
-            f"hdg={hdg:.1f}\u00b0 method={method.name} precision={precision}m"
+            f"hdg={hdg:.1f}\u00b0 method={method.name} xy\u2264{precision}m "
+            f"settle={settle_time:.2f}s"
         )
 
         # POSITION_GLOBAL: publish a GPS setpoint
@@ -1032,7 +1077,15 @@ class VehicleDrone(BaseDrone):
                 latitude, longitude, alt, hdg, self._initial_altitude
             )
             self._prepare_position_setpoint(precision)
-            return self._navigator.navigate_setpoint(target, timeout, precision, check_alt=alt)
+            return self._navigator.navigate_setpoint(
+                target,
+                timeout,
+                precision,
+                check_alt=alt,
+                precision_z=precision_z,
+                precision_yaw=precision_yaw,
+                settle_time=settle_time,
+            )
 
         # PID_EKF: convert GPS target to local NED and use EKF position
         if method == NavigationMethod.PID_EKF:
@@ -1054,6 +1107,9 @@ class VehicleDrone(BaseDrone):
                 altitude_source=AltitudeSource.REL_ALT,
                 altitude_target=alt,
                 use_local=True,
+                precision_z=precision_z,
+                precision_yaw=precision_yaw,
+                settle_time=settle_time,
             )
 
         # PID: raw GPS with geodesic error computation
@@ -1068,6 +1124,9 @@ class VehicleDrone(BaseDrone):
             precision=precision,
             altitude_source=AltitudeSource.REL_ALT,
             altitude_target=alt,
+            precision_z=precision_z,
+            precision_yaw=precision_yaw,
+            settle_time=settle_time,
         )
 
     def _compute_pid_target(

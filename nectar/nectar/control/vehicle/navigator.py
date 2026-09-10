@@ -19,7 +19,58 @@ if TYPE_CHECKING:
     from nectar.control.vehicle.drone import VehicleDrone
 
 LIDAR_ALTITUDE_LIMIT = 15.0  # meters
-YAW_THRESHOLD = np.radians(3)
+DEFAULT_PRECISION_YAW_DEG = 3.0
+DEFAULT_SETTLE_TIME = 0.15
+_ARRIVAL_BRAKE_S = 0.4
+
+
+def resolve_precisions(
+    precision: float,
+    precision_z: Optional[float] = None,
+    precision_yaw: Optional[float] = None,
+) -> tuple[float, float, float]:
+    """Return ``(xy_m, z_m, yaw_rad)`` with None meaning inherit defaults."""
+    z = precision if precision_z is None else precision_z
+    yaw_deg = DEFAULT_PRECISION_YAW_DEG if precision_yaw is None else precision_yaw
+    return precision, z, math.radians(yaw_deg)
+
+
+def cylinder_errors(
+    dx: float,
+    dy: float,
+    dz: float,
+    dyaw: float,
+    x_on: bool,
+    y_on: bool,
+    z_on: bool,
+    yaw_on: bool,
+) -> tuple[float, float, float]:
+    """XY hypot, |z|, |yaw| for active axes. Inactive axes report 0."""
+    xy_sq = 0.0
+    if x_on:
+        xy_sq += dx * dx
+    if y_on:
+        xy_sq += dy * dy
+    xy = math.sqrt(xy_sq) if (x_on or y_on) else 0.0
+    z = abs(dz) if z_on else 0.0
+    yaw = abs(dyaw) if yaw_on else 0.0
+    return xy, z, yaw
+
+
+def inside_cylinder(
+    xy: float,
+    z: float,
+    yaw: float,
+    precision_xy: float,
+    precision_z: float,
+    precision_yaw: float,
+) -> bool:
+    """True when all reported errors (inactive axes already 0) are inside."""
+    return xy <= precision_xy and z <= precision_z and yaw <= precision_yaw
+
+
+def _held_s(now, since) -> float:
+    return (now - since).nanoseconds * 1e-9
 
 
 class VehicleNavigator:
@@ -48,12 +99,16 @@ class VehicleNavigator:
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
         altitude_target: Optional[float] = None,
         use_local: bool = False,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = DEFAULT_SETTLE_TIME,
     ) -> bool:
         """
         PID velocity-based navigation loop.
 
         Computes body-frame errors, feeds them into per-axis PID controllers,
-        and publishes velocity commands until the target is reached or timeout.
+        and publishes velocity commands until the target is held inside the
+        arrival cylinder for ``settle_time``, or timeout.
 
         Returns
         -------
@@ -62,6 +117,8 @@ class VehicleNavigator:
         """
         drone = self._drone
         logger = drone.node.get_logger()
+        prec_xy, prec_z, prec_yaw = resolve_precisions(precision, precision_z, precision_yaw)
+        yaw_on = yaw is not None
 
         pid_x = self._create_pid("x")
         pid_y = self._create_pid("y")
@@ -69,6 +126,10 @@ class VehicleNavigator:
         pid_yaw = self._create_pid("yaw")
 
         self._log_target(target, altitude_source, altitude_target)
+        logger.info(
+            f"PID nav: precision xy\u2264{prec_xy:.2f}m  z\u2264{prec_z:.2f}m  "
+            f"yaw\u2264{math.degrees(prec_yaw):.1f}\u00b0  settle={settle_time:.2f}s"
+        )
 
         start = drone.node.get_clock().now()
         timeout_dur = Duration(seconds=timeout) if timeout else None
@@ -78,8 +139,8 @@ class VehicleNavigator:
 
         # Align yaw before translating to prevent body-frame errors from
         # rotating during simultaneous yaw + position PID control.
-        if yaw is not None and (x_active or y_active):
-            aligned = self._align_yaw(target, pid_yaw, start, timeout_dur, use_local)
+        if yaw_on and (x_active or y_active):
+            aligned = self._align_yaw(target, pid_yaw, start, timeout_dur, use_local, prec_yaw)
             if not aligned:
                 return False
             pid_yaw.reset()
@@ -87,10 +148,13 @@ class VehicleNavigator:
             x_active = True
             y_active = True
 
+        inside_since = None
+
         while True:
             drone.delay(0.01)
 
             if not drone.obstacle_manager.should_continue_navigation(drone):
+                inside_since = None
                 continue
 
             disable_x, disable_y, disable_z = drone.obstacle_manager.get_axis_control()
@@ -99,50 +163,56 @@ class VehicleNavigator:
                 target, yaw, altitude_source, altitude_target, use_local
             )
 
-            axes = {
-                "x": (x_active and not disable_x, dx, pid_x),
-                "y": (y_active and not disable_y, dy, pid_y),
-                "z": (z_active and not disable_z, dz, pid_z),
+            x_on = x_active and not disable_x
+            y_on = y_active and not disable_y
+            z_on = z_active and not disable_z
+
+            vel = {
+                "x": pid_x.update(-dx) if x_on else 0.0,
+                "y": pid_y.update(-dy) if y_on else 0.0,
+                "z": pid_z.update(-dz) if z_on else 0.0,
             }
+            vyaw = pid_yaw.update(-dyaw) if yaw_on else 0.0
 
-            dead_zone = precision / 2
-            vel = {}
-            error_parts = []
-            dist_sq = 0.0
+            xy, z_err, yaw_err = cylinder_errors(dx, dy, dz, dyaw, x_on, y_on, z_on, yaw_on)
+            inside = inside_cylinder(xy, z_err, yaw_err, prec_xy, prec_z, prec_yaw)
 
-            for name, (active, err, pid) in axes.items():
-                v = pid.update(-err) if active else 0.0
-                if abs(err) < dead_zone:
-                    v = 0.0
-                vel[name] = v
-                if active:
-                    error_parts.append(f"d{name}={err:.2f}")
-                    dist_sq += err**2
-
-            vyaw = pid_yaw.update(-dyaw) if yaw is not None else 0.0
-            if yaw is not None:
-                error_parts.append(f"dyaw={np.degrees(dyaw):.1f}\u00b0")
-
-            distance = np.sqrt(dist_sq)
+            now = drone.node.get_clock().now()
+            settled, inside_since, held = self._settle(inside, inside_since, now, settle_time)
 
             logger.info(
-                f"Distance: {distance:.2f}m | Error: {', '.join(error_parts)} | "
-                f"Vel: vx={vel['x']:.2f}, vy={vel['y']:.2f}, "
-                f"vz={vel['z']:.2f}, vyaw={vyaw:.2f}",
+                self._arrival_log(
+                    xy,
+                    z_err,
+                    yaw_err,
+                    x_on,
+                    y_on,
+                    z_on,
+                    yaw_on,
+                    vel,
+                    vyaw,
+                    inside,
+                    held,
+                    settle_time,
+                ),
                 throttle_duration_sec=0.5,
             )
 
             drone.move_velocity(vel["x"], vel["y"], vel["z"], vyaw)
 
-            yaw_ok = yaw is None or abs(dyaw) <= YAW_THRESHOLD
-            if distance <= precision and yaw_ok:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
-                logger.info(f"\033[32;1mTarget reached! Distance: {distance:.2f}m\033[0m")
+            if settled:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=_ARRIVAL_BRAKE_S)
+                logger.info(
+                    f"\033[32;1mReached  {self._arrival_summary(xy, z_err, yaw_err, yaw_on)}"
+                    f"  (held {held:.2f}s)\033[0m"
+                )
                 return True
 
-            if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
-                logger.warn(f"\033[33;1mTimeout reached. Distance: {distance:.2f}m\033[0m")
+            if timeout_dur and (now - start) > timeout_dur:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=_ARRIVAL_BRAKE_S)
+                logger.warn(
+                    f"\033[33;1mTimeout  {self._arrival_summary(xy, z_err, yaw_err, yaw_on)}\033[0m"
+                )
                 return False
 
     def navigate_setpoint(
@@ -151,15 +221,18 @@ class VehicleNavigator:
         timeout: Optional[float],
         precision: float,
         check_alt: Optional[float] = None,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = DEFAULT_SETTLE_TIME,
     ) -> bool:
         """
         Direct setpoint navigation loop.
 
-        Sends the target to the transport and monitors distance until reached.
+        Sends the target to the transport and monitors the arrival cylinder
+        until held for ``settle_time``.
 
-        For :class:`LocalTarget`: checks Euclidean distance using EKF local
-        position. For :class:`GlobalTarget`: checks geodesic distance using GPS
-        and relative altitude.
+        For :class:`LocalTarget`: XY hypot + |z| using EKF local position.
+        For :class:`GlobalTarget`: geodesic XY + relative altitude.
 
         Returns
         -------
@@ -170,6 +243,8 @@ class VehicleNavigator:
         logger = drone.node.get_logger()
         is_gps = isinstance(target, GlobalTarget)
         target_yaw = PositionUtils.get_yaw_from_pose(target)
+        prec_xy, prec_z, prec_yaw = resolve_precisions(precision, precision_z, precision_yaw)
+        z_on = (not is_gps) or check_alt is not None
 
         if is_gps:
             logger.info(
@@ -183,9 +258,14 @@ class VehicleNavigator:
                 f"Setpoint nav \u2192 local target: x={tp.x:.2f}, y={tp.y:.2f}, "
                 f"z={tp.z:.2f}, yaw={np.degrees(target_yaw):.1f}\u00b0"
             )
+        logger.info(
+            f"Setpoint nav: precision xy\u2264{prec_xy:.2f}m  z\u2264{prec_z:.2f}m  "
+            f"yaw\u2264{math.degrees(prec_yaw):.1f}\u00b0  settle={settle_time:.2f}s"
+        )
 
         start = drone.node.get_clock().now()
         timeout_dur = Duration(seconds=timeout) if timeout else None
+        inside_since = None
 
         drone.publish_setpoint(target)
 
@@ -193,31 +273,42 @@ class VehicleNavigator:
             drone.delay(0.1)
 
             if is_gps:
-                reached, distance, (dx, dy, dz) = self._check_reached_gps(
-                    target, check_alt, precision
-                )
+                dx, dy, dz, xy = self._gps_errors(target, check_alt)
             else:
-                reached, distance, (dx, dy, dz) = self._check_reached_local(target, precision)
+                dx, dy, dz, xy = self._local_errors(target)
 
             curr_yaw = self._get_current_yaw(use_local=not is_gps)
             dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw)
-
-            error_parts = (
-                f"dx={dx:.2f}, dy={dy:.2f}, dz={dz:.2f}, dyaw={np.degrees(dyaw):.1f}\u00b0"
+            z_err = abs(dz) if z_on else 0.0
+            yaw_err = abs(dyaw)
+            xy_report = xy if math.isfinite(xy) else float("inf")
+            inside = math.isfinite(xy_report) and inside_cylinder(
+                xy_report, z_err, yaw_err, prec_xy, prec_z, prec_yaw
             )
+
+            now = drone.node.get_clock().now()
+            settled, inside_since, held = self._settle(inside, inside_since, now, settle_time)
+
+            settle_txt = f"  settle {held:.2f}/{settle_time:.2f}s" if inside else ""
             logger.info(
-                f"Distance: {distance:.2f}m | Error: {error_parts}",
+                f"xy={xy_report:.2f}m  z={z_err:.2f}m  "
+                f"yaw={np.degrees(dyaw):.1f}\u00b0{settle_txt}",
                 throttle_duration_sec=0.5,
             )
 
-            if reached and abs(dyaw) <= YAW_THRESHOLD:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
-                logger.info(f"\033[32;1mSetpoint reached! Distance: {distance:.2f}m\033[0m")
+            if settled:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=_ARRIVAL_BRAKE_S)
+                logger.info(
+                    f"\033[32;1mReached  {self._arrival_summary(xy_report, z_err, yaw_err, True)}"
+                    f"  (held {held:.2f}s)\033[0m"
+                )
                 return True
 
-            if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
-                logger.warn(f"\033[33;1mSetpoint timeout. Distance: {distance:.2f}m\033[0m")
+            if timeout_dur and (now - start) > timeout_dur:
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=_ARRIVAL_BRAKE_S)
+                logger.warn(
+                    f"\033[33;1mTimeout  {self._arrival_summary(xy_report, z_err, yaw_err, True)}\033[0m"
+                )
                 return False
 
     def resolve_altitude_target(
@@ -339,7 +430,7 @@ class VehicleNavigator:
         if yaw is not None:
             curr_yaw = self._get_current_yaw(use_local)
             target_yaw = PositionUtils.get_yaw_from_pose(target)
-            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw, YAW_THRESHOLD)
+            dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw)
         else:
             dyaw = 0.0
 
@@ -373,6 +464,7 @@ class VehicleNavigator:
         start,
         timeout_dur: Optional[Duration],
         use_local: bool,
+        precision_yaw: float,
     ) -> bool:
         """
         Rotate to target yaw before starting position control.
@@ -386,7 +478,10 @@ class VehicleNavigator:
         logger = drone.node.get_logger()
         target_yaw = PositionUtils.get_yaw_from_pose(target)
 
-        logger.info(f"Yaw alignment phase \u2192 {np.degrees(target_yaw):.1f}\u00b0")
+        logger.info(
+            f"Yaw alignment \u2192 {np.degrees(target_yaw):.1f}\u00b0  "
+            f"(\u2264{math.degrees(precision_yaw):.1f}\u00b0)"
+        )
 
         while True:
             drone.delay(0.01)
@@ -397,80 +492,62 @@ class VehicleNavigator:
             curr_yaw = self._get_current_yaw(use_local)
             dyaw = PositionUtils.compute_yaw_error(target_yaw, curr_yaw)
 
-            if abs(dyaw) <= YAW_THRESHOLD:
+            if abs(dyaw) <= precision_yaw:
                 drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.1)
-                logger.info(f"\033[32;1mYaw aligned: {np.degrees(curr_yaw):.1f}\u00b0\033[0m")
+                logger.info(f"\033[32;1mYaw aligned  {np.degrees(curr_yaw):.1f}\u00b0\033[0m")
                 return True
 
             vyaw = pid_yaw.update(-dyaw)
             drone.move_velocity(0.0, 0.0, 0.0, vyaw)
 
             logger.info(
-                f"Yaw align: dyaw={np.degrees(dyaw):.1f}\u00b0 vyaw={vyaw:.2f}",
+                f"Yaw align: dyaw={np.degrees(dyaw):.1f}\u00b0  vyaw={vyaw:.2f}",
                 throttle_duration_sec=0.5,
             )
 
             if timeout_dur and (drone.node.get_clock().now() - start) > timeout_dur:
-                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=0.4)
+                drone.move_velocity(0.0, 0.0, 0.0, 0.0, duration=_ARRIVAL_BRAKE_S)
                 logger.warn("\033[33;1mTimeout during yaw alignment\033[0m")
                 return False
 
-    def _check_reached_local(
-        self, target: LocalTarget, precision: float
-    ) -> tuple[bool, float, tuple[float, float, float]]:
-        """
-        Check arrival for local targets using EKF local position.
-
-        Returns
-        -------
-        tuple[bool, float, tuple]
-            (reached, distance, (dx, dy, dz)) in ENU world frame. Errors are
-            ``inf`` if local_pose is unavailable.
-        """
+    def _local_errors(self, target: LocalTarget) -> tuple[float, float, float, float]:
+        """ENU errors and XY hypot. ``inf`` if local_pose is unavailable."""
         local = self._drone.local_pose
         if local is None:
-            return False, float("inf"), (float("inf"), float("inf"), float("inf"))
+            inf = float("inf")
+            return inf, inf, inf, inf
 
         current = local.position
         dx = target.position.x - current.x
         dy = target.position.y - current.y
         dz = target.position.z - current.z
-        distance = math.sqrt(dx**2 + dy**2 + dz**2)
-        return distance <= precision, distance, (dx, dy, dz)
+        return dx, dy, dz, math.hypot(dx, dy)
 
-    def _check_reached_gps(
+    def _gps_errors(
         self,
         target: GlobalTarget,
         check_alt: Optional[float],
-        precision: float,
-    ) -> tuple[bool, float, tuple[float, float, float]]:
-        """
-        Check arrival for GPS targets using geodesic distance.
-
-        Returns
-        -------
-        tuple[bool, float, tuple]
-            (reached, horizontal_distance, (dx, dy, dz)) where dx/dy are the
-            east/north offsets to the target and dz is the altitude error.
-        """
+    ) -> tuple[float, float, float, float]:
+        """East/north/alt errors and geodesic XY distance."""
         gps = self._drone.gps
         current_alt = self._drone.rel_alt if check_alt is not None else 0.0
         target_alt = check_alt if check_alt is not None else 0.0
 
-        reached, dist, _ = GPSUtils.check_reached(
+        _, dist, _ = GPSUtils.check_reached(
             gps.latitude,
             gps.longitude,
             current_alt,
             target.latitude,
             target.longitude,
             target_alt,
-            precision,
+            precision_radius=float("inf"),
+            alt_threshold=float("inf"),
         )
         east, north = GPSUtils.local_offset(
             gps.latitude, gps.longitude, target.latitude, target.longitude
         )
         dz = target_alt - current_alt if check_alt is not None else 0.0
-        return reached, dist, (east, north, dz)
+        return east, north, dz, dist
 
     def _create_pid(self, axis: str) -> PIDController:
         """Create PID controller for the specified axis from drone config."""
@@ -483,7 +560,54 @@ class VehicleNavigator:
             kd=cfg.kd,
             output_limits=cfg.get_output_limits(),
             integral_limits=cfg.get_integral_limits(),
+            output_deadband=cfg.output_deadband,
         )
+
+    @staticmethod
+    def _settle(inside: bool, inside_since, now, settle_time: float):
+        if not inside:
+            return False, None, 0.0
+        if inside_since is None:
+            inside_since = now
+        held = _held_s(now, inside_since)
+        if settle_time <= 0.0:
+            return True, inside_since, held
+        return held >= settle_time, inside_since, held
+
+    @staticmethod
+    def _arrival_summary(xy: float, z: float, yaw: float, yaw_on: bool) -> str:
+        parts = [f"xy={xy:.2f}m", f"z={z:.2f}m"]
+        if yaw_on:
+            parts.append(f"yaw={math.degrees(yaw):.1f}\u00b0")
+        return "  ".join(parts)
+
+    @staticmethod
+    def _arrival_log(
+        xy: float,
+        z: float,
+        yaw: float,
+        x_on: bool,
+        y_on: bool,
+        z_on: bool,
+        yaw_on: bool,
+        vel: dict,
+        vyaw: float,
+        inside: bool,
+        held: float,
+        settle_time: float,
+    ) -> str:
+        parts = []
+        if x_on or y_on:
+            parts.append(f"xy={xy:.2f}m")
+        if z_on:
+            parts.append(f"z={z:.2f}m")
+        if yaw_on:
+            parts.append(f"yaw={math.degrees(yaw):.1f}\u00b0")
+        err = "  ".join(parts) if parts else "-"
+        cmd = f"vx={vel['x']:.2f}  vy={vel['y']:.2f}  vz={vel['z']:.2f}  vyaw={vyaw:.2f}"
+        if inside:
+            return f"{err}  |  {cmd}  |  settle {held:.2f}/{settle_time:.2f}s"
+        return f"{err}  |  {cmd}"
 
     def _log_target(
         self,

@@ -7,6 +7,7 @@ x:
   output_max: 0.42
   integral_min: -0.5
   integral_max: 0.5
+  output_deadband: 0.02
 
 y:
   kp: 0.5
@@ -16,15 +17,17 @@ y:
   output_max: 0.42
   integral_min: -0.5
   integral_max: 0.5
+  output_deadband: 0.02
 
 z:
-  kp: 0.22
+  kp: 0.25
   ki: 0.0
   kd: 0.0
-  output_min: -0.15
-  output_max: 0.1
+  output_min: -0.17
+  output_max: 0.20
   integral_min: -0.3
   integral_max: 0.3
+  output_deadband: 0.05
 
 yaw:
   kp: 0.5
@@ -34,3 +37,4 @@ yaw:
   output_max: 0.2
   integral_min: -0.5
   integral_max: 0.5
+  output_deadband: 0.04

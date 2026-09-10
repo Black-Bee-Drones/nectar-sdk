@@ -18,6 +18,7 @@ class PIDConfig:
     output_max: float = 1.0
     integral_min: float = -1.0
     integral_max: float = 1.0
+    output_deadband: float = 0.0
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "PIDConfig":
@@ -63,6 +64,7 @@ class PIDConfig:
             output_max=config_dict.get("output_max", 1.0),
             integral_min=config_dict.get("integral_min", -1.0),
             integral_max=config_dict.get("integral_max", 1.0),
+            output_deadband=config_dict.get("output_deadband", 0.0),
         )
 
     def to_dict(self) -> dict:
@@ -83,6 +85,7 @@ class PIDConfig:
             "output_max": self.output_max,
             "integral_min": self.integral_min,
             "integral_max": self.integral_max,
+            "output_deadband": self.output_deadband,
         }
 
     def get_output_limits(self) -> tuple[float, float]:

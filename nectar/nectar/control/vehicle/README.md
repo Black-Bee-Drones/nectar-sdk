@@ -303,7 +303,7 @@ move_to(x=0, y=0)    → target (0, 0)    # full takeoff origin
 
 When `yaw` is specified together with a position axis (`x` or `y`), PID navigation is **yaw-first**:
 
-1. **Phase 1 — Yaw alignment**: rotate to target yaw while holding position (zero translation). Completes when `|dyaw| ≤ 3°` (`YAW_THRESHOLD`).
+1. **Phase 1 — Yaw alignment**: rotate to target yaw while holding position (zero translation). Completes when `|dyaw| ≤ precision_yaw` (default 3.0°).
 2. **Phase 2 — Translation**: move to the target with yaw hold. Both `x` and `y` are activated regardless of which was specified, because after rotation the world-frame target may project onto either body axis.
 
 The position target is computed at call time in the original heading direction — yaw rotation changes only the final orientation. With POSITION / POSITION_GLOBAL, yaw and position are controlled simultaneously by the FCU (no yaw-first phase).
@@ -316,6 +316,7 @@ The position target is computed at call time in the original heading direction �
 drone.move_to(x=2.0, y=0.0, z=0.0)            # 2m forward
 drone.move_to(z=0.5)                           # 0.5m up (x/y disabled)
 drone.move_to(x=3.0, yaw=45.0)                 # rotate 45°, then 3m to target
+drone.move_to(x=2.0, precision=0.12, precision_z=0.08, settle_time=0.2)
 ```
 
 **Takeoff-relative** (absolute offsets from the takeoff origin):
@@ -389,19 +390,23 @@ flowchart TD
     D --> G["navigator.navigate_setpoint"]
     F --> yawCheck{"yaw + position axes active?"}
     yawCheck -->|Yes| yawPhase["Phase 1: align yaw (zero translation)"]
-    yawPhase --> yawDone{"|dyaw| ≤ 3°?"}
+    yawPhase --> yawDone{"|dyaw| <= precision_yaw?"}
     yawDone -->|No| yawPhase
     yawDone -->|Yes| enableXY["Enable both x,y; reset yaw PID"]
     enableXY --> H["Phase 2: PID loop (body-frame errors)"]
     yawCheck -->|No| H
     H --> L["PID to move_velocity"]
-    L --> conv{"distance ≤ precision AND |dyaw| ≤ 3°?"}
-    conv -->|No| H
-    conv -->|Yes| donePID["Target reached"]
-    G --> I["Setpoint loop: publish_setpoint + check_reached"]
-    I --> convSP{"reached AND |dyaw| ≤ 3°?"}
-    convSP -->|No| I
-    convSP -->|Yes| doneSP["Setpoint reached"]
+    L --> conv{"xy z yaw inside cylinder?"}
+    conv -->|No| resetSettle["Reset settle clock"] --> H
+    conv -->|Yes| dwell{"held settle_time?"}
+    dwell -->|No| H
+    dwell -->|Yes| donePID["Target reached"]
+    G --> I["Setpoint loop: publish_setpoint"]
+    I --> convSP{"inside cylinder?"}
+    convSP -->|No| resetSP["Reset settle clock"] --> I
+    convSP -->|Yes| dwellSP{"held settle_time?"}
+    dwellSP -->|No| I
+    dwellSP -->|Yes| doneSP["Setpoint reached"]
 ```
 
 ### PID Navigation
@@ -409,20 +414,22 @@ flowchart TD
 Velocity-based control with closed-loop feedback via `navigate_pid()`:
 
 1. The drone computes the target position (world frame, per reference) and resolves the altitude target (per altitude source).
-2. The navigator creates per-axis PID controllers from `pid_config`.
+2. The navigator creates per-axis PID controllers from `pid_config` (including YAML `output_deadband`).
 3. If yaw + position: align yaw first (Phase 1), then enable both x and y.
-4. Position loop (~100 Hz): compute the body-frame position and yaw errors, override the altitude error if an altitude target is set (LIDAR/REL_ALT), update the PIDs, publish velocity, and check arrival (`distance ≤ precision AND |dyaw| ≤ 3°`).
+4. Position loop (~100 Hz): compute the body-frame position and yaw errors, override the altitude error if an altitude target is set (LIDAR/REL_ALT), update the PIDs, publish velocity, and check the **arrival cylinder**.
 
-**Dead zone**: per-axis velocity is zeroed when `|error| < precision / 2` to prevent oscillation. **Active axes**: only non-`None` axes are controlled and counted in the distance check (the yaw+x/y exception above applies).
+**Arrival cylinder**: `precision` is the XY radius (hypot of active X/Y). `precision_z` is the Z half-height (defaults to `precision`). `precision_yaw` is the yaw tolerance in degrees (default 3.0°). Inactive axes (`None`) are ignored. The vehicle must remain inside for `settle_time` (default 0.15 s) while PID keeps running; leaving the cylinder resets the clock. `settle_time <= 0` exits on the first tick inside.
+
+Command noise is suppressed by per-axis `output_deadband` in the PID YAML, not by zeroing velocity at `precision / 2`.
 
 ### Setpoint (Position) Navigation
 
 Direct setpoint publishing via `navigate_setpoint()`. The FCU receives a full target (position + yaw) and controls all axes simultaneously — no yaw-first phase.
 
-- **Local** (`LocalTarget`): publishes a local NED setpoint; checks Euclidean distance using the EKF local pose.
-- **Global** (`GlobalTarget`): publishes a global AMSL setpoint; checks geodesic distance using GPS + relative altitude.
+- **Local** (`LocalTarget`): publishes a local NED setpoint; arrival is XY hypot + |z| using the EKF local pose.
+- **Global** (`GlobalTarget`): publishes a global AMSL setpoint; arrival is geodesic XY + relative altitude.
 
-Both verify the target yaw is reached (within `YAW_THRESHOLD = 3°`) before declaring arrival.
+Both use the same cylinder and settle clock as PID (`precision` / `precision_z` / `precision_yaw`).
 
 How a firmware routes a published setpoint to its onboard controllers is firmware-specific: ArduPilot's GUIDED-mode `AC_PosControl`/`AC_WPNav` selection and `WPNAV_*` parameters are in [ArduPilot](../ardupilot/README.md#ardupilot-guided-mode-position-controllers); PX4's continuous OFFBOARD setpoint pump is in [PX4](../px4/README.md).
 
@@ -484,7 +491,7 @@ east, north = GPSUtils.local_offset(                           # equirectangular
 )
 ```
 
-`create_global_target` stores yaw in ENU radians (converted from the NED `heading`) to match the local-frame convention. `local_offset` is an equirectangular approximation of the east/north offset in meters; arrival is always decided by the geodesic distance from `check_reached`.
+`create_global_target` stores yaw in ENU radians (converted from the NED `heading`) to match the local-frame convention. `local_offset` is an equirectangular approximation of the east/north offset in meters. Navigator arrival uses geodesic XY from `check_reached` plus a separate Z band (`precision_z`).
 
 ## PID Configuration
 
@@ -495,7 +502,7 @@ drone.set_pid_config("/path/to/config.yaml")
 drone.set_pid_config({"x": {"kp": 0.8, "output_min": -1.0, "output_max": 1.0}})
 ```
 
-The controller internals (gains, output clamps, integral handling) live in the [PID module](../pid/README.md).
+The controller internals (gains, output clamps, integral handling, `output_deadband`) live in the [PID module](../pid/README.md).
 
 ## Transports
 

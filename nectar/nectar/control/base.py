@@ -373,6 +373,9 @@ class BaseDrone(ABC):
         precision: float = 0.2,
         method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = 0.15,
     ) -> bool:
         """
         Navigate to target position.
@@ -414,7 +417,7 @@ class BaseDrone(ABC):
             Maximum navigation time in seconds. None for no timeout.
 
         precision : float, default=0.2
-            Arrival threshold in meters.
+            Arrival XY radius in meters.
 
         method : NavigationMethod (enum), default=POSITION
             Navigation algorithm:
@@ -430,6 +433,13 @@ class BaseDrone(ABC):
             - LIDAR: lidar rangefinder for ground-relative altitude control.
             - VISION: vision pose Z component.
             - REL_ALT: GPS-based relative altitude.
+
+        precision_z : float, optional
+            Arrival Z half-height in meters. None uses ``precision``.
+        precision_yaw : float, optional
+            Arrival yaw tolerance in degrees. None uses 3.0°.
+        settle_time : float, default=0.15
+            Time the vehicle must remain inside the cylinder.
 
         Returns
         -------
@@ -456,6 +466,9 @@ class BaseDrone(ABC):
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
         method: NavigationMethod = NavigationMethod.PID,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = 0.15,
     ) -> bool:
         """
         Navigate to GPS coordinates.
@@ -473,9 +486,15 @@ class BaseDrone(ABC):
         timeout : float, optional, default=60.0
             Maximum navigation time in seconds.
         precision : float, default=0.5
-            Arrival threshold in meters.
+            Arrival XY radius in meters.
         method : NavigationMethod, default=PID
             Navigation algorithm.
+        precision_z : float, optional
+            Arrival Z half-height in meters. None uses ``precision``.
+        precision_yaw : float, optional
+            Arrival yaw tolerance in degrees. None uses 3.0°.
+        settle_time : float, default=0.15
+            Time the vehicle must remain inside the cylinder.
 
         Returns
         -------

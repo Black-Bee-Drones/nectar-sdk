@@ -64,6 +64,9 @@ class Drone(Protocol):
         precision: float = 0.2,
         method: NavigationMethod = NavigationMethod.POSITION,
         altitude_source: AltitudeSource = AltitudeSource.AUTO,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = 0.15,
     ) -> bool: ...
 
     def move_to_gps(
@@ -75,6 +78,9 @@ class Drone(Protocol):
         timeout: Optional[float] = 60.0,
         precision: float = 0.5,
         method: NavigationMethod = NavigationMethod.PID,
+        precision_z: Optional[float] = None,
+        precision_yaw: Optional[float] = None,
+        settle_time: float = 0.15,
     ) -> bool: ...
 
     def emergency_stop(self) -> None: ...
