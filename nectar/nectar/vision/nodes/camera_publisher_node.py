@@ -400,19 +400,16 @@ def main(args=None) -> None:
     import nectar
 
     rclpy.init(args=args)
-    nectar.use_executor(rclpy.get_global_executor())
-
+    nectar.init()
     node = CameraPublisherNode()
-
+    nectar.add_node(node)
     try:
-        rclpy.spin(node)
+        nectar.spin()
     except KeyboardInterrupt:
         pass
     finally:
         node.cleanup()
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

@@ -136,13 +136,13 @@ classDiagram
         +camera AbstractCam
         +poll_interval float
         -_frame_timeout float
-        -cam_timer Timer
         +open()
         +close()
         +run()
         +take_photo(timeout, wait_for_new) Any
         +process()
         +cleanup()
+        +pump_gui()$ Optional~bool~
     }
 
     AbstractCam <|-- DepthCam
@@ -204,20 +204,22 @@ Interface de câmera apoiada por um `Node` ROS 2 interno (registrado no
 executor de runtime do SDK — veja
 [`nectar.runtime`](https://github.com/Black-Bee-Drones/nectar-sdk/blob/main/nectar/nectar/runtime.py)).
 `run()` captura frames em uma thread worker (`get_frame(wait_for_new=True)` para tópicos
-ROS e OpenCV threaded). Essa espera não pode rodar no executor: o `EventsExecutor` é
-single-thread, então um timer que espera a próxima imagem ROS trava, e um timer que
-copia o último frame a cada 0.3 ms compete com a subscription e com a inferência.
-A janela OpenCV, se habilitada, permanece em um timer ROS.
+ROS e OpenCV threaded). Essa espera não pode rodar no executor: um timer que espera a
+próxima imagem ROS trava a subscription, e o `EventsExecutor` (quando existe) é
+single-thread. A janela OpenCV, se habilitada, é atualizada por `nectar.spin()` na
+thread principal. `open()` / `take_photo()` permanecem one-shot na thread do chamador.
 
 ```python
 ImageHandler(
     image_source: str,
     image_processing_callback: Callable = None,
-    show_result: str = None,             # OpenCV window name
+    show_result: str = None,             # OpenCV window name; shown by nectar.spin()
     *,
+    on_key: Callable = None,             # extra keys on the GUI thread (not q)
+    on_display: Callable = None,         # extra HighGUI after imshow
     config: CameraConfig = None,
     camera: AbstractCam = None,          # pre-configured camera
-    poll_interval: float = 0.01,         # sync grab sleep / display timer (seconds)
+    poll_interval: float = 0.01,         # sync grab sleep (seconds)
     frame_timeout: float = 0.1,          # frame wait timeout (async)
     executor: Executor = None,           # defaults to nectar.runtime executor
 )
@@ -229,7 +231,8 @@ ImageHandler(
 | `open()` | Inicialização manual da câmera |
 | `close()` | Interrompe a câmera |
 | `take_photo(timeout_sec=1.0, wait_for_new=True)` | Captura única (single-shot) |
-| `cleanup()` | Libera a câmera, destrói o timer, desregistra o nó interno |
+| `cleanup()` | Libera a câmera e desregistra o nó interno |
+| `pump_gui()` | Apresenta as janelas registradas; chamado por `nectar.spin()` |
 
 ```python
 import nectar

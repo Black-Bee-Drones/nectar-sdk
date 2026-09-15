@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
-import sys
 from math import isnan
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import cv2
 import numpy as np
@@ -364,7 +363,7 @@ class LineDetectionNode(Node):
 
         return result
 
-    def process_image(self, img: np.ndarray) -> None:
+    def process_image(self, img: np.ndarray) -> Optional[np.ndarray]:
         """
         Process image frame and publish detection results.
 
@@ -472,15 +471,11 @@ class LineDetectionNode(Node):
                 zone_y2 = center_y + zone_height // 2
                 cv2.rectangle(display_img, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 255, 0), 1)
 
-                if self.show_visualization:
-                    cv2.imshow(self.visualization_name, display_img)
-
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    cv2.destroyWindow(self.visualization_name)
-                    self.image_handler.cleanup()
+            return display_img
 
         except Exception as e:
             self.get_logger().error(f"Error in line detection: {e}")
+            return None
 
     def _get_color_values_to_bgr(self, color_values, color_space):
         """
@@ -573,6 +568,7 @@ class LineDetectionNode(Node):
         self.image_handler = ImageHandler(
             image_source=self.image_source,
             image_processing_callback=self.process_image,
+            show_result=self.visualization_name if self.show_visualization else None,
         )
 
         colors_str = ", ".join(self.line_colors)
@@ -609,18 +605,17 @@ def main(args=None):
     import nectar
 
     rclpy.init(args=args)
-    nectar.use_executor(rclpy.get_global_executor())
-
+    nectar.init()
     detector = LineDetectionNode()
-
+    nectar.add_node(detector)
     detector.run()
-
     try:
-        rclpy.spin(detector)
+        nectar.spin()
     except KeyboardInterrupt:
+        pass
+    finally:
         detector.cleanup()
-        rclpy.shutdown()
-        sys.exit(0)
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

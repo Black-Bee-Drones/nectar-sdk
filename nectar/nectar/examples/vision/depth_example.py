@@ -26,8 +26,10 @@ class DepthDemo:
         self.window = f"{camera_type.replace('_', ' ').title()} Color"
         self.depth_window = f"{camera_type.replace('_', ' ').title()} Depth"
         self.point_uv: Optional[Tuple[int, int]] = None
+        self._depth_vis: Optional[np.ndarray] = None
 
         cv2.namedWindow(self.window)
+        cv2.namedWindow(self.depth_window)
         cv2.setMouseCallback(self.window, self._on_mouse)
 
         self.cam = self._build_camera(camera_type)
@@ -38,6 +40,7 @@ class DepthDemo:
             camera=self.cam,
             image_processing_callback=self.process_frame,
             show_result=self.window,
+            on_display=self._show_depth,
         )
         self.handler.run()
         log.info("Click on the color image to select a pixel. Press 'q' to quit.")
@@ -129,7 +132,11 @@ class DepthDemo:
             scaled_u, scaled_v = u, v
         if 0 <= scaled_u < depth_w and 0 <= scaled_v < depth_h:
             cv2.circle(depth_vis, (scaled_u, scaled_v), 5, (255, 255, 255), -1)
-        cv2.imshow(self.depth_window, depth_vis)
+        self._depth_vis = depth_vis
+
+    def _show_depth(self) -> None:
+        if self._depth_vis is not None:
+            cv2.imshow(self.depth_window, self._depth_vis)
 
 
 def main():

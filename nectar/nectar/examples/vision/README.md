@@ -45,7 +45,7 @@ python3 camera_example.py --camera-type realsense
 | `oakd` | `OakdCam` | Default OAK-D settings |
 | `c920` | `C920Cam` | Profile 1 (1280x720) |
 | `imx219` | `IMX219Cam` | 1280x720 @ 30fps, flip 180° |
-| `ros` | `ROSCam` | `/camera/color/image_raw/compressed` |
+| `ros` | `ROSCam` | `/image_raw/compressed` |
 
 ---
 

@@ -118,7 +118,7 @@ class ClassifierStream:
         self.handler.run()
         log.info("Classification stream started; press 'q' to quit")
 
-    def process_frame(self, frame) -> None:
+    def process_frame(self, frame):
         if frame is None:
             return
         image = frame.copy()
@@ -144,6 +144,7 @@ class ClassifierStream:
                 msg.format = "jpeg"
                 msg.data = buf.tobytes()
                 self._pub.publish(msg)
+        return image
 
     def cleanup(self) -> None:
         self.handler.cleanup()

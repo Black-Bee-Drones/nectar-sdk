@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -82,10 +82,11 @@ class ColorCalibrationNode(Node):
         self.pending_clicks: List[tuple] = []
         self.lower = np.array(self.config["init"][::2])
         self.upper = np.array(self.config["init"][1::2])
+        self._sync_trackbars = False
 
-        self.window_initialized = False
-
-        if not self._gui_available():
+        try:
+            self._init_window()
+        except cv2.error:
             self.get_logger().error(
                 "Color calibration needs an OpenCV GUI (mouse + trackbars) but none "
                 "is available. Run on a machine with a display."
@@ -95,6 +96,9 @@ class ColorCalibrationNode(Node):
         self.image_handler = ImageHandler(
             image_source=image_source,
             image_processing_callback=self._process,
+            show_result=self.WINDOW,
+            on_key=self._on_key,
+            on_display=self._on_display,
         )
 
         self.get_logger().info(f"Color calibration: {self.color_space.name} mode")
@@ -102,14 +106,20 @@ class ColorCalibrationNode(Node):
         self.get_logger().info("Click to sample | r=reset z=undo s=save l=load c=switch q=quit")
         self.image_handler.run()
 
-    @staticmethod
-    def _gui_available() -> bool:
+    def _on_trackbar(self, _value: int) -> None:
+        names = self.config["names"]
         try:
-            cv2.namedWindow("__nectar_gui_probe__")
-            cv2.destroyWindow("__nectar_gui_probe__")
-            return True
+            self.lower = np.array(
+                [cv2.getTrackbarPos(names[i], self.WINDOW) for i in (0, 2, 4)],
+                dtype=np.uint8,
+            )
+            self.upper = np.array(
+                [cv2.getTrackbarPos(names[i], self.WINDOW) for i in (1, 3, 5)],
+                dtype=np.uint8,
+            )
+            self.flood_tolerance = cv2.getTrackbarPos("Tolerance", self.WINDOW)
         except cv2.error:
-            return False
+            pass
 
     def _mouse_cb(self, event: int, x: int, y: int, flags: int, param) -> None:
         del flags, param
@@ -119,24 +129,17 @@ class ColorCalibrationNode(Node):
     def _init_window(self) -> None:
         cv2.namedWindow(self.WINDOW)
         cv2.setMouseCallback(self.WINDOW, self._mouse_cb)
-        cv2.createTrackbar("Tolerance", self.WINDOW, self.flood_tolerance, 50, lambda x: None)
+        cv2.createTrackbar("Tolerance", self.WINDOW, self.flood_tolerance, 50, self._on_trackbar)
         for i, name in enumerate(self.config["names"]):
             cv2.createTrackbar(
-                name, self.WINDOW, self.config["init"][i], self.config["max"][i], lambda x: None
+                name, self.WINDOW, self.config["init"][i], self.config["max"][i], self._on_trackbar
             )
-        self.window_initialized = True
 
-    def _get_trackbar_values(self) -> Tuple[np.ndarray, np.ndarray]:
-        names = self.config["names"]
-        lower = np.array(
-            [cv2.getTrackbarPos(names[i], self.WINDOW) for i in (0, 2, 4)],
-            dtype=np.uint8,
-        )
-        upper = np.array(
-            [cv2.getTrackbarPos(names[i], self.WINDOW) for i in (1, 3, 5)],
-            dtype=np.uint8,
-        )
-        return lower, upper
+    def _on_display(self) -> None:
+        if not self._sync_trackbars:
+            return
+        self._sync_trackbars = False
+        self._set_trackbar_values(self.lower, self.upper)
 
     def _set_trackbar_values(self, lower: np.ndarray, upper: np.ndarray) -> None:
         names = self.config["names"]
@@ -155,7 +158,7 @@ class ColorCalibrationNode(Node):
         if not (0 <= x < w and 0 <= y < h):
             return None
 
-        tol = cv2.getTrackbarPos("Tolerance", self.WINDOW)
+        tol = self.flood_tolerance
         mask = np.zeros((h + 2, w + 2), np.uint8)
         cv2.floodFill(
             converted.copy(),
@@ -186,15 +189,12 @@ class ColorCalibrationNode(Node):
 
         self.lower = np.array(lower, dtype=np.uint8)
         self.upper = np.array(upper, dtype=np.uint8)
-        self._set_trackbar_values(self.lower, self.upper)
+        self._sync_trackbars = True
         self.get_logger().info(f"Bounds: {self.lower.tolist()} - {self.upper.tolist()}")
 
-    def _process(self, img: np.ndarray) -> None:
+    def _process(self, img: np.ndarray) -> Optional[np.ndarray]:
         if img is None:
-            return
-
-        if not self.window_initialized:
-            self._init_window()
+            return None
 
         converted = cv2.cvtColor(img, self.config["convert"])
 
@@ -204,8 +204,6 @@ class ColorCalibrationNode(Node):
                 self.sampled_pixels.append(pixels)
                 self._compute_bounds()
         self.pending_clicks.clear()
-
-        self.lower, self.upper = self._get_trackbar_values()
 
         mask = cv2.inRange(converted, self.lower, self.upper)
         mask = self._apply_morphology(mask)
@@ -232,9 +230,7 @@ class ColorCalibrationNode(Node):
             (0, 255, 255),
             1,
         )
-
-        cv2.imshow(self.WINDOW, display)
-        self._handle_keys()
+        return display
 
     @staticmethod
     def _apply_morphology(mask: np.ndarray) -> np.ndarray:
@@ -245,11 +241,8 @@ class ColorCalibrationNode(Node):
         _, mask = cv2.threshold(mask, 128, 255, cv2.THRESH_BINARY)
         return mask
 
-    def _handle_keys(self) -> None:
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            self._cleanup()
-        elif key == ord("r"):
+    def _on_key(self, key: int) -> None:
+        if key == ord("r"):
             self._reset()
         elif key == ord("z"):
             self._undo()
@@ -264,7 +257,7 @@ class ColorCalibrationNode(Node):
         self.sampled_pixels.clear()
         self.lower = np.array(self.config["init"][::2])
         self.upper = np.array(self.config["init"][1::2])
-        self._set_trackbar_values(self.lower, self.upper)
+        self._sync_trackbars = True
         self.get_logger().info("Reset")
 
     def _undo(self) -> None:
@@ -312,29 +305,34 @@ class ColorCalibrationNode(Node):
         values = data[color_name][self.color_space.name]
         self.lower = np.array(values[0], dtype=np.uint8)
         self.upper = np.array(values[1], dtype=np.uint8)
-        self._set_trackbar_values(self.lower, self.upper)
+        self._sync_trackbars = True
         self.sampled_pixels.clear()
         self.get_logger().info(
             f"Loaded '{color_name}': {self.lower.tolist()} - {self.upper.tolist()}"
         )
 
     def _switch_color_space(self) -> None:
-        cv2.destroyAllWindows()
-        self.window_initialized = False
+        cv2.destroyWindow(self.WINDOW)
         self.sampled_pixels.clear()
 
         self.color_space = ColorSpace.LAB if self.color_space == ColorSpace.HSV else ColorSpace.HSV
         self.config = self.TRACKBAR_CONFIG[self.color_space]
         self.lower = np.array(self.config["init"][::2])
         self.upper = np.array(self.config["init"][1::2])
+        try:
+            self._init_window()
+        except cv2.error as e:
+            self.get_logger().error(f"Failed to recreate window: {e}")
+            return
         self.get_logger().info(f"Switched to {self.color_space.name}")
 
-    def _cleanup(self) -> None:
+    def cleanup(self) -> None:
         self.image_handler.cleanup()
-        cv2.destroyAllWindows()
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
         self.get_logger().info("Exiting")
-        if rclpy.ok():
-            rclpy.shutdown()
 
 
 def main(args=None) -> None:
@@ -342,18 +340,16 @@ def main(args=None) -> None:
     import nectar
 
     rclpy.init(args=args)
-    nectar.use_executor(rclpy.get_global_executor())
-
+    nectar.init()
     node = ColorCalibrationNode()
-
+    nectar.add_node(node)
     try:
-        rclpy.spin(node)
+        nectar.spin()
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        node.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

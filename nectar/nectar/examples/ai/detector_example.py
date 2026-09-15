@@ -124,7 +124,7 @@ class DetectorStream:
         self.handler.run()
         log.info("Detection stream started; press 'q' to quit")
 
-    def process_frame(self, frame) -> None:
+    def process_frame(self, frame):
         if frame is None:
             return
         image = frame.copy()
@@ -163,6 +163,7 @@ class DetectorStream:
                 msg.format = "jpeg"
                 msg.data = buf.tobytes()
                 self._pub.publish(msg)
+        return image
 
     def _overlay(self, frame, result) -> None:
         fps = 1.0 / result.inference_time if result.inference_time > 0 else 0

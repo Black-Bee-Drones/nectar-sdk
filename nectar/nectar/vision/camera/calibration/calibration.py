@@ -188,8 +188,19 @@ class CameraCalibration(Node):
         self._image_handler: Optional[ImageHandler] = None
         self._last_capture = 0.0
         self._saved_frames = 0
-        self._gui_ok = self.show_preview and self._gui_available()
+        self._gui_ok = bool(self.show_preview)
         self._finished = False
+        self._last_good = False
+        self._last_frame: Optional[np.ndarray] = None
+        self._last_obj_pts: Optional[np.ndarray] = None
+        self._last_img_pts: Optional[np.ndarray] = None
+
+        if self._gui_ok:
+            try:
+                cv2.namedWindow(self.PREVIEW_WINDOW)
+            except cv2.error:
+                self._gui_ok = False
+                self.get_logger().warn("Preview window failed; continuing without GUI.")
 
         if self.mode == "manual" and not self._gui_ok:
             self.get_logger().warn(
@@ -239,6 +250,8 @@ class CameraCalibration(Node):
         self._image_handler = ImageHandler(
             image_source=self.image_source,
             image_processing_callback=self._on_frame,
+            show_result=self.PREVIEW_WINDOW if self._gui_ok else None,
+            on_key=self._on_key if self.mode == "manual" else None,
             config=config,
         )
         self._image_handler.run()
@@ -247,9 +260,9 @@ class CameraCalibration(Node):
                 "Manual capture: c=capture, u=undo, r=reset, Enter=finish, q=quit"
             )
 
-    def _on_frame(self, frame: np.ndarray) -> None:
+    def _on_frame(self, frame: np.ndarray) -> Optional[np.ndarray]:
         if frame is None or self._finished:
-            return
+            return None
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if self.image_size is None:
@@ -257,16 +270,24 @@ class CameraCalibration(Node):
 
         n_corners, obj_pts, img_pts = self.detector.detect(gray)
         good = obj_pts is not None and n_corners >= self.min_corners_per_frame
+        self._last_good = good
+        self._last_frame = frame
+        self._last_obj_pts = obj_pts
+        self._last_img_pts = img_pts
 
         if self._gui_ok:
-            key = self._show_preview(frame, n_corners, good)
-        else:
-            key = -1
+            self._draw_preview(frame, n_corners, good)
 
-        if self.mode == "manual":
-            self._handle_manual_key(key, good, frame, obj_pts, img_pts)
-        else:
+        if self.mode != "manual":
             self._handle_auto(good, frame, obj_pts, img_pts)
+        return frame
+
+    def _on_key(self, key: int) -> None:
+        if self._last_frame is None:
+            return
+        self._handle_manual_key(
+            key, self._last_good, self._last_frame, self._last_obj_pts, self._last_img_pts
+        )
 
     def _handle_auto(
         self,
@@ -354,7 +375,7 @@ class CameraCalibration(Node):
         if rclpy.ok():
             rclpy.shutdown()
 
-    def _show_preview(self, frame: np.ndarray, n_corners: int, good: bool) -> int:
+    def _draw_preview(self, frame: np.ndarray, n_corners: int, good: bool) -> None:
         self.detector.draw(frame)
         status = f"Board: {n_corners} corners" if n_corners > 0 else "Board: not detected"
         cv2.putText(
@@ -385,13 +406,6 @@ class CameraCalibration(Node):
                 (255, 255, 255),
                 1,
             )
-        try:
-            cv2.imshow(self.PREVIEW_WINDOW, frame)
-            return cv2.waitKey(1) & 0xFF
-        except cv2.error:
-            self._gui_ok = False
-            self.get_logger().warn("Preview window failed; continuing without GUI.")
-            return -1
 
     def calibrate(self) -> bool:
         """
@@ -451,15 +465,6 @@ class CameraCalibration(Node):
         self.get_logger().info(f"Saved calibration to {self.output_dir}")
 
     @staticmethod
-    def _gui_available() -> bool:
-        try:
-            cv2.namedWindow("__nectar_gui_probe__")
-            cv2.destroyWindow("__nectar_gui_probe__")
-            return True
-        except cv2.error:
-            return False
-
-    @staticmethod
     def _package_dir() -> str:
         """Resolve the calibration package directory (stable across run modes)."""
         import nectar.vision.camera.calibration as _calib_pkg
@@ -515,19 +520,18 @@ def main(args=None) -> None:
     import nectar
 
     rclpy.init(args=args)
-    nectar.use_executor(rclpy.get_global_executor())
-
+    nectar.init()
     node = CameraCalibration()
-
+    nectar.add_node(node)
     try:
         node.run()
-        rclpy.spin(node)
+        nectar.spin()
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        if node._image_handler is not None:
+            node._image_handler.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

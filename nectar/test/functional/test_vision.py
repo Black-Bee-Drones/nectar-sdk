@@ -1,10 +1,4 @@
-"""Vision functional tests.
-
-Algorithms are exercised on synthetic inputs (a rendered ArUco marker, a
-solid-color patch, a drawn line) so they need no camera. The ROS-topic camera
-path is exercised end to end by publishing an image and reading it back through
-``CameraFactory``. Physical USB/RealSense/OAK-D drivers live in ``test/hardware``.
-"""
+"""Vision functional tests."""
 
 from __future__ import annotations
 
@@ -124,3 +118,92 @@ def test_ros_topic_camera(ros_node):
 
     assert got is not None, "no frame received through CameraFactory ROS topic"
     assert got.shape == frame.shape, f"frame shape {got.shape} != published {frame.shape}"
+
+
+def test_image_handler_callback_return(ros_node, tmp_path):
+    """A callback ndarray return replaces the frame stored on the handler."""
+    import cv2
+
+    from nectar.vision.camera import ImageHandler
+
+    raw = np.full((24, 32, 3), (10, 20, 30), dtype=np.uint8)
+    path = tmp_path / "frame.png"
+    cv2.imwrite(str(path), raw)
+
+    def on_frame(frame):
+        out = frame.copy()
+        out[:] = (1, 2, 3)
+        return out
+
+    handler = ImageHandler(str(path), image_processing_callback=on_frame)
+    handler.run()
+    deadline = time.monotonic() + 5.0
+    img = None
+    try:
+        while time.monotonic() < deadline:
+            img = handler.img
+            if img is not None and int(img[0, 0, 0]) == 1:
+                break
+            time.sleep(0.05)
+        assert img is not None, "handler never stored a frame"
+        assert int(img[0, 0, 0]) == 1, f"stored frame was not the callback return: {img[0, 0]}"
+    finally:
+        handler.cleanup()
+
+
+def test_image_handler_ros_topic_not_stale(ros_node):
+    """ImageHandler on a ROS topic delivers successive distinct frames."""
+    from cv_bridge import CvBridge
+    from rclpy.qos import qos_profile_sensor_data
+    from sensor_msgs.msg import Image as RosImage
+
+    from nectar.vision.camera import ImageHandler
+
+    bridge = CvBridge()
+    topic = "/nectar_test/handler_cam"
+    pub = ros_node.create_publisher(RosImage, topic, qos_profile_sensor_data)
+    seen = []
+
+    def on_frame(frame):
+        seen.append(int(frame[0, 0, 0]))
+
+    handler = ImageHandler(topic, image_processing_callback=on_frame)
+    handler.run()
+    try:
+        deadline = time.monotonic() + 8.0
+        value = 10
+        while time.monotonic() < deadline and not {10, 200}.issubset(set(seen)):
+            frame = np.full((24, 32, 3), value, dtype=np.uint8)
+            pub.publish(bridge.cv2_to_imgmsg(frame, encoding="bgr8"))
+            if 10 in seen:
+                value = 200
+            time.sleep(0.05)
+        assert 10 in seen and 200 in seen, f"expected two distinct frames, got {set(seen)}"
+    finally:
+        handler.cleanup()
+
+
+def test_two_handlers_register_display(ros_node, tmp_path):
+    """Two show_result handlers register with the class-level GUI pump."""
+    import cv2
+
+    from nectar.vision.camera.handler import ImageHandler
+
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    cv2.imwrite(str(a), np.zeros((8, 8, 3), dtype=np.uint8))
+    cv2.imwrite(str(b), np.full((8, 8, 3), 255, dtype=np.uint8))
+
+    ImageHandler._displays.clear()
+    h1 = ImageHandler(str(a), show_result="A")
+    h2 = ImageHandler(str(b), show_result="B")
+    h1.run()
+    h2.run()
+    try:
+        assert h1 in ImageHandler._displays
+        assert h2 in ImageHandler._displays
+        assert len(ImageHandler._displays) == 2
+    finally:
+        h1.cleanup()
+        h2.cleanup()
+        assert ImageHandler._displays == []

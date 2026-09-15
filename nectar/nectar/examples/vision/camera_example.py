@@ -10,7 +10,7 @@ log = logging.getLogger("camera_example")
 
 
 _CAMERA_PARAMS = {
-    "webcam": {"device_index": 1, "width": 1280, "height": 720, "fps": 30},
+    "webcam": {"device_index": 0, "width": 1280, "height": 720, "fps": 30},
     "imx219": {"sensor_id": 0, "width": 1280, "height": 720, "flip": 2},
     "realsense": {
         "color_width": 1280,
@@ -22,7 +22,7 @@ _CAMERA_PARAMS = {
     "c920": {"profile": 1},
     "oakd": {},
     "ros": {
-        "topic": "/camera/color/image_raw/compressed",
+        "topic": "/image_raw/compressed",
         "compressed": True,
     },
     "realsense_ros": {
