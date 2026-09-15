@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional, Tuple
-from subprocess import run as run_shell
 import shlex
 import traceback
+from dataclasses import dataclass
+from enum import Enum
+from subprocess import run as run_shell
+from typing import Optional, Tuple
 
 
 class QoSReliability(Enum):
@@ -69,8 +69,8 @@ class OpenCVConfig(CameraConfig):
         autofocus: Optional[bool] = None,
         focus: Optional[int] = None,
         buffer_size: Optional[int] = 2,
-        threaded: bool = True
-        ) -> 'OpenCVConfig':
+        threaded: bool = True,
+    ) -> "OpenCVConfig":
         """
         Retrieves the V4L2 video device index for a specified camera name and
         returns a new OpenCVConfig instance.
@@ -125,7 +125,7 @@ class OpenCVConfig(CameraConfig):
         """
 
         kwargs = locals().copy()
-        kwargs.pop('cls')
+        kwargs.pop("cls")
 
         safe_name = shlex.quote(name)
 
@@ -139,7 +139,7 @@ class OpenCVConfig(CameraConfig):
                 print(f"Warning: Camera '{name}' not found. Defaulting to index -1.")
                 idx = -1
 
-            kwargs['device_index'] = int(idx)
+            kwargs["device_index"] = int(idx)
             return cls(**kwargs)
 
         except Exception as e:
@@ -209,6 +209,3 @@ class T265Config(CameraConfig):
     fisheye1_topic: str = "/camera/fisheye1/image_raw"
     fisheye2_topic: str = "/camera/fisheye2/image_raw"
     pose_topic: str = "/camera/pose/sample"
-
-def main():
-    cam_config = OpenCVConfig()
