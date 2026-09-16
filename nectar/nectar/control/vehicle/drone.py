@@ -549,7 +549,7 @@ class VehicleDrone(BaseDrone):
         Per attempt: arm (state-polled) -> spin-up delay -> set takeoff position
         (first attempt) -> takeoff command -> wait for liftoff and altitude
         settling -> optional altitude adjustment. Skips entirely if already
-        airborne. Retries only on failed liftoff.
+        airborne. Retries on rejected takeoff ACK and on failed liftoff.
 
         Parameters
         ----------
@@ -602,12 +602,21 @@ class VehicleDrone(BaseDrone):
                 f"{ARROW} Takeoff start_alt={start_alt:.2f}m (source={alt_source})"
             )
 
+            cmd_ok = False
             try:
-                if not self._command_takeoff(float(altitude)):
-                    self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
-                    return False
+                cmd_ok = bool(self._command_takeoff(float(altitude)))
             except TimeoutError as e:
                 self._node.get_logger().error(f"{ERR} Takeoff service timeout: {e}")
+
+            if not cmd_ok:
+                self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
+                if attempt < max_retries - 1:
+                    self._node.get_logger().warn(
+                        f"{WARN} Disarming for retry ({attempt + 1}/{max_retries})"
+                    )
+                    self.disarm()
+                    self.delay(1.5)
+                    continue
                 return False
 
             lifted, current_alt = self._sequencer.wait_takeoff_settle(

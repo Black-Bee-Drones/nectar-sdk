@@ -7,8 +7,8 @@ from sklearn.cluster import DBSCAN
 
 from nectar.control.obstacles.base import BaseObstacleDetector
 from nectar.control.protocols import ObstacleDirection, ObstacleInfo
-from nectar.vision.camera.config import RealSenseConfig
-from nectar.vision.camera.drivers.realsense_cam import RealsenseCam
+from nectar.vision.camera.config import ROSDepthConfig
+from nectar.vision.camera.drivers.ros_depth_cam import ROSDepthCam
 from nectar.vision.camera.handler import ImageHandler
 
 
@@ -34,7 +34,8 @@ class DepthObstacleDetector(BaseObstacleDetector):
     depth_threshold_mm : float
         Maximum cluster mean depth to consider as obstacle.
     color_topic, depth_topic : str
-        RealSense color and aligned-depth topics.
+        RealSense color and aligned-depth topics. Defaults match D435i
+        ``realsense2_camera`` with ``align_depth.enable``.
     """
 
     def __init__(
@@ -45,8 +46,8 @@ class DepthObstacleDetector(BaseObstacleDetector):
         cluster_min_samples: int = 20,
         min_cluster_pixels: int = 50,
         depth_threshold_mm: float = 1300,
-        color_topic: str = "/camera/color/image_raw",
-        depth_topic: str = "/camera/depth/image_rect_raw",
+        color_topic: str = "/camera/color/image_raw/compressed",
+        depth_topic: str = "/camera/aligned_depth_to_color/image_raw",
     ):
         super().__init__()
         self._color_topic = color_topic
@@ -58,26 +59,24 @@ class DepthObstacleDetector(BaseObstacleDetector):
         self._min_cluster_pixels = min_cluster_pixels
         self._depth_threshold_mm = depth_threshold_mm
 
-        self._camera: Optional[RealsenseCam] = None
+        self._camera: Optional[ROSDepthCam] = None
         self._image_handler: Optional[ImageHandler] = None
         self._detection_event = Event()
 
     def _on_enable(self) -> None:
         if self._image_handler is None:
             self._image_handler = ImageHandler(
-                image_source="realsense_ros",
-                config=RealSenseConfig(
-                    use_ros_topics=True,
-                    color_topic=self._color_topic,
+                image_source="ros_depth",
+                config=ROSDepthConfig(
+                    topic=self._color_topic,
+                    compressed=self._color_topic.rstrip("/").endswith("compressed"),
                     depth_topic=self._depth_topic,
-                    color_compressed=True,
+                    depth_compressed=False,
                     enable_depth=True,
                 ),
-                poll_interval=0.15,
             )
-            self._image_handler.open()
-            self._camera = self._image_handler.camera  # type: ignore[assignment]
             self._image_handler.run()
+            self._camera = self._image_handler.camera  # type: ignore[assignment]
 
         self._image_handler.node.get_logger().info("DepthObstacleDetector enabled")
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from math import pi, tan
-from threading import Lock
+from threading import Event, Lock
 from typing import TYPE_CHECKING, Optional, Tuple
 
 import cv2
@@ -66,7 +66,7 @@ class T265Cam(DepthCam):
        https://github.com/IntelRealSense/librealsense/blob/v2.53.1/wrappers/python/examples/t265_stereo.py
     """
 
-    def __init__(self, config: T265Config, node: Optional["Node"] = None) -> None:
+    def __init__(self, config: T265Config, *, node: Optional["Node"] = None) -> None:
         super().__init__(name=config.name)
         self._config = config
         self._node = node
@@ -77,6 +77,9 @@ class T265Cam(DepthCam):
         self._right: Optional[np.ndarray] = None
         self._frame_ts: Optional[float] = None
         self._pose = T265Pose()
+        self._new_frame_event = Event()
+        self._frame_id = 0
+        self._last_consumed_id = 0
 
         self._pipeline = None
         self._stereo: Optional[cv2.StereoSGBM] = None
@@ -227,6 +230,8 @@ class T265Cam(DepthCam):
                 self._right = np.asanyarray(f2.get_data())
                 self._frame_ts = frameset.get_timestamp()
                 self._cached_depth = None
+                self._frame_id += 1
+            self._new_frame_event.set()
 
         if frame.is_pose_frame() and self._config.enable_pose:
             pose = frame.as_pose_frame().get_pose_data()
@@ -261,6 +266,8 @@ class T265Cam(DepthCam):
             self._left = img
             self._frame_ts = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
             self._cached_depth = None
+            self._frame_id += 1
+        self._new_frame_event.set()
 
     def _ros_fisheye2_cb(self, msg) -> None:
         img = self._bridge.imgmsg_to_cv2(msg, desired_encoding="mono8")
@@ -414,18 +421,35 @@ class T265Cam(DepthCam):
             ]
         )
 
-    def get_frame(self) -> Optional[np.ndarray]:
+    def get_frame(self, wait_for_new: bool = False, timeout: float = 0.1) -> Optional[np.ndarray]:
         """
         Capture left fisheye frame as 3-channel BGR image.
+
+        Parameters
+        ----------
+        wait_for_new : bool, optional
+            If True, block until a new left frame arrives or timeout.
+        timeout : float, optional
+            Max seconds to wait when ``wait_for_new`` is True.
 
         Returns
         -------
         np.ndarray or None
             Left fisheye image converted to BGR, or None if not available.
         """
+        if wait_for_new:
+            with self._mutex:
+                if self._frame_id > self._last_consumed_id and self._left is not None:
+                    self._last_consumed_id = self._frame_id
+                    return cv2.cvtColor(self._left.copy(), cv2.COLOR_GRAY2BGR)
+            self._new_frame_event.clear()
+            if not self._new_frame_event.wait(timeout):
+                return None
+
         with self._mutex:
             if self._left is None:
                 return None
+            self._last_consumed_id = self._frame_id
             return cv2.cvtColor(self._left.copy(), cv2.COLOR_GRAY2BGR)
 
     def get_stereo_frames(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
@@ -595,3 +619,4 @@ class T265Cam(DepthCam):
             self._node = None
 
         self._is_running = False
+        self._new_frame_event.set()

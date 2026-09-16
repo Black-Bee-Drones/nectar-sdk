@@ -50,7 +50,7 @@ classDiagram
         -_pipeline Pipeline
         -_align Align
         -_depth_scale float
-        -_use_ros_topics bool
+        -_use_ros_delegate bool
         +start()
         +get_frame(wait_for_new, timeout) Optional~ndarray~
         +get_depth_frame(wait_for_new, timeout) Optional~ndarray~
@@ -135,13 +135,12 @@ classDiagram
         +camera AbstractCam
         +poll_interval float
         -_frame_timeout float
-        -cam_timer Timer
         +open()
         +close()
         +run()
         +take_photo(timeout, wait_for_new) Any
-        +process()
         +cleanup()
+        +pump_gui()$ Optional~bool~
     }
 
     AbstractCam <|-- DepthCam
@@ -198,19 +197,25 @@ camera = CameraFactory.from_source("/path/to/image.jpg")             # file
 
 ## ImageHandler
 
-Timer-based camera interface backed by an internal ROS 2 `Node` (registered with the SDK runtime
-executor — see [`nectar.runtime`](../../runtime.py)). Invokes a processing callback on every frame
-and optionally renders to an OpenCV window.
+Camera interface backed by an internal ROS 2 `Node` (registered with the SDK runtime
+executor — see [`nectar.runtime`](../../runtime.py)). `run()` grabs frames on a worker
+thread (`get_frame(wait_for_new=True)` for ROS topics and threaded OpenCV). That wait
+must not run on the executor: a timer that waits for the next ROS image deadlocks the
+subscription, and `EventsExecutor` (when present) is single-threaded. Display, if
+enabled, is pumped from `nectar.spin()` on the main thread. `open()` / `take_photo()`
+stay one-shot on the caller thread.
 
 ```python
 ImageHandler(
     image_source: str,
     image_processing_callback: Callable = None,
-    show_result: str = None,             # OpenCV window name
+    show_result: str = None,             # OpenCV window name; shown by nectar.spin()
     *,
+    on_key: Callable = None,             # extra keys on the GUI thread (not q)
+    on_display: Callable = None,         # extra HighGUI after imshow
     config: CameraConfig = None,
     camera: AbstractCam = None,          # pre-configured camera
-    poll_interval: float = 0.01,         # timer period (seconds)
+    poll_interval: float = 0.01,         # sync grab sleep (seconds)
     frame_timeout: float = 0.1,          # frame wait timeout (async)
     executor: Executor = None,           # defaults to nectar.runtime executor
 )
@@ -218,11 +223,12 @@ ImageHandler(
 
 | Method | Purpose |
 |--------|---------|
-| `run()` | Start continuous frame capture with the timer |
+| `run()` | Start continuous capture on a worker thread |
 | `open()` | Manual camera initialization |
 | `close()` | Stop the camera |
 | `take_photo(timeout_sec=1.0, wait_for_new=True)` | Single-shot capture |
-| `cleanup()` | Release the camera, destroy the timer, unregister the internal node |
+| `cleanup()` | Release the camera and unregister the internal node |
+| `pump_gui()` | Present registered windows; called from `nectar.spin()` |
 
 ```python
 import nectar
@@ -488,13 +494,12 @@ after printing and compute the real square size; the marker length scales by the
 
 ```bash
 ros2 run nectar calibration.py                                          # auto ChArUco (default)
-ros2 run nectar calibration.py --ros-args -p width:=1920 -p height:=1080 # match production resolution
+ros2 run nectar calibration.py --width 1920 --height 1080               # match production resolution
 
-ros2 run nectar calibration.py --ros-args \
-    -p pattern:=chessboard -p mode:=manual \
-    -p chessboard_cols:=9 -p chessboard_rows:=7 -p square_length:=0.025  # manual chessboard
+ros2 run nectar calibration.py --pattern chessboard --mode manual \
+    --chessboard-cols 9 --chessboard-rows 7 --square-length 0.025       # manual chessboard
 
-ros2 run nectar calibration.py --ros-args -p show_preview:=false         # headless
+ros2 run nectar calibration.py --no-show                                # headless
 ```
 
 Calibrate at the same resolution you will use in production (intrinsics are resolution-specific).
@@ -503,27 +508,24 @@ especially near the edges where distortion is strongest.
 
 **Parameters**:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `pattern` | string | `charuco` | Board pattern: `charuco` or `chessboard` |
-| `mode` | string | `auto` | Capture mode: `auto` or `manual` |
-| `image_source` | string | `webcam` | Camera source (any `CameraFactory` value) |
-| `device_index` | int | `0` | OpenCV `VideoCapture` index (only for `webcam`/`opencv`) |
-| `width` | int | `0` | Requested capture width; `0` keeps the camera default |
-| `height` | int | `0` | Requested capture height; `0` keeps the camera default |
-| `chessboard_cols` | int | `9` | Inner corners in X (chessboard only) |
-| `chessboard_rows` | int | `7` | Inner corners in Y (chessboard only) |
-| `squares_x` | int | `5` | Board squares in X (charuco only) |
-| `squares_y` | int | `7` | Board squares in Y (charuco only) |
-| `square_length` | float | `0.040` | Measured square side in meters (caliper after printing) |
-| `marker_length` | float | `0.030` | Measured marker side in meters (charuco; scale with `square_length`) |
-| `aruco_dict` | string | `DICT_4X4_1000` | Predefined dictionary name (charuco); shorthand `4X4_1000` accepted |
-| `min_corners_per_frame` | int | `6` | Minimum corners required to accept a frame |
-| `target_views` | int | `20` | Accepted views to collect before auto calibration |
-| `auto_interval` | float | `0.75` | Seconds between automatic captures (auto mode) |
-| `show_preview` | bool | `true` | Live preview window; auto-disabled when no GUI is available |
-| `save_dataset` | bool | `true` | Also write accepted frames to `dataset/` |
-| `output_dir` | string | `""` | Output directory; empty resolves to the calibration package dir so `load_calibration()` finds it |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--source` | string | `webcam` | Camera source (any `CameraFactory` value) plus the shared camera flags |
+| `--pattern` | string | `charuco` | Board pattern: `charuco` or `chessboard` |
+| `--mode` | string | `auto` | Capture mode: `auto` or `manual` |
+| `--chessboard-cols` | int | `9` | Inner corners in X (chessboard only) |
+| `--chessboard-rows` | int | `7` | Inner corners in Y (chessboard only) |
+| `--squares-x` | int | `5` | Board squares in X (charuco only) |
+| `--squares-y` | int | `7` | Board squares in Y (charuco only) |
+| `--square-length` | float | `0.040` | Measured square side in meters (caliper after printing) |
+| `--marker-length` | float | `0.030` | Measured marker side in meters (charuco; scale with `square_length`) |
+| `--aruco-dict` | string | `DICT_4X4_1000` | Predefined dictionary name (charuco); shorthand `4X4_1000` accepted |
+| `--min-corners-per-frame` | int | `6` | Minimum corners required to accept a frame |
+| `--target-views` | int | `20` | Accepted views to collect before auto calibration |
+| `--auto-interval` | float | `0.75` | Seconds between automatic captures (auto mode) |
+| `--show` / `--no-show` | flag | show | Live preview window; auto-disabled when no GUI is available |
+| `--no-save-dataset` | flag | save on | Skip writing accepted frames to `dataset/` |
+| `--output-dir` | string | `""` | Output directory; empty resolves to the calibration package dir so `load_calibration()` finds it |
 
 Aim for `reprojection_error < 0.5 px` (logged after calibration). Values above 1.0 px trigger a
 warning and usually mean a flexed board, motion blur, or poor pose coverage.

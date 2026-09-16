@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import os
 import time
 from abc import ABC, abstractmethod
@@ -9,8 +10,10 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 
-from nectar.vision.camera.config import OpenCVConfig
+from nectar.vision.camera.cli import add_camera_arguments, parse_camera_args
+from nectar.vision.camera.config import CameraConfig
 from nectar.vision.camera.handler import ImageHandler
+from nectar.vision.stream import add_stream_arguments
 
 SUBPIX_CRITERIA = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -137,42 +140,46 @@ class CameraCalibration(Node):
     DATASET_DIR = "dataset"
     PREVIEW_WINDOW = "Camera Calibration"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        source: str = "webcam",
+        camera_config: Optional[CameraConfig] = None,
+        *,
+        pattern: str = "charuco",
+        mode: str = "auto",
+        chessboard_cols: int = 9,
+        chessboard_rows: int = 7,
+        squares_x: int = 5,
+        squares_y: int = 7,
+        square_length: float = 0.040,
+        marker_length: float = 0.030,
+        aruco_dict: str = "DICT_4X4_1000",
+        min_corners_per_frame: int = 6,
+        target_views: int = 20,
+        auto_interval: float = 0.75,
+        show: bool = True,
+        save_dataset: bool = True,
+        output_dir: str = "",
+    ) -> None:
         super().__init__("camera_calibration_node")
 
-        self.declare_parameter("pattern", "charuco")
-        self.declare_parameter("mode", "auto")
-        self.declare_parameter("image_source", "webcam")
-        self.declare_parameter("device_index", 0)
-        self.declare_parameter("width", 0)
-        self.declare_parameter("height", 0)
-        self.declare_parameter("chessboard_cols", 9)
-        self.declare_parameter("chessboard_rows", 7)
-        self.declare_parameter("squares_x", 5)
-        self.declare_parameter("squares_y", 7)
-        self.declare_parameter("square_length", 0.040)
-        self.declare_parameter("marker_length", 0.030)
-        self.declare_parameter("aruco_dict", "DICT_4X4_1000")
-        self.declare_parameter("min_corners_per_frame", 6)
-        self.declare_parameter("target_views", 20)
-        self.declare_parameter("auto_interval", 0.75)
-        self.declare_parameter("show_preview", True)
-        self.declare_parameter("save_dataset", True)
-        self.declare_parameter("output_dir", "")
-
-        self.pattern = str(self.get_parameter("pattern").value).lower()
-        self.mode = str(self.get_parameter("mode").value).lower()
-        self.image_source = str(self.get_parameter("image_source").value)
-        self.device_index = int(self.get_parameter("device_index").value)
-        self.width = int(self.get_parameter("width").value)
-        self.height = int(self.get_parameter("height").value)
-        self.square_length = float(self.get_parameter("square_length").value)
-        self.min_corners_per_frame = int(self.get_parameter("min_corners_per_frame").value)
-        self.target_views = int(self.get_parameter("target_views").value)
-        self.auto_interval = float(self.get_parameter("auto_interval").value)
-        self.show_preview = bool(self.get_parameter("show_preview").value)
-        self.save_dataset = bool(self.get_parameter("save_dataset").value)
-        self.output_dir = str(self.get_parameter("output_dir").value) or self._package_dir()
+        self.source = source
+        self.camera_config = camera_config
+        self.pattern = str(pattern).lower()
+        self.mode = str(mode).lower()
+        self.square_length = float(square_length)
+        self.min_corners_per_frame = int(min_corners_per_frame)
+        self.target_views = int(target_views)
+        self.auto_interval = float(auto_interval)
+        self.show_preview = bool(show)
+        self.save_dataset = bool(save_dataset)
+        self.output_dir = str(output_dir) or self._package_dir()
+        self._chessboard_cols = int(chessboard_cols)
+        self._chessboard_rows = int(chessboard_rows)
+        self._squares_x = int(squares_x)
+        self._squares_y = int(squares_y)
+        self._marker_length = float(marker_length)
+        self._aruco_dict = str(aruco_dict)
 
         self.detector = self._build_detector()
 
@@ -188,8 +195,19 @@ class CameraCalibration(Node):
         self._image_handler: Optional[ImageHandler] = None
         self._last_capture = 0.0
         self._saved_frames = 0
-        self._gui_ok = self.show_preview and self._gui_available()
+        self._gui_ok = bool(self.show_preview)
         self._finished = False
+        self._last_good = False
+        self._last_frame: Optional[np.ndarray] = None
+        self._last_obj_pts: Optional[np.ndarray] = None
+        self._last_img_pts: Optional[np.ndarray] = None
+
+        if self._gui_ok:
+            try:
+                cv2.namedWindow(self.PREVIEW_WINDOW)
+            except cv2.error:
+                self._gui_ok = False
+                self.get_logger().warn("Preview window failed; continuing without GUI.")
 
         if self.mode == "manual" and not self._gui_ok:
             self.get_logger().warn(
@@ -210,36 +228,29 @@ class CameraCalibration(Node):
     def _build_detector(self) -> BoardDetector:
         if self.pattern == "chessboard":
             return ChessboardDetector(
-                int(self.get_parameter("chessboard_cols").value),
-                int(self.get_parameter("chessboard_rows").value),
+                self._chessboard_cols,
+                self._chessboard_rows,
                 self.square_length,
             )
         if self.pattern != "charuco":
             self.get_logger().warn(f"Unknown pattern '{self.pattern}', using charuco.")
             self.pattern = "charuco"
         return CharucoDetector(
-            int(self.get_parameter("squares_x").value),
-            int(self.get_parameter("squares_y").value),
+            self._squares_x,
+            self._squares_y,
             self.square_length,
-            float(self.get_parameter("marker_length").value),
-            self._resolve_aruco_dict(str(self.get_parameter("aruco_dict").value)),
+            self._marker_length,
+            self._resolve_aruco_dict(self._aruco_dict),
         )
 
     def run(self) -> None:
         """Open the camera and start the capture loop."""
-        config = (
-            OpenCVConfig(
-                device_index=self.device_index,
-                width=self.width if self.width > 0 else None,
-                height=self.height if self.height > 0 else None,
-            )
-            if self.image_source.lower() in ("webcam", "opencv")
-            else None
-        )
         self._image_handler = ImageHandler(
-            image_source=self.image_source,
+            image_source=self.source,
             image_processing_callback=self._on_frame,
-            config=config,
+            show_result=self.PREVIEW_WINDOW if self._gui_ok else None,
+            on_key=self._on_key if self.mode == "manual" else None,
+            config=self.camera_config,
         )
         self._image_handler.run()
         if self.mode == "manual":
@@ -247,9 +258,9 @@ class CameraCalibration(Node):
                 "Manual capture: c=capture, u=undo, r=reset, Enter=finish, q=quit"
             )
 
-    def _on_frame(self, frame: np.ndarray) -> None:
+    def _on_frame(self, frame: np.ndarray) -> Optional[np.ndarray]:
         if frame is None or self._finished:
-            return
+            return None
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if self.image_size is None:
@@ -257,16 +268,28 @@ class CameraCalibration(Node):
 
         n_corners, obj_pts, img_pts = self.detector.detect(gray)
         good = obj_pts is not None and n_corners >= self.min_corners_per_frame
+        self._last_good = good
+        self._last_frame = frame
+        self._last_obj_pts = obj_pts
+        self._last_img_pts = img_pts
 
         if self._gui_ok:
-            key = self._show_preview(frame, n_corners, good)
-        else:
-            key = -1
+            self._draw_preview(frame, n_corners, good)
 
-        if self.mode == "manual":
-            self._handle_manual_key(key, good, frame, obj_pts, img_pts)
-        else:
+        if self.mode != "manual":
             self._handle_auto(good, frame, obj_pts, img_pts)
+        return frame
+
+    def _on_key(self, key: int) -> None:
+        if self._last_frame is None:
+            return
+        self._handle_manual_key(
+            key,
+            self._last_good,
+            self._last_frame,
+            self._last_obj_pts,
+            self._last_img_pts,
+        )
 
     def _handle_auto(
         self,
@@ -354,7 +377,7 @@ class CameraCalibration(Node):
         if rclpy.ok():
             rclpy.shutdown()
 
-    def _show_preview(self, frame: np.ndarray, n_corners: int, good: bool) -> int:
+    def _draw_preview(self, frame: np.ndarray, n_corners: int, good: bool) -> None:
         self.detector.draw(frame)
         status = f"Board: {n_corners} corners" if n_corners > 0 else "Board: not detected"
         cv2.putText(
@@ -385,13 +408,6 @@ class CameraCalibration(Node):
                 (255, 255, 255),
                 1,
             )
-        try:
-            cv2.imshow(self.PREVIEW_WINDOW, frame)
-            return cv2.waitKey(1) & 0xFF
-        except cv2.error:
-            self._gui_ok = False
-            self.get_logger().warn("Preview window failed; continuing without GUI.")
-            return -1
 
     def calibrate(self) -> bool:
         """
@@ -451,15 +467,6 @@ class CameraCalibration(Node):
         self.get_logger().info(f"Saved calibration to {self.output_dir}")
 
     @staticmethod
-    def _gui_available() -> bool:
-        try:
-            cv2.namedWindow("__nectar_gui_probe__")
-            cv2.destroyWindow("__nectar_gui_probe__")
-            return True
-        except cv2.error:
-            return False
-
-    @staticmethod
     def _package_dir() -> str:
         """Resolve the calibration package directory (stable across run modes)."""
         import nectar.vision.camera.calibration as _calib_pkg
@@ -510,24 +517,69 @@ class CameraCalibration(Node):
         return camera_matrix, distortion
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Camera intrinsic calibration")
+    add_camera_arguments(parser)
+    add_stream_arguments(parser, show_default=True, include_publish=False)
+    parser.add_argument("--pattern", choices=["charuco", "chessboard"], default="charuco")
+    parser.add_argument("--mode", choices=["auto", "manual"], default="auto")
+    parser.add_argument("--chessboard-cols", type=int, default=9)
+    parser.add_argument("--chessboard-rows", type=int, default=7)
+    parser.add_argument("--squares-x", type=int, default=5)
+    parser.add_argument("--squares-y", type=int, default=7)
+    parser.add_argument("--square-length", type=float, default=0.040)
+    parser.add_argument("--marker-length", type=float, default=0.030)
+    parser.add_argument("--aruco-dict", default="DICT_4X4_1000")
+    parser.add_argument("--min-corners-per-frame", type=int, default=6)
+    parser.add_argument("--target-views", type=int, default=20)
+    parser.add_argument("--auto-interval", type=float, default=0.75)
+    parser.add_argument(
+        "--no-save-dataset",
+        dest="save_dataset",
+        action="store_false",
+        help="Do not write accepted frames to dataset/",
+    )
+    parser.set_defaults(save_dataset=True)
+    parser.add_argument("--output-dir", default="")
+    return parser
+
+
 def main(args=None) -> None:
     """Entry point for the camera calibration node."""
     import nectar
 
-    rclpy.init(args=args)
-    nectar.use_executor(rclpy.get_global_executor())
-
-    node = CameraCalibration()
-
+    ns, ros_argv, source, camera_config = parse_camera_args(_parser(), args)
+    rclpy.init(args=ros_argv)
+    nectar.init()
+    node = CameraCalibration(
+        source,
+        camera_config,
+        pattern=ns.pattern,
+        mode=ns.mode,
+        chessboard_cols=ns.chessboard_cols,
+        chessboard_rows=ns.chessboard_rows,
+        squares_x=ns.squares_x,
+        squares_y=ns.squares_y,
+        square_length=ns.square_length,
+        marker_length=ns.marker_length,
+        aruco_dict=ns.aruco_dict,
+        min_corners_per_frame=ns.min_corners_per_frame,
+        target_views=ns.target_views,
+        auto_interval=ns.auto_interval,
+        show=ns.show,
+        save_dataset=ns.save_dataset,
+        output_dir=ns.output_dir,
+    )
+    nectar.add_node(node)
     try:
         node.run()
-        rclpy.spin(node)
+        nectar.spin()
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        if node._image_handler is not None:
+            node._image_handler.cleanup()
+        nectar.shutdown()
 
 
 if __name__ == "__main__":
