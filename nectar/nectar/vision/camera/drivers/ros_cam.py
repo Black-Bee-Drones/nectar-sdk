@@ -25,7 +25,7 @@ class ROSCam(AbstractCam):
     path taken when wrapped by :class:`ImageHandler`).
     """
 
-    def __init__(self, node: Optional[Node] = None, config: Optional[ROSConfig] = None) -> None:
+    def __init__(self, config: Optional[ROSConfig] = None, *, node: Optional[Node] = None) -> None:
         if config is None:
             raise ValueError("ROSCam requires a ROSConfig")
         super().__init__(name=config.name)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 from typing import List, Optional
 
 import cv2
@@ -12,7 +13,8 @@ from nectar.vision.algorithms.color import (
     resolve_calibration_path,
     save_calibration_data,
 )
-from nectar.vision.camera import ImageHandler
+from nectar.vision.camera import ImageHandler, add_camera_arguments, parse_camera_args
+from nectar.vision.camera.config import CameraConfig
 
 
 class ColorCalibrationNode(Node):
@@ -24,17 +26,6 @@ class ColorCalibrationNode(Node):
     then adjust the trackbars for fine control. Named colors are saved to the
     calibration file consumed by ``ColorDetector(mode="preset")``. Default:
     ``~/.config/nectar/color_calibration.json``.
-
-    Parameters (ROS)
-    ----------------
-    image_source : str
-        Camera source identifier (default: ``webcam``).
-    color_space : str
-        Initial color space, ``hsv`` or ``lab`` (default: ``hsv``).
-    flood_tolerance : int
-        Initial flood-fill tolerance for click sampling (default: 15).
-    calibration_file : str
-        Path to the calibration JSON. Empty uses the default home path.
 
     Notes
     -----
@@ -60,20 +51,19 @@ class ColorCalibrationNode(Node):
         },
     }
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        source: str = "webcam",
+        camera_config: Optional[CameraConfig] = None,
+        *,
+        color_space: str = "hsv",
+        flood_tolerance: int = 15,
+        calibration_file: str = "",
+    ) -> None:
         super().__init__("color_calibration_node")
 
-        self.declare_parameter("image_source", "webcam")
-        self.declare_parameter("color_space", "hsv")
-        self.declare_parameter("flood_tolerance", 15)
-        self.declare_parameter("calibration_file", "")
-
-        image_source = str(self.get_parameter("image_source").value)
-        color_space = str(self.get_parameter("color_space").value)
-        self.flood_tolerance = int(self.get_parameter("flood_tolerance").value)
-        self.file_path = str(
-            resolve_calibration_path(str(self.get_parameter("calibration_file").value))
-        )
+        self.flood_tolerance = int(flood_tolerance)
+        self.file_path = str(resolve_calibration_path(calibration_file))
 
         self.color_space = ColorSpace.HSV if color_space.upper() == "HSV" else ColorSpace.LAB
         self.config = self.TRACKBAR_CONFIG[self.color_space]
@@ -94,11 +84,12 @@ class ColorCalibrationNode(Node):
             raise SystemExit(1)
 
         self.image_handler = ImageHandler(
-            image_source=image_source,
+            image_source=source,
             image_processing_callback=self._process,
             show_result=self.WINDOW,
             on_key=self._on_key,
             on_display=self._on_display,
+            config=camera_config,
         )
 
         self.get_logger().info(f"Color calibration: {self.color_space.name} mode")
@@ -132,7 +123,11 @@ class ColorCalibrationNode(Node):
         cv2.createTrackbar("Tolerance", self.WINDOW, self.flood_tolerance, 50, self._on_trackbar)
         for i, name in enumerate(self.config["names"]):
             cv2.createTrackbar(
-                name, self.WINDOW, self.config["init"][i], self.config["max"][i], self._on_trackbar
+                name,
+                self.WINDOW,
+                self.config["init"][i],
+                self.config["max"][i],
+                self._on_trackbar,
             )
 
     def _on_display(self) -> None:
@@ -193,9 +188,6 @@ class ColorCalibrationNode(Node):
         self.get_logger().info(f"Bounds: {self.lower.tolist()} - {self.upper.tolist()}")
 
     def _process(self, img: np.ndarray) -> Optional[np.ndarray]:
-        if img is None:
-            return None
-
         converted = cv2.cvtColor(img, self.config["convert"])
 
         for click in self.pending_clicks:
@@ -282,7 +274,10 @@ class ColorCalibrationNode(Node):
             data = {}
 
         data.setdefault(color_name, {})
-        data[color_name][self.color_space.name] = [self.lower.tolist(), self.upper.tolist()]
+        data[color_name][self.color_space.name] = [
+            self.lower.tolist(),
+            self.upper.tolist(),
+        ]
         save_calibration_data(self.file_path, data)
 
         self.get_logger().info(f"Saved '{color_name}' to {self.file_path}")
@@ -335,13 +330,29 @@ class ColorCalibrationNode(Node):
         self.get_logger().info("Exiting")
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Interactive HSV/LAB color calibration")
+    add_camera_arguments(parser)
+    parser.add_argument("--color-space", choices=["hsv", "lab"], default="hsv")
+    parser.add_argument("--flood-tolerance", type=int, default=15)
+    parser.add_argument("--calibration-file", default="")
+    return parser
+
+
 def main(args=None) -> None:
     """Entry point for the color calibration node."""
     import nectar
 
-    rclpy.init(args=args)
+    ns, ros_argv, source, camera_config = parse_camera_args(_parser(), args)
+    rclpy.init(args=ros_argv)
     nectar.init()
-    node = ColorCalibrationNode()
+    node = ColorCalibrationNode(
+        source,
+        camera_config,
+        color_space=ns.color_space,
+        flood_tolerance=ns.flood_tolerance,
+        calibration_file=ns.calibration_file,
+    )
     nectar.add_node(node)
     try:
         nectar.spin()

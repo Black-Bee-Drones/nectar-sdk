@@ -101,8 +101,6 @@ class ImageHandler:
         return self._node
 
     def _build_camera_from_source(self) -> AbstractCam:
-        if self.camera is not None:
-            return self.camera
         return CameraFactory.from_source(self.image_source, config=self.config, node=self._node)
 
     def _uses_async(self) -> bool:
@@ -110,9 +108,17 @@ class ImageHandler:
         cam = self.camera
         if cam is None:
             return False
-        if getattr(cam, "is_threaded", False) or getattr(cam, "_use_ros_topics", False):
+        if getattr(cam, "is_threaded", False) or getattr(cam, "_use_ros_delegate", False):
             return True
-        return cam.__class__.__name__ in ("ROSCam", "ROSDepthCam")
+        cfg = getattr(cam, "_config", None)
+        if cfg is not None and getattr(cfg, "use_ros_topics", False):
+            return True
+        return cam.__class__.__name__ in (
+            "ROSCam",
+            "ROSDepthCam",
+            "T265Cam",
+            "FileImageCam",
+        )
 
     def open(self) -> None:
         """Build the camera (if needed) and start capture."""
@@ -137,9 +143,6 @@ class ImageHandler:
         async_mode = self._uses_async()
         while not self.cleaned:
             try:
-                if self.camera is None:
-                    time.sleep(self.poll_interval)
-                    continue
                 if async_mode:
                     frame = self.camera.get_frame(wait_for_new=True, timeout=self._frame_timeout)
                 else:
@@ -159,6 +162,7 @@ class ImageHandler:
             except Exception as e:
                 if not self.cleaned:
                     self._node.get_logger().error(f"Image processing error: {e}")
+                    time.sleep(self.poll_interval)
 
     def _present(self) -> None:
         with self._lock:
@@ -221,20 +225,10 @@ class ImageHandler:
         if not ImageHandler._displays:
             nectar_runtime._runtime._gui_pump = None
 
-    def process(self) -> None:
-        """Run the processing callback on the current frame."""
-        if self.image_processing_callback is not None:
-            result = self.image_processing_callback(self.img)
-            if self.img is not None:
-                self._store_frame(self.img, result)
-
     def run(self) -> None:
         """Open the camera and start the capture loop on a worker thread."""
         self._node.get_logger().info(f"Running image handler [{self.image_source}]")
-        if self.camera is None:
-            self.camera = self._build_camera_from_source()
-        if not self.camera.is_running:
-            self.camera.start()
+        self.open()
         if self._worker is None:
             self._worker = threading.Thread(
                 target=self._worker_loop, name="nectar-image-handler", daemon=True

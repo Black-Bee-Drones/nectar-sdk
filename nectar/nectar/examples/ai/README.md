@@ -32,8 +32,8 @@ Camera stream detection using `Detector` + `ImageHandler`.
 | Explicit framework (DETR) | `python3 detector_example.py --model facebook/detr-resnet-50 --framework transformers` |
 | Custom YOLO from HuggingFace | `python3 detector_example.py --model "blackbeedrones/cbr-25-base:yolov11n.pt"` |
 | Local model, headless, republish as ROS topic | `python3 detector_example.py --model /path/to/model.pt --no-show --publish --publish-topic /inference/compressed` |
-| ROS compressed image topic | `python3 detector_example.py --camera-source /image_raw/compressed --publish --no-show` |
-| ROS source key | `python3 detector_example.py --camera-source ros --topic /image_raw/compressed --compressed --publish --no-show` |
+| ROS compressed image topic | `python3 detector_example.py --source /image_raw/compressed --publish --no-show` |
+| ROS source key | `python3 detector_example.py --source ros --topic /image_raw/compressed --compressed --publish --no-show` |
 
 Private HuggingFace models: pass `--hf-token hf_...` or set `export HF_TOKEN=hf_...`. Select the compute device with `--device {auto,cpu,cuda,0,1}` (default `auto`).
 
@@ -44,10 +44,10 @@ Private HuggingFace models: pass `--hf-token hf_...` or set `export HF_TOKEN=hf_
 | `--model` | `yolov8n.pt` | Model path or HuggingFace repo |
 | `--framework` | "" | Explicit framework: `ultralytics`, `transformers`, `rfdetr` (empty = auto-detect) |
 | `--confidence` | `0.25` | Detection confidence threshold |
-| `--camera-source` | `webcam` | Camera source: registered key (`webcam`, `ros`, `realsense`, …) or a ROS topic path |
-| `--topic` | `/image_raw` | ROS image topic when `--camera-source ros` |
+| `--source` | `webcam` | Camera source: registered key, ROS topic path, or file |
+| `--topic` | `/image_raw` | ROS image topic when `--source ros` |
 | `--compressed` | off | Subscribe to `CompressedImage` (also inferred when the topic ends with `/compressed`) |
-| `--device-index` / `--width` / `--height` | `0` / `1280` / `720` | Webcam / OpenCV capture settings |
+| `--device-index` / `--width` / `--height` | dataclass defaults | Webcam / OpenCV capture settings |
 | `--no-show` | off | Disable the detection window (default shows it) |
 | `--annotator-type` | `color` | Annotation style: `box`, `round_box`, `color` |
 | `--show-labels` / `--show-confidence` / `--show-class` | on | Toggle overlay fields |

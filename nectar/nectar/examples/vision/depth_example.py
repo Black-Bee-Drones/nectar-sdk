@@ -10,76 +10,45 @@ import nectar
 from nectar.vision.camera import (
     DepthCam,
     ImageHandler,
-    OakdCam,
-    OakDConfig,
-    RealsenseCam,
-    RealSenseConfig,
     ROSDepthCam,
-    ROSDepthConfig,
+    add_camera_arguments,
+    parse_camera_args,
 )
+from nectar.vision.stream import add_stream_arguments
 
 log = logging.getLogger("depth_example")
 
 
 class DepthDemo:
-    def __init__(self, camera_type: str) -> None:
-        self.window = f"{camera_type.replace('_', ' ').title()} Color"
-        self.depth_window = f"{camera_type.replace('_', ' ').title()} Depth"
+    def __init__(self, source: str, config, show: bool) -> None:
+        self.window = f"{source.replace('_', ' ').title()} Color"
+        self.depth_window = f"{source.replace('_', ' ').title()} Depth"
         self.point_uv: Optional[Tuple[int, int]] = None
         self._depth_vis: Optional[np.ndarray] = None
+        self.cam: Optional[DepthCam] = None
 
-        cv2.namedWindow(self.window)
-        cv2.namedWindow(self.depth_window)
-        cv2.setMouseCallback(self.window, self._on_mouse)
-
-        self.cam = self._build_camera(camera_type)
-        source_key = {"oakd": "oakd", "realsense_ros": "ros_depth"}.get(camera_type, "realsense")
+        if show:
+            cv2.namedWindow(self.window)
+            cv2.namedWindow(self.depth_window)
+            cv2.setMouseCallback(self.window, self._on_mouse)
 
         self.handler = ImageHandler(
-            image_source=source_key,
-            camera=self.cam,
+            image_source=source,
+            config=config,
             image_processing_callback=self.process_frame,
-            show_result=self.window,
-            on_display=self._show_depth,
+            show_result=self.window if show else None,
+            on_display=self._show_depth if show else None,
         )
         self.handler.run()
+        self.cam = self.handler.camera
         log.info("Click on the color image to select a pixel. Press 'q' to quit.")
-
-    @staticmethod
-    def _build_camera(camera_type: str) -> DepthCam:
-        if camera_type == "oakd":
-            cam = OakdCam(OakDConfig(cam_num=1, enable_depth=True))
-            cam.start()
-            return cam
-        if camera_type == "realsense_ros":
-            cam = ROSDepthCam(
-                config=ROSDepthConfig(
-                    topic="/camera/color/image_raw/compressed",
-                    compressed=True,
-                    depth_topic="/camera/depth/image_rect_raw/compressedDepth",
-                    depth_compressed=True,
-                )
-            )
-            cam.start()
-            log.info("Using ROS topics: %s, %s", cam.color_topic, cam.depth_topic)
-            return cam
-        cam = RealsenseCam(
-            RealSenseConfig(
-                color_res=(1280, 720),
-                depth_res=(1280, 720),
-                fps=30,
-                align_to_color=True,
-            )
-        )
-        cam.start()
-        return cam
 
     def _on_mouse(self, event, x, y, flags, param) -> None:
         if event == cv2.EVENT_LBUTTONDOWN:
             self.point_uv = (x, y)
 
     def process_frame(self, img) -> None:
-        if img is None:
+        if img is None or self.cam is None:
             return
         h, w = img.shape[:2]
         u, v = self.point_uv if self.point_uv is not None else (w // 2, h // 2)
@@ -109,6 +78,7 @@ class DepthDemo:
         )
 
         self._render_depth(img, u, v, w, h)
+        return img
 
     def _render_depth(self, img, u: int, v: int, w: int, h: int) -> None:
         try:
@@ -142,15 +112,12 @@ class DepthDemo:
 def main():
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     parser = argparse.ArgumentParser(description="Depth camera example")
-    parser.add_argument(
-        "--camera",
-        choices=["realsense", "realsense_ros", "oakd"],
-        default="realsense",
-    )
-    args, _ = parser.parse_known_args()
+    add_camera_arguments(parser, default_source="realsense")
+    add_stream_arguments(parser, show_default=True, include_publish=False)
+    args, _, source, config = parse_camera_args(parser)
 
     nectar.init()
-    demo = DepthDemo(camera_type=args.camera)
+    demo = DepthDemo(source, config, show=args.show)
     try:
         nectar.spin()
     finally:

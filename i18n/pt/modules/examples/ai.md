@@ -32,8 +32,8 @@ Detecção em stream de câmera usando `Detector` + `ImageHandler`.
 | Framework explícito (DETR) | `python3 detector_example.py --model facebook/detr-resnet-50 --framework transformers` |
 | YOLO personalizado a partir do HuggingFace | `python3 detector_example.py --model "blackbeedrones/cbr-25-base:yolov11n.pt"` |
 | Modelo local, sem interface, republicado como tópico ROS | `python3 detector_example.py --model /path/to/model.pt --no-show --publish --publish-topic /inference/compressed` |
-| Tópico ROS de imagem comprimida | `python3 detector_example.py --camera-source /image_raw/compressed --publish --no-show` |
-| Chave de fonte ROS | `python3 detector_example.py --camera-source ros --topic /image_raw/compressed --compressed --publish --no-show` |
+| Tópico ROS de imagem comprimida | `python3 detector_example.py --source /image_raw/compressed --publish --no-show` |
+| Chave de fonte ROS | `python3 detector_example.py --source ros --topic /image_raw/compressed --compressed --publish --no-show` |
 
 Modelos privados do HuggingFace: passe `--hf-token hf_...` ou defina
 `export HF_TOKEN=hf_...`. Selecione o dispositivo de computação com
@@ -46,8 +46,8 @@ Modelos privados do HuggingFace: passe `--hf-token hf_...` ou defina
 | `--model` | `yolov8n.pt` | Caminho do modelo ou repositório HuggingFace |
 | `--framework` | "" | Framework explícito: `ultralytics`, `transformers`, `rfdetr` (vazio = detecção automática) |
 | `--confidence` | `0.25` | Limiar de confiança de detecção |
-| `--camera-source` | `webcam` | Fonte da câmera: chave registrada (`webcam`, `ros`, `realsense`, …) ou caminho de tópico ROS |
-| `--topic` | `/image_raw` | Tópico de imagem ROS quando `--camera-source ros` |
+| `--source` | `webcam` | Fonte da câmera: chave registrada (`webcam`, `ros`, `realsense`, …) ou caminho de tópico ROS |
+| `--topic` | `/image_raw` | Tópico de imagem ROS quando `--source ros` |
 | `--compressed` | off | Assina `CompressedImage` (também inferido quando o tópico termina com `/compressed`) |
 | `--device-index` / `--width` / `--height` | `0` / `1280` / `720` | Ajustes de captura webcam / OpenCV |
 | `--no-show` | off | Desabilita a janela de detecção (por padrão ela é exibida) |
