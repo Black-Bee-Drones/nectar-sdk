@@ -4,8 +4,38 @@ Ready-to-run nodes that wrap the vision [algorithms](../algorithms/README.md) an
 [cameras](../camera/README.md) as ROS 2 executables (`ros2 run nectar <node>.py`). Each drives an
 `ImageHandler` internally and publishes to `nectar_interfaces` messages.
 
+Camera and preview flags are shared. Algorithm flags stay on the node. Launch files pass
+`arguments=['--source', 'webcam']` (not a YAML dump of every driver).
+
 See also: [Cameras](../camera/README.md) · [Algorithms](../algorithms/README.md) ·
 [Vision overview](../README.md).
+
+## Shared flags
+
+Every vision node accepts the same camera and stream flags. Camera fields are generated from the
+`CameraConfig` dataclasses; omitted flags keep that driver's dataclass default (so `--width` is
+not applied to Oak-D, and Oak-D `enable_depth` stays `False` unless you pass it).
+
+```bash
+ros2 run nectar aruco_node.py --source webcam --device-index 1 --no-show
+ros2 run nectar aruco_node.py --source ros --topic /camera/color/image_raw/compressed --compressed
+ros2 run nectar aruco_node.py --source /image_raw --publish
+```
+
+| Flag | Maps to | Notes |
+|------|---------|-------|
+| `--source` | `CameraFactory` key, ROS topic (`/…`), or file path | Default `webcam` |
+| `--device-index` | `OpenCVConfig.device_index` | Webcam / opencv |
+| `--width` `--height` `--fps` | OpenCV / IMX219 fields | Dataclass default if omitted |
+| `--topic` `--compressed` | `ROSConfig` | `--source ros`, or a topic as `--source` |
+| `--path` | `FileImageConfig.path` | `--source file` |
+| `--color-width` `--color-height` | `RealSenseConfig.color_res` | RealSense only |
+| `--show` / `--no-show` | `ImageHandler.show_result` | Interactive nodes default on; publisher defaults off |
+| `--publish` `--publish-topic` `--jpeg-quality` | optional JPEG of the processed frame | Not used by `camera_publisher_node` (it always publishes the frame) |
+
+`ros2 run nectar <node>.py --help` lists driver-specific groups. Leftover `--ros-args` still reach
+`rclpy`. Line detection still exposes `line_colors` / `method` / `spaces` / `roi` as ROS parameters
+for live `ros2 param set` (those do not reopen the camera).
 
 ## Architecture
 
@@ -54,35 +84,32 @@ classDiagram
 ## ArUco detection node
 
 ```bash
-ros2 run nectar aruco_node.py --ros-args \
-    -p image_source:=webcam -p marker_dict:=5 -p tag_size:=0.05
+ros2 run nectar aruco_node.py --source webcam --marker-dict 5 --tag-size 0.05
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `image_source` | string | webcam | Camera source |
-| `marker_dict` | int | 5 | ArUco dictionary (4, 5, 6, 7) |
-| `tag_size` | float | 0.2 | Marker size in meters |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--marker-dict` | int | 5 | ArUco dictionary (4, 5, 6, 7) |
+| `--tag-size` | float | 0.2 | Marker size in meters |
 
-Publishes `/aruco/pose_estimate` (`nectar_interfaces/ArucoTransforms`).
+Publishes `/aruco/pose_estimate` (`nectar_interfaces/ArucoTransforms`). `--publish` adds the
+annotated image on `--publish-topic` (default `/aruco/image/compressed`).
 
 ## Line detection node
 
 ```bash
-ros2 run nectar line_detection_node.py --ros-args \
-    -p line_colors:="blue,red" -p method:=HoughLinesP \
-    -p spaces:="hsv,lab" -p image_source:=webcam -p show_visualization:=true
+ros2 run nectar line_detection_node.py --source webcam \
+    --line-colors blue,red --method HoughLinesP --spaces hsv,lab
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `line_colors` | string | teste | Comma-separated color names from the calibration JSON (e.g. `blue,red`). The default `teste` is a placeholder — set names that exist in your file. |
-| `method` | string | HoughLinesP | Estimation method |
-| `spaces` | string | hsv | Comma-separated color spaces |
-| `image_source` | string | webcam | Camera source |
-| `show_visualization` | bool | true | Show OpenCV window |
-| `visualization_name` | string | Line Detection | Window title |
-| `calibration_file` | string | (empty) | Calibration JSON. Empty uses `~/.config/nectar/color_calibration.json`. |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--line-colors` | string | teste | Comma-separated color names from the calibration JSON (e.g. `blue,red`). The default `teste` is a placeholder — set names that exist in your file. |
+| `--method` | string | HoughLinesP | Estimation method |
+| `--spaces` | string | hsv | Comma-separated color spaces |
+| `--roi` | string | 480,280 | Detection window as `width,height` |
+| `--visualization-name` | string | Line Detection | Window title |
+| `--calibration-file` | string | (empty) | Calibration JSON. Empty uses `~/.config/nectar/color_calibration.json`. |
 
 Methods: `HoughLinesP`, `RotatedRect`, `FitEllipse`, `RansacLine`, `AdaptiveHoughLinesP`. Per color
 it publishes `/line_state/{color}` (`nectar_interfaces/LineInfo`) and `/line_detect/{color}`
@@ -91,20 +118,18 @@ it publishes `/line_state/{color}` (`nectar_interfaces/LineInfo`) and `/line_det
 ## Color calibration node
 
 ```bash
-ros2 run nectar color_calibration_node.py --ros-args \
-    -p image_source:=webcam -p color_space:=hsv -p flood_tolerance:=15
+ros2 run nectar color_calibration_node.py --source webcam --color-space hsv --flood-tolerance 15
 ```
 
 Interactive HSV/LAB calibration in one window: left-click a colored region to auto-compute
 thresholds via flood fill, then fine-tune with the six channel trackbars. The stacked view shows
-`original | mask | result`.
+`original | mask | result`. Requires an OpenCV GUI.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `image_source` | string | webcam | Camera source |
-| `color_space` | string | hsv | Initial color space (`hsv` or `lab`) |
-| `flood_tolerance` | int | 15 | Initial flood-fill tolerance for click sampling |
-| `calibration_file` | string | (empty) | Calibration JSON. Empty uses `~/.config/nectar/color_calibration.json`. |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--color-space` | string | hsv | Initial color space (`hsv` or `lab`) |
+| `--flood-tolerance` | int | 15 | Initial flood-fill tolerance for click sampling |
+| `--calibration-file` | string | (empty) | Calibration JSON. Empty uses `~/.config/nectar/color_calibration.json`. |
 
 | Key | Action |
 |-----|--------|
@@ -116,35 +141,26 @@ thresholds via flood fill, then fine-tune with the six channel trackbars. The st
 | `r` | Reset |
 | `q` | Quit |
 
-Saved colors are written to `~/.config/nectar/color_calibration.json` (or `calibration_file`) and
-load via `ColorDetector(mode="preset", color=<name>)` and the line detection node. Copy that file
-to the same path on the vehicle, or pass `-p calibration_file:=/path/to/colors.json`.
-
-> **Note:** this node requires an OpenCV GUI (mouse + trackbars).
+Saved colors are written to `~/.config/nectar/color_calibration.json` (or `--calibration-file`) and
+load via `ColorDetector(mode="preset", color=<name>)` and the line detection node.
 
 ## Camera publisher node
 
-Publishes any `CameraFactory` source as a ROS 2 image topic. Select the driver with
-`camera_source` (`webcam`, `realsense`, `oakd`, `c920`, `imx219`, `ros`, ...) and set the
-source-specific parameters.
+Publishes any `CameraFactory` source as a ROS 2 image topic. This node always publishes the frame;
+use `--no-compression` for raw `sensor_msgs/Image`. Preview is off unless `--show`.
 
 ```bash
-ros2 run nectar camera_publisher_node.py --ros-args \
-    -p camera_source:=webcam -p device_index:=0 \
-    -p width:=1280 -p height:=720 -p fps:=30 \
-    -p use_compression:=true -p jpeg_quality:=80 -p threaded:=true
+ros2 run nectar camera_publisher_node.py --source webcam --device-index 0 \
+    --width 1280 --height 720 --fps 30 --jpeg-quality 80
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `camera_source` | string | webcam | Camera driver key passed to `CameraFactory` |
-| `device_index` | int | 0 | USB/webcam device index |
-| `width` / `height` | int | 640 / 480 | Frame size |
-| `fps` | int | 30 | Target FPS |
-| `use_compression` | bool | true | Publish JPEG-compressed images |
-| `jpeg_quality` | int | 80 | JPEG quality (0-100) |
-| `buffer_size` | int | 2 | Camera buffer size |
-| `threaded` | bool | true | Background capture thread |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--no-compression` | flag | (compression on) | Publish `sensor_msgs/Image` instead of JPEG |
+| `--jpeg-quality` | int | 80 | JPEG quality (0-100) |
+| `--log-fps-interval` | float | 5.0 | FPS log period; `0` disables |
+| `--poll-interval` | float | -1 | Frame-poll period; `-1` = auto |
+| `--frame-timeout` | float | -1 | New-frame wait; `-1` = auto |
 
 Publishes `image_raw/compressed` (`sensor_msgs/CompressedImage`) or `image_raw`
-(`sensor_msgs/Image`, when compression is disabled).
+(`sensor_msgs/Image`).

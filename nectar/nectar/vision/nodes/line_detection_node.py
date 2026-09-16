@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import sys
+import argparse
 from math import isnan
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import cv2
 import numpy as np
@@ -21,7 +21,9 @@ from nectar.vision.algorithms.line import (
     RansacLine,
     RotatedRect,
 )
-from nectar.vision.camera import ImageHandler
+from nectar.vision.camera import ImageHandler, add_camera_arguments, parse_camera_args
+from nectar.vision.camera.config import CameraConfig
+from nectar.vision.stream import CompressedFramePublisher, add_stream_arguments
 
 
 class LineDetectionNode(Node):
@@ -30,29 +32,6 @@ class LineDetectionNode(Node):
 
     Processes images from a specified source, detects lines based on
     configured colors and estimation method, and publishes results.
-
-    Parameters (ROS)
-    ----------------
-    line_colors : str
-        Comma-separated list of colors to detect.
-    method : str
-        Line detection method (HoughLinesP, RotatedRect, etc.).
-    image_source : str
-        Camera source identifier.
-    show_visualization : bool
-        Whether to show OpenCV window.
-    visualization_name : str
-        Name for visualization window.
-    spaces : str
-        Comma-separated color spaces (hsv, lab).
-    roi : str
-        Detection window as ``width,height`` (default ``480,280``).
-        Example: ``-p roi:=640,230``.
-    cap : int
-        Webcam index for OpenCV.
-    calibration_file : str
-        Path to the color calibration JSON. Empty uses
-        ``~/.config/nectar/color_calibration.json``.
 
     Attributes
     ----------
@@ -76,43 +55,47 @@ class LineDetectionNode(Node):
         "AdaptiveHoughLinesP": AdaptiveHoughLinesP,
     }
 
-    def __init__(self):
+    def __init__(
+        self,
+        source: str = "webcam",
+        camera_config: Optional[CameraConfig] = None,
+        *,
+        show: bool = True,
+        publish: bool = False,
+        publish_topic: str = "/line_detect/image/compressed",
+        jpeg_quality: int = 80,
+        line_colors: str = "teste",
+        method: str = "HoughLinesP",
+        visualization_name: str = "Line Detection",
+        spaces: str = "hsv",
+        roi: str = "480,280",
+        calibration_file: str = "",
+    ) -> None:
         super().__init__("line_detection_node")
 
-        self.declare_parameter("line_colors", "teste")
-        self.declare_parameter("method", "HoughLinesP")
-        self.declare_parameter("image_source", "webcam")
-        self.declare_parameter("show_visualization", True)
-        self.declare_parameter("visualization_name", "Line Detection")
-        self.declare_parameter("spaces", "hsv")
-        self.declare_parameter("roi", "480,280")
-        self.declare_parameter("cap", 0)
-        self.declare_parameter("calibration_file", "")
+        self.source = source
+        self.camera_config = camera_config
+        self.show_visualization = show
+        self.visualization_name = visualization_name
+
+        self.declare_parameter("line_colors", line_colors)
+        self.declare_parameter("method", method)
+        self.declare_parameter("spaces", spaces)
+        self.declare_parameter("roi", roi)
 
         colors_param = self.get_parameter("line_colors").get_parameter_value().string_value
         self.line_colors = [color.strip() for color in colors_param.split(",")]
 
-        self.image_source = self.get_parameter("image_source").get_parameter_value().string_value
         estimation_method_name = self.get_parameter("method").get_parameter_value().string_value
-        self.show_visualization = (
-            self.get_parameter("show_visualization").get_parameter_value().bool_value
-        )
-        self.visualization_name = (
-            self.get_parameter("visualization_name").get_parameter_value().string_value
-        )
-        spaces = self.get_parameter("spaces").get_parameter_value().string_value
-        self.color_spaces = [color_space.strip() for color_space in spaces.split(",")]
+        spaces_value = self.get_parameter("spaces").get_parameter_value().string_value
+        self.color_spaces = [color_space.strip() for color_space in spaces_value.split(",")]
         self.detection_zone = self._parse_roi(
             self.get_parameter("roi").get_parameter_value().string_value
         )
         if self.detection_zone is None:
             self.get_logger().warning("Invalid roi, using default 480,280.")
             self.detection_zone = self.DETECTION_ZONE
-        self.calibration_file = str(
-            resolve_calibration_path(
-                self.get_parameter("calibration_file").get_parameter_value().string_value
-            )
-        )
+        self.calibration_file = str(resolve_calibration_path(calibration_file))
         self.get_logger().info(f"Calibration file: {self.calibration_file}")
         # If there are fewer color spaces than colors, use the first color space for additional colors
         if len(self.color_spaces) < len(self.line_colors):
@@ -124,8 +107,6 @@ class LineDetectionNode(Node):
                 f"than colors ({len(self.line_colors)}). "
                 f"Using '{default_space}' for the additional colors."
             )
-
-        self.cap = self.get_parameter("cap").get_parameter_value().integer_value
 
         if estimation_method_name in self.estimation_methods:
             self.estimation_class = self.estimation_methods[estimation_method_name]
@@ -153,15 +134,20 @@ class LineDetectionNode(Node):
             f"Line Detection Node initialized with: \
             \n - Line colors: {colors_str} \
             \n - Estimation method: {estimation_method_name} \
-            \n - Image source: {self.image_source} \
+            \n - Image source: {self.source} \
             \n - Color spaces: {self.color_spaces} \
             \n - ROI: {self.detection_zone[0]}x{self.detection_zone[1]} \
-            \n - Webcam index: {self.cap} \
             \n - Show visualization: {self.show_visualization} \
             \n - Available methods: {method_names}"
         )
 
         self.add_on_set_parameters_callback(self.parameters_callback)
+
+        self._image_pub: Optional[CompressedFramePublisher] = None
+        if publish:
+            self._image_pub = CompressedFramePublisher(
+                publish_topic, jpeg_quality=jpeg_quality, node=self
+            )
 
     @staticmethod
     def _parse_roi(raw):
@@ -364,7 +350,7 @@ class LineDetectionNode(Node):
 
         return result
 
-    def process_image(self, img: np.ndarray) -> None:
+    def process_image(self, img: np.ndarray) -> Optional[np.ndarray]:
         """
         Process image frame and publish detection results.
 
@@ -375,7 +361,8 @@ class LineDetectionNode(Node):
         """
         try:
             img = cv2.resize(img, self.IMG_SIZE)
-            display_img = img.copy() if self.show_visualization else None
+            draw = self.show_visualization or self._image_pub is not None
+            display_img = img.copy() if draw else None
 
             for color in self.line_colors:
                 if color not in self.line_detectors:
@@ -390,7 +377,7 @@ class LineDetectionNode(Node):
                         self.get_logger().warning(f"Error getting color for {color}: {e}")
                         bgr_color = (255, 255, 255)
 
-                    img_copy = display_img if self.show_visualization else img.copy()
+                    img_copy = display_img if draw else img.copy()
 
                     try:
                         (
@@ -404,7 +391,7 @@ class LineDetectionNode(Node):
                         ) = detector.detect_line(
                             img_copy,
                             region=self.detection_zone,
-                            draw=self.show_visualization,
+                            draw=draw,
                             draw_color=bgr_color,
                         )
                     except TypeError as e:
@@ -422,7 +409,7 @@ class LineDetectionNode(Node):
                         ) = detector.detect_line(
                             img_copy,
                             region=self.detection_zone,
-                            draw=self.show_visualization,
+                            draw=draw,
                         )
                     except Exception as e:
                         self.get_logger().error(f"Error in line detection for {color}: {e}")
@@ -448,7 +435,7 @@ class LineDetectionNode(Node):
                 except Exception as e:
                     self.get_logger().error(f"Error processing color {color}: {e}")
 
-            if self.show_visualization and display_img is not None:
+            if draw and display_img is not None:
                 center_x, center_y = self.IMG_SIZE[0] // 2, self.IMG_SIZE[1] // 2
                 cv2.line(
                     display_img,
@@ -472,15 +459,14 @@ class LineDetectionNode(Node):
                 zone_y2 = center_y + zone_height // 2
                 cv2.rectangle(display_img, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 255, 0), 1)
 
-                if self.show_visualization:
-                    cv2.imshow(self.visualization_name, display_img)
+            if self._image_pub is not None and display_img is not None:
+                self._image_pub.publish(display_img)
 
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    cv2.destroyWindow(self.visualization_name)
-                    self.image_handler.cleanup()
+            return display_img
 
         except Exception as e:
             self.get_logger().error(f"Error in line detection: {e}")
+            return None
 
     def _get_color_values_to_bgr(self, color_values, color_space):
         """
@@ -571,25 +557,16 @@ class LineDetectionNode(Node):
     def run(self):
         """Start the line detection processing loop."""
         self.image_handler = ImageHandler(
-            image_source=self.image_source,
+            image_source=self.source,
+            config=self.camera_config,
             image_processing_callback=self.process_image,
+            show_result=self.visualization_name if self.show_visualization else None,
         )
 
         colors_str = ", ".join(self.line_colors)
         spaces_str = ", ".join(self.color_spaces)
-        _color_space_info = ", ".join(
-            [
-                f"{color}: {space}"
-                for color, space in zip(
-                    self.line_colors,
-                    self.color_spaces[: len(self.line_colors)]
-                    + [self.color_spaces[0]] * (len(self.line_colors) - len(self.color_spaces)),
-                )
-            ]
-        )
-
         self.get_logger().info(
-            f"\nDetection Node running: {colors_str}, {self.image_source}, {spaces_str}, cap={self.cap}"
+            f"\nDetection Node running: {colors_str}, {self.source}, {spaces_str}"
         )
 
         self.image_handler.run()
@@ -597,6 +574,8 @@ class LineDetectionNode(Node):
     def cleanup(self):
         """Clean up resources and shutdown."""
         self.image_handler.cleanup()
+        if self._image_pub is not None:
+            self._image_pub.cleanup()
 
         if self.show_visualization:
             cv2.destroyAllWindows()
@@ -604,23 +583,49 @@ class LineDetectionNode(Node):
         self.destroy_node()
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Line detection from a calibrated color")
+    add_camera_arguments(parser)
+    add_stream_arguments(parser, show_default=True, publish_topic="/line_detect/image/compressed")
+    parser.add_argument("--line-colors", default="teste")
+    parser.add_argument("--method", default="HoughLinesP")
+    parser.add_argument("--spaces", default="hsv")
+    parser.add_argument("--roi", default="480,280")
+    parser.add_argument("--visualization-name", default="Line Detection")
+    parser.add_argument("--calibration-file", default="")
+    return parser
+
+
 def main(args=None):
     """Entry point for line detection node."""
     import nectar
 
-    rclpy.init(args=args)
-    nectar.use_executor(rclpy.get_global_executor())
-
-    detector = LineDetectionNode()
-
+    ns, ros_argv, source, camera_config = parse_camera_args(_parser(), args)
+    rclpy.init(args=ros_argv)
+    nectar.init()
+    detector = LineDetectionNode(
+        source,
+        camera_config,
+        show=ns.show,
+        publish=ns.publish,
+        publish_topic=ns.publish_topic,
+        jpeg_quality=ns.jpeg_quality,
+        line_colors=ns.line_colors,
+        method=ns.method,
+        visualization_name=ns.visualization_name,
+        spaces=ns.spaces,
+        roi=ns.roi,
+        calibration_file=ns.calibration_file,
+    )
+    nectar.add_node(detector)
     detector.run()
-
     try:
-        rclpy.spin(detector)
+        nectar.spin()
     except KeyboardInterrupt:
+        pass
+    finally:
         detector.cleanup()
-        rclpy.shutdown()
-        sys.exit(0)
+        nectar.shutdown()
 
 
 if __name__ == "__main__":

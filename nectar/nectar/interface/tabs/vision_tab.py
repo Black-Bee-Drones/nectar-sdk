@@ -343,7 +343,7 @@ class CameraInitWorker(QObject):
                 )
                 if self._node is None:
                     raise ValueError("ROS depth camera requires a ROS node")
-                return ROSDepthCam(self._node, config)
+                return ROSDepthCam(config, node=self._node)
             else:
                 from nectar.vision.camera import RealsenseCam, RealSenseConfig
 
@@ -419,7 +419,7 @@ class CameraInitWorker(QObject):
             )
             if self._node is None:
                 raise ValueError("ROS camera requires a ROS node")
-            return ROSCam(self._node, config)
+            return ROSCam(config, node=self._node)
 
         elif camera_type == "ros_depth":
             from nectar.vision.camera import QoSReliability, ROSDepthCam, ROSDepthConfig
@@ -450,7 +450,7 @@ class CameraInitWorker(QObject):
             )
             if self._node is None:
                 raise ValueError("ROS depth camera requires a ROS node")
-            return ROSDepthCam(self._node, config)
+            return ROSDepthCam(config, node=self._node)
 
         elif camera_type == "file":
             from nectar.vision.camera import FileImageCam, FileImageConfig
