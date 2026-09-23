@@ -142,7 +142,15 @@ def main():
         if params.get("evaluate"):
             eval_start_time = time.time()
             eval_split = params.get("eval_split", "test")
-            eval_batch = params.get("eval_batch_size", params.get("batch_size", 1))
+            eval_batch = params.get("eval_batch_size", params.get("batch_size", 16))
+            if not isinstance(eval_batch, int) or eval_batch < 1:
+                logger.info(
+                    "Eval batch size %s is not usable; using 16. "
+                    "batch_size -1 is autobatch for training only. "
+                    "Set eval.batch_size to override.",
+                    eval_batch,
+                )
+                eval_batch = 16
             eval_device = params.get("eval_device", params.get("device", "auto"))
             eval_samples = params.get("eval_num_samples", params.get("max_test_samples"))
             eval_output = params.get("eval_output_dir", str(Path(output_dir_raw) / "evaluation"))
