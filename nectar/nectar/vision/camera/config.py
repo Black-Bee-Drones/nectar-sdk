@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import shlex
+import traceback
 from dataclasses import dataclass
 from enum import Enum
+from subprocess import run as run_shell
 from typing import Optional, Tuple
 
 
@@ -54,6 +57,96 @@ class OpenCVConfig(CameraConfig):
     focus: Optional[int] = None
     buffer_size: Optional[int] = 2
     threaded: bool = True
+
+    @classmethod
+    def config_by_name(
+        cls,
+        name: str,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        fps: Optional[int] = 30,
+        fourcc: Optional[str] = "MJPG",
+        autofocus: Optional[bool] = None,
+        focus: Optional[int] = None,
+        buffer_size: Optional[int] = 2,
+        threaded: bool = True,
+    ) -> "OpenCVConfig":
+        """
+        Retrieves the V4L2 video device index for a specified camera name and
+        returns a new OpenCVConfig instance.
+
+        This function executes system shell commands to parse the output of
+        'v4l2-ctl --list-devices' and extracts the first matching video
+        node index (e.g., uses 0 for '/dev/video0').
+
+        Parameters
+        ----------
+        name : str
+            The name or partial name of the camera to search for.
+        width : int, optional
+            Width of the camera frame.
+        height : int, optional
+            Height of the camera frame.
+        fps : int, optional
+            Frames per second.
+        fourcc : str, optional
+            FourCC code for the video codec.
+        autofocus : bool, optional
+            Enable or disable autofocus.
+        focus : int, optional
+            Manual focus value.
+        buffer_size : int, optional
+            OpenCV internal buffer size.
+        threaded : bool
+            Enable threaded camera reading.
+
+        Returns
+        -------
+        OpenCVConfig
+            An instance of OpenCVConfig configured with the found device index.
+            If the camera is not found, or command fails, the device_index
+            defaults to -1.
+
+        Notes
+        -----
+        This function is Linux-specific and requires the 'v4l2-utils' package
+        to be installed on the system to run the 'v4l2-ctl' command.
+
+        WARNING - MULTIPLE IDENTICAL CAMERAS:
+        -------------------------------------
+        If using multiple cameras of the exact same model (e.g., front and back),
+        the OS USB initialization order is non-deterministic. This means `instance=0`
+        might swap between the physical front and back cameras upon reboot.
+
+        To guarantee deterministic mapping, do not use this factory method based on
+        camera names. Instead, create UDEV rules (e.g., `/dev/video_front`) in the OS
+        and use the default constructor directly, or pass the hardware USB path
+        (e.g., "14.0-1") as the 'name' parameter.
+        """
+
+        kwargs = locals().copy()
+        kwargs.pop("cls")
+
+        safe_name = shlex.quote(name)
+
+        cmd = f'v4l2-ctl --list-devices | grep -i {safe_name} -A 4 | grep -o "video[0-9]\\+" | head -n 1 | grep -o "[0-9]\\+"'
+
+        try:
+            result = run_shell(cmd, shell=True, capture_output=True, text=True)
+            idx = result.stdout.strip()
+
+            if not idx:
+                print(f"Warning: Camera '{name}' not found. Defaulting to index -1.")
+                idx = -1
+
+            kwargs["device_index"] = int(idx)
+            return cls(**kwargs)
+
+        except Exception as e:
+            print(f"Error executing v4l2-ctl (is v4l2-utils installed?): {e}")
+            traceback.print_exc()
+            kwargs["device_index"] = -1
+            return cls(**kwargs)
 
 
 @dataclass(frozen=True)

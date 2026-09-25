@@ -286,6 +286,7 @@ classDiagram
         +focus Optional~int~
         +buffer_size Optional~int~
         +threaded bool
+        +config_by_name(name: str)$ OpenCVConfig
     }
 
     class RealSenseConfig {
