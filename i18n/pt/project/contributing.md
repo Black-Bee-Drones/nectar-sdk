@@ -232,7 +232,7 @@ A suíte funcional vive em
   uma *operação real* sobre entradas sintéticas ou um loopback. Os testes se auto-pulam
   (nunca falham) quando uma dependência opcional está ausente, via
   `pytest.importorskip(...)`.
-- `nectar/test/hardware/` — checks condicionados a dispositivo (RealSense, OAK-D, TF-Luna),
+- `nectar/test/hardware/` — checks condicionados a dispositivo (RealSense, OAK-D),
   marcados como `hardware` e **desselecionados por padrão**.
 - `nectar/test/conftest.py` + `nectar/test/helpers.py` — fixtures (`ros_node`, `fake_fcu`,
   `qt_app`) e o FCU de loopback.

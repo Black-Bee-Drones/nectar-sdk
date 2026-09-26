@@ -20,12 +20,12 @@ import rclpy
 from rclpy.node import Node
 
 from nectar.control.mavlink import MavlinkConnection
-from nectar.sensors import ObstacleMaskFilter, RangefinderPublisher, TFLuna
+from nectar.sensors import MODELS, BenewakeTF, ObstacleMaskFilter, RangefinderPublisher
 
 
 class RangefinderNode(Node):
     """
-    ROS2 entry point that wires TF-Luna + filter + MAVLink publisher.
+    ROS2 entry point that wires a Benewake TF-series LiDAR + filter + MAVLink publisher.
 
     All knobs are exposed as ROS parameters so per-mission tuning lives in
     the launch file. The node owns a background thread (the publisher),
@@ -40,16 +40,22 @@ class RangefinderNode(Node):
 
         self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baudrate", 115200)
+        self.declare_parameter("model", "tfluna")
         self.declare_parameter("mavlink_url", "udp:127.0.0.1:14551")
         self.declare_parameter("mavlink_baud", 921600)
         self.declare_parameter("source_system", 1)
         self.declare_parameter("source_component", 191)
         self.declare_parameter("heartbeat_timeout_s", 30.0)
 
+        model = str(self.get_parameter("model").value)
+        if model not in MODELS:
+            raise ValueError(f"unknown Benewake model {model!r}; valid: {', '.join(MODELS)}")
+        profile = MODELS[model]
+
         self.declare_parameter("sensor_id", 0)
         self.declare_parameter("orientation", 25)
-        self.declare_parameter("min_distance_m", 0.05)
-        self.declare_parameter("max_distance_m", 8.0)
+        self.declare_parameter("min_distance_m", profile.min_range_m)
+        self.declare_parameter("max_distance_m", profile.max_range_m)
         self.declare_parameter("covariance_cm", 0)
         self.declare_parameter("rate_hz", 50.0)
 
@@ -60,7 +66,7 @@ class RangefinderNode(Node):
         self.declare_parameter("estimate_lock_s", 0.2)
         self.declare_parameter("timeout_s", 5.0)
 
-        self._sensor: TFLuna | None = None
+        self._sensor: BenewakeTF | None = None
         self._connection: MavlinkConnection | None = None
         self._publisher: RangefinderPublisher | None = None
 
@@ -77,8 +83,9 @@ class RangefinderNode(Node):
         source_system = int(self.get_parameter("source_system").value)
         source_component = int(self.get_parameter("source_component").value)
 
-        self.get_logger().info(f"Opening TF-Luna on {port} @ {baudrate} bps")
-        self._sensor = TFLuna(port=port, baudrate=baudrate)
+        model = str(self.get_parameter("model").value)
+        self.get_logger().info(f"Opening Benewake {model} on {port} @ {baudrate} bps")
+        self._sensor = BenewakeTF(port=port, model=model, baudrate=baudrate)
 
         self.get_logger().info(f"Connecting MAVLink to {mavlink_url}")
         self._connection = MavlinkConnection(

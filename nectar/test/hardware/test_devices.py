@@ -36,8 +36,3 @@ def test_oakd_device():
         pytest.skip(f"depthai present, device query failed: {exc}")
     if not devices:
         pytest.skip("depthai installed, no OAK-D device attached")
-
-
-def test_tfluna_serial():
-    """The TF-Luna UART driver reads a sample from a serial port."""
-    pytest.skip("requires a TF-Luna on a serial/UART port")
