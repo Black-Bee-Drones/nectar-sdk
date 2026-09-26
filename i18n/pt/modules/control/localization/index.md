@@ -68,10 +68,29 @@ make isaac-run          # or: ./docker/isaac_vslam/run_docker.sh
 
 # inside:
 
-nectar-vslam            # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
+nectar-vslam            # alias → launch no source tree montado do workspace
 ```
 
-Confirme que a RealSense é enumerada e que os tópicos do VSLAM publicam. Notas do Docker:
+O `nectar-vslam` encaminha argumentos extras (`"$@"`). Todo o ajuste de RealSense +
+Visual SLAM fica em um único YAML (não em `/opt/ros/.../isaac_ros_visual_slam/`):
+
+| Onde | Caminho |
+|------|---------|
+| Host | `nectar/nectar/control/localization/config/vslam_realsense.yaml` |
+| Container Isaac | `/workspaces/isaac_ros-dev/src/nectar-sdk/nectar/nectar/control/localization/config/vslam_realsense.yaml` |
+
+O container Isaac monta o `ros2_ws` inteiro, então edições no host aparecem ao vivo —
+reinicie o `nectar-vslam` depois de mudar. Arquivo alternativo opcional:
+
+```bash
+nectar-vslam params_file:=/path/to/other.yaml
+```
+
+Padrões: infra @ `640x360x90` + IMU para o cuVSLAM (emitter desligado), RGB ligado
+com o profile padrão do realsense (`0,0,0` → escolha do device, frequentemente
+`1280x720x30` no D435i) para detecção (`/camera/color/...`), depth desligado. O SLAM remapeia
+**apenas infra**; assine a color para modelos de IA. Confirme que a RealSense é
+enumerada e que os tópicos do VSLAM publicam. Notas do Docker:
 [Isaac ROS Visual SLAM (Jetson)](../../../setup/docker/#isaac-ros-visual-slam-jetson).
 
 ### 2. Consumidor — feeder de vision (manter em execução) {#2-consumidor-feeder-de-vision-manter-em-execucao}
@@ -148,6 +167,8 @@ reinicie o producer + a bridge (e reinicie o FCU depois de mudanças de parâmet
 | Sintoma | Causa provável | O que tentar |
 |---------|--------------|-------------|
 | Nenhum tópico VSLAM | Câmera / Isaac / USB | `rs-enumerate-devices` no container Isaac; USB3; reinicie o `nectar-vslam` |
+| Color OK, pose parada / infra cai | Largura de banda USB, launch errado, cuVSLAM obsoleto | `ros2 topic hz` em `/camera/infra1/image_rect_raw` e `/visual_slam/tracking/vo_pose_covariance`; use o YAML do Nectar (não `/opt/ros/...`); USB3; `make isaac-stop` e reinicie |
+| Edição do YAML ignorada | Arquivo errado ou install antigo | Edite o YAML montado do Nectar acima; não edite o launch empacotado da NVIDIA em `/opt/ros` |
 | VSLAM OK, pose do FCU congelada | Bridge, domínio ou feeder duplicado | `ROS_DOMAIN_ID` compartilhado; reinicie o consumer; [regra do feeder único](#regra-do-feeder-unico) |
 | Vision no ROS, EKF não usa | Parâmetros / origem | [Configuração do FCU](#configuracao-do-fcu), [Origem do EKF](#origem-do-ekf); reinicie após mudar parâmetros |
 | Caminho instável / divergindo | Vibração, textura, movimento abrupto, sessão obsoleta | Soft-mount; aquecimento mais lento; reinicie o producer |
@@ -433,14 +454,15 @@ Dois perfis (`rviz/vslam_light.rviz`, `rviz/vslam_full.rviz`):
 | Perfil | Mostra | Custo no producer |
 |---------|-------|---------------|
 | `light` (padrão) | TF + odometria + trajetória SLAM (verde) + trajetória VO (roxa) | nenhum (os tópicos de tracking são sempre publicados) |
-| `full` | light + nuvens de landmarks / loop-closure + pose graph | exige `enable_visualization:=true` |
+| `full` | light + nuvens de landmarks / loop-closure + pose graph | ative `enable_slam_visualization` (e landmarks / observations) no YAML do VSLAM |
 
 O perfil `light` desenha duas trajetórias sempre publicadas: a trajetória **verde** do SLAM
 (`/visual_slam/tracking/slam_path`, corrigida por loop closure) e a trajetória **roxa** de
 VO (`/visual_slam/tracking/vo_path`, odometria bruta). Quando um loop se fecha, a
 trajetória verde se ajusta em relação à roxa — esse é o loop closure, visível sem custo no
 producer. A nuvem de pontos roxa literal do loop closure vive no `full` (é um tópico
-`/visual_slam/vis/*`, publicado apenas com `enable_visualization:=true`).
+`/visual_slam/vis/*`, publicado apenas quando as flags de visualização estão ativas em
+`vslam_realsense.yaml`).
 
 As duas trajetórias `light` são mostradas como um **buffer deslizante** (últimos 15 s por
 padrão) para que a janela não se preencha com a trajetória inteira. O `vslam_rviz.launch.py`
@@ -465,11 +487,9 @@ rviz2 -d src/nectar-sdk/nectar/nectar/control/localization/rviz/vslam_light.rviz
 ```
 
 O perfil `full` exige que o producer publique os tópicos `/visual_slam/vis/*`, que ficam
-desligados por padrão para manter o Jetson leve:
-
-```bash
-nectar-vslam enable_visualization:=true
-```
+desligados por padrão para manter o Jetson leve. Em `vslam_realsense.yaml`, defina
+`enable_slam_visualization`, `enable_landmarks_view` e `enable_observations_view` como
+`true` e reinicie o `nectar-vslam`.
 
 ## Notas de hardware
 

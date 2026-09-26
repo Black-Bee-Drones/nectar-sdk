@@ -388,8 +388,18 @@ make isaac-run        # or: ./docker/isaac_vslam/run_docker.sh
 **Inside the container, start the producer** with the baked helper:
 
 ```bash
-nectar-vslam          # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
+nectar-vslam          # alias → mounted nectar launch; forwards "$@"
 ```
+
+All RealSense + Visual SLAM parameters are in the mounted YAML (edit on the host or
+inside the container, then restart `nectar-vslam`):
+
+`/workspaces/isaac_ros-dev/src/nectar-sdk/nectar/nectar/control/localization/config/vslam_realsense.yaml`
+
+Do not edit `/opt/ros/humble/share/isaac_ros_visual_slam/...` — that is NVIDIA’s packaged
+launch, not Nectar’s. Defaults enable RGB (`/camera/color/...`) alongside infra for
+cuVSLAM; SLAM does not consume color. Alternate config:
+`nectar-vslam params_file:=/path/to/other.yaml`.
 
 > **Warning — Run only one cuVSLAM container at a time:** The container uses `--ipc=host` and
 > `--pid=host`, so if cuVSLAM crashes the dead GXF process leaves a robust mutex in shared memory

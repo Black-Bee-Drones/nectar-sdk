@@ -7,6 +7,9 @@
 #
 # Inside the container, start the producer with the baked helper:
 #   nectar-vslam
+#   nectar-vslam params_file:=/path/to/other.yaml
+#
+# Params: nectar/.../localization/config/vslam_realsense.yaml (workspace is mounted).
 #
 # Requirements: docker (non-root), git-lfs, NVIDIA Container Toolkit (Jetson).
 set -e

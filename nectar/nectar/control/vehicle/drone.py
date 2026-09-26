@@ -84,6 +84,8 @@ class VehicleDrone(BaseDrone):
         self._takeoff_local: Optional[LocalTarget] = None
         self._initial_altitude: float = 0.0
         self._initial_heading: float = 0.0
+        self.mode_timeout = float(getattr(config, "mode_timeout", 10.0))
+        self.arm_timeout = float(getattr(config, "arm_timeout", 6.0))
 
         super().__init__(config, executor)
 
@@ -100,7 +102,7 @@ class VehicleDrone(BaseDrone):
     # Firmware hooks (overridden by ArduPilot / PX4 specializations)
 
     @abstractmethod
-    def arm(self) -> bool:
+    def arm(self, timeout: Optional[float] = None) -> bool:
         """Arm the motors in the firmware's offboard/guided control mode."""
 
     @abstractmethod
@@ -547,7 +549,7 @@ class VehicleDrone(BaseDrone):
         Per attempt: arm (state-polled) -> spin-up delay -> set takeoff position
         (first attempt) -> takeoff command -> wait for liftoff and altitude
         settling -> optional altitude adjustment. Skips entirely if already
-        airborne. Retries only on failed liftoff.
+        airborne. Retries on rejected takeoff ACK and on failed liftoff.
 
         Parameters
         ----------
@@ -600,12 +602,21 @@ class VehicleDrone(BaseDrone):
                 f"{ARROW} Takeoff start_alt={start_alt:.2f}m (source={alt_source})"
             )
 
+            cmd_ok = False
             try:
-                if not self._command_takeoff(float(altitude)):
-                    self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
-                    return False
+                cmd_ok = bool(self._command_takeoff(float(altitude)))
             except TimeoutError as e:
                 self._node.get_logger().error(f"{ERR} Takeoff service timeout: {e}")
+
+            if not cmd_ok:
+                self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
+                if attempt < max_retries - 1:
+                    self._node.get_logger().warn(
+                        f"{WARN} Disarming for retry ({attempt + 1}/{max_retries})"
+                    )
+                    self.disarm()
+                    self.delay(1.5)
+                    continue
                 return False
 
             lifted, current_alt = self._sequencer.wait_takeoff_settle(
@@ -1400,7 +1411,7 @@ class VehicleDrone(BaseDrone):
             self._node.get_logger().error(f"Set home failed: {e}")
             return False
 
-    def set_mode(self, mode: str) -> bool:
+    def set_mode(self, mode: str, timeout: Optional[float] = None) -> bool:
         """
         Set the FCU flight mode.
 
@@ -1408,6 +1419,9 @@ class VehicleDrone(BaseDrone):
         ----------
         mode : str
             Flight mode name (e.g. 'GUIDED', 'STABILIZE', 'LOITER', 'RTL', 'LAND').
+        timeout : float, optional
+            Seconds to wait for the FCU to report ``mode``. ``None`` uses
+            ``mode_timeout``.
 
         Returns
         -------
@@ -1422,7 +1436,8 @@ class VehicleDrone(BaseDrone):
         """
         if not self._transport.set_mode(mode):
             return False
-        if self._wait_until(lambda: (self.flight_mode or "").upper() == mode.upper(), 3.0):
+        wait = self.mode_timeout if timeout is None else timeout
+        if self._wait_until(lambda: (self.flight_mode or "").upper() == mode.upper(), wait):
             return True
         self._node.get_logger().error(
             f"{ERR} Mode '{mode}' not confirmed (still '{self.flight_mode}')"
@@ -1614,7 +1629,7 @@ class VehicleDrone(BaseDrone):
                 y=0,
                 z=target_z,
                 precision=precision,
-                method=NavigationMethod.PID_EKF,
+                method=NavigationMethod.PID,
             )
 
         self._node.get_logger().info("Navigating to takeoff position")
@@ -1624,7 +1639,7 @@ class VehicleDrone(BaseDrone):
             z=0,
             reference=MoveReference.TAKEOFF,
             precision=precision,
-            method=NavigationMethod.PID_EKF,
+            method=NavigationMethod.PID,
         )
 
         if land:

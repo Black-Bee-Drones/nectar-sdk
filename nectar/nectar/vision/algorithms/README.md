@@ -28,6 +28,7 @@ classDiagram
         -mode str
         -color_space ColorSpace
         -color_values list
+        -file_path str
         +mask ndarray
         +result ndarray
         +initTrackbars()
@@ -123,7 +124,7 @@ saturation/value 0-255) and LAB (L 0-255, a/b 0-255) are supported. Two modes: `
 trackbar calibration) and `preset` (load pre-calibrated values from JSON).
 
 ```python
-ColorDetector(mode: str = "track", color: str = None, color_space: ColorSpace = ColorSpace.HSV)
+ColorDetector(mode: str = "track", color: str = None, color_space: ColorSpace = ColorSpace.HSV, file_path: str = None)
 
 detector.filterColor(img)  # updates detector.mask and detector.result
 detector.initTrackbars()   # calibration window (track mode)
@@ -133,7 +134,7 @@ detector.saveColorValues() # save calibration to JSON
 ```python
 from nectar.vision import ColorDetector, ColorSpace
 
-# track: tune thresholds live, press 's' to save
+# track: tune thresholds live, then saveColorValues("red")
 detector = ColorDetector(mode="track", color_space=ColorSpace.HSV)
 detector.initTrackbars()
 
@@ -143,7 +144,10 @@ detector.filterColor(frame)
 mask = detector.mask
 ```
 
-Calibration file (`color_calibration.json`):
+Calibration JSON (default `~/.config/nectar/color_calibration.json`; pass `file_path=` for a
+mission file). Calibrate once with the [color calibration node](../nodes/README.md) or
+`saveColorValues()`, then load by name. Copy that file to the same path on the vehicle, or pass
+`-p calibration_file:=/path/to/colors.json`.
 
 ```json
 {
@@ -170,7 +174,7 @@ Color-based line detection: a binary mask from `ColorDetector` plus a geometric 
 | `AdaptiveHoughLinesP` | HoughLinesP with threshold from `mean + std` of mask | Varying illumination |
 
 ```python
-LineDetector(color: str, estimation_method: ILineEstimationMethod, color_space: ColorSpace = None)
+LineDetector(color: str, estimation_method: ILineEstimationMethod, color_space: ColorSpace = None, file_path: str = None)
 
 img, mask, cx, cy, angle, width, height = detector.detect_line(
     img, region=(400, 300), draw=True, draw_color=(0, 255, 0)
@@ -183,7 +187,9 @@ pixels, the `angle` in degrees (-90 to 90), and the average line `width, height`
 ```python
 from nectar.vision import LineDetector, HoughLinesP, ColorSpace
 
-detector = LineDetector(color="blue", estimation_method=HoughLinesP, color_space=ColorSpace.HSV)
+detector = LineDetector(
+    color="blue", estimation_method=HoughLinesP, color_space=ColorSpace.HSV
+)
 result, mask, cx, cy, angle, w, h = detector.detect_line(frame, draw=True)
 if not math.isnan(cx):
     print(f"Line at ({cx:.0f}, {cy:.0f}), angle {angle:.1f}")

@@ -24,21 +24,16 @@ import time
 
 import nectar
 from nectar.vision.algorithms.flow import OpticalFlowConfig, OpticalFlowEstimator
-from nectar.vision.camera import ImageHandler
+from nectar.vision.camera import ImageHandler, add_camera_arguments, parse_camera_args
+from nectar.vision.stream import add_stream_arguments
 
 log = logging.getLogger("optical_flow_example")
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args():
     parser = argparse.ArgumentParser(description="Optical flow demo")
-    parser.add_argument(
-        "--source",
-        default="webcam",
-        help=(
-            "Camera source: a registered key (webcam, realsense, oakd, c920, imx219), "
-            "a ROS topic (e.g. /camera/image_raw), or an image/video file path"
-        ),
-    )
+    add_camera_arguments(parser)
+    add_stream_arguments(parser, show_default=True, include_publish=False)
     parser.add_argument(
         "--method",
         choices=["farneback", "lucas_kanade"],
@@ -57,8 +52,7 @@ def _parse_args() -> argparse.Namespace:
         default=0.0,
         help="Camera altitude in meters (0 = skip m/s decode)",
     )
-    parser.add_argument("--no-show", action="store_true", help="Disable preview window")
-    return parser.parse_args()
+    return parse_camera_args(parser)
 
 
 def _format(result) -> str:
@@ -78,7 +72,7 @@ def _format(result) -> str:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
-    args = _parse_args()
+    args, _, source, config = _parse_args()
 
     estimator = OpticalFlowEstimator(OpticalFlowConfig(method=args.method))
     focal_px = args.focal if args.focal > 0.0 else None
@@ -100,13 +94,17 @@ def main() -> None:
 
     nectar.init()
     handler = ImageHandler(
-        image_source=args.source,
-        show_result=None if args.no_show else "Optical Flow",
+        image_source=source,
+        config=config,
+        show_result="Optical Flow" if args.show else None,
         image_processing_callback=on_frame,
-        poll_interval=0.0003,
     )
     handler.run()
-    log.info("Running %s flow on '%s'. Press 'q' or Ctrl+C to quit.", args.method, args.source)
+    log.info(
+        "Running %s flow on '%s'. Press 'q' or Ctrl+C to quit.",
+        args.method,
+        source,
+    )
     try:
         nectar.spin()
     finally:

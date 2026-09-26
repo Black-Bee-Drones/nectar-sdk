@@ -64,11 +64,29 @@ flowchart LR
 ```bash
 make isaac-run          # or: ./docker/isaac_vslam/run_docker.sh
 # inside:
-nectar-vslam            # = ros2 launch nectar/launch/isaac_vslam_realsense.launch.py
+nectar-vslam            # alias → source launch under the mounted workspace
 ```
 
-Confirm RealSense enumerates and VSLAM topics publish. Docker notes:
-[Isaac ROS Visual SLAM (Jetson)](../../../../docker/README.md#isaac-ros-visual-slam-jetson).
+`nectar-vslam` forwards extra args (`"$@"`). All RealSense + Visual SLAM tuning
+lives in one YAML (not in `/opt/ros/.../isaac_ros_visual_slam/`):
+
+| Where | Path |
+|-------|------|
+| Host | `nectar/nectar/control/localization/config/vslam_realsense.yaml` |
+| Isaac container | `/workspaces/isaac_ros-dev/src/nectar-sdk/nectar/nectar/control/localization/config/vslam_realsense.yaml` |
+
+The Isaac container mounts the whole `ros2_ws`, so host edits appear live — restart
+`nectar-vslam` after changes. Optional alternate file:
+
+```bash
+nectar-vslam params_file:=/path/to/other.yaml
+```
+
+Defaults: infra @ `640x360x90` + IMU for cuVSLAM (emitter off), RGB enabled
+with realsense default profile (`0,0,0` → device pick, often `1280x720x30` on
+D435i) for detection (`/camera/color/...`), depth off. SLAM remaps **infra only**; subscribe
+to color for AI models. Confirm RealSense enumerates and VSLAM topics publish.
+Docker notes: [Isaac ROS Visual SLAM (Jetson)](../../../../docker/README.md#isaac-ros-visual-slam-jetson).
 
 ### 2. Consumer — vision feeder (keep running)
 
@@ -145,6 +163,8 @@ producer + bridge (and reboot the FCU after param changes).
 | Symptom | Likely cause | What to try |
 |---------|--------------|-------------|
 | No VSLAM topics | Camera / Isaac / USB | `rs-enumerate-devices` in Isaac container; USB3; restart `nectar-vslam` |
+| Color OK, pose publisher idle / infra drops | USB bandwidth, wrong launch, stale cuVSLAM | `ros2 topic hz` on `/camera/infra1/image_rect_raw` and `/visual_slam/tracking/vo_pose_covariance`; use Nectar YAML (not `/opt/ros/...`); USB3; `make isaac-stop` then restart |
+| YAML edit ignored | Edited wrong file or stale install | Edit the mounted Nectar YAML above; do not edit NVIDIA’s packaged launch under `/opt/ros` |
 | VSLAM OK, FCU pose frozen | Bridge, domain, or dual feeder | Shared `ROS_DOMAIN_ID`; restart consumer; [one feeder rule](#one-feeder-rule) |
 | Vision on ROS, EKF unused | Params / origin | [FCU setup](#fcu-setup), [EKF origin](#ekf-origin); reboot after params |
 | Jumpy / diverging path | Vibration, texture, abrupt motion, stale session | Soft-mount; slower warm-up; restart producer |
@@ -428,15 +448,15 @@ Two profiles (`rviz/vslam_light.rviz`, `rviz/vslam_full.rviz`):
 | Profile | Shows | Producer cost |
 |---------|-------|---------------|
 | `light` (default) | TF + odometry + SLAM path (green) + VO path (purple) | none (tracking topics are always published) |
-| `full` | light + landmarks / loop-closure clouds + pose graph | requires `enable_visualization:=true` |
+| `full` | light + landmarks / loop-closure clouds + pose graph | set `enable_slam_visualization` (and landmarks / observations) in the VSLAM YAML |
 
 The `light` profile draws two always-published trajectories: the **green** SLAM
 path (`/visual_slam/tracking/slam_path`, loop-closure-corrected) and the
 **purple** VO path (`/visual_slam/tracking/vo_path`, raw odometry). When a loop
 closes, the green path snaps relative to the purple — that is the loop closure,
 visible with no producer cost. The literal purple loop-closure point cloud lives
-in `full` (it is a `/visual_slam/vis/*` topic, only published with
-`enable_visualization:=true`).
+in `full` (it is a `/visual_slam/vis/*` topic, only published when visualization
+flags are enabled in `vslam_realsense.yaml`).
 
 Both `light` paths are shown as a **rolling buffer** (default last 15 s) so the
 window does not fill with the whole trajectory. `vslam_rviz.launch.py` runs a
@@ -460,11 +480,9 @@ rviz2 -d src/nectar-sdk/nectar/nectar/control/localization/rviz/vslam_light.rviz
 ```
 
 The `full` profile needs the producer to publish the `/visual_slam/vis/*` topics,
-which are off by default to keep the Jetson light:
-
-```bash
-nectar-vslam enable_visualization:=true
-```
+which are off by default to keep the Jetson light. In `vslam_realsense.yaml` set
+`enable_slam_visualization`, `enable_landmarks_view`, and `enable_observations_view`
+to `true`, then restart `nectar-vslam`.
 
 ## Hardware notes
 

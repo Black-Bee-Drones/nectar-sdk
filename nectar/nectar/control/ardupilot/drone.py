@@ -14,7 +14,7 @@ from typing import Optional
 from nectar.control.ardupilot.setpoint_config import SetpointNavConfig
 from nectar.control.capabilities import Capability
 from nectar.control.vehicle.drone import VehicleDrone
-from nectar.utils.log import ERR, WARN
+from nectar.utils.log import ERR
 
 
 class ArduPilotDrone(VehicleDrone):
@@ -123,11 +123,16 @@ class ArduPilotDrone(VehicleDrone):
 
     # Arm (GUIDED)
 
-    def arm(self) -> bool:
+    def arm(self, timeout: Optional[float] = None) -> bool:
         """
         Arm motors in GUIDED mode.
 
         Sets GUIDED mode and arms, polling vehicle state to confirm each step.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Seconds to wait for ``is_armed``. ``None`` uses ``arm_timeout``.
 
         Returns
         -------
@@ -137,13 +142,12 @@ class ArduPilotDrone(VehicleDrone):
         try:
             if not self.set_mode("GUIDED"):
                 return False
-            if not self._wait_until(lambda: self.flight_mode == "GUIDED", 3.0):
-                self._node.get_logger().warn(f"{WARN} Mode change slow to reflect in state")
             if self._config.apply_setpoint_params:
                 self._apply_setpoint_config()
             if not self._transport.arm():
                 return False
-            if not self._wait_until(lambda: self.is_armed, 6.0):
+            wait = self.arm_timeout if timeout is None else timeout
+            if not self._wait_until(lambda: self.is_armed, wait):
                 self._node.get_logger().error(f"{ERR} Arm command sent but vehicle did not arm")
                 return False
             return True

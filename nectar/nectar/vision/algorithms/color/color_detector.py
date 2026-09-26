@@ -1,9 +1,44 @@
 import json
-import os
 from enum import Enum, auto
+from pathlib import Path
+from typing import Optional, Union
 
 import cv2
 import numpy as np
+
+PathLike = Union[str, Path]
+
+
+def default_calibration_path() -> Path:
+    """User config file: ``~/.config/nectar/color_calibration.json``."""
+    return Path.home() / ".config" / "nectar" / "color_calibration.json"
+
+
+def resolve_calibration_path(path: Optional[PathLike] = None) -> Path:
+    """Return ``path`` if set, otherwise :func:`default_calibration_path`."""
+    if path is None or (isinstance(path, str) and not path.strip()):
+        return default_calibration_path()
+    return Path(path).expanduser()
+
+
+def load_calibration_data(path: PathLike) -> dict:
+    """Load the calibration JSON. Raises ``ValueError`` if missing or invalid."""
+    path = Path(path)
+    if not path.exists():
+        raise ValueError(f"Color calibration file not found: {path}")
+    try:
+        with open(path, encoding="utf-8") as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        raise ValueError("Invalid JSON format in color calibration file") from None
+
+
+def save_calibration_data(path: PathLike, data: dict) -> None:
+    """Write calibration JSON, creating parent directories as needed."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=4)
 
 
 class ColorSpace(Enum):
@@ -38,6 +73,9 @@ class ColorDetector:
         Color name to load from calibration file (required for "preset" mode).
     color_space : ColorSpace, default=ColorSpace.HSV
         Color space for detection.
+    file_path : str or Path, optional
+        Calibration JSON. Empty or omitted uses
+        ``~/.config/nectar/color_calibration.json``.
 
     Attributes
     ----------
@@ -54,10 +92,12 @@ class ColorDetector:
         mode: str = "track",
         color: str = None,
         color_space: ColorSpace = ColorSpace.HSV,
+        file_path: Optional[PathLike] = None,
     ):
         self.mode = mode
         self.mask = self.result = None
         self.color_space = color_space
+        self.file_path = str(resolve_calibration_path(file_path))
 
         self.color_space_config = {
             ColorSpace.HSV: {
@@ -87,9 +127,6 @@ class ColorDetector:
                 "trackbar_maxes": [255, 255, 255, 255, 255, 255],
             },
         }
-
-        self.package_path = os.path.dirname(os.path.realpath(__file__))
-        self.file_path = os.path.join(self.package_path, "color_calibration.json")
 
         if self.mode == "track":
             print(f"Create Trackbars for {self.color_space.name} color space")
@@ -227,50 +264,40 @@ class ColorDetector:
         ValueError
             If file not found, color not defined, or invalid JSON.
         """
-        if not os.path.exists(self.file_path):
-            raise ValueError(f"Color calibration file not found: {self.file_path}")
-
-        try:
-            with open(self.file_path, "r") as file:
-                colors_data = json.load(file)
-
-            if color_name not in colors_data:
-                raise ValueError(f"Color '{color_name}' not defined in calibration file")
-
-            if self.color_space.name not in colors_data[color_name]:
-                raise ValueError(
-                    f"Color '{color_name}' does not have {self.color_space.name} values defined"
-                )
-
-            return colors_data[color_name][self.color_space.name]
-
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON format in color calibration file")
-        except Exception as e:
-            raise ValueError(f"Error retrieving color values: {str(e)}")
-
-    def saveColorValues(self) -> None:
-        """
-        Save current color values to calibration JSON file.
-        """
-        color_name = input("Enter the color name: ")
-
-        colors_data = {}
-        if os.path.exists(self.file_path):
-            try:
-                with open(self.file_path, "r") as file:
-                    colors_data = json.load(file)
-            except json.JSONDecodeError:
-                pass
+        colors_data = load_calibration_data(self.file_path)
 
         if color_name not in colors_data:
-            colors_data[color_name] = {}
+            raise ValueError(f"Color '{color_name}' not defined in calibration file")
 
-        colors_data[color_name][self.color_space.name] = self.color_values.tolist()
+        if self.color_space.name not in colors_data[color_name]:
+            raise ValueError(
+                f"Color '{color_name}' does not have {self.color_space.name} values defined"
+            )
 
-        with open(self.file_path, "w") as file:
-            json.dump(colors_data, file, indent=4)
+        return colors_data[color_name][self.color_space.name]
+
+    def saveColorValues(self, color_name: str = None) -> None:
+        """
+        Save current color values to calibration JSON file.
+
+        Parameters
+        ----------
+        color_name : str, optional
+            Name to store. If omitted, prompts on stdin.
+        """
+        if not color_name:
+            color_name = input("Enter the color name: ")
+
+        try:
+            colors_data = load_calibration_data(self.file_path)
+        except ValueError:
+            colors_data = {}
+
+        colors_data.setdefault(color_name, {})
+        colors_data[color_name][self.color_space.name] = np.asarray(self.color_values).tolist()
+        save_calibration_data(self.file_path, colors_data)
 
         print(
-            f"Color '{color_name}' saved with {self.color_space.name} values: {self.color_values.tolist()}"
+            f"Color '{color_name}' saved with {self.color_space.name} values: "
+            f"{np.asarray(self.color_values).tolist()} to {self.file_path}"
         )

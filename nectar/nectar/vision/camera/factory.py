@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, Dict, Optional
+from importlib import import_module
+from typing import Callable, Dict, NamedTuple, Optional, Type, Union
 
 from rclpy.node import Node
 
@@ -19,99 +20,59 @@ from nectar.vision.camera.config import (
     T265Config,
 )
 
-# Builder signature: (config, node) -> AbstractCam.
-# Each built-in builder lazily imports its driver module so that the
-# factory module itself does not pull pyrealsense2, depthai, etc.
 _BuilderFunc = Callable[[Optional[CameraConfig], Optional[Node]], AbstractCam]
+_ExternalBuilder = Union[Type[AbstractCam], _BuilderFunc]
 
 
-def _build_opencv(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.opencv_cam import OpenCVCam
-
-    return OpenCVCam(config or OpenCVConfig())
-
-
-def _build_c920(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.c920_cam import C920Cam
-
-    return C920Cam(config or C920Config())
+class _Spec(NamedTuple):
+    module: str
+    class_name: str
+    config_cls: Type[CameraConfig]
+    pass_node: bool = False
 
 
-def _build_imx219(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.imx219_cam import IMX219Cam
+_OPENCV = _Spec("nectar.vision.camera.drivers.opencv_cam", "OpenCVCam", OpenCVConfig)
 
-    return IMX219Cam(config or IMX219Config())
-
-
-def _build_realsense(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.realsense_cam import RealsenseCam
-
-    cfg = config or RealSenseConfig()
-    if isinstance(cfg, RealSenseConfig) and cfg.use_ros_topics:
-        if node is None:
-            raise ValueError(
-                "RealsenseCam with use_ros_topics=True requires a ROS node. "
-                "Consider using ROSDepthCam instead."
-            )
-        return RealsenseCam(cfg, node)
-    return RealsenseCam(cfg)
-
-
-def _build_t265(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.t265_cam import T265Cam
-
-    cfg = config or T265Config()
-    if isinstance(cfg, T265Config) and cfg.use_ros_topics:
-        if node is None:
-            raise ValueError("T265Cam with use_ros_topics=True requires a ROS node.")
-        return T265Cam(cfg, node)
-    return T265Cam(cfg)
-
-
-def _build_oakd(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.oakd_cam import OakdCam
-
-    return OakdCam(config or OakDConfig())
-
-
-def _build_ros(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.ros_cam import ROSCam
-
-    cfg = config or ROSConfig()
-    if not isinstance(cfg, ROSConfig):
-        raise ValueError("ROSCam requires a ROSConfig.")
-    return ROSCam(node, cfg)
-
-
-def _build_ros_depth(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.ros_depth_cam import ROSDepthCam
-
-    cfg = config or ROSDepthConfig()
-    if not isinstance(cfg, ROSDepthConfig):
-        raise ValueError("ROSDepthCam requires a ROSDepthConfig.")
-    if node is None:
-        raise ValueError("ROSDepthCam requires a ROS node.")
-    return ROSDepthCam(node, cfg)
-
-
-def _build_file(config: Optional[CameraConfig], node: Optional[Node]) -> AbstractCam:
-    from nectar.vision.camera.drivers.file_cam import FileImageCam
-
-    return FileImageCam(config or FileImageConfig())
-
-
-_BUILTINS: Dict[str, _BuilderFunc] = {
-    "webcam": _build_opencv,
-    "opencv": _build_opencv,
-    "c920": _build_c920,
-    "imx219": _build_imx219,
-    "realsense": _build_realsense,
-    "t265": _build_t265,
-    "oakd": _build_oakd,
-    "ros": _build_ros,
-    "ros_depth": _build_ros_depth,
-    "file": _build_file,
+_BUILTINS: Dict[str, _Spec] = {
+    "webcam": _OPENCV,
+    "opencv": _OPENCV,
+    "c920": _Spec("nectar.vision.camera.drivers.c920_cam", "C920Cam", C920Config),
+    "imx219": _Spec("nectar.vision.camera.drivers.imx219_cam", "IMX219Cam", IMX219Config),
+    "realsense": _Spec(
+        "nectar.vision.camera.drivers.realsense_cam",
+        "RealsenseCam",
+        RealSenseConfig,
+        True,
+    ),
+    "t265": _Spec("nectar.vision.camera.drivers.t265_cam", "T265Cam", T265Config, True),
+    "oakd": _Spec("nectar.vision.camera.drivers.oakd_cam", "OakdCam", OakDConfig),
+    "ros": _Spec("nectar.vision.camera.drivers.ros_cam", "ROSCam", ROSConfig, True),
+    "ros_depth": _Spec(
+        "nectar.vision.camera.drivers.ros_depth_cam",
+        "ROSDepthCam",
+        ROSDepthConfig,
+        True,
+    ),
+    "file": _Spec("nectar.vision.camera.drivers.file_cam", "FileImageCam", FileImageConfig),
 }
+
+
+def _instantiate(
+    spec: _Spec,
+    config: Optional[CameraConfig],
+    node: Optional[Node],
+    *,
+    source: str,
+) -> AbstractCam:
+    if config is not None and not isinstance(config, spec.config_cls):
+        raise ValueError(
+            f"Source {source!r} requires {spec.config_cls.__name__}, got {type(config).__name__}"
+        )
+    cam_cls = getattr(import_module(spec.module), spec.class_name)
+    cfg = spec.config_cls() if config is None else config
+    if spec.pass_node:
+        return cam_cls(cfg, node=node)
+    return cam_cls(cfg)
 
 
 class CameraFactory:
@@ -121,19 +82,19 @@ class CameraFactory:
     Built-in drivers are loaded lazily on first use to keep the import
     cost of ``nectar.vision`` low (no eager pyrealsense2 / depthai /
     mediapipe loads).
-
-    Attributes
-    ----------
-    _builders : dict
-        Registry mapping source keys to builder callables or camera
-        classes registered via :meth:`register`. Built-in drivers live
-        in a separate internal registry.
     """
 
-    _builders: Dict[str, _BuilderFunc] = {}
+    _builders: Dict[str, _ExternalBuilder] = {}
+    _config_classes: Dict[str, Type[CameraConfig]] = {}
 
     @classmethod
-    def register(cls, key: str, builder) -> None:
+    def register(
+        cls,
+        key: str,
+        builder: _ExternalBuilder,
+        *,
+        config_cls: Optional[Type[CameraConfig]] = None,
+    ) -> None:
         """
         Register a camera builder under ``key``.
 
@@ -144,8 +105,36 @@ class CameraFactory:
         builder : Type[AbstractCam] or callable
             Either a camera class instantiated as ``builder(config)``,
             or a callable with signature ``(config, node) -> AbstractCam``.
+        config_cls : type of CameraConfig, optional
+            Dataclass used to build config for this key (CLI and ConfigBuilder).
         """
         cls._builders[key.lower()] = builder
+        if config_cls is not None:
+            cls._config_classes[key.lower()] = config_cls
+
+    @classmethod
+    def config_class(cls, source: str) -> Optional[Type[CameraConfig]]:
+        """Return the CameraConfig subclass registered for ``source``, if any."""
+        key = source.lower()
+        if key in cls._config_classes:
+            return cls._config_classes[key]
+        builtin = _BUILTINS.get(key)
+        return builtin.config_cls if builtin is not None else None
+
+    @classmethod
+    def registered_keys(cls) -> list[str]:
+        """Driver keys in registration order (built-ins first)."""
+        keys = list(_BUILTINS.keys())
+        for key in cls._builders:
+            if key not in _BUILTINS:
+                keys.append(key)
+        return keys
+
+    @classmethod
+    def is_registered(cls, source: str) -> bool:
+        """True when ``source`` is a registered driver key."""
+        key = source.lower()
+        return key in _BUILTINS or key in cls._builders
 
     @classmethod
     def from_source(
@@ -171,7 +160,8 @@ class CameraFactory:
         config : CameraConfig, optional
             Camera configuration. Auto-generated if not provided.
         node : Node, optional
-            ROS2 node required for ROSCam and RealsenseCam with ROS topics.
+            Forwarded to drivers that subscribe to ROS topics. Omitted, those
+            drivers create an internal node.
 
         Returns
         -------
@@ -184,26 +174,15 @@ class CameraFactory:
             If source type is unknown or config type mismatches.
         """
         if os.path.isfile(source):
-            from nectar.vision.camera.drivers.file_cam import FileImageCam
-
             cfg = config if isinstance(config, FileImageConfig) else FileImageConfig(path=source)
-            return FileImageCam(cfg)
+            return _instantiate(_BUILTINS["file"], cfg, node, source=source)
 
         if source.startswith("/"):
-            from nectar.vision.camera.drivers.ros_cam import ROSCam
-
-            cfg = config if isinstance(config, ROSConfig) else ROSConfig(topic=source)
-            if config is not None and not isinstance(config, ROSConfig):
-                # Forwarding the wrong config type to ROSCam used to fail deep inside
-                # _build_qos_profile with an opaque AttributeError. Make it explicit.
-                raise ValueError(
-                    f"ROS source {source!r} requires a ROSConfig, got {type(config).__name__}"
-                )
-            return ROSCam(node, cfg)
+            cfg = ROSConfig(topic=source) if config is None else config
+            return _instantiate(_BUILTINS["ros"], cfg, node, source=source)
 
         key = source.lower()
 
-        # User-registered builders take precedence over built-ins.
         external = cls._builders.get(key)
         if external is not None:
             if isinstance(external, type):
@@ -214,4 +193,4 @@ class CameraFactory:
         if builtin is None:
             raise ValueError(f"Unknown camera source type: {source}")
 
-        return builtin(config, node)
+        return _instantiate(builtin, config, node, source=key)

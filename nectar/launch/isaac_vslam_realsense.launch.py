@@ -1,14 +1,28 @@
-"""RealSense + Isaac ROS Visual SLAM
+"""RealSense + Isaac ROS Visual SLAM (release-3.2).
 
-ros2 launch nectar isaac_vslam_realsense.launch.py
-ros2 launch /path/to/nectar/launch/isaac_vslam_realsense.launch.py enable_depth:=true
+All RealSense and Visual SLAM parameters live in the YAML (single source of
+truth). Edit that file and restart the producer — do not rely on scattered
+launch overrides.
+
+  nectar-vslam
+  ros2 launch nectar isaac_vslam_realsense.launch.py
+  ros2 launch /path/to/nectar/launch/isaac_vslam_realsense.launch.py
+
+Optional alternate config:
+
+  nectar-vslam params_file:=/path/to/other.yaml
+
+Defaults
+  - infra @ 640x360x90 + IMU for cuVSLAM (emitter off)
+  - RGB on (realsense default rgb_camera.profile 0,0,0) for /camera/color/...
+  - depth off (set enable_depth: true in the YAML if needed)
+  - visualization topics off (set enable_slam_visualization etc. in the YAML)
 """
 
 import os
 
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
-from launch_ros.parameter_descriptions import ParameterValue
 
 import launch
 from launch.actions import DeclareLaunchArgument
@@ -27,72 +41,45 @@ def _config_dir() -> str:
 
 
 def generate_launch_description():
-    params = os.path.join(_config_dir(), "vslam_realsense.yaml")
+    default_params = os.path.join(_config_dir(), "vslam_realsense.yaml")
+    params_file = LaunchConfiguration("params_file")
 
-    enable_depth = LaunchConfiguration("enable_depth")
-    enable_color = LaunchConfiguration("enable_color")
-    emitter_enabled = LaunchConfiguration("emitter_enabled")
-    depth_profile = LaunchConfiguration("depth_profile")
-    enable_visualization = LaunchConfiguration("enable_visualization")
-
-    args = [
-        DeclareLaunchArgument("enable_depth", default_value="false"),
-        DeclareLaunchArgument("enable_color", default_value="false"),
-        DeclareLaunchArgument("emitter_enabled", default_value="0"),
-        DeclareLaunchArgument("depth_profile", default_value="640x360x90"),
-        DeclareLaunchArgument(
-            "enable_visualization",
-            default_value="false",
-            description="Publish /visual_slam/vis/* topics (landmarks, loop closure, "
-            "pose graph) for the full RViz profile",
-        ),
-    ]
-
-    realsense_node = Node(
-        name="camera",
-        namespace="camera",
-        package="realsense2_camera",
-        executable="realsense2_camera_node",
-        output="screen",
-        parameters=[
-            params,
-            {
-                "enable_depth": ParameterValue(enable_depth, value_type=bool),
-                "enable_color": ParameterValue(enable_color, value_type=bool),
-                "depth_module.emitter_enabled": ParameterValue(emitter_enabled, value_type=int),
-                "depth_module.profile": ParameterValue(depth_profile, value_type=str),
-            },
-        ],
+    return launch.LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "params_file",
+                default_value=default_params,
+                description="YAML with /camera/camera and /visual_slam_node parameters",
+            ),
+            ComposableNodeContainer(
+                name="visual_slam_launch_container",
+                namespace="",
+                package="rclcpp_components",
+                executable="component_container",
+                composable_node_descriptions=[
+                    ComposableNode(
+                        name="visual_slam_node",
+                        package="isaac_ros_visual_slam",
+                        plugin="nvidia::isaac_ros::visual_slam::VisualSlamNode",
+                        parameters=[params_file],
+                        remappings=[
+                            ("visual_slam/image_0", "camera/infra1/image_rect_raw"),
+                            ("visual_slam/camera_info_0", "camera/infra1/camera_info"),
+                            ("visual_slam/image_1", "camera/infra2/image_rect_raw"),
+                            ("visual_slam/camera_info_1", "camera/infra2/camera_info"),
+                            ("visual_slam/imu", "camera/imu"),
+                        ],
+                    ),
+                ],
+                output="screen",
+            ),
+            Node(
+                name="camera",
+                namespace="camera",
+                package="realsense2_camera",
+                executable="realsense2_camera_node",
+                output="screen",
+                parameters=[params_file],
+            ),
+        ]
     )
-
-    visual_slam_node = ComposableNode(
-        name="visual_slam_node",
-        package="isaac_ros_visual_slam",
-        plugin="nvidia::isaac_ros::visual_slam::VisualSlamNode",
-        parameters=[
-            params,
-            {
-                "enable_slam_visualization": ParameterValue(enable_visualization, value_type=bool),
-                "enable_landmarks_view": ParameterValue(enable_visualization, value_type=bool),
-                "enable_observations_view": ParameterValue(enable_visualization, value_type=bool),
-            },
-        ],
-        remappings=[
-            ("visual_slam/image_0", "camera/infra1/image_rect_raw"),
-            ("visual_slam/camera_info_0", "camera/infra1/camera_info"),
-            ("visual_slam/image_1", "camera/infra2/image_rect_raw"),
-            ("visual_slam/camera_info_1", "camera/infra2/camera_info"),
-            ("visual_slam/imu", "camera/imu"),
-        ],
-    )
-
-    container = ComposableNodeContainer(
-        name="visual_slam_launch_container",
-        namespace="",
-        package="rclcpp_components",
-        executable="component_container",
-        composable_node_descriptions=[visual_slam_node],
-        output="screen",
-    )
-
-    return launch.LaunchDescription([*args, container, realsense_node])

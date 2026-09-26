@@ -44,7 +44,7 @@ to watch it larger.
           <source src="assets/media/comp-hook.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/SAE-Eletroquad">SAE Eletroquad 2026</a><span class="cap-sub">Hook and place, annotated run</span></div>
+      <div class="nectar-cap"><a href="https://github.com/Black-Bee-Drones/SAE-2026">SAE Eletroquad 2026</a><span class="cap-sub">Hook and place, annotated run</span></div>
     </div>
     <div class="nectar-tile" data-src="assets/media/comp-imav23.mp4" data-poster="assets/media/comp-imav23.jpg">
       <div class="nectar-tile__media">

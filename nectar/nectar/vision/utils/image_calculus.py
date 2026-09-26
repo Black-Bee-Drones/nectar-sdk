@@ -277,6 +277,22 @@ class ImageCalculus:
         return destination.latitude, destination.longitude
 
     @staticmethod
+    def focal_length_px(image_pixels: float, fov_rad: float) -> float:
+        if image_pixels <= 0 or fov_rad <= 0:
+            return 0.0
+        return (image_pixels / 2.0) / math.tan(fov_rad / 2.0)
+
+    @staticmethod
+    def meters_to_pixels(
+        offset_meters: float,
+        range_meters: float | None,
+        focal_px: float,
+    ) -> float:
+        if range_meters is None or range_meters <= 0 or focal_px <= 0:
+            return 0.0
+        return focal_px * (offset_meters / range_meters)
+
+    @staticmethod
     def calculate_offset_pixels(
         offset_meters: float,
         height_meters: float,
@@ -305,16 +321,9 @@ class ImageCalculus:
         -------
         float
             Offset in pixels.
-
-        Notes
-        -----
-        The calculation follows these steps:
-
-        1. Convert FOV to radians: fov_radians = fov_degrees * π / 180
-        2. Calculate ground span in meters: ground_span = 2 * height_meters * tan(fov_radians / 2)
-        3. Calculate meters per pixel: ground_span / image_pixels
-        4. Convert physical offset (offset_meters) to offset in pixels (offset_pixels)t: offset_pixels = offset_meters / meters_per_pixel
         """
-        ground_span = 2 * height_meters * math.tan(math.radians(fov_degrees) / 2)
-        offset_pixels = offset_meters / (ground_span / image_pixels)
-        return offset_pixels
+        return ImageCalculus.meters_to_pixels(
+            offset_meters,
+            height_meters,
+            ImageCalculus.focal_length_px(image_pixels, math.radians(fov_degrees)),
+        )

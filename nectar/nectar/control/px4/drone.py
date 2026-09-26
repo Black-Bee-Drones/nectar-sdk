@@ -175,12 +175,17 @@ class Px4Drone(VehicleDrone):
 
     # Arm (OFFBOARD)
 
-    def arm(self) -> bool:
+    def arm(self, timeout: Optional[float] = None) -> bool:
         """
         Arm motors in OFFBOARD mode.
 
         Streams a hold setpoint so PX4 accepts the offboard switch, enters
         OFFBOARD, then arms, polling vehicle state to confirm each step.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Seconds to wait for ``is_armed``. ``None`` uses ``arm_timeout``.
 
         Returns
         -------
@@ -194,15 +199,15 @@ class Px4Drone(VehicleDrone):
 
             if not self.set_mode(_MODE_OFFBOARD):
                 return False
-            if not self._wait_until(lambda: self.flight_mode == _MODE_OFFBOARD, 3.0):
-                self._node.get_logger().warn(f"{WARN} OFFBOARD slow to reflect in state")
+
             # MPC_* speed/accel limits (no-op on the uXRCE-DDS backend, which has
             # no apply_setpoint_params field and cannot set_param).
             if getattr(self._config, "apply_setpoint_params", False):
                 self._apply_setpoint_config()
             if not self._transport.arm():
                 return False
-            if not self._wait_until(lambda: self.is_armed, 6.0):
+            wait = self.arm_timeout if timeout is None else timeout
+            if not self._wait_until(lambda: self.is_armed, wait):
                 self._node.get_logger().error(f"{ERR} Arm command sent but vehicle did not arm")
                 return False
             return True
