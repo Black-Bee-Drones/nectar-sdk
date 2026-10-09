@@ -23,7 +23,7 @@ lista apenas os eventos e os links oficiais.
 
 <div class="nectar-meta" markdown>
 
-- [:simple-github: Repositório](https://github.com/Black-Bee-Drones/SAE-Eletroquad)
+- [:simple-github: Repositório](https://github.com/Black-Bee-Drones/SAE-2026)
 - [:simple-huggingface: Modelos](https://huggingface.co/collections/blackbeedrones/sae-2026)
 - [Competição](https://saebrasil.org.br/programas-estudantis/eletroquad/)
 - [Regras](https://saebrasil.org.br/programas-estudantis/eletroquad/regras-e-relatorios/)

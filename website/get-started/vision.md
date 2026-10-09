@@ -70,8 +70,8 @@ explicit key.
 
 ## 3. Stream frames through an ImageHandler
 
-`ImageHandler` wraps the source in a timer-driven ROS 2 node and calls your callback on every
-frame:
+`ImageHandler` grabs frames on a worker thread and calls your callback on every
+frame. Preview windows are pumped from `nectar.spin()`:
 
 === "Webcam"
 

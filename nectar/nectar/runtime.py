@@ -2,8 +2,8 @@
 
 Each subsystem owns its ``Node`` and registers it here. A shared executor
 runs on a background thread so blocking calls never starve callbacks.
-``EventsExecutor`` is preferred when available (Jazzy+), with
-``MultiThreadedExecutor`` as fallback (Humble).
+``EventsExecutor`` is used when rclpy provides it (single-threaded event
+loop); otherwise ``MultiThreadedExecutor`` (Humble/Jazzy).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import atexit
 import threading
 import time
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import rclpy
 from rclpy.executors import Executor, MultiThreadedExecutor
@@ -30,6 +30,7 @@ class _Runtime:
         self._thread: Optional[threading.Thread] = None
         self._owns_executor = False
         self._nodes: List[Node] = []
+        self._gui_pump: Optional[Callable[[], Optional[bool]]] = None
 
     def init(self, num_threads: Optional[int] = None) -> Executor:
         """Create and start the SDK executor. Idempotent.
@@ -91,13 +92,6 @@ class _Runtime:
         with self._lock:
             if self._executor is None:
                 return
-            for node in list(self._nodes):
-                try:
-                    self._executor.remove_node(node)
-                    node.destroy_node()
-                except Exception:
-                    pass
-            self._nodes.clear()
             if self._owns_executor:
                 try:
                     self._executor.shutdown()
@@ -105,9 +99,17 @@ class _Runtime:
                     pass
                 if self._thread is not None:
                     self._thread.join(timeout=2.0)
+            for node in list(self._nodes):
+                try:
+                    self._executor.remove_node(node)
+                    node.destroy_node()
+                except Exception:
+                    pass
+            self._nodes.clear()
             self._executor = None
             self._thread = None
             self._owns_executor = False
+            self._gui_pump = None
 
     def detach(self) -> None:
         """Release an externally-owned executor registration.
@@ -122,6 +124,7 @@ class _Runtime:
                 return
             self._executor = None
             self._nodes.clear()
+            self._gui_pump = None
 
     @property
     def is_initialized(self) -> bool:
@@ -187,7 +190,15 @@ def spin() -> None:
     """Block the calling thread until SIGINT; callbacks keep firing in the background."""
     try:
         while rclpy.ok():
-            time.sleep(0.5)
+            pump = _runtime._gui_pump
+            if pump is not None:
+                result = pump()
+                if result is False:
+                    break
+                if result is None:
+                    time.sleep(0.5)
+            else:
+                time.sleep(0.5)
     except KeyboardInterrupt:
         pass
 

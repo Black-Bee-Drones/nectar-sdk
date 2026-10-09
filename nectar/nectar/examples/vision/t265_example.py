@@ -3,8 +3,8 @@
 
 Run:
     ros2 run nectar t265_example.py
-    ros2 run nectar t265_example.py --mode ros
-    ros2 run nectar t265_example.py --no-depth
+    ros2 run nectar t265_example.py --use-ros-topics
+    ros2 run nectar t265_example.py --no-enable-depth
 """
 
 import argparse
@@ -16,37 +16,31 @@ import cv2
 import numpy as np
 
 import nectar
-from nectar.vision.camera import T265Cam, T265Config
+from nectar.vision.camera import T265Cam, T265Config, add_camera_arguments, parse_camera_args
 
 log = logging.getLogger("t265_example")
 
 
 class T265Demo:
-    def __init__(self, mode: str, enable_depth: bool) -> None:
-        self.enable_depth = enable_depth
+    def __init__(self, config: T265Config) -> None:
+        self.enable_depth = config.enable_depth
         self.fisheye_window = "T265 Fisheye (L | R)"
         self.depth_window = "T265 Stereo Depth (click to measure)"
         self.depth_point: Optional[Tuple[int, int]] = None
         self._stop = threading.Event()
 
-        self.cam = T265Cam(
-            T265Config(
-                enable_depth=enable_depth,
-                enable_pose=True,
-                use_ros_topics=mode == "ros",
-            )
-        )
+        self.cam = T265Cam(config)
         self.cam.start()
 
         cv2.namedWindow(self.fisheye_window)
-        if enable_depth:
+        if self.enable_depth:
             cv2.namedWindow(self.depth_window)
             cv2.setMouseCallback(self.depth_window, self._on_depth_click)
 
         log.info(
-            "T265 started (%s, depth=%s). Click depth window to measure. Press 'q' to quit.",
-            "ROS topics" if mode == "ros" else "direct pyrealsense2",
-            "on" if enable_depth else "off",
+            "T265 started (ros_topics=%s, depth=%s). Click depth window to measure. Press 'q' to quit.",
+            config.use_ros_topics,
+            "on" if self.enable_depth else "off",
         )
 
     def _on_depth_click(self, event, x, y, flags, param) -> None:
@@ -138,12 +132,13 @@ class T265Demo:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     parser = argparse.ArgumentParser(description="T265 tracking camera example")
-    parser.add_argument("--mode", choices=["direct", "ros"], default="direct")
-    parser.add_argument("--no-depth", action="store_true")
-    args, _ = parser.parse_known_args()
+    add_camera_arguments(parser, default_source="t265")
+    _, _, source, config = parse_camera_args(parser)
+    if not isinstance(config, T265Config):
+        raise SystemExit(f"T265 example requires --source t265, got {source!r}")
 
     nectar.init()
-    demo = T265Demo(mode=args.mode, enable_depth=not args.no_depth)
+    demo = T265Demo(config)
     try:
         demo.run()
     except KeyboardInterrupt:

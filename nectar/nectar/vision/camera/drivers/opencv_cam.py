@@ -66,7 +66,8 @@ class OpenCVCam(AbstractCam):
         if self._config.fps is not None:
             self._cap.set(cv2.CAP_PROP_FPS, self._config.fps)
         if self._config.buffer_size is not None:
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, self._config.buffer_size)
+            size = min(max(int(self._config.buffer_size), 1), 10)
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, size)
         if self._config.autofocus is not None:
             self._cap.set(cv2.CAP_PROP_AUTOFOCUS, 1 if self._config.autofocus else 0)
         if self._config.focus is not None:

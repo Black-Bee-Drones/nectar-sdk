@@ -74,8 +74,8 @@ essas duas não precisam de chave explícita.
 
 ## 3. Transmita frames por um ImageHandler
 
-`ImageHandler` envolve a fonte em um nó ROS 2 acionado por timer e chama seu callback a
-cada frame:
+`ImageHandler` captura frames em uma thread worker e chama seu callback a
+cada frame. Janelas de preview são atualizadas por `nectar.spin()`:
 
 === "Webcam"
 

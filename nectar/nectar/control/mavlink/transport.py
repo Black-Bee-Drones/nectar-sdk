@@ -137,6 +137,7 @@ class PymavlinkTransport(VehicleTransport):
         self._params: Dict[str, float] = {}
         self._acks: Dict[int, int] = {}
         self._last_statustext: Optional[str] = None
+        self._link_error = False
 
     # Lifecycle
 
@@ -247,13 +248,17 @@ class PymavlinkTransport(VehicleTransport):
         master = self._connection.master
         if master is None:
             return
-        for _ in range(200):
-            msg = master.recv_match(blocking=False)
-            if msg is None:
-                return
-            handler = self._HANDLERS.get(msg.get_type())
-            if handler is not None:
-                handler(self, msg)
+        try:
+            for _ in range(200):
+                msg = master.recv_match(blocking=False)
+                if msg is None:
+                    return
+                self._link_error = False
+                handler = self._HANDLERS.get(msg.get_type())
+                if handler is not None:
+                    handler(self, msg)
+        except OSError as e:
+            self._log_link_error("RX", e)
 
     def _on_heartbeat(self, msg) -> None:
         if msg.type in (_M.MAV_TYPE_GCS, _M.MAV_TYPE_ONBOARD_CONTROLLER):
@@ -383,30 +388,48 @@ class PymavlinkTransport(VehicleTransport):
     def _time_boot_ms() -> int:
         return int(time.monotonic() * 1000) & 0xFFFFFFFF
 
-    def _send_heartbeat(self) -> None:
-        master = self._connection.master
-        if master is None:
+    def _log_link_error(self, where: str, e: OSError) -> None:
+        if self._link_error:
             return
-        with self._connection.send_lock:
-            master.mav.heartbeat_send(
-                _M.MAV_TYPE_ONBOARD_CONTROLLER, _M.MAV_AUTOPILOT_INVALID, 0, 0, 0
-            )
+        self._link_error = True
+        self._node.get_logger().error(f"MAVLink {where} failed: {e}")
+
+    def _send_heartbeat(self) -> None:
+        try:
+            with self._connection.send_lock:
+                master = self._connection.master
+                if master is None:
+                    return
+                master.mav.heartbeat_send(
+                    _M.MAV_TYPE_ONBOARD_CONTROLLER, _M.MAV_AUTOPILOT_INVALID, 0, 0, 0
+                )
+        except OSError as e:
+            self._log_link_error("TX", e)
 
     def _command_long(
-        self, command: int, *params: float, want_ack: bool = False, ack_timeout: float = 3.0
+        self,
+        command: int,
+        *params: float,
+        want_ack: bool = False,
+        ack_timeout: Optional[float] = None,
     ) -> bool:
-        master = self._connection.master
         values = [float(p) for p in params[:7]]
         values += [0.0] * (7 - len(values))
         if want_ack:
             self._acks.pop(int(command), None)
         with self._connection.send_lock:
+            master = self._connection.master
+            if master is None:
+                return False
             master.mav.command_long_send(
                 master.target_system, master.target_component, int(command), 0, *values
             )
         if not want_ack:
             return True
-        result = self._poll(lambda: self._acks.get(int(command)), timeout=ack_timeout)
+        wait = float(
+            ack_timeout if ack_timeout is not None else getattr(self._config, "ack_timeout", 5.0)
+        )
+        result = self._poll(lambda: self._acks.get(int(command)), timeout=wait)
         logger = self._node.get_logger()
         if result is None:
             logger.warn(f"{WARN} COMMAND_ACK timeout for command {int(command)}")

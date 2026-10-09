@@ -28,10 +28,10 @@ class ROSDepthCam(DepthCam):
 
     Parameters
     ----------
-    node : Node
-        ROS2 node for subscription creation.
     config : ROSDepthConfig
         Configuration with color and depth topic settings.
+    node : Node
+        ROS2 node for subscription creation.
 
     Examples
     --------
@@ -43,7 +43,7 @@ class ROSDepthCam(DepthCam):
     ...     depth_topic="/camera/depth/image_rect_raw",
     ...     depth_compressed=False,
     ... )
-    >>> cam = ROSDepthCam(node, config)
+    >>> cam = ROSDepthCam(config, node=node)
 
     Compressed topics:
 
@@ -53,7 +53,7 @@ class ROSDepthCam(DepthCam):
     ...     depth_topic="/camera/depth/image_rect_raw/compressedDepth",
     ...     depth_compressed=True,
     ... )
-    >>> cam = ROSDepthCam(node, config)
+    >>> cam = ROSDepthCam(config, node=node)
     >>> cam.start()
     >>> rgb = cam.get_frame()
     >>> depth = cam.get_depth_frame()
@@ -68,8 +68,9 @@ class ROSDepthCam(DepthCam):
 
     def __init__(
         self,
-        node: Optional[Node] = None,
         config: Optional[ROSDepthConfig] = None,
+        *,
+        node: Optional[Node] = None,
     ) -> None:
         if config is None:
             raise ValueError("ROSDepthCam requires a ROSDepthConfig")
@@ -86,7 +87,7 @@ class ROSDepthCam(DepthCam):
         self._config = config
         self._bridge = CvBridge()
 
-        self._color_cam = ROSCam(self._node, config)
+        self._color_cam = ROSCam(config, node=self._node)
 
         self._depth: Optional[np.ndarray] = None
         self._depth_sub = None

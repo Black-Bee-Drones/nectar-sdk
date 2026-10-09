@@ -114,7 +114,7 @@ classDiagram
     }
 
     class DepthObstacleDetector {
-        -_camera Optional~RealsenseCam~
+        -_camera Optional~ROSDepthCam~
         -_image_handler Optional~ImageHandler~
         -_detection_event Event
         -_color_topic str
@@ -286,12 +286,12 @@ detector = DepthObstacleDetector(
     cluster_min_samples=20,      # DBSCAN minimum samples
     min_cluster_pixels=50,       # minimum valid pixels to attempt clustering
     depth_threshold_mm=1300,     # max cluster mean depth to count as obstacle
-    color_topic="/camera/color/image_raw",
-    depth_topic="/camera/depth/image_rect_raw",
+    color_topic="/camera/color/image_raw/compressed",
+    depth_topic="/camera/aligned_depth_to_color/image_raw",
 )
 ```
 
-> **Note:** the detector owns its own RealSense `ImageHandler` (and ROS node) internally — no `node` argument is passed.
+> **Note:** the detector owns an `ImageHandler` wrapping `ROSDepthCam` (D435i via ROS topics, same pattern as IMAV indoor: compressed color + `aligned_depth_to_color`). No `node` argument is passed. If align_depth is off, pass `depth_topic="/camera/depth/image_rect_raw"`.
 
 #### Depth camera processing
 

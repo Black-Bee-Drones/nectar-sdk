@@ -22,33 +22,30 @@ Captura de câmera usando `ImageHandler` com backends configuráveis.
 
 ### Uso
 
-Rode com a webcam padrão, ou passe qualquer `--camera-type` de
-[Tipos de Câmera Suportados](#tipos-de-camera-suportados); adicione `--no-show` para rodar
-sem interface.
+Rode com a webcam padrão, ou passe `--source` e as flags de câmera (`--help`); adicione `--no-show` para rodar sem interface.
 
 ```bash
 python3 camera_example.py
-python3 camera_example.py --camera-type realsense
+python3 camera_example.py --source realsense
+python3 camera_example.py --source webcam --device-index 1 --width 1280 --height 720
 ```
 
 ### Argumentos
 
-| Flag | Padrão | Descrição |
-|------|---------|-------------|
-| `--camera-type` | `webcam` | Fonte da câmera: `webcam`, `imx219`, `realsense`, `realsense_ros`, `oakd`, `c920`, `ros` |
-| `--no-show` | off | Desabilita a janela de exibição do OpenCV |
+Flags compartilhadas de câmera/stream (`--source`, `--device-index`, `--width`, `--show` / `--no-show`, …). Veja a tabela de flags compartilhadas em [nós de visão](../vision/nodes.md).
 
 ### Tipos de Câmera Suportados {#tipos-de-camera-suportados}
 
-| Tipo | Driver | Configuração |
-|------|--------|---------------|
-| `webcam` | `OpenCVCam` | 1280x720 @ 30fps, dispositivo 0 |
-| `realsense` | `RealsenseCam` | 1280x720 RGB+Depth @ 30fps |
-| `realsense_ros` | `ROSDepthCam` | Via tópicos ROS de color + depth |
-| `oakd` | `OakdCam` | Configurações padrão do OAK-D |
-| `c920` | `C920Cam` | Perfil 1 (1280x720) |
-| `imx219` | `IMX219Cam` | 1280x720 @ 30fps, flip 180° |
-| `ros` | `ROSCam` | `/camera/color/image_raw/compressed` |
+| `--source` | Driver | Notas |
+|------------|--------|-------|
+| `webcam` / `opencv` | `OpenCVCam` | `--device-index`, `--width`, `--height`, `--fps` |
+| `realsense` | `RealsenseCam` | `--color-width`, `--color-height`, `--enable-depth` |
+| `ros_depth` | `ROSDepthCam` | `--topic`, `--depth-topic` |
+| `oakd` | `OakdCam` | `--cam-num`, `--enable-depth` (padrão off) |
+| `c920` | `C920Cam` | `--profile` |
+| `imx219` | `IMX219Cam` | `--sensor-id`, `--width` padrão 1920 |
+| `ros` | `ROSCam` | `--topic`, `--compressed` |
+| `/tópico` ou caminho de arquivo | auto | Mesmas regras de `CameraFactory.from_source` |
 
 ---
 
@@ -60,9 +57,9 @@ Demonstra o uso de câmera de profundidade com medição de distância interativ
 
 | Fonte | Comando |
 |--------|---------|
-| RealSense (SDK pyrealsense2 direto) | `python3 depth_example.py --camera realsense` |
-| RealSense via tópicos ROS | `python3 depth_example.py --camera realsense_ros` |
-| OAK-D | `python3 depth_example.py --camera oakd` |
+| RealSense (SDK pyrealsense2 direto) | `python3 depth_example.py --source realsense` |
+| RealSense via tópicos ROS | `python3 depth_example.py --source ros_depth` |
+| OAK-D | `python3 depth_example.py --source oakd --enable-depth` |
 
 ### Funcionalidades
 
@@ -89,13 +86,14 @@ profundidade.
 
 ```bash
 python3 t265_example.py
-python3 t265_example.py --mode ros
+python3 t265_example.py --use-ros-topics
 ```
 
 | Flag | Padrão | Descrição |
 |------|---------|-------------|
-| `--mode` | `direct` | `direct` (pyrealsense2) ou `ros` (tópicos ROS) |
-| `--no-depth` | off | Desabilita o caminho de profundidade/fisheye |
+| `--source` | `t265` | Deve permanecer `t265` |
+| `--use-ros-topics` / `--no-use-ros-topics` | off | Inscreve nos tópicos fisheye/pose em vez do SDK |
+| `--enable-depth` / `--no-enable-depth` | on | Caminho de profundidade estéreo |
 
 ---
 
@@ -136,14 +134,14 @@ interface do Nectar enquanto este nó grava os frames.
 | Padrão (webcam, 1 foto/s, pasta com timestamp) | `python3 collect_photos.py` |
 | Diretório de saída e intervalo personalizados (2 fotos/s) | `python3 collect_photos.py --output-dir hook_photos --capture-interval 0.5` |
 | Execução nomeada para uma sessão de voo | `python3 collect_photos.py --output-dir hook_photos --run-name flight_01_low_alt` |
-| RealSense com janela de preview | `python3 collect_photos.py --camera-type realsense --show` |
+| RealSense com janela de preview | `python3 collect_photos.py --source realsense --show` |
 | Webcam em alta resolução, PNG, máximo de 500 fotos | `python3 collect_photos.py --width 1920 --height 1080 --image-format png --max-photos 500` |
 
 ### Argumentos
 
 | Flag | Padrão | Descrição |
 |------|---------|-------------|
-| `--camera-type` | `webcam` | Fonte da câmera (mesmo conjunto de `camera_example.py`) |
+| `--source` | `webcam` | Fonte da câmera (flags compartilhadas; veja `--help`) |
 | `--output-dir` | `collected_photos` | Diretório de saída base sob `~/` |
 | `--run-name` | *(timestamp)* | Nome da subpasta desta execução |
 | `--capture-interval` | `1.0` | Segundos entre capturas |
@@ -151,7 +149,7 @@ interface do Nectar enquanto este nó grava os frames.
 | `--jpeg-quality` | `90` | Qualidade JPEG de 0 a 100 |
 | `--show` | off | Exibe a janela de preview do OpenCV em tempo real |
 | `--max-photos` | `0` | Para depois de N fotos (`0` = ilimitado) |
-| `--width` / `--height` / `--fps` | `1280` / `720` / `30` | Configurações de captura |
+| `--width` / `--height` / `--fps` | padrões do dataclass | Ajustes de captura quando o driver os usa |
 | `--publish` / `--publish-topic` / `--publish-scale` | off / `collect_photos/compressed` / `0.5` | Republica os frames capturados como um tópico de imagem comprimida |
 
 ### Estrutura de Saída
@@ -204,7 +202,7 @@ make realsense
 
 ```
 
-Ou use o modo de tópico ROS (`realsense_ros` / `ros_depth`) com o `realsense2_camera` já em
+Ou use o modo de tópico ROS (`--source ros_depth`) com o `realsense2_camera` já em
 execução.
 
 ### Erro de Importação do OAK-D

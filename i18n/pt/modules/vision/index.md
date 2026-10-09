@@ -47,8 +47,9 @@ Duas camadas sustentam o módulo:
 - **Câmeras.** `CameraFactory.from_source(key)` devolve um driver que implementa `AbstractCam`
   (`start` / `get_frame` / `close`); câmeras com profundidade acrescentam `DepthCam` (`get_depth_frame` /
   `get_distance`). Veja [Cameras](camera/).
-- **Streaming + algoritmos.** `ImageHandler` envolve qualquer câmera em um nó ROS 2 acionado por
-  timer e chama seu callback de processamento em cada frame. O callback roda um [algoritmo](algorithms/)
+- **Streaming + algoritmos.** `ImageHandler` envolve qualquer câmera em um loop de captura
+  em thread worker e chama seu callback de processamento em cada frame. O preview OpenCV,
+  se habilitado, é atualizado por `nectar.spin()` na thread principal. O callback roda um [algoritmo](algorithms/)
   (ArUco, cor, linha, distância, MediaPipe), ou você pode rodar os
   [nós ROS 2](nodes/) prontos.
 

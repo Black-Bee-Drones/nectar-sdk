@@ -6,40 +6,23 @@ Examples::
     python detector_example.py --model yolov8n.pt --confidence 0.5
     python detector_example.py --model facebook/detr-resnet-50 --framework transformers
     python detector_example.py --model rfdetr-medium --framework rfdetr --publish
+    python detector_example.py --source /image_raw/compressed --compressed --publish --no-show
 """
 
 import argparse
 import logging
 import os
-import uuid
 from typing import Optional
 
 import cv2
-from rclpy.node import Node
-from sensor_msgs.msg import CompressedImage
 
 import nectar
 from nectar.ai.core import Framework
 from nectar.ai.detection import Detector
-from nectar.vision.camera import ImageHandler, OpenCVConfig, ROSConfig
+from nectar.vision.camera import ImageHandler, add_camera_arguments, parse_camera_args
+from nectar.vision.stream import CompressedFramePublisher, add_stream_arguments
 
 log = logging.getLogger("detector_example")
-
-
-def _camera_config(source: str):
-    """Return a config matching the camera source kind.
-
-    For non-OpenCV registered sources (realsense, t265, oakd, c920, imx219, ...)
-    we return None so each driver uses its own default config; forwarding an
-    OpenCVConfig to those drivers would crash on missing fields.
-    """
-    if source.startswith("/"):
-        return ROSConfig(topic=source)
-    if os.path.isfile(source):
-        return None
-    if source.lower() in ("webcam", "opencv"):
-        return OpenCVConfig(device_index=0, width=1280, height=720)
-    return None
 
 
 def _resolve_framework(framework_str: str) -> Optional[Framework]:
@@ -53,7 +36,7 @@ def _resolve_framework(framework_str: str) -> Optional[Framework]:
 
 
 class DetectorStream:
-    def __init__(self, args: argparse.Namespace) -> None:
+    def __init__(self, args: argparse.Namespace, source: str, config) -> None:
         if args.hf_token:
             os.environ["HF_TOKEN"] = args.hf_token
 
@@ -62,7 +45,6 @@ class DetectorStream:
         self.show_labels = args.show_labels
         self.show_confidence = args.show_confidence
         self.show_class = args.show_class
-        self.jpeg_quality = args.jpeg_quality
         self.frame_count = 0
         self.total_detections = 0
 
@@ -77,31 +59,26 @@ class DetectorStream:
         self.detector.load()
         log.info("Model loaded -- framework: %s", self.detector.framework.value)
 
-        self._pub_node: Optional[Node] = None
-        self._pub = None
+        self._pub: Optional[CompressedFramePublisher] = None
         if args.publish:
-            self._pub_node = Node(
-                f"nectar_detector_pub_{uuid.uuid4().hex[:8]}",
-                start_parameter_services=False,
-            )
-            nectar.add_node(self._pub_node)
-            self._pub = self._pub_node.create_publisher(CompressedImage, args.topic, 1)
-            log.info("Publishing annotated frames on %s", args.topic)
+            self._pub = CompressedFramePublisher(args.publish_topic, jpeg_quality=args.jpeg_quality)
+            log.info("Publishing annotated frames on %s", args.publish_topic)
 
         self.handler = ImageHandler(
-            image_source=args.camera_source,
-            config=_camera_config(args.camera_source),
-            show_result="Detection Stream" if args.show_result else None,
+            image_source=source,
+            config=config,
+            show_result="Detection Stream" if args.show else None,
             image_processing_callback=self.process_frame,
         )
         self.handler.run()
         log.info("Detection stream started; press 'q' to quit")
 
-    def process_frame(self, frame) -> None:
+    def process_frame(self, frame):
         if frame is None:
             return
+        image = frame.copy()
         self.frame_count += 1
-        result = self.detector.detect(frame, conf=self.confidence)
+        result = self.detector.detect(image, conf=self.confidence)
         self.total_detections += len(result)
 
         if len(result) > 0:
@@ -111,8 +88,8 @@ class DetectorStream:
                 len(result),
                 result.inference_time * 1000,
             )
-            annotated = self.detector.draw_detections(
-                image=frame,
+            image = self.detector.draw_detections(
+                image=image,
                 result=result,
                 show_labels=self.show_labels,
                 show_confidence=self.show_confidence,
@@ -121,21 +98,12 @@ class DetectorStream:
                 thickness=2,
                 text_scale=0.6,
             )
-            frame[:] = annotated
 
-        self._overlay(frame, result)
+        self._overlay(image, result)
 
         if self._pub is not None:
-            ok, buf = cv2.imencode(
-                ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
-            )
-            if ok:
-                msg = CompressedImage()
-                msg.header.stamp = self._pub_node.get_clock().now().to_msg()
-                msg.header.frame_id = "down_camera"
-                msg.format = "jpeg"
-                msg.data = buf.tobytes()
-                self._pub.publish(msg)
+            self._pub.publish(image)
+        return image
 
     def _overlay(self, frame, result) -> None:
         fps = 1.0 / result.inference_time if result.inference_time > 0 else 0
@@ -168,42 +136,33 @@ class DetectorStream:
             self.total_detections,
         )
         self.handler.cleanup()
-        if self._pub_node is not None:
-            nectar.remove_node(self._pub_node)
-            try:
-                self._pub_node.destroy_node()
-            except Exception:
-                pass
+        if self._pub is not None:
+            self._pub.cleanup()
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args():
     p = argparse.ArgumentParser(description="Real-time object detection")
+    add_camera_arguments(p)
+    add_stream_arguments(p, show_default=True, publish_topic="/inference/compressed")
     p.add_argument("--model", default="yolov8n.pt")
     p.add_argument("--framework", default="")
     p.add_argument("--confidence", type=float, default=0.25)
-    p.add_argument("--camera-source", default="webcam")
-    p.add_argument("--show-result", action="store_true", default=True)
-    p.add_argument("--no-show", dest="show_result", action="store_false")
     p.add_argument("--annotator-type", default="color")
     p.add_argument("--show-labels", action="store_true", default=True)
     p.add_argument("--show-confidence", action="store_true", default=True)
     p.add_argument("--show-class", action="store_true", default=True)
     p.add_argument("--device", default="auto")
     p.add_argument("--hf-token", default="")
-    p.add_argument("--publish", action="store_true")
-    p.add_argument("--topic", default="/inference/compressed")
-    p.add_argument("--jpeg-quality", type=int, default=80)
-    args, _ = p.parse_known_args()
-    return args
+    return parse_camera_args(p)
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+    args, _, source, config = parse_args()
     nectar.init()
-    args = parse_args()
     stream = None
     try:
-        stream = DetectorStream(args)
+        stream = DetectorStream(args, source, config)
         nectar.spin()
     except KeyboardInterrupt:
         pass

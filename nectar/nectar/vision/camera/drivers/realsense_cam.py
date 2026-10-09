@@ -2,6 +2,7 @@ import warnings
 from typing import Optional
 
 import numpy as np
+from rclpy.node import Node
 
 from nectar.vision.camera.abstract import DepthCam
 from nectar.vision.camera.config import RealSenseConfig
@@ -57,7 +58,7 @@ class RealsenseCam(DepthCam):
     ROSDepthCam : For accessing RealSense via ROS topics.
     """
 
-    def __init__(self, config: RealSenseConfig, node=None) -> None:
+    def __init__(self, config: RealSenseConfig, *, node: Optional[Node] = None) -> None:
         if not REALSENSE_AVAILABLE:
             raise ImportError(
                 "pyrealsense2 is required for RealsenseCam. Install with: pip install pyrealsense2"
@@ -77,7 +78,7 @@ class RealsenseCam(DepthCam):
                 "      depth_topic='/camera/depth/image_rect_raw',\n"
                 "      depth_compressed=False,\n"
                 "  )\n"
-                "  cam = ROSDepthCam(node, config)",
+                "  cam = ROSDepthCam(config, node=node)",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -91,7 +92,7 @@ class RealsenseCam(DepthCam):
                 depth_compressed=config.depth_compressed,
                 enable_depth=config.enable_depth,
             )
-            self._ros_delegate = ROSDepthCam(node, ros_config)
+            self._ros_delegate = ROSDepthCam(ros_config, node=node)
             self._use_ros_delegate = True
         else:
             self._ros_delegate = None

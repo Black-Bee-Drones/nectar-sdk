@@ -5,6 +5,11 @@ from typing import TYPE_CHECKING
 
 from nectar.vision.camera.abstract import AbstractCam, DepthCam
 from nectar.vision.camera.calibration import CameraCalibration
+from nectar.vision.camera.cli import (
+    add_camera_arguments,
+    camera_config_from_args,
+    parse_camera_args,
+)
 from nectar.vision.camera.config import (
     C920Config,
     CameraConfig,
@@ -81,6 +86,9 @@ __all__ = [
     "ConfigBuilder",
     "CameraFactory",
     "ImageHandler",
+    "add_camera_arguments",
+    "camera_config_from_args",
+    "parse_camera_args",
     "FileImageCam",
     "OpenCVCam",
     "ROSCam",

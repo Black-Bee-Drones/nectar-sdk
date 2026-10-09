@@ -1,196 +1,111 @@
-from typing import Any, Callable, Dict, Union
+"""Build CameraConfig dataclasses from a field-name mapping."""
 
-from rclpy.node import Node
+from __future__ import annotations
 
+import os
+from dataclasses import fields
+from typing import Any, Callable, Dict, Optional, Type
+
+from nectar.utils.dataclass_cli import dataclass_from_mapping
 from nectar.vision.camera.config import (
-    C920Config,
     CameraConfig,
     FileImageConfig,
-    IMX219Config,
-    OakDConfig,
-    OpenCVConfig,
-    QoSDurability,
-    QoSReliability,
     RealSenseConfig,
     ROSConfig,
-    ROSDepthConfig,
-    T265Config,
 )
+from nectar.vision.camera.factory import CameraFactory
+
+ConfigBuilderFunc = Callable[[Dict[str, Any]], CameraConfig]
+
+# CLI scalars for dataclass tuple fields. Not aliases of --width/--height.
+_TUPLE_FIELDS: Dict[Type[CameraConfig], Dict[str, tuple[str, str]]] = {
+    RealSenseConfig: {
+        "color_res": ("color_width", "color_height"),
+        "depth_res": ("depth_width", "depth_height"),
+    }
+}
 
 
-def _get_param(params: Union[Node, Dict[str, Any]], key: str, default: Any = None) -> Any:
-    """Extract parameter from Node or dict."""
-    if isinstance(params, Node):
-        return params.get_parameter(key).value
-    return params.get(key, default)
-
-
-ConfigBuilderFunc = Callable[[Union[Node, Dict[str, Any]]], CameraConfig]
+def apply_tuple_fields(cls: Type[CameraConfig], params: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill tuple dataclass fields from ``*_width`` / ``*_height`` scalars when present."""
+    mapping = _TUPLE_FIELDS.get(cls)
+    if not mapping:
+        return params
+    out = dict(params)
+    defaults = {f.name: f.default for f in fields(cls)}
+    for field_name, (width_key, height_key) in mapping.items():
+        if field_name in out:
+            continue
+        if width_key not in params and height_key not in params:
+            continue
+        current = defaults.get(field_name, (0, 0))
+        width = int(params[width_key]) if width_key in params else int(current[0])
+        height = int(params[height_key]) if height_key in params else int(current[1])
+        out[field_name] = (width, height)
+    return out
 
 
 class ConfigBuilder:
-    """Registry for camera configuration builders."""
+    """Build a CameraConfig from a source key and a field mapping."""
 
     _builders: Dict[str, ConfigBuilderFunc] = {}
 
     @classmethod
     def register(cls, key: str, builder: ConfigBuilderFunc) -> None:
-        """Register config builder for camera type."""
+        """Register a custom builder that takes a dict and returns a CameraConfig."""
         cls._builders[key.lower()] = builder
 
     @classmethod
     def is_registered(cls, source: str) -> bool:
-        """Check if source is registered."""
-        return source.lower() in cls._builders
+        """True when ``source`` has a custom builder or a factory config class."""
+        key = source.lower()
+        return key in cls._builders or CameraFactory.config_class(source) is not None
 
     @classmethod
-    def build(cls, source: str, params: Union[Node, Dict[str, Any]]) -> CameraConfig:
-        """Build config from source key and parameters."""
-        key = source.lower()
-        builder = cls._builders.get(key)
+    def build(cls, source: str, params: Optional[Dict[str, Any]] = None) -> CameraConfig:
+        """
+        Build config from source key and a dict of field names.
 
-        if not builder:
+        Extra keys are ignored. A path that exists on disk or a string starting
+        with ``/`` follows the same auto-detect rules as ``CameraFactory``.
+        """
+        params = dict(params or {})
+
+        if os.path.isfile(source):
+            if "path" not in params:
+                params["path"] = source
+            return dataclass_from_mapping(FileImageConfig, params)
+
+        if source.startswith("/"):
+            params = _infer_compressed(params, source)
+            if "topic" not in params:
+                params["topic"] = source
+            return dataclass_from_mapping(ROSConfig, params)
+
+        key = source.lower()
+        custom = cls._builders.get(key)
+        if custom is not None:
+            return custom(params)
+
+        config_cls = CameraFactory.config_class(source)
+        if config_cls is None:
             return CameraConfig(name=source)
 
-        return builder(params)
+        if issubclass(config_cls, ROSConfig):
+            params = _infer_compressed(params, source)
+        params = apply_tuple_fields(config_cls, params)
+        return dataclass_from_mapping(config_cls, params)
 
 
-def _build_opencv_config(params: Union[Node, Dict[str, Any]]) -> OpenCVConfig:
-    """Build OpenCVConfig from parameters."""
-    return OpenCVConfig(
-        name="camera",
-        device_index=_get_param(params, "device_index", 0),
-        width=_get_param(params, "width", 640),
-        height=_get_param(params, "height", 480),
-        fps=_get_param(params, "fps", 30),
-        fourcc=_get_param(params, "fourcc", "MJPG"),
-        autofocus=_get_param(params, "autofocus", None),
-        focus=_get_param(params, "focus", None),
-        buffer_size=min(max(_get_param(params, "buffer_size", 2), 1), 10),
-        threaded=_get_param(params, "threaded", True),
-    )
-
-
-def _build_c920_config(params: Union[Node, Dict[str, Any]]) -> C920Config:
-    """Build C920Config from parameters."""
-    return C920Config(
-        name="c920",
-        profile=_get_param(params, "profile", 1),
-        fallback_device_index=_get_param(params, "fallback_device_index", 0),
-    )
-
-
-def _build_imx219_config(params: Union[Node, Dict[str, Any]]) -> IMX219Config:
-    """Build IMX219Config from parameters."""
-    return IMX219Config(
-        sensor_id=_get_param(params, "sensor_id", 0),
-        width=_get_param(params, "width", 1920),
-        height=_get_param(params, "height", 1080),
-        fps=_get_param(params, "fps", 30),
-        flip=_get_param(params, "flip", 0),
-        brightness=_get_param(params, "brightness", None),
-    )
-
-
-def _build_realsense_config(params: Union[Node, Dict[str, Any]]) -> RealSenseConfig:
-    """Build RealSenseConfig from parameters."""
-    return RealSenseConfig(
-        color_res=(
-            _get_param(params, "color_width", 640),
-            _get_param(params, "color_height", 480),
-        ),
-        depth_res=(
-            _get_param(params, "depth_width", 640),
-            _get_param(params, "depth_height", 480),
-        ),
-        fps=_get_param(params, "fps", 30),
-        align_to_color=_get_param(params, "align_to_color", True),
-        enable_depth=_get_param(params, "enable_depth", True),
-        use_ros_topics=_get_param(params, "use_ros_topics", False),
-        color_topic=_get_param(params, "color_topic", "/camera/color/image_raw"),
-        depth_topic=_get_param(params, "depth_topic", "/camera/depth/image_rect_raw"),
-        color_compressed=_get_param(params, "color_compressed", True),
-        depth_compressed=_get_param(params, "depth_compressed", False),
-    )
-
-
-def _build_t265_config(params: Union[Node, Dict[str, Any]]) -> T265Config:
-    """Build T265Config from parameters."""
-    return T265Config(
-        enable_pose=_get_param(params, "enable_pose", True),
-        enable_depth=_get_param(params, "enable_depth", True),
-        stereo_fov_deg=_get_param(params, "stereo_fov_deg", 90.0),
-        stereo_height_px=_get_param(params, "stereo_height_px", 300),
-        num_disparities=_get_param(params, "num_disparities", 96),
-        block_size=_get_param(params, "block_size", 16),
-        uniqueness_ratio=_get_param(params, "uniqueness_ratio", 10),
-        speckle_window_size=_get_param(params, "speckle_window_size", 100),
-        speckle_range=_get_param(params, "speckle_range", 32),
-        smoothness_window=_get_param(params, "smoothness_window", 5),
-        max_depth_m=_get_param(params, "max_depth_m", 3.0),
-        use_ros_topics=_get_param(params, "use_ros_topics", False),
-        fisheye1_topic=_get_param(params, "fisheye1_topic", "/camera/fisheye1/image_raw"),
-        fisheye2_topic=_get_param(params, "fisheye2_topic", "/camera/fisheye2/image_raw"),
-        pose_topic=_get_param(params, "pose_topic", "/camera/pose/sample"),
-    )
-
-
-def _build_oakd_config(params: Union[Node, Dict[str, Any]]) -> OakDConfig:
-    """Build OakDConfig from parameters."""
-    return OakDConfig(
-        cam_num=_get_param(params, "cam_num", 1),
-        enable_depth=_get_param(params, "enable_depth", False),
-    )
-
-
-def _build_ros_config(params: Union[Node, Dict[str, Any]]) -> ROSConfig:
-    """Build ROSConfig from parameters."""
-    reliability_str = _get_param(params, "reliability", "best_effort")
-    durability_str = _get_param(params, "durability", "volatile")
-
-    return ROSConfig(
-        topic=_get_param(params, "topic", "/image_raw"),
-        compressed=_get_param(params, "compressed", False),
-        reliability=QoSReliability(reliability_str),
-        durability=QoSDurability(durability_str),
-        history_depth=_get_param(params, "history_depth", 1),
-        encoding=_get_param(params, "encoding", "bgr8"),
-    )
-
-
-def _build_ros_depth_config(params: Union[Node, Dict[str, Any]]) -> ROSDepthConfig:
-    """Build ROSDepthConfig from parameters."""
-    reliability_str = _get_param(params, "reliability", "best_effort")
-    durability_str = _get_param(params, "durability", "volatile")
-
-    return ROSDepthConfig(
-        topic=_get_param(params, "topic", "/image_raw"),
-        compressed=_get_param(params, "compressed", False),
-        reliability=QoSReliability(reliability_str),
-        durability=QoSDurability(durability_str),
-        history_depth=_get_param(params, "history_depth", 1),
-        encoding=_get_param(params, "encoding", "bgr8"),
-        depth_topic=_get_param(params, "depth_topic", "/camera/depth/image_rect_raw"),
-        depth_compressed=_get_param(params, "depth_compressed", False),
-        depth_encoding=_get_param(params, "depth_encoding", "passthrough"),
-        enable_depth=_get_param(params, "enable_depth", True),
-    )
-
-
-def _build_file_config(params: Union[Node, Dict[str, Any]]) -> FileImageConfig:
-    """Build FileImageConfig from parameters."""
-    return FileImageConfig(
-        path=_get_param(params, "file_path", ""),
-    )
-
-
-ConfigBuilder.register("webcam", _build_opencv_config)
-ConfigBuilder.register("opencv", _build_opencv_config)
-ConfigBuilder.register("c920", _build_c920_config)
-ConfigBuilder.register("imx219", _build_imx219_config)
-ConfigBuilder.register("realsense", _build_realsense_config)
-ConfigBuilder.register("t265", _build_t265_config)
-ConfigBuilder.register("oakd", _build_oakd_config)
-ConfigBuilder.register("ros", _build_ros_config)
-ConfigBuilder.register("ros_depth", _build_ros_depth_config)
-ConfigBuilder.register("file", _build_file_config)
+def _infer_compressed(params: Dict[str, Any], source: str) -> Dict[str, Any]:
+    """Set compressed=True when the topic name ends with /compressed."""
+    if "compressed" in params:
+        return params
+    topic = params.get("topic")
+    if topic is None and source.startswith("/"):
+        topic = source
+    if isinstance(topic, str) and topic.rstrip("/").endswith("/compressed"):
+        out = dict(params)
+        out["compressed"] = True
+        return out
+    return params
