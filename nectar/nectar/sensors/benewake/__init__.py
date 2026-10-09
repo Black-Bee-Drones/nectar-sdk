@@ -4,7 +4,8 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 _LAZY_ATTRS = {
-    "TFLuna": "nectar.sensors.benewake.tfluna",
+    "BenewakeTF": "nectar.sensors.benewake.tf_series",
+    "MODELS": "nectar.sensors.benewake.tf_series",
 }
 
 
@@ -22,7 +23,7 @@ def __dir__():
 
 
 if TYPE_CHECKING:
-    from nectar.sensors.benewake.tfluna import TFLuna
+    from nectar.sensors.benewake.tf_series import MODELS, BenewakeTF
 
 
-__all__ = ["TFLuna"]
+__all__ = ["BenewakeTF", "MODELS"]

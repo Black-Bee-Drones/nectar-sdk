@@ -5,14 +5,15 @@ missão.
 
 | Script | O que faz |
 |--------|--------------|
-| `rangefinder_example.py` | Teste de bancada do pipeline TF-Luna → filtro → `DISTANCE_SENSOR` do MAVLink (sem ROS) |
+| `rangefinder_example.py` | Teste de bancada do pipeline Benewake TF-series → filtro → `DISTANCE_SENSOR` do MAVLink (sem ROS) |
 
 ## Argumentos
 
 | Flag | Padrão | Descrição |
 |------|---------|-------------|
-| `--port` | `/dev/ttyUSB0` | Porta serial do TF-Luna |
-| `--baud` | `115200` | Baud rate do TF-Luna |
+| `--port` | `/dev/ttyUSB0` | Porta serial do Benewake TF |
+| `--model` | `tfluna` | `tfluna`, `tfmini-s` ou `tf02-pro` |
+| `--baud` | `115200` | Baud rate UART |
 | `--mavlink` | `udp:127.0.0.1:14551` | String de conexão MAVLink (UDP/TCP/serial) |
 | `--mavlink-baud` | `921600` | Baud serial para endpoints MAVLink (ignorado para UDP/TCP) |
 | `--filter` | `none` | `none` ou `obstacle_mask` |

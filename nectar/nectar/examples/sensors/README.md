@@ -4,14 +4,15 @@ Bench-test the companion-computer sensor pipelines before wiring them into a mis
 
 | Script | What it does |
 |--------|--------------|
-| `rangefinder_example.py` | Bench-test the TF-Luna -> filter -> MAVLink `DISTANCE_SENSOR` pipeline (no ROS) |
+| `rangefinder_example.py` | Bench-test the Benewake TF-series -> filter -> MAVLink `DISTANCE_SENSOR` pipeline (no ROS) |
 
 ## Arguments
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--port` | `/dev/ttyUSB0` | TF-Luna serial port |
-| `--baud` | `115200` | TF-Luna baud |
+| `--port` | `/dev/ttyUSB0` | Benewake TF serial port |
+| `--model` | `tfluna` | `tfluna`, `tfmini-s`, or `tf02-pro` |
+| `--baud` | `115200` | UART baud |
 | `--mavlink` | `udp:127.0.0.1:14551` | MAVLink connection string (UDP/TCP/serial) |
 | `--mavlink-baud` | `921600` | Serial baud for MAVLink endpoints (ignored for UDP/TCP) |
 | `--filter` | `none` | `none` or `obstacle_mask` |
