@@ -2,8 +2,7 @@
 
 The obstacle-mask filter is driven with a synthetic step-drop stream to confirm
 its masking logic; the rangefinder publisher is wired to a loopback FCU and we
-assert a real ``DISTANCE_SENSOR`` MAVLink message comes out. The physical TF-Luna
-UART driver lives in ``test/hardware`` (it needs a serial device).
+assert a real ``DISTANCE_SENSOR`` MAVLink message comes out.
 """
 
 from __future__ import annotations

@@ -26,10 +26,10 @@ classDiagram
         +reset()
     }
 
-    class TFLuna {
+    class BenewakeTF {
         -_ser Serial
         -_buffer bytearray
-        -_min_strength int
+        -_model BenewakeModel
         +read() Optional~float~
         +close()
         -_parse_one_frame() Optional~float~
@@ -84,7 +84,7 @@ classDiagram
     }
 
     class RangefinderNode {
-        -_sensor TFLuna
+        -_sensor BenewakeTF
         -_connection MavlinkConnection
         -_publisher RangefinderPublisher
         +__init__()
@@ -93,7 +93,7 @@ classDiagram
         -_build_filter()
     }
 
-    DistanceSensor <|.. TFLuna
+    DistanceSensor <|.. BenewakeTF
     DistanceFilter <|.. ObstacleMaskFilter
     RangefinderPublisher o-- DistanceSensor
     RangefinderPublisher o-- DistanceFilter
@@ -105,8 +105,8 @@ classDiagram
 
 ```mermaid
 flowchart LR
-    HW["TF-Luna UART"] --> TFLuna
-    TFLuna -->|"raw m"| Filter["ObstacleMaskFilter (optional)"]
+    HW["Benewake TF UART"] --> BenewakeTF
+    BenewakeTF -->|"raw m"| Filter["ObstacleMaskFilter (optional)"]
     Filter -->|"masked m"| Pub["RangefinderPublisher"]
     Pub -->|"DISTANCE_SENSOR (132)"| Conn["MavlinkConnection"]
     Conn -->|"MAVLink UDP/Serial"| FCU["Pixhawk RNGFND1_TYPE=10"]
@@ -131,21 +131,31 @@ class DistanceFilter(Protocol):
     def reset(self) -> None: ...
 ```
 
-### `TFLuna`
+### `BenewakeTF`
 
-Benewake TF-Luna serial driver in [`benewake/tfluna.py`](benewake/tfluna.py). Parses the standard 9-byte UART frame (`0x59 0x59 ...`), validates checksum and signal strength, and returns the latest valid reading on each `read()`. Non-blocking: small serial timeout, drains `in_waiting` per call, returns `None` when no fresh frame is ready.
+Benewake TF-series UART driver in [`benewake/tf_series.py`](benewake/tf_series.py). Parses the factory 9-byte UART frame shared by TF-Luna, TFmini-S, and TF02-Pro (`0x59 0x59 ...`), then applies per-model strength and Dist-sentinel rules. Returns the latest valid reading on each `read()`. Non-blocking: small serial timeout, drains `in_waiting` per call, returns `None` when no fresh frame is ready. PIX, 9-byte/mm, I2C, and `5A` config commands are out of scope.
 
 ```python
-from nectar.sensors import TFLuna
+from nectar.sensors import BenewakeTF
 
-sensor = TFLuna(port="/dev/ttyUSB0", baudrate=115200)
+sensor = BenewakeTF(port="/dev/ttyUSB0", model="tfluna")
 distance_m = sensor.read()  # float | None
 sensor.close()
 ```
 
-Hardware reference: [TF-Luna product page](https://en.benewake.com/TFLuna/index.html) and [Data Download](https://en.benewake.com/DataDownload/index.aspx?pid=20&lcid=21) (datasheet, user manual, Pixhawk application notes).
+`model` is `"tfluna"` (default), `"tfmini-s"`, or `"tf02-pro"`. That selects the strength floor, Dist sentinels, and advertised range:
 
-> Spec range is 0.20 - 8.00 m. In practice the sensor returns valid readings down to roughly 0.05 - 0.08 m, which is why `min_distance_m` defaults to `0.05`. Keep `RNGFND1_MIN_CM = 20` on the FCU per manufacturer spec — the SDK's reported `DISTANCE_SENSOR.min_distance` and ArduPilot's gating are independent on purpose.
+| `model` | min strength | Dist sentinels (cm) | default min / max (m) |
+|---------|--------------|---------------------|------------------------|
+| `tfluna` | 100; Amp `> 32768` or `= 65535` dropped | — | 0.05 / 8.0 |
+| `tfmini-s` | 100; Amp `= 65535` dropped | 65535, 65534, 65532 | 0.10 / 12.0 |
+| `tf02-pro` | 60; Amp `= 65535` dropped | 4500, 65534 | 0.10 / 40.0 |
+
+`min_range_m` / `max_range_m` on the driver match that table so the publisher and ROS node can fill `DISTANCE_SENSOR` without duplicating numbers. Pass `min_strength=` to override the floor.
+
+Hardware: [TF-Luna](https://en.benewake.com/TFLuna/index.html), [TFmini-S](https://en.benewake.com/TFminiS/index.html), [TF02-Pro](https://en.benewake.com/TF02Pro/index.html), and [Data Download](https://en.benewake.com/DataDownload/index.aspx) (datasheets, user manuals).
+
+> TF-Luna spec range is 0.20 - 8.00 m. In practice it returns valid readings down to roughly 0.05 - 0.08 m, which is why `min_distance_m` defaults to `0.05` for `tfluna`. Keep `RNGFND1_MIN_CM` / `RNGFND1_MAX_CM` on the FCU per the model table below — the SDK's reported `DISTANCE_SENSOR.min_distance` and ArduPilot's gating are independent on purpose.
 
 ### `ObstacleMaskFilter`
 
@@ -221,13 +231,13 @@ Composition piece in [`rangefinder_publisher.py`](rangefinder_publisher.py). Own
 ```python
 from nectar.control import MavlinkConnection
 from nectar.sensors import (
+    BenewakeTF,
     ObstacleMaskFilter,
     RangefinderPublisher,
-    TFLuna,
 )
 from pymavlink import mavutil
 
-sensor = TFLuna(port="/dev/ttyUSB0")
+sensor = BenewakeTF(port="/dev/ttyUSB0", model="tfluna")
 conn = MavlinkConnection()
 conn.connect("udp:127.0.0.1:14551")
 
@@ -237,8 +247,8 @@ publisher = RangefinderPublisher(
     sensor_id=0,
     sensor_type=mavutil.mavlink.MAV_DISTANCE_SENSOR_LASER,
     orientation=mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270,  # downward
-    min_distance_m=0.05,
-    max_distance_m=8.0,
+    min_distance_m=sensor.min_range_m,
+    max_distance_m=sensor.max_range_m,
     rate_hz=50.0,
     filter=ObstacleMaskFilter(),  # auto-detect; pass obstacle_height_m=X to lock
 )
@@ -285,8 +295,9 @@ ros2 run nectar rangefinder_node.py --ros-args \
 
 #### Parameters
 
-- `serial_port` (string, default `/dev/ttyUSB0`) — TF-Luna device path.
-- `baudrate` (int, default `115200`) — TF-Luna baud rate.
+- `serial_port` (string, default `/dev/ttyUSB0`) — Benewake TF device path.
+- `baudrate` (int, default `115200`) — UART baud rate.
+- `model` (string, default `tfluna`) — `tfluna`, `tfmini-s`, or `tf02-pro`. Selects strength/sentinel rules and the default min/max range.
 - `mavlink_url` (string, default `udp:127.0.0.1:14551`) — pymavlink endpoint to the FCU. Use a UDP fan-out (e.g. mavlink-router) if MAVROS already owns the FCU's serial line.
 - `mavlink_baud` (int, default `921600`) — Used only for serial endpoints.
 - `source_system` (int, default `1`) — MAVLink system ID this companion presents.
@@ -294,7 +305,7 @@ ros2 run nectar rangefinder_node.py --ros-args \
 - `heartbeat_timeout_s` (float, default `30.0`) — Max wait for the first FCU heartbeat.
 - `sensor_id` (int 0-7, default `0`) — Maps to ArduPilot `RNGFND<id+1>_*` slot.
 - `orientation` (int, default `25`) — `MAV_SENSOR_ORIENTATION` enum (`25` = `PITCH_270`, downward).
-- `min_distance_m` / `max_distance_m` (float, default `0.05` / `8.0`) — Sensor range, sent as part of `DISTANCE_SENSOR`.
+- `min_distance_m` / `max_distance_m` (float) — Sensor range sent in `DISTANCE_SENSOR`. Defaults come from `model` (TF-Luna `0.05` / `8.0`, TFmini-S `0.10` / `12.0`, TF02-Pro `0.10` / `40.0`).
 - `covariance_cm` (int 0-254, default `0`) — `0` means "use FCU defaults".
 - `rate_hz` (float, default `50.0`) — Publish rate.
 - `filter` (string, default `none`) — `none` or `obstacle_mask`.
@@ -306,9 +317,9 @@ ros2 run nectar rangefinder_node.py --ros-args \
 Set on the FCU via Mission Planner / parameter editor:
 
 - `RNGFND1_TYPE = 10` (MAVLink)
-- `RNGFND1_MIN_CM = 20`, `RNGFND1_MAX_CM = 800` (TF-Luna manufacturer spec; see [datasheet](https://en.benewake.com/DataDownload/index.aspx?pid=20&lcid=21))
+- `RNGFND1_MIN_CM` / `RNGFND1_MAX_CM` matching the model (TF-Luna `20` / `800`, TFmini-S `10` / `1200`, TF02-Pro `10` / `4000`; see the [datasheets](https://en.benewake.com/DataDownload/index.aspx))
 - `RNGFND1_ORIENT = 25` (Down)
-- Physically disconnect the TF-Luna's UART from the Pixhawk so the only rangefinder source is the filtered MAVLink stream.
+- Physically disconnect the LiDAR UART from the Pixhawk so the only rangefinder source is the filtered MAVLink stream.
 - Keep `EK3_SRC1_POSZ = Rangefinder` and `EK3_RNG_USE_HGT = -1` if that is your current configuration; the masking filter is what makes that combination safe across known obstacles.
 
 The Jetson and MAVROS both need access to the FCU MAVLink stream. The standard pattern is to run [mavlink-router](https://github.com/mavlink-router/mavlink-router) (or equivalent) on the Jetson to fan out the FCU's serial link to both MAVROS and this node's UDP endpoint.
@@ -350,11 +361,11 @@ Standalone (no ROS): see the [standalone rangefinder example](../examples/sensor
 - **Auto-estimated height is too small** (drone still climbs slightly when crossing the obstacle): the lock window expired before the beam reached the deepest point. Increase `estimate_lock_s` (e.g. 0.4 s), or lock the height with `obstacle_height_m`.
 - **Auto-estimated height is too large** (drone dips when entering the masked region): noisy entry sample. Increase `avg_window` so the pre-baseline is more stable, or lock the height with `obstacle_height_m`.
 - **Stuck masked**: lower `timeout_s` (default 5.0 s) or set it to a value just larger than the longest obstacle traversal expected for the mission.
-- **TF-Luna returns `None` constantly**: check baud (default 115200), wiring, and that no other process is holding the serial port. Raise the `min_strength` constructor argument of `TFLuna(...)` (not a ROS parameter) if you suspect the sensor is reading through low-confidence reflections.
+- **Sensor returns `None` constantly**: check baud (default 115200), wiring, `model`, and that no other process is holding the serial port. Raise the `min_strength` constructor argument of `BenewakeTF(...)` (not a ROS parameter) if you suspect the sensor is reading through low-confidence reflections.
 
 ## References
 
-- [Benewake TF-Luna product page](https://en.benewake.com/TFLuna/index.html) and [Data Download](https://en.benewake.com/DataDownload/index.aspx?pid=20&lcid=21) (datasheet, user manual, Pixhawk app notes)
+- [Benewake TF-Luna](https://en.benewake.com/TFLuna/index.html), [TFmini-S](https://en.benewake.com/TFminiS/index.html), [TF02-Pro](https://en.benewake.com/TF02Pro/index.html), and [Data Download](https://en.benewake.com/DataDownload/index.aspx)
 - [ArduPilot rangefinder landing page](https://ardupilot.org/copter/docs/common-rangefinder-landingpage.html)
 - [ArduPilot terrain following](https://ardupilot.org/copter/docs/terrain-following.html)
 - [ArduPilot Benewake setup](https://ardupilot.org/copter/docs/common-benewake-tf02-lidar.html)

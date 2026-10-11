@@ -213,7 +213,7 @@ installed with the package) and is plain `pytest`:
   performs a *real operation* on synthetic inputs or a loopback. Tests
   self-skip (never fail) when an optional dependency is absent, via
   `pytest.importorskip(...)`.
-- `nectar/test/hardware/` — device-gated checks (RealSense, OAK-D, TF-Luna),
+- `nectar/test/hardware/` — device-gated checks (RealSense, OAK-D),
   marked `hardware` and **deselected by default**.
 - `nectar/test/conftest.py` + `nectar/test/helpers.py` — fixtures (`ros_node`,
   `fake_fcu`, `qt_app`) and the loopback FCU.

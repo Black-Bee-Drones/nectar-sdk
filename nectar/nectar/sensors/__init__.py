@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 from nectar.sensors.base import DistanceFilter, DistanceSensor
 
 _LAZY_ATTRS = {
-    "TFLuna": "nectar.sensors.benewake.tfluna",
+    "BenewakeTF": "nectar.sensors.benewake.tf_series",
+    "MODELS": "nectar.sensors.benewake.tf_series",
     "ObstacleMaskFilter": "nectar.sensors.filters.obstacle_mask",
     "RangefinderPublisher": "nectar.sensors.rangefinder_publisher",
 }
@@ -26,7 +27,7 @@ def __dir__():
 
 
 if TYPE_CHECKING:
-    from nectar.sensors.benewake.tfluna import TFLuna
+    from nectar.sensors.benewake.tf_series import MODELS, BenewakeTF
     from nectar.sensors.filters.obstacle_mask import ObstacleMaskFilter
     from nectar.sensors.rangefinder_publisher import RangefinderPublisher
 
@@ -34,7 +35,8 @@ if TYPE_CHECKING:
 __all__ = [
     "DistanceSensor",
     "DistanceFilter",
-    "TFLuna",
+    "BenewakeTF",
+    "MODELS",
     "ObstacleMaskFilter",
     "RangefinderPublisher",
 ]

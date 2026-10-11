@@ -23,7 +23,7 @@ links only.
 
 <div class="nectar-meta" markdown>
 
-- [:simple-github: Repository](https://github.com/Black-Bee-Drones/SAE-Eletroquad)
+- [:simple-github: Repository](https://github.com/Black-Bee-Drones/SAE-2026)
 - [:simple-huggingface: Models](https://huggingface.co/collections/blackbeedrones/sae-2026)
 - [Competition](https://saebrasil.org.br/programas-estudantis/eletroquad/)
 - [Rules](https://saebrasil.org.br/programas-estudantis/eletroquad/regras-e-relatorios/)
