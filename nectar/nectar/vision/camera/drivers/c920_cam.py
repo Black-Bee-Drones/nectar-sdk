@@ -1,4 +1,3 @@
-import re
 import subprocess
 from typing import Optional, Tuple
 
@@ -7,6 +6,7 @@ import numpy as np
 
 from nectar.vision.camera.abstract import AbstractCam
 from nectar.vision.camera.config import C920Config
+from nectar.vision.camera.v4l2 import list_v4l2_devices
 
 
 class C920Cam(AbstractCam):
@@ -45,28 +45,15 @@ class C920Cam(AbstractCam):
     def _find_device_and_ctrl(self) -> Tuple[Optional[str], Optional[str]]:
         """Detect C920 device path and control parameter via v4l2-ctl."""
         try:
-            result = subprocess.run(["v4l2-ctl", "--list-devices"], capture_output=True, text=True)
-            lines = result.stdout.splitlines()
+            devices = list_v4l2_devices()
         except Exception:
             return None, None
 
-        device = None
-        ctrl_param = None
-        for i, line in enumerate(lines):
+        for device in devices:
             for model_name, param in self.C920_CTRL_MAP.items():
-                if model_name in line:
-                    ctrl_param = param
-                    j = i + 1
-                    while j < len(lines) and lines[j].startswith("\t"):
-                        match = re.search(r"(/dev/video\d+)", lines[j])
-                        if match:
-                            device = match.group(1)
-                            break
-                        j += 1
-                    break
-            if device and ctrl_param:
-                break
-        return device, ctrl_param
+                if model_name in device.name and device.nodes:
+                    return device.nodes[0], param
+        return None, None
 
     def _apply_controls(self, device: str, ctrl_param: Optional[str]) -> None:
         """Apply v4l2 control settings (disable autofocus)."""
