@@ -49,6 +49,7 @@ class FileImageConfig(CameraConfig):
 @dataclass(frozen=True)
 class OpenCVConfig(CameraConfig):
     device_index: int = 0
+    device_name: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
     fps: Optional[int] = 30
