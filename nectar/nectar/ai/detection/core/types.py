@@ -43,6 +43,8 @@ class Detection:
         Class identifier (zero-indexed).
     class_name : str, optional
         Human-readable class name. Defaults to empty string.
+    angle : float, optional
+        OBB rotation in radians, or None for axis-aligned detections.
 
     Attributes
     ----------
@@ -73,6 +75,7 @@ class Detection:
     confidence: float
     class_id: int
     class_name: str = ""
+    angle: Optional[float] = None
 
     @property
     def center(self) -> Tuple[float, float]:
@@ -114,6 +117,7 @@ class Detection:
             "confidence": float(self.confidence),
             "class_id": int(self.class_id),
             "class_name": self.class_name,
+            "angle": self.angle,
         }
 
     @classmethod
@@ -136,6 +140,7 @@ class Detection:
             confidence=data["confidence"],
             class_id=data["class_id"],
             class_name=data.get("class_name", ""),
+            angle=data.get("angle"),
         )
 
 
@@ -285,10 +290,17 @@ class DetectionResult:
         if not self.detections:
             return sv.Detections.empty()
 
+        data = {}
+        if any(d.angle is not None for d in self.detections):
+            data["angle"] = np.array([
+                d.angle if d.angle is not None else np.nan for d in self.detections
+            ], dtype=float)
+
         return sv.Detections(
             xyxy=np.array([d.xyxy for d in self.detections]),
             confidence=np.array([d.confidence for d in self.detections]),
             class_id=np.array([d.class_id for d in self.detections]),
+            data=data,
         )
 
     @classmethod
@@ -326,6 +338,7 @@ class DetectionResult:
         """
         detection_list = []
         if detections is not None and len(detections) > 0:
+            angles = detections.data.get("angle") if hasattr(detections, "data") else None
             for i in range(len(detections)):
                 xyxy = detections.xyxy[i]
                 confidence = (
@@ -333,6 +346,11 @@ class DetectionResult:
                 )
                 class_id = int(detections.class_id[i])
                 class_name = class_names.get(class_id, f"class_{class_id}")
+                angle = (
+                    float(angles[i])
+                    if angles is not None and np.isfinite(angles[i])
+                    else None
+                )
 
                 detection_list.append(
                     Detection(
@@ -340,6 +358,7 @@ class DetectionResult:
                         confidence=confidence,
                         class_id=class_id,
                         class_name=class_name,
+                        angle=angle,
                     )
                 )
 
