@@ -543,7 +543,13 @@ class BaseDetectionModel(ABC):
 
         annotated = image.copy()
 
-        if annotator_type == "round_box":
+        has_obb = bool(detections.data) and "xyxyxyxy" in detections.data
+        if has_obb:
+            box_annotator = sv.OrientedBoxAnnotator(
+                thickness=thickness,
+                color=sv.ColorPalette.DEFAULT,
+            )
+        elif annotator_type == "round_box":
             box_annotator = sv.RoundBoxAnnotator(
                 thickness=thickness,
                 color=sv.ColorPalette.DEFAULT,

@@ -397,6 +397,14 @@ def plot_metrics_summary(metrics: Dict[str, float], output_dir: Path) -> str:
     return str(path)
 
 
+def _annotate_boxes(scene: np.ndarray, detections) -> np.ndarray:
+    data = getattr(detections, "data", None) or {}
+    obb = data.get("xyxyxyxy")
+    if obb is not None and len(np.asarray(obb)) > 0:
+        return sv.OrientedBoxAnnotator().annotate(scene, detections)
+    return sv.BoxAnnotator().annotate(scene, detections)
+
+
 def plot_prediction_samples(
     images: List[np.ndarray],
     predictions: List,
@@ -415,7 +423,6 @@ def plot_prediction_samples(
     n = min(max_samples, len(images))
     indices = np.random.choice(len(images), n, replace=False)
 
-    box_ann = sv.BoxAnnotator()
     label_ann = sv.LabelAnnotator()
 
     annotated, titles = [], []
@@ -426,7 +433,7 @@ def plot_prediction_samples(
 
         if len(gt) > 0:
             gt_labels = [classes[int(c)] if int(c) < len(classes) else "?" for c in gt.class_id]
-            gt_img = box_ann.annotate(gt_img, gt)
+            gt_img = _annotate_boxes(gt_img, gt)
             gt_img = label_ann.annotate(gt_img, gt, gt_labels)
         if len(pred) > 0:
             pred_labels = [
@@ -436,7 +443,7 @@ def plot_prediction_samples(
                     (pred.confidence if pred.confidence is not None else np.ones(len(pred))),
                 )
             ]
-            pred_img = box_ann.annotate(pred_img, pred)
+            pred_img = _annotate_boxes(pred_img, pred)
             pred_img = label_ann.annotate(pred_img, pred, pred_labels)
 
         annotated.extend([gt_img, pred_img])

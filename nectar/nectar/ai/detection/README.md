@@ -545,6 +545,27 @@ det.height    # 100
 det.area      # 10000
 ```
 
+### Oriented boxes
+
+`yolo11n-obb.pt` (or any Ultralytics `*-obb` weight) uses the same `Detector`. `xyxy` stays the enclosing rectangle, so `center` is unchanged. `corners` is the quadrilateral in pixels, shape `(4, 2)`. `angle` is the long-side direction in radians, in `[-π/4, 3π/4)`: `0` is horizontal in the image and `π/2` is vertical. Both are `None` for an axis-aligned model.
+
+```python
+import math
+
+detector = Detector("yolo11n-obb.pt")
+detector.load()
+result = detector.detect(image)
+det = result[0]
+det.corners          # (4, 2) pixels
+det.angle            # long side, radians
+# Image yaw in degrees. 0 when the long side is vertical, range (-90, 90].
+deg = math.degrees(det.angle - math.pi / 2)
+deg = (deg + 90.0) % 180.0 - 90.0
+annotated = detector.draw_detections(image, result)
+```
+
+Train on a YOLO-OBB folder (`data.yaml` and labels `class x1 y1 x2 y2 x3 y3 x4 y4`) or an Ultralytics OBB yaml such as `dota8.yaml`. Roboflow exports download with `--roboflow-format yolov8-obb`. Augmentation, YOLO-to-COCO, and HuggingFace conversion do not accept those labels; train on the export directly. `evaluate` scores oriented IoU when the labels have eight corners.
+
 ### DetectionResult
 
 ```python

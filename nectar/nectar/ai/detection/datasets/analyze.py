@@ -151,7 +151,15 @@ class DatasetAnalyzer:
                             parts = line.split()
                             if len(parts) >= 5:
                                 cls_id = int(parts[0])
-                                cx, cy, bw, bh = (float(x) for x in parts[1:5])
+                                if len(parts) == 9:
+                                    xs = [float(v) for v in parts[1::2]]
+                                    ys = [float(v) for v in parts[2::2]]
+                                    cx = (min(xs) + max(xs)) / 2
+                                    cy = (min(ys) + max(ys)) / 2
+                                    bw = max(xs) - min(xs)
+                                    bh = max(ys) - min(ys)
+                                else:
+                                    cx, cy, bw, bh = (float(x) for x in parts[1:5])
                                 split_stats["class_distribution"][cls_id] += 1
                                 split_stats["bbox_sizes"].append(bw * bh)
                                 results["bbox_centers"].append((cx, cy))

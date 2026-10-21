@@ -15,6 +15,23 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+_OBB_LABEL_ERROR = (
+    "is a YOLO-OBB label (class + 8 corners). "
+    "This tool only accepts axis-aligned YOLO labels (class cx cy w h). "
+    "Train an OBB model on that export directly."
+)
+
+
+def reject_obb_labels(labels_dir: Path) -> None:
+    """Raise if a YOLO label directory contains 8-corner OBB lines."""
+    labels_dir = Path(labels_dir)
+    if not labels_dir.is_dir():
+        return
+    for label_path in sorted(labels_dir.glob("*.txt")):
+        for line in label_path.read_text(encoding="utf-8").splitlines():
+            if len(line.split()) == 9:
+                raise ValueError(f"{label_path} {_OBB_LABEL_ERROR}")
+
 
 def _process_coco_image_to_yolo(args: Tuple) -> Optional[Tuple[str, str, bool]]:
     """Worker function for COCO to YOLO conversion"""
@@ -120,6 +137,8 @@ def _process_yolo_image_to_coco(args: Tuple) -> Optional[Dict]:
             parts = yolo_ann.strip().split()
             if len(parts) < 5:
                 continue
+            if len(parts) == 9:
+                raise ValueError(f"{label_path} {_OBB_LABEL_ERROR}")
 
             class_id = int(parts[0])
             x_center = float(parts[1])
@@ -161,6 +180,8 @@ def _process_yolo_image_to_coco(args: Tuple) -> Optional[Dict]:
             "annotations": annotations,
             "copy_success": copy_success,
         }
+    except ValueError:
+        raise
     except Exception as e:
         logger.warning(f"Error processing {img_path_str}: {e}")
         return None
@@ -597,6 +618,7 @@ class FormatConverter:
 
             images_dir = self.source_dir / split / "images"
             labels_dir = self.source_dir / split / "labels"
+            reject_obb_labels(labels_dir)
 
             target_name = "valid" if split == "val" else split
             target_split = self.target_dir / target_name

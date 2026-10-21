@@ -14,6 +14,27 @@ if TYPE_CHECKING:
     from PIL import Image
 
 
+def long_side_angle(corners: np.ndarray) -> float:
+    """Long-side angle of a quadrilateral, in radians.
+
+    Matches Ultralytics ``xyxyxyxy2xywhr``: ``cv2.minAreaRect``, then the
+    longer side is the width. The result is in ``[-pi/4, 3*pi/4)``. ``0`` is
+    horizontal in the image (x right, y down). ``pi/2`` is vertical.
+    """
+    import cv2
+
+    points = np.asarray(corners, dtype=np.float32).reshape(-1, 2)
+    (_center, (width, height), angle_deg) = cv2.minAreaRect(points)
+    theta = float(angle_deg) * np.pi / 180.0
+    if width < height:
+        theta += np.pi / 2
+    while theta >= 3 * np.pi / 4:
+        theta -= np.pi
+    while theta < -np.pi / 4:
+        theta += np.pi
+    return float(theta)
+
+
 ImageType = Union[str, Path, np.ndarray, "torch.Tensor", "Image.Image"]
 BatchImageType = Union[
     List[str],
@@ -43,17 +64,25 @@ class Detection:
         Class identifier (zero-indexed).
     class_name : str, optional
         Human-readable class name. Defaults to empty string.
+    corners : np.ndarray, optional
+        Oriented box corners, shape ``(4, 2)``, in pixels. ``None`` for an
+        axis-aligned detection. Same order as Ultralytics ``xyxyxyxy``.
 
     Attributes
     ----------
     center : Tuple[float, float]
-        Center point (x, y) of the bounding box.
+        Center point (x, y) of the enclosing box. For an oriented box this is
+        also the center of the rotated rectangle.
     width : int
-        Width of bounding box in pixels.
+        Width of the enclosing box in pixels.
     height : int
-        Height of bounding box in pixels.
+        Height of the enclosing box in pixels.
     area : int
-        Area of bounding box in square pixels.
+        Area of the enclosing box in square pixels.
+    angle : float or None
+        Long-side angle in radians, in ``[-pi/4, 3*pi/4)``. ``None`` when
+        ``corners`` is ``None``. ``0`` is horizontal and ``pi/2`` is vertical
+        in the image.
 
     Examples
     --------
@@ -67,12 +96,33 @@ class Detection:
     (150.0, 150.0)
     >>> det.area
     10000
+    >>> obb = Detection(
+    ...     xyxy=np.array([100, 100, 200, 140]),
+    ...     confidence=0.9,
+    ...     class_id=0,
+    ...     class_name="package",
+    ...     corners=np.array([[100, 100], [200, 110], [190, 140], [90, 130]]),
+    ... )
+    >>> obb.corners.shape
+    (4, 2)
+    >>> import math
+    >>> # Image yaw in degrees. 0 when the long side is vertical, range (-90, 90].
+    >>> deg = math.degrees(obb.angle - math.pi / 2)
+    >>> deg = (deg + 90.0) % 180.0 - 90.0
     """
 
     xyxy: np.ndarray
     confidence: float
     class_id: int
     class_name: str = ""
+    corners: Optional[np.ndarray] = None
+
+    @property
+    def angle(self) -> Optional[float]:
+        """Long-side angle in radians, or None for an axis-aligned detection."""
+        if self.corners is None:
+            return None
+        return long_side_angle(self.corners)
 
     @property
     def center(self) -> Tuple[float, float]:
@@ -108,13 +158,18 @@ class Detection:
         -------
         Dict[str, Any]
             Dictionary with xyxy, confidence, class_id, and class_name.
+            ``corners`` and ``angle`` are included only for an oriented box.
         """
-        return {
+        data = {
             "xyxy": (self.xyxy.tolist() if hasattr(self.xyxy, "tolist") else list(self.xyxy)),
             "confidence": float(self.confidence),
             "class_id": int(self.class_id),
             "class_name": self.class_name,
         }
+        if self.corners is not None:
+            data["corners"] = np.asarray(self.corners, dtype=float).reshape(4, 2).tolist()
+            data["angle"] = self.angle
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Detection":
@@ -124,18 +179,21 @@ class Detection:
         Parameters
         ----------
         data : Dict[str, Any]
-            Dictionary with xyxy, confidence, class_id, and optionally class_name.
+            Dictionary with xyxy, confidence, class_id, and optionally class_name
+            and corners.
 
         Returns
         -------
         Detection
             New Detection instance.
         """
+        corners = data.get("corners")
         return cls(
             xyxy=np.array(data["xyxy"]),
             confidence=data["confidence"],
             class_id=data["class_id"],
             class_name=data.get("class_name", ""),
+            corners=None if corners is None else np.asarray(corners, dtype=float).reshape(4, 2),
         )
 
 
@@ -285,10 +343,22 @@ class DetectionResult:
         if not self.detections:
             return sv.Detections.empty()
 
+        data = {}
+        if any(d.corners is not None for d in self.detections):
+            quads = []
+            for det in self.detections:
+                if det.corners is not None:
+                    quads.append(np.asarray(det.corners, dtype=float).reshape(4, 2))
+                else:
+                    x1, y1, x2, y2 = det.xyxy
+                    quads.append(np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=float))
+            data["xyxyxyxy"] = np.stack(quads)
+
         return sv.Detections(
             xyxy=np.array([d.xyxy for d in self.detections]),
             confidence=np.array([d.confidence for d in self.detections]),
             class_id=np.array([d.class_id for d in self.detections]),
+            data=data,
         )
 
     @classmethod
@@ -326,6 +396,7 @@ class DetectionResult:
         """
         detection_list = []
         if detections is not None and len(detections) > 0:
+            obb = detections.data.get("xyxyxyxy") if getattr(detections, "data", None) else None
             for i in range(len(detections)):
                 xyxy = detections.xyxy[i]
                 confidence = (
@@ -333,6 +404,11 @@ class DetectionResult:
                 )
                 class_id = int(detections.class_id[i])
                 class_name = class_names.get(class_id, f"class_{class_id}")
+                corners = None
+                if obb is not None:
+                    quad = np.asarray(obb[i], dtype=float).reshape(4, 2)
+                    if np.isfinite(quad).all():
+                        corners = quad
 
                 detection_list.append(
                     Detection(
@@ -340,6 +416,7 @@ class DetectionResult:
                         confidence=confidence,
                         class_id=class_id,
                         class_name=class_name,
+                        corners=corners,
                     )
                 )
 

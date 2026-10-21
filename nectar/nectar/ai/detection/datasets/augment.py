@@ -217,6 +217,12 @@ def _augment_yolo_image_worker(
             with open(label_path) as f:
                 for line in f:
                     parts = line.strip().split()
+                    if len(parts) == 9:
+                        raise ValueError(
+                            f"{label_path} is a YOLO-OBB label (class + 8 corners). "
+                            "Augmentation only accepts axis-aligned YOLO labels "
+                            "(class cx cy w h). Train an OBB model on that export directly."
+                        )
                     if len(parts) >= 5:
                         class_labels.append(int(parts[0]))
                         bboxes.append([float(x) for x in parts[1:5]])
@@ -238,6 +244,8 @@ def _augment_yolo_image_worker(
                     f.write(f"{cls_id} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f}\n")
             count += 1
         return count
+    except ValueError:
+        raise
     except Exception:
         return 0
 
@@ -561,6 +569,10 @@ class AugmentationBuilder:
             if not images_dir.exists():
                 logger.warning("Images dir not found for split '%s', skipping", split)
                 continue
+
+            from nectar.ai.detection.datasets.format import reject_obb_labels
+
+            reject_obb_labels(labels_dir)
 
             out_images = output_path / split / "images"
             out_labels = output_path / split / "labels"

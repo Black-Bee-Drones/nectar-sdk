@@ -14,7 +14,7 @@ across every supported framework.
 
 | Framework | Models | Example |
 |-----------|--------|---------|
-| **Ultralytics** | YOLOv8/11/26 detect, seg, cls | `yolov8n.pt`, `yolo26n-cls.pt` |
+| **Ultralytics** | YOLOv8/11/26 detect, seg, cls, obb | `yolov8n.pt`, `yolo11n-obb.pt`, `yolo26n-cls.pt` |
 | **Transformers** | DETR, ViT, … | `facebook/detr-resnet-50`, `google/vit-base-patch16-224` |
 | **RF-DETR** | RF-DETR Nano/Small/Medium/Large | `rfdetr-medium` |
 
@@ -29,6 +29,7 @@ Camera stream detection using `Detector` + `ImageHandler`.
 | Case | Command |
 |------|---------|
 | Default (webcam + YOLO, auto GPU) | `python3 detector_example.py` |
+| Oriented box (YOLO-OBB) | `python3 detector_example.py --model yolo11n-obb.pt` |
 | Explicit framework (DETR) | `python3 detector_example.py --model facebook/detr-resnet-50 --framework transformers` |
 | Custom YOLO from HuggingFace | `python3 detector_example.py --model "blackbeedrones/cbr-25-base:yolov11n.pt"` |
 | Local model, headless, republish as ROS topic | `python3 detector_example.py --model /path/to/model.pt --no-show --publish --publish-topic /inference/compressed` |
@@ -36,6 +37,8 @@ Camera stream detection using `Detector` + `ImageHandler`.
 | ROS source key | `python3 detector_example.py --source ros --topic /image_raw/compressed --compressed --publish --no-show` |
 
 Private HuggingFace models: pass `--hf-token hf_...` or set `export HF_TOKEN=hf_...`. Select the compute device with `--device {auto,cpu,cuda,0,1}` (default `auto`).
+
+With an OBB weight such as `yolo11n-obb.pt`, the window draws the quad. The log prints image yaw in degrees for the first oriented box: `0` when the long side is vertical, range `(-90, 90]`. See [Oriented boxes](../../ai/detection/README.md#oriented-boxes).
 
 ### Arguments
 
