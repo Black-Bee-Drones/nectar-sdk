@@ -220,7 +220,13 @@ def yolo_to_hf(dataset_dir: str):
         rows: List[Dict[str, Any]] = []
         ann_id = 0
         for idx, img_path in enumerate(sorted(images_dir.iterdir())):
-            if img_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
+            if img_path.suffix.lower() not in {
+                ".jpg",
+                ".jpeg",
+                ".png",
+                ".bmp",
+                ".webp",
+            }:
                 continue
 
             with PILImage.open(img_path) as im:
@@ -233,6 +239,12 @@ def yolo_to_hf(dataset_dir: str):
                     parts = line.strip().split()
                     if len(parts) < 5:
                         continue
+                    if len(parts) == 9:
+                        raise ValueError(
+                            f"{label_path} is a YOLO-OBB label (class + 8 corners). "
+                            "HuggingFace conversion only accepts axis-aligned YOLO labels "
+                            "(class cx cy w h). Train an OBB model on that export directly."
+                        )
                     cls = int(parts[0])
                     xc, yc, bw, bh = (float(v) for v in parts[1:5])
                     x = (xc - bw / 2) * w

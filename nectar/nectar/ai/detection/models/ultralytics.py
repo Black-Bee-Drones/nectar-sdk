@@ -147,10 +147,7 @@ class UltralyticsModel(BaseDetectionModel):
         inference_time = time.time() - start_time
 
         if results and len(results) > 0:
-            result = results[0]
-            detections = sv.Detections.from_ultralytics(result)
-            if getattr(result, "obb", None) is not None:
-                detections.data["angle"] = result.obb.xywhr[:, 4].cpu().numpy()
+            detections = sv.Detections.from_ultralytics(results[0])
         else:
             detections = sv.Detections.empty()
 

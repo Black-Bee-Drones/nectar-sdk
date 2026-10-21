@@ -16,6 +16,7 @@ except ImportError:
 
 try:
     import supervision as sv
+    from supervision.metrics.core import MetricTarget
     from supervision.metrics.f1_score import F1Score
     from supervision.metrics.mean_average_precision import MeanAveragePrecision
     from supervision.metrics.mean_average_recall import MeanAverageRecall
@@ -23,6 +24,7 @@ try:
     from supervision.metrics.recall import Recall
 except ImportError:
     sv = None
+    MetricTarget = None
 
 from tqdm import tqdm
 
@@ -50,6 +52,22 @@ from nectar.ai.detection.models.dataset import load_detection_dataset
 logger = logging.getLogger(__name__)
 
 _RAW_CONF_THRESHOLD = 0.001
+
+
+def _has_oriented_boxes(detections_list) -> bool:
+    for dets in detections_list:
+        data = getattr(dets, "data", None) or {}
+        obb = data.get("xyxyxyxy")
+        if obb is not None and len(np.asarray(obb)) > 0:
+            return True
+    return False
+
+
+def _metric_target(preds, gts):
+    if _has_oriented_boxes(preds) or _has_oriented_boxes(gts):
+        logger.info("Evaluating with oriented box IoU")
+        return MetricTarget.ORIENTED_BOUNDING_BOXES
+    return MetricTarget.BOXES
 
 
 class ObjectDetectionEvaluator:
@@ -342,17 +360,18 @@ class ObjectDetectionEvaluator:
         return filtered
 
     def _compute_metrics(self, preds, gts, classes):
-        map_metric = MeanAveragePrecision()
+        metric_target = _metric_target(preds, gts)
+        map_metric = MeanAveragePrecision(metric_target=metric_target)
         map_metric.update(predictions=preds, targets=gts)
         map_result = map_metric.compute()
 
-        mar_metric = MeanAverageRecall()
+        mar_metric = MeanAverageRecall(metric_target=metric_target)
         mar_metric.update(predictions=preds, targets=gts)
         mar_result = mar_metric.compute()
 
-        precision_metric = Precision()
-        recall_metric = Recall()
-        f1_metric = F1Score()
+        precision_metric = Precision(metric_target=metric_target)
+        recall_metric = Recall(metric_target=metric_target)
+        f1_metric = F1Score(metric_target=metric_target)
         precision_metric.update(predictions=preds, targets=gts)
         recall_metric.update(predictions=preds, targets=gts)
         f1_metric.update(predictions=preds, targets=gts)

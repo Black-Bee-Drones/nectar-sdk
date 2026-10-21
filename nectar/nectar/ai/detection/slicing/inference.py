@@ -157,6 +157,16 @@ class SlicingInference:
                 # Adjust coordinates to original image space
                 slice_detections.xyxy[:, [0, 2]] += offset_x
                 slice_detections.xyxy[:, [1, 3]] += offset_y
+                obb = (
+                    slice_detections.data.get("xyxyxyxy")
+                    if getattr(slice_detections, "data", None)
+                    else None
+                )
+                if obb is not None:
+                    obb = np.array(obb, dtype=float, copy=True)
+                    obb[..., 0] += offset_x
+                    obb[..., 1] += offset_y
+                    slice_detections.data["xyxyxyxy"] = obb
                 all_detections.append(slice_detections)
 
         # Merge detections

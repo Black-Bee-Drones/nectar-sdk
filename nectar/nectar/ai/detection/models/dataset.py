@@ -338,9 +338,14 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
             stripped = tuple(p for p in Path(split_path).parts if p != "..")
             split_dir = root.joinpath(*stripped) if stripped else root
 
-    # Get image and label directories
+    # Get image and label directories.
+    # Roboflow: <split>/images and <split>/labels.
+    # Ultralytics: images/<split> and labels/<split>.
     images_dir = split_dir
     labels_dir = split_dir.parent / "labels"
+    ultralytics_labels = split_dir.parent.parent / "labels" / split_dir.name
+    if ultralytics_labels.is_dir():
+        labels_dir = ultralytics_labels
 
     if not images_dir.exists():
         images_dir = split_dir / "images"
@@ -364,6 +369,8 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
 
             boxes = []
             class_ids = []
+            quads = []
+            oriented = True
 
             with open(label_path) as f:
                 for line in f:
@@ -376,17 +383,25 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
                     except ValueError:
                         continue
 
+                    quad = None
                     if len(coords) == 4:
                         # YOLO bbox: class cx cy w h (normalized).
+                        oriented = False
                         cx, cy, bw, bh = coords
                         x1 = (cx - bw / 2) * width
                         y1 = (cy - bh / 2) * height
                         x2 = (cx + bw / 2) * width
                         y2 = (cy + bh / 2) * height
+                    elif len(coords) == 8:
+                        # YOLO-OBB: class x1 y1 x2 y2 x3 y3 x4 y4 (normalized).
+                        quad = np.array(coords, dtype=np.float32).reshape(4, 2)
+                        quad[:, 0] *= width
+                        quad[:, 1] *= height
+                        x1, y1 = float(quad[:, 0].min()), float(quad[:, 1].min())
+                        x2, y2 = float(quad[:, 0].max()), float(quad[:, 1].max())
                     elif len(coords) >= 6 and len(coords) % 2 == 0:
-                        # YOLO polygon (segmentation/OBB): class x1 y1 x2 y2 ...
-                        # Roboflow exports segmentation projects this way even
-                        # when format=yolo. Reduce to bbox via min/max.
+                        # YOLO polygon. Reduce to the enclosing box.
+                        oriented = False
                         xs = [coords[i] * width for i in range(0, len(coords), 2)]
                         ys = [coords[i] * height for i in range(1, len(coords), 2)]
                         x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
@@ -395,11 +410,17 @@ def _load_yolo_dataset(dataset_path: Path, split: str) -> DetectionDataset:
 
                     boxes.append([x1, y1, x2, y2])
                     class_ids.append(cls_id)
+                    if quad is not None:
+                        quads.append(quad)
 
             if boxes:
+                data = {}
+                if oriented and len(quads) == len(boxes):
+                    data["xyxyxyxy"] = np.stack(quads)
                 detection = sv.Detections(
                     xyxy=np.array(boxes, dtype=np.float32),
                     class_id=np.array(class_ids, dtype=int),
+                    data=data,
                 )
             else:
                 detection = sv.Detections.empty()
