@@ -26,6 +26,7 @@ ros2 run nectar aruco_node.py --source /image_raw --publish
 |------|---------|-------|
 | `--source` | `CameraFactory` key, ROS topic (`/…`), or file path | Default `webcam` |
 | `--device-index` | `OpenCVConfig.device_index` | Webcam / opencv |
+| `--device-name` | `OpenCVConfig.device_name` | Webcam / opencv. Resolved at start; omitted keeps `device_index` |
 | `--width` `--height` `--fps` | OpenCV / IMX219 fields | Dataclass default if omitted |
 | `--topic` `--compressed` | `ROSConfig` | `--source ros`, or a topic as `--source` |
 | `--path` | `FileImageConfig.path` | `--source file` |
