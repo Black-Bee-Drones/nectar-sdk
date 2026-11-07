@@ -49,8 +49,11 @@ def get_stylesheet() -> str:
         background-color: {COLORS.background};
     }}
 
+    /* Opaque on purpose. Wayland does not erase a transparent widget,
+       so text from the previous frame stays and overlaps the new text.
+       Xorg hides that. Labels stay transparent and sit on this fill. */
     QWidget {{
-        background-color: transparent;
+        background-color: {COLORS.surface};
         color: {COLORS.text_primary};
     }}
 
@@ -113,8 +116,11 @@ def get_stylesheet() -> str:
 
     QPushButton[accent="true"] {{
         background-color: {COLORS.accent};
-        color: {COLORS.background};
+        color: {COLORS.text_primary};
         border: none;
+        border-radius: 4px;
+        padding: 5px 12px;
+        min-height: 22px;
         font-weight: 600;
     }}
 
@@ -140,8 +146,11 @@ def get_stylesheet() -> str:
 
     QPushButton[success="true"] {{
         background-color: {COLORS.success};
-        color: {COLORS.background};
+        color: {COLORS.text_primary};
         border: none;
+        border-radius: 4px;
+        padding: 5px 12px;
+        min-height: 22px;
         font-weight: 600;
     }}
 

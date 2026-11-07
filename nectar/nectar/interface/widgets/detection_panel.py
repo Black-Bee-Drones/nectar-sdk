@@ -285,6 +285,8 @@ class DetectionConfigPanel(QWidget):
 
         self._load_btn = QPushButton("Load Model")
         self._load_btn.setProperty("accent", True)
+        self._load_btn.style().unpolish(self._load_btn)
+        self._load_btn.style().polish(self._load_btn)
         self._load_btn.clicked.connect(self._on_load_clicked)
 
         self._unload_btn = QPushButton("Unload")

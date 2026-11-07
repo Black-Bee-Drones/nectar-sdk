@@ -14,7 +14,7 @@ import signal
 import sys
 
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtGui import QFont, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -58,6 +58,7 @@ class NectarApp(QMainWindow):
         if logo_path.exists():
             self.setWindowIcon(QIcon(str(logo_path)))
 
+        self.setAutoFillBackground(True)
         self.setStyleSheet(get_stylesheet())
 
     def _setup_ui(self) -> None:
@@ -212,6 +213,11 @@ class NectarApp(QMainWindow):
 
 def main() -> None:
     """Main entry point for the Nectar SDK GUI application."""
+    # Fractional Wayland scales put glyphs on fractional pixels and the
+    # lines collide. Round the scale before the application exists.
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor
+    )
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
