@@ -278,6 +278,7 @@ classDiagram
     class OpenCVConfig {
         <<dataclass>>
         +device_index int
+        +device_name Optional~str~
         +width Optional~int~
         +height Optional~int~
         +fps Optional~int~
@@ -286,6 +287,7 @@ classDiagram
         +focus Optional~int~
         +buffer_size Optional~int~
         +threaded bool
+        +config_by_name(name: str)$ OpenCVConfig
     }
 
     class RealSenseConfig {
@@ -371,6 +373,19 @@ classDiagram
     ROSConfig <|-- ROSDepthConfig
 ```
 
+USB indices move after a reboot or when the camera is unplugged. `device_index` still
+opens that index. Set `device_name` and `OpenCVCam.start()` resolves one `/dev/videoN`
+from `v4l2-ctl --list-devices`. The match is a case-insensitive substring of the device
+name or of a `/dev/v4l/by-id` or `/dev/v4l/by-path` link. No match, or more than one
+camera, raises and lists the names and paths. Two cameras with the same product name
+are ambiguous; use the by-id serial or the by-path USB port. This needs `v4l2-utils`.
+
+```python
+OpenCVConfig(device_name="HD Pro Webcam C920")
+OpenCVConfig(device_name="usb-046d_HD_Pro_Webcam_C920_<serial>")
+OpenCVConfig(device_name="pci-0000:00:14.0-usb-0:2:1.0")
+```
+
 ## T265 tracking camera
 
 The T265 has two 848x800 global-shutter fisheye cameras (30 Hz), a BMI055 IMU (gyro 200 Hz, accel
@@ -428,7 +443,7 @@ from nectar.vision import T265Cam, T265Config
 cam = T265Cam(T265Config(enable_depth=True, enable_pose=True))
 cam.start()
 frame = cam.get_frame()          # left fisheye (BGR, 800x848x3)
-depth = cam.get_depth_frame()    # stereo depth (float32, meters, 300x300)
+depth = cam.get_depth_frame()    # stereo depth (float32, meters, 396×300 at the defaults)
 pose = cam.get_pose()            # T265Pose
 left, right = cam.get_stereo_frames()
 

@@ -1,11 +1,12 @@
 from threading import Event, Lock, Thread
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import cv2
 import numpy as np
 
 from nectar.vision.camera.abstract import AbstractCam
 from nectar.vision.camera.config import OpenCVConfig
+from nectar.vision.camera.v4l2 import resolve_v4l2_device
 
 
 class OpenCVCam(AbstractCam):
@@ -50,10 +51,21 @@ class OpenCVCam(AbstractCam):
         self._last_consumed_id: int = 0
 
     def start(self) -> None:
-        """Open and configure the camera."""
-        self._cap = cv2.VideoCapture(self._config.device_index, cv2.CAP_V4L2)
+        """Open and configure the camera.
+
+        ``device_name``, when set, is resolved to one ``/dev/videoN`` before open.
+        Otherwise ``device_index`` is used.
+        """
+        device_name = (self._config.device_name or "").strip()
+        device: Union[int, str] = self._config.device_index
+        if device_name:
+            device = resolve_v4l2_device(device_name)
+
+        self._cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
 
         if not self._cap.isOpened():
+            if device_name:
+                raise RuntimeError(f"Failed to open camera at {device}")
             raise RuntimeError(f"Failed to open camera at index {self._config.device_index}")
 
         if self._config.fourcc:
