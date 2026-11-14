@@ -12,6 +12,7 @@ source for each symbol lives on GitHub.
 | `nectar.vision` | [Vision](vision.md) — cameras, handler, algorithms |
 | `nectar.ai` | [AI](ai.md) — detection and segmentation |
 | `nectar.sensors` | [Sensors](sensors.md) — rangefinder drivers, filters, bridges |
+| `nectar.actuators` | [Actuators](actuators.md) — motor drivers and movement interfaces |
 | `nectar.utils` | [Utils](utils.md) — GPS, position, process helpers |
 
 !!! tip
