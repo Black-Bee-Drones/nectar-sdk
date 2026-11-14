@@ -10,6 +10,7 @@ run — start here to see how the modules are used and combined in practice.
 | [Vision](vision.md) | Camera drivers, depth measurement, T265 tracking, optical flow, dataset photo collection |
 | [AI](ai.md) | Real-time detection stream, batch image/video processing, multi-model detection + segmentation |
 | [Sensors](sensors.md) | TF-Luna rangefinder → MAVLink bridge bench test |
+| [Actuators](actuators.md) | Stepper motor and PWM servo GPIO examples |
 
 ## How to run
 

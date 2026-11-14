@@ -58,6 +58,7 @@ MANIFEST: dict[str, str] = {
     "nectar/nectar/ai/segmentation/README.md": "modules/ai/segmentation.md",
     "nectar/nectar/ai/classification/README.md": "modules/ai/classification.md",
     "nectar/nectar/sensors/README.md": "modules/sensors.md",
+    "nectar/nectar/actuators/README.md": "modules/actuators.md",
     "nectar/nectar/interface/README.md": "modules/interface.md",
     "nectar/nectar/utils/README.md": "modules/utils.md",
     # Examples
@@ -65,6 +66,7 @@ MANIFEST: dict[str, str] = {
     "nectar/nectar/examples/vision/README.md": "modules/examples/vision.md",
     "nectar/nectar/examples/ai/README.md": "modules/examples/ai.md",
     "nectar/nectar/examples/sensors/README.md": "modules/examples/sensors.md",
+    "nectar/nectar/examples/actuators/README.md": "modules/examples/actuators.md",
     # Simulation / interfaces
     "nectar/simulation/README.md": "modules/simulation.md",
     "nectar_interfaces/README.md": "modules/interfaces.md",

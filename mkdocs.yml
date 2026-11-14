@@ -202,6 +202,7 @@ nav:
           - Segmentation: modules/ai/segmentation.md
           - Classification: modules/ai/classification.md
       - Sensors: modules/sensors.md
+      - Actuators: modules/actuators.md
       - Interface (GUI): modules/interface.md
       - Simulation: modules/simulation.md
       - Messages (nectar_interfaces): modules/interfaces.md
@@ -212,6 +213,7 @@ nav:
       - Vision: modules/examples/vision.md
       - AI: modules/examples/ai.md
       - Sensors: modules/examples/sensors.md
+      - Actuators: modules/examples/actuators.md
   - Development:
       - Python API:
           - Overview: api/index.md
@@ -220,6 +222,7 @@ nav:
           - Vision: api/vision.md
           - AI: api/ai.md
           - Sensors: api/sensors.md
+          - Actuators: api/actuators.md
           - Utils: api/utils.md
       - Commands & Makefile: development/commands.md
       - Contributing: project/contributing.md
