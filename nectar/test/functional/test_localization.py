@@ -71,6 +71,8 @@ def test_vision_pose_mavlink(ros_node, fake_fcu):
 
     pub = ros_node.create_publisher(PoseWithCovarianceStamped, topic, qos_profile_sensor_data)
     msg = PoseWithCovarianceStamped()
+    msg.header.stamp.sec = 123
+    msg.header.stamp.nanosec = 456_789_000
     msg.pose.pose.position.x = 1.5
     msg.pose.pose.orientation.w = 1.0
 
@@ -83,6 +85,7 @@ def test_vision_pose_mavlink(ros_node, fake_fcu):
             break
 
     assert capture is not None, "no VISION_POSITION_ESTIMATE emitted to the loopback FCU"
+    assert capture.usec == 123_456_789, capture.usec
 
 
 def _matmul(a, b):
@@ -243,6 +246,8 @@ def test_vision_pose_mavlink_without_covariance_sends_zeros(ros_node, fake_fcu):
 
     pub = ros_node.create_publisher(PoseStamped, topic, qos_profile_sensor_data)
     msg = PoseStamped()
+    msg.header.stamp.sec = 123
+    msg.header.stamp.nanosec = 456_789_000
     msg.pose.orientation.w = 1.0
 
     capture = None
@@ -254,6 +259,7 @@ def test_vision_pose_mavlink_without_covariance_sends_zeros(ros_node, fake_fcu):
             break
 
     assert capture is not None, "no VISION_POSITION_ESTIMATE emitted to the loopback FCU"
+    assert capture.usec == 123_456_789, capture.usec
     assert list(capture.covariance) == [0.0] * 21
 
 
@@ -381,6 +387,8 @@ def test_vision_speed_mavlink(ros_node, fake_fcu):
 
     pub = ros_node.create_publisher(Odometry, topic, qos_profile_sensor_data)
     msg = _odometry_msg((1.0, 0.0, 0.0), _yaw_quaternion(math.pi / 2.0))
+    msg.header.stamp.sec = 123
+    msg.header.stamp.nanosec = 456_789_000
 
     capture = None
     deadline = time.monotonic() + 5.0
@@ -391,6 +399,7 @@ def test_vision_speed_mavlink(ros_node, fake_fcu):
             break
 
     assert capture is not None, "no VISION_SPEED_ESTIMATE emitted to the loopback FCU"
+    assert capture.usec == 123_456_789, capture.usec
     ned = [round(capture.x, 6), round(capture.y, 6), round(capture.z, 6)]
     assert ned == [1.0, 0.0, 0.0], f"velocity not converted to NED: {ned}"
 
