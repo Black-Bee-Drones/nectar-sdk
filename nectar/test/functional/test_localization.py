@@ -404,6 +404,39 @@ def test_vision_speed_mavlink(ros_node, fake_fcu):
     assert ned == [1.0, 0.0, 0.0], f"velocity not converted to NED: {ned}"
 
 
+def test_mavlink_time_sync(ros_node, fake_fcu):
+    """The direct backend publishes SYSTEM_TIME and exchanges TIMESYNC packets."""
+    pytest.importorskip("pymavlink", reason="pymavlink not installed (make python-sensors)")
+    import helpers
+    from nectar.control.mavlink import MavlinkTimeSync
+
+    conn = helpers.mavlink_connection_to(fake_fcu.port)
+    time_sync = MavlinkTimeSync(node=ros_node, connection=conn)
+    time_sync.start()
+    try:
+        system_time = fake_fcu.wait_for("SYSTEM_TIME", timeout=2.0)
+        request = fake_fcu.wait_for(
+            "TIMESYNC", timeout=2.0, predicate=lambda msg: msg.tc1 == 0
+        )
+        assert system_time is not None, "no SYSTEM_TIME sent to the FCU"
+        ros_time_usec = ros_node.get_clock().now().nanoseconds // 1000
+        assert abs(system_time.time_unix_usec - ros_time_usec) < 1_000_000
+        assert request is not None, "no TIMESYNC request sent to the FCU"
+        assert request.ts1 > 0
+
+        request_ts = 987_654_321
+        fake_fcu._mav.mav.timesync_send(0, request_ts)
+        reply = fake_fcu.wait_for(
+            "TIMESYNC",
+            timeout=2.0,
+            predicate=lambda msg: msg.tc1 > 0 and msg.ts1 == request_ts,
+        )
+        assert reply is not None, "incoming TIMESYNC request was not answered"
+    finally:
+        time_sync.stop()
+        conn.close()
+
+
 def test_vision_speed_dds(ros_node):
     """The PX4 bridge attaches the VSLAM velocity to VehicleOdometry, in NED."""
     pytest.importorskip("px4_msgs", reason="px4_msgs not built into the workspace")

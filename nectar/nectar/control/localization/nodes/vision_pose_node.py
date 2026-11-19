@@ -39,6 +39,8 @@ class VisionPoseNode(Node):
         self.declare_parameter("source_system", 1)
         self.declare_parameter("source_component", 191)
         self.declare_parameter("heartbeat_timeout_s", 30.0)
+        self.declare_parameter("system_time_rate", 1.0)
+        self.declare_parameter("timesync_rate", 10.0)
 
         self.declare_parameter("odometry_topic", "/fmu/in/vehicle_visual_odometry")
         self.declare_parameter("px4_namespace", "")
@@ -60,6 +62,7 @@ class VisionPoseNode(Node):
         self._connection = None
         self._bridge = None
         self._speed_bridge = None
+        self._time_sync = None
         self._dds_bridge = None
 
         backend = self.get_parameter("backend").value
@@ -127,6 +130,7 @@ class VisionPoseNode(Node):
         try:
             from nectar.control.mavlink import (
                 MavlinkConnection,
+                MavlinkTimeSync,
                 VisionPoseBridge,
                 VisionSpeedBridge,
             )
@@ -146,6 +150,14 @@ class VisionPoseNode(Node):
         )
         self._connection.connect(url, baud=baud)
         self._maybe_set_origin(self.BACKEND_MAVLINK)
+
+        self._time_sync = MavlinkTimeSync(
+            node=self,
+            connection=self._connection,
+            system_time_rate_hz=float(self.get_parameter("system_time_rate").value),
+            timesync_rate_hz=float(self.get_parameter("timesync_rate").value),
+        )
+        self._time_sync.start()
 
         self._bridge = VisionPoseBridge(
             node=self,
@@ -185,6 +197,8 @@ class VisionPoseNode(Node):
             self._bridge.stop()
         if self._speed_bridge is not None:
             self._speed_bridge.stop()
+        if self._time_sync is not None:
+            self._time_sync.stop()
         if self._dds_bridge is not None:
             self._dds_bridge.stop()
         if self._connection is not None:

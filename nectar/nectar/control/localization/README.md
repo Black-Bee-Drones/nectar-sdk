@@ -186,7 +186,11 @@ alone ([ardupilot#23485](https://github.com/ArduPilot/ardupilot/issues/23485)).
 
 The direct `mavlink` backend uses each input message's `header.stamp` for the
 MAVLink `time_usec` field on both pose and speed messages. A zero stamp falls
-back to the current monotonic time.
+back to the current monotonic time. It also sends `SYSTEM_TIME` at 1 Hz and
+exchanges `TIMESYNC` messages at 10 Hz, matching the indoor MAVROS profile.
+Override or disable these rates with `system_time_rate` and `timesync_rate`
+(set either to `0` to disable it). `SYSTEM_TIME` is sourced from the node's ROS
+clock, so ensure that clock is the desired time source.
 
 ```bash
 ros2 launch nectar vision_pose.launch.py backend:=mavros send_speed:=true

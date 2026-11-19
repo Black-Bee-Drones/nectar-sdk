@@ -10,6 +10,7 @@ _LAZY_ATTRS = {
     "VisionPoseBridge": "nectar.control.mavlink.vision_bridge",
     "VisionPoseSubscriber": "nectar.control.mavlink.vision_bridge",
     "VisionSpeedBridge": "nectar.control.mavlink.vision_bridge",
+    "MavlinkTimeSync": "nectar.control.mavlink.time_sync",
 }
 
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from nectar.control.mavlink.connection import MavlinkConnection
     from nectar.control.mavlink.drone import MavlinkDrone
     from nectar.control.mavlink.transport import PymavlinkTransport
+    from nectar.control.mavlink.time_sync import MavlinkTimeSync
     from nectar.control.mavlink.vision_bridge import (
         VisionPoseBridge,
         VisionPoseSubscriber,
@@ -44,4 +46,5 @@ __all__ = [
     "VisionPoseBridge",
     "VisionPoseSubscriber",
     "VisionSpeedBridge",
+    "MavlinkTimeSync",
 ]

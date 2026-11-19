@@ -53,6 +53,8 @@ def generate_launch_description():
     tgt_component = LaunchConfiguration("tgt_component")
     namespace = LaunchConfiguration("namespace")
     mavlink_url = LaunchConfiguration("mavlink_url")
+    system_time_rate = LaunchConfiguration("system_time_rate")
+    timesync_rate = LaunchConfiguration("timesync_rate")
     odometry_topic = LaunchConfiguration("odometry_topic")
     px4_namespace = LaunchConfiguration("px4_namespace")
     send_speed = ParameterValue(LaunchConfiguration("send_speed"), value_type=bool)
@@ -121,6 +123,8 @@ def generate_launch_description():
                 "backend": "mavlink",
                 "input_topic": input_topic,
                 "mavlink_url": mavlink_url,
+                "system_time_rate": ParameterValue(system_time_rate, value_type=float),
+                "timesync_rate": ParameterValue(timesync_rate, value_type=float),
                 "send_speed": send_speed,
                 "speed_topic": speed_topic,
                 "set_ekf_origin": set_ekf_origin,
@@ -168,6 +172,8 @@ def generate_launch_description():
             DeclareLaunchArgument("tgt_component", default_value="1"),
             DeclareLaunchArgument("namespace", default_value="mavros"),
             DeclareLaunchArgument("mavlink_url", default_value="udp:127.0.0.1:14552"),
+            DeclareLaunchArgument("system_time_rate", default_value="1.0"),
+            DeclareLaunchArgument("timesync_rate", default_value="10.0"),
             DeclareLaunchArgument(
                 "odometry_topic", default_value="/fmu/in/vehicle_visual_odometry"
             ),
