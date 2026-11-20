@@ -71,6 +71,8 @@ def test_vision_pose_mavlink(ros_node, fake_fcu):
 
     pub = ros_node.create_publisher(PoseWithCovarianceStamped, topic, qos_profile_sensor_data)
     msg = PoseWithCovarianceStamped()
+    msg.header.stamp.sec = 123
+    msg.header.stamp.nanosec = 456_789_000
     msg.pose.pose.position.x = 1.5
     msg.pose.pose.orientation.w = 1.0
 
@@ -83,6 +85,7 @@ def test_vision_pose_mavlink(ros_node, fake_fcu):
             break
 
     assert capture is not None, "no VISION_POSITION_ESTIMATE emitted to the loopback FCU"
+    assert capture.usec == 123_456_789, capture.usec
 
 
 def _matmul(a, b):
@@ -243,6 +246,8 @@ def test_vision_pose_mavlink_without_covariance_sends_zeros(ros_node, fake_fcu):
 
     pub = ros_node.create_publisher(PoseStamped, topic, qos_profile_sensor_data)
     msg = PoseStamped()
+    msg.header.stamp.sec = 123
+    msg.header.stamp.nanosec = 456_789_000
     msg.pose.orientation.w = 1.0
 
     capture = None
@@ -254,6 +259,7 @@ def test_vision_pose_mavlink_without_covariance_sends_zeros(ros_node, fake_fcu):
             break
 
     assert capture is not None, "no VISION_POSITION_ESTIMATE emitted to the loopback FCU"
+    assert capture.usec == 123_456_789, capture.usec
     assert list(capture.covariance) == [0.0] * 21
 
 
@@ -381,6 +387,8 @@ def test_vision_speed_mavlink(ros_node, fake_fcu):
 
     pub = ros_node.create_publisher(Odometry, topic, qos_profile_sensor_data)
     msg = _odometry_msg((1.0, 0.0, 0.0), _yaw_quaternion(math.pi / 2.0))
+    msg.header.stamp.sec = 123
+    msg.header.stamp.nanosec = 456_789_000
 
     capture = None
     deadline = time.monotonic() + 5.0
@@ -391,8 +399,41 @@ def test_vision_speed_mavlink(ros_node, fake_fcu):
             break
 
     assert capture is not None, "no VISION_SPEED_ESTIMATE emitted to the loopback FCU"
+    assert capture.usec == 123_456_789, capture.usec
     ned = [round(capture.x, 6), round(capture.y, 6), round(capture.z, 6)]
     assert ned == [1.0, 0.0, 0.0], f"velocity not converted to NED: {ned}"
+
+
+def test_mavlink_time_sync(ros_node, fake_fcu):
+    """The direct backend publishes SYSTEM_TIME and exchanges TIMESYNC packets."""
+    pytest.importorskip("pymavlink", reason="pymavlink not installed (make python-sensors)")
+    import helpers
+
+    from nectar.control.mavlink import MavlinkTimeSync
+
+    conn = helpers.mavlink_connection_to(fake_fcu.port)
+    time_sync = MavlinkTimeSync(node=ros_node, connection=conn)
+    time_sync.start()
+    try:
+        system_time = fake_fcu.wait_for("SYSTEM_TIME", timeout=2.0)
+        request = fake_fcu.wait_for("TIMESYNC", timeout=2.0, predicate=lambda msg: msg.tc1 == 0)
+        assert system_time is not None, "no SYSTEM_TIME sent to the FCU"
+        ros_time_usec = ros_node.get_clock().now().nanoseconds // 1000
+        assert abs(system_time.time_unix_usec - ros_time_usec) < 1_000_000
+        assert request is not None, "no TIMESYNC request sent to the FCU"
+        assert request.ts1 > 0
+
+        request_ts = 987_654_321
+        fake_fcu._mav.mav.timesync_send(0, request_ts)
+        reply = fake_fcu.wait_for(
+            "TIMESYNC",
+            timeout=2.0,
+            predicate=lambda msg: msg.tc1 > 0 and msg.ts1 == request_ts,
+        )
+        assert reply is not None, "incoming TIMESYNC request was not answered"
+    finally:
+        time_sync.stop()
+        conn.close()
 
 
 def test_vision_speed_dds(ros_node):

@@ -124,13 +124,13 @@ class FakeFcu:
                 with self._rx_lock:
                     self._rx.append(msg)
 
-    def wait_for(self, msg_type: str, timeout: float = 3.0):
-        """Return the first received message of ``msg_type`` within ``timeout``, else ``None``."""
+    def wait_for(self, msg_type: str, timeout: float = 3.0, predicate=None):
+        """Return the first matching message within ``timeout``, else ``None``."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             with self._rx_lock:
                 for msg in self._rx:
-                    if msg.get_type() == msg_type:
+                    if msg.get_type() == msg_type and (predicate is None or predicate(msg)):
                         return msg
             time.sleep(0.02)
         return None

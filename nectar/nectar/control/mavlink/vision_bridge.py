@@ -33,6 +33,13 @@ _POSE_COVARIANCE_ZERO = [0.0] * 21
 _COVARIANCE_UNKNOWN = [float("nan")] + [0.0] * 8
 
 
+def _timestamp_usec(header) -> int:
+    stamp = header.stamp
+    if stamp.sec != 0 or stamp.nanosec != 0:
+        return stamp.sec * 1_000_000 + stamp.nanosec // 1_000
+    return int(time.monotonic() * 1e6) & 0xFFFFFFFFFFFFFFFF
+
+
 def _local_pose_from_msg(pose) -> LocalPose:
     p = pose.position
     q = pose.orientation
@@ -132,12 +139,12 @@ class VisionPoseBridge:
             )
 
     def _on_cov(self, msg: PoseWithCovarianceStamped) -> None:
-        self._send(msg.pose.pose, msg.pose.covariance)
+        self._send(msg.pose.pose, msg.pose.covariance, msg.header)
 
     def _on_pose_stamped(self, msg: PoseStamped) -> None:
-        self._send(msg.pose, None)
+        self._send(msg.pose, None, msg.header)
 
-    def _send(self, pose, covariance) -> None:
+    def _send(self, pose, covariance, header) -> None:
         if self._on_pose is not None:
             self._on_pose(_local_pose_from_msg(pose))
 
@@ -153,7 +160,7 @@ class VisionPoseBridge:
             cov_urt = covariance_urt_to_mavlink(pose_covariance_enu_to_ned(covariance))
             self._check_covariance_transmittable()
 
-        usec = int(time.monotonic() * 1e6) & 0xFFFFFFFFFFFFFFFF
+        usec = _timestamp_usec(header)
         with self._connection.send_lock:
             self._connection.master.mav.vision_position_estimate_send(
                 usec, x_ned, y_ned, z_ned, roll_ned, pitch_ned, yaw_ned, cov_urt
@@ -192,7 +199,7 @@ class VisionSpeedBridge:
         q = msg.pose.pose.orientation
         vx, vy, vz = body_velocity_to_ned((lin.x, lin.y, lin.z), (q.x, q.y, q.z, q.w))
 
-        usec = int(time.monotonic() * 1e6) & 0xFFFFFFFFFFFFFFFF
+        usec = _timestamp_usec(msg.header)
         with self._connection.send_lock:
             self._connection.master.mav.vision_speed_estimate_send(
                 usec, vx, vy, vz, _COVARIANCE_UNKNOWN
