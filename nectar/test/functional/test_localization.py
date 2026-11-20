@@ -408,6 +408,7 @@ def test_mavlink_time_sync(ros_node, fake_fcu):
     """The direct backend publishes SYSTEM_TIME and exchanges TIMESYNC packets."""
     pytest.importorskip("pymavlink", reason="pymavlink not installed (make python-sensors)")
     import helpers
+
     from nectar.control.mavlink import MavlinkTimeSync
 
     conn = helpers.mavlink_connection_to(fake_fcu.port)
@@ -415,9 +416,7 @@ def test_mavlink_time_sync(ros_node, fake_fcu):
     time_sync.start()
     try:
         system_time = fake_fcu.wait_for("SYSTEM_TIME", timeout=2.0)
-        request = fake_fcu.wait_for(
-            "TIMESYNC", timeout=2.0, predicate=lambda msg: msg.tc1 == 0
-        )
+        request = fake_fcu.wait_for("TIMESYNC", timeout=2.0, predicate=lambda msg: msg.tc1 == 0)
         assert system_time is not None, "no SYSTEM_TIME sent to the FCU"
         ros_time_usec = ros_node.get_clock().now().nanoseconds // 1000
         assert abs(system_time.time_unix_usec - ros_time_usec) < 1_000_000

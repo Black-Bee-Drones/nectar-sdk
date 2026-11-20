@@ -27,9 +27,7 @@ class MavlinkTimeSync:
     ) -> None:
         self._node = node
         self._connection = connection
-        self._system_time_period = self._rate_period(
-            "system_time_rate", system_time_rate_hz
-        )
+        self._system_time_period = self._rate_period("system_time_rate", system_time_rate_hz)
         self._timesync_period = self._rate_period("timesync_rate", timesync_rate_hz)
         self._pending_requests: deque[int] = deque(maxlen=64)
         self._last_system_time = 0.0
@@ -89,10 +87,7 @@ class MavlinkTimeSync:
             self._send_system_time()
             self._last_system_time = now
 
-        if (
-            self._timesync_period is not None
-            and now - self._last_timesync >= self._timesync_period
-        ):
+        if self._timesync_period is not None and now - self._last_timesync >= self._timesync_period:
             self._send_timesync_request()
             self._last_timesync = now
 
