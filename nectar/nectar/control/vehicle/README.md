@@ -162,7 +162,7 @@ flowchart TD
   T5 -->|yes| T6["move_to(z, TAKEOFF)"]
   T5 -->|no| TOk[return success]
   T6 --> TOk
-  T4 -->|timeout / disarm| TRetry[disarm and retry]
+  T4 -->|timeout / disarm| TRetry[retry without disarm]
 ```
 
 Per attempt: arm (firmware guided/offboard), `_SPIN_UP_DELAY`, capture takeoff pose on the first attempt only, `_command_takeoff` (FCU takeoff on ArduPilot; offboard climb setpoint on PX4), then `wait_takeoff_settle`. Optional post-settle `move_to(z=altitude, reference=TAKEOFF)` when `adjust_altitude=True`. Climb progress is logged ~1 Hz.
@@ -171,7 +171,7 @@ Per attempt: arm (firmware guided/offboard), `_SPIN_UP_DELAY`, capture takeoff p
 
 **Missing / rejected ACK**: the rangefinder is polled for `_LIDAR_LIFTOFF_WINDOW`; a rise of `_LIDAR_LIFTOFF_DELTA` over `_LIDAR_LIFTOFF_SAMPLES` consecutive samples means the FCU executed the command anyway, so takeoff continues (settle + adjust) and returns `True` with a warning. Otherwise the takeoff command is retried **without disarming**; if the vehicle is still armed the arm step and spin-up delay are skipped, and if the FCU auto-disarmed meanwhile it is re-armed with a warning.
 
-**Retries**: ACK received but liftoff never seen (or mid-climb disarm) → disarm and retry; last attempt fails. Settled with `height_gain < _LIFTOFF_DELTA` while `is_airborne` is true is accepted (sensor glitch).
+**Retries**: ACK received but liftoff never seen (or mid-climb disarm) → retry without disarming (re-arm only if the FCU disarmed); last attempt fails. Takeoff never disarms the vehicle itself. Settled with `height_gain < _LIFTOFF_DELTA` while `is_airborne` is true is accepted (sensor glitch).
 
 ### Airborne check (`is_airborne`)
 

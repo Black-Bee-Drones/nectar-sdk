@@ -549,7 +549,8 @@ class VehicleDrone(BaseDrone):
         Per attempt: arm (state-polled) -> spin-up delay -> set takeoff position
         (first attempt) -> takeoff command -> wait for liftoff and altitude
         settling -> optional altitude adjustment. Skips entirely if already
-        airborne. Retries on rejected takeoff ACK and on failed liftoff.
+        airborne. Retries on rejected takeoff ACK and on failed liftoff
+        without ever disarming (re-arms only if the FCU disarmed).
 
         Parameters
         ----------
@@ -679,9 +680,8 @@ class VehicleDrone(BaseDrone):
             if attempt < max_retries - 1:
                 self._node.get_logger().warn(
                     f"{WARN} No liftoff (gain {height_gain:.2f}m, abort={abort}, "
-                    f"armed={armed}), disarming for retry"
+                    f"armed={armed}), retrying without disarm"
                 )
-                # self.disarm()
                 self.delay(1.5)
             else:
                 self._node.get_logger().error(
