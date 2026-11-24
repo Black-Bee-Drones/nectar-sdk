@@ -154,7 +154,10 @@ flowchart TD
   T0 -->|no| T1[arm]
   T1 --> T2[spin-up delay]
   T2 --> T3["_command_takeoff(alt)"]
-  T3 --> T4[wait_takeoff_settle]
+  T3 -->|ACK ok| T4[wait_takeoff_settle]
+  T3 -->|no ACK| TL{lidar climb?}
+  TL -->|yes, warn| T4
+  TL -->|no / no lidar| TNoAck[retry without disarm]
   T4 -->|settled| T5{adjust_altitude?}
   T5 -->|yes| T6["move_to(z, TAKEOFF)"]
   T5 -->|no| TOk[return success]
@@ -166,7 +169,9 @@ Per attempt: arm (firmware guided/offboard), `_SPIN_UP_DELAY`, capture takeoff p
 
 **Settle** requires all of: altitude rose by `_LIFTOFF_DELTA`; altitude ≥ `target_alt - min(_SETTLE_ALT_TOLERANCE, _SETTLE_ALT_FRACTION × climb)`; mean `|vz|` over `_SETTLE_WINDOW` below `_SETTLE_VELOCITY`.
 
-**Retries**: liftoff never seen (or mid-climb disarm) → disarm and retry; last attempt fails. Settled with `height_gain < _LIFTOFF_DELTA` while `is_airborne` is true is accepted (sensor glitch).
+**Missing / rejected ACK**: the rangefinder is polled for `_LIDAR_LIFTOFF_WINDOW`; a rise of `_LIDAR_LIFTOFF_DELTA` over `_LIDAR_LIFTOFF_SAMPLES` consecutive samples means the FCU executed the command anyway, so takeoff continues (settle + adjust) and returns `True` with a warning. Otherwise the takeoff command is retried **without disarming**; if the vehicle is still armed the arm step and spin-up delay are skipped, and if the FCU auto-disarmed meanwhile it is re-armed with a warning.
+
+**Retries**: ACK received but liftoff never seen (or mid-climb disarm) → disarm and retry; last attempt fails. Settled with `height_gain < _LIFTOFF_DELTA` while `is_airborne` is true is accepted (sensor glitch).
 
 ### Airborne check (`is_airborne`)
 

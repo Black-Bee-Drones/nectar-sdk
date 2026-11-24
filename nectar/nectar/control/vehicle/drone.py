@@ -586,11 +586,17 @@ class VehicleDrone(BaseDrone):
                 f"{ARROW} Takeoff attempt {attempt + 1}/{max_retries} to {altitude:.2f}m"
             )
 
-            if not self.arm():
-                self._node.get_logger().error(f"{ERR} Arm failed, cannot takeoff")
-                return False
-
-            self.delay(self._sequencer.spin_up_delay)
+            if attempt > 0 and self.is_armed:
+                self._node.get_logger().info(f"{ARROW} Still armed, retrying without re-arm")
+            else:
+                if attempt > 0:
+                    self._node.get_logger().warn(
+                        f"{WARN} Vehicle disarmed before retry (FCU auto-disarm?), re-arming"
+                    )
+                if not self.arm():
+                    self._node.get_logger().error(f"{ERR} Arm failed, cannot takeoff")
+                    return False
+                self.delay(self._sequencer.spin_up_delay)
 
             if attempt == 0 and not self._set_takeoff_position():
                 self._node.get_logger().error(f"{ERR} Failed to set takeoff position")
@@ -602,19 +608,34 @@ class VehicleDrone(BaseDrone):
                 f"{ARROW} Takeoff start_alt={start_alt:.2f}m (source={alt_source})"
             )
 
+            start_range = self._transport.rangefinder
+
             cmd_ok = False
+            acked = False
             try:
-                cmd_ok = bool(self._command_takeoff(float(altitude)))
+                cmd_ok = acked = bool(self._command_takeoff(float(altitude)))
             except TimeoutError as e:
                 self._node.get_logger().error(f"{ERR} Takeoff service timeout: {e}")
 
             if not cmd_ok:
                 self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
+                if start_range is None:
+                    self._node.get_logger().warn(
+                        f"{WARN} No lidar reading, cannot confirm liftoff without ACK"
+                    )
+                elif self._sequencer.lidar_liftoff(start_range):
+                    self._node.get_logger().warn(
+                        f"{WARN} Takeoff not acknowledged but lidar shows climb "
+                        f"from {start_range:.2f}m, continuing takeoff"
+                    )
+                    cmd_ok = True
+
+            if not cmd_ok:
                 if attempt < max_retries - 1:
                     self._node.get_logger().warn(
-                        f"{WARN} Disarming for retry ({attempt + 1}/{max_retries})"
+                        f"{WARN} No liftoff detected, retrying takeoff without disarm "
+                        f"({attempt + 1}/{max_retries})"
                     )
-                    # self.disarm()
                     self.delay(1.5)
                     continue
                 return False
@@ -643,6 +664,7 @@ class VehicleDrone(BaseDrone):
                         precision=precision,
                         timeout=timeout,
                     )
+                self._warn_unacked_takeoff(acked)
                 return True
 
             if self._sequencer.is_airborne():
@@ -650,6 +672,7 @@ class VehicleDrone(BaseDrone):
                     f"{WARN} Low gain ({height_gain:.2f}m) but airborne at "
                     f"{current_alt:.2f}m, accepting"
                 )
+                self._warn_unacked_takeoff(acked)
                 return True
 
             abort = "disarmed" if not armed else "timeout"
@@ -667,6 +690,12 @@ class VehicleDrone(BaseDrone):
                 )
 
         return False
+
+    def _warn_unacked_takeoff(self, acked: bool) -> None:
+        if not acked:
+            self._node.get_logger().warn(
+                f"{WARN} Takeoff succeeded without FCU ACK (confirmed by lidar)"
+            )
 
     def land(self, timeout: float = 60.0) -> bool:
         """

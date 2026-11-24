@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from nectar.control.vehicle.types import LandedState
 from nectar.utils.log import ARROW, OK
@@ -26,6 +26,9 @@ class FlightSequencer:
 
     _SPIN_UP_DELAY = 2.7  # s
     _LIFTOFF_DELTA = 0.08  # m
+    _LIDAR_LIFTOFF_DELTA = 0.15  # m; no-ACK liftoff confirmation
+    _LIDAR_LIFTOFF_SAMPLES = 3  # consecutive polls above delta
+    _LIDAR_LIFTOFF_WINDOW = 3.0  # s
     _SETTLE_WINDOW = 0.8  # s
     _SETTLE_VELOCITY = 0.25  # m/s
     _SETTLE_POLL = 0.1  # s
@@ -224,6 +227,37 @@ class FlightSequencer:
             history.append((now, alt))
             last_alt = alt
         return lifted, last_alt
+
+    def lidar_liftoff(self, start_range: float, window: Optional[float] = None) -> bool:
+        """Check the rangefinder for a climb after an unacknowledged takeoff.
+
+        Polls the lidar for up to ``window`` seconds (default
+        ``_LIDAR_LIFTOFF_WINDOW``) and reports liftoff once
+        the reading exceeds ``start_range`` by ``_LIDAR_LIFTOFF_DELTA`` for
+        ``_LIDAR_LIFTOFF_SAMPLES`` consecutive samples (rejects single-sample
+        noise). Aborts early if the vehicle disarms.
+
+        Returns
+        -------
+        bool
+            True if a sustained climb was observed, False otherwise (including
+            when no rangefinder data is available).
+        """
+        drone = self._drone
+        deadline = time.time() + (self._LIDAR_LIFTOFF_WINDOW if window is None else window)
+        hits = 0
+        while time.time() < deadline:
+            rng = drone._transport.rangefinder
+            if rng is not None and rng - start_range > self._LIDAR_LIFTOFF_DELTA:
+                hits += 1
+                if hits >= self._LIDAR_LIFTOFF_SAMPLES:
+                    return True
+            else:
+                hits = 0
+            if not drone.is_armed:
+                return False
+            time.sleep(self._SETTLE_POLL)
+        return False
 
     def _settle_band(self, climb: float) -> float:
         """Altitude tolerance below target for declaring the takeoff settled."""
