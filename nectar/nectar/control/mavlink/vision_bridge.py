@@ -7,8 +7,9 @@ https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html.
 ``VisionPoseBridge`` / ``VisionSpeedBridge`` also send to the FCU.
 """
 
+import math
 import time
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Sequence
 
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
@@ -31,6 +32,30 @@ PoseCallback = Callable[[LocalPose], None]
 _POSE_COVARIANCE_ZERO = [0.0] * 21
 # ArduPilot ignores VISION_SPEED covariance and uses VISO_VEL_M_NSE.
 _COVARIANCE_UNKNOWN = [float("nan")] + [0.0] * 8
+# NaN in the first element marks the pose covariance as unknown: ArduPilot skips
+# its sqrt() and falls back to VISO_POS_M_NSE / VISO_YAW_M_NSE.
+_POSE_COVARIANCE_UNKNOWN = [float("nan")] + [0.0] * 20
+_POSE_COVARIANCE_DIAGONAL = (0, 6, 11, 15, 18, 20)
+_QUATERNION_NORM_TOLERANCE = 0.01
+_INVALID_DATA_LOG_PERIOD_S = 1.0
+
+
+def _pose_is_valid(pose) -> bool:
+    """Return True if the position is finite and the orientation is a unit quaternion."""
+    p = pose.position
+    q = pose.orientation
+    values = (p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+    if not all(math.isfinite(v) for v in values):
+        return False
+    norm = math.sqrt(q.x**2 + q.y**2 + q.z**2 + q.w**2)
+    return abs(norm - 1.0) < _QUATERNION_NORM_TOLERANCE
+
+
+def _pose_covariance_is_valid(cov_urt: Sequence[float]) -> bool:
+    """Return True if a MAVLink upper-triangle covariance cannot produce NaN on the FCU."""
+    return all(math.isfinite(v) for v in cov_urt) and all(
+        cov_urt[i] >= 0.0 for i in _POSE_COVARIANCE_DIAGONAL
+    )
 
 
 def _local_pose_from_msg(pose) -> LocalPose:
@@ -98,6 +123,8 @@ class VisionPoseBridge:
         self._on_pose = on_pose
         self._sub = None
         self._protocol_checked = False
+        self._dropped_poses = 0
+        self._replaced_covariances = 0
 
     def start(self) -> None:
         if self._sub is not None:
@@ -138,6 +165,16 @@ class VisionPoseBridge:
         self._send(msg.pose, None)
 
     def _send(self, pose, covariance) -> None:
+        # Never repeat a previous pose here: a stale sample with a fresh timestamp
+        # would hide the outage from the EKF and its vision-loss failsafe.
+        if not _pose_is_valid(pose):
+            self._dropped_poses += 1
+            self._node.get_logger().warning(
+                f"Dropped invalid vision pose (total={self._dropped_poses})",
+                throttle_duration_sec=_INVALID_DATA_LOG_PERIOD_S,
+            )
+            return
+
         if self._on_pose is not None:
             self._on_pose(_local_pose_from_msg(pose))
 
@@ -148,9 +185,17 @@ class VisionPoseBridge:
         x_ned, y_ned, z_ned = enu_to_ned((p.x, p.y, p.z))
         roll_ned, pitch_ned, yaw_ned = euler_enu_to_ned(roll_enu, pitch_enu, yaw_enu)
 
-        cov_urt = _POSE_COVARIANCE_ZERO
+        cov_urt: List[float] = _POSE_COVARIANCE_ZERO
         if covariance is not None:
             cov_urt = covariance_urt_to_mavlink(pose_covariance_enu_to_ned(covariance))
+            if not _pose_covariance_is_valid(cov_urt):
+                cov_urt = _POSE_COVARIANCE_UNKNOWN
+                self._replaced_covariances += 1
+                self._node.get_logger().warning(
+                    "Invalid vision covariance, using FCU default noise "
+                    f"(total={self._replaced_covariances})",
+                    throttle_duration_sec=_INVALID_DATA_LOG_PERIOD_S,
+                )
             self._check_covariance_transmittable()
 
         usec = int(time.monotonic() * 1e6) & 0xFFFFFFFFFFFFFFFF
