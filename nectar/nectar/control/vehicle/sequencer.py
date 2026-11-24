@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Optional, Tuple
 
+from nectar.control.types import AltitudeSource
 from nectar.control.vehicle.types import LandedState
 from nectar.utils.log import ARROW, OK
 
@@ -26,9 +27,9 @@ class FlightSequencer:
 
     _SPIN_UP_DELAY = 2.7  # s
     _LIFTOFF_DELTA = 0.08  # m
-    _LIDAR_LIFTOFF_DELTA = 0.15  # m; no-ACK liftoff confirmation
-    _LIDAR_LIFTOFF_SAMPLES = 3  # consecutive polls above delta
-    _LIDAR_LIFTOFF_WINDOW = 3.0  # s
+    _NOACK_LIFTOFF_DELTA = 0.15  # m; no-ACK liftoff confirmation
+    _NOACK_LIFTOFF_SAMPLES = 3  # consecutive polls above delta
+    _NOACK_LIFTOFF_WINDOW = 3.0  # s
     _SETTLE_WINDOW = 0.8  # s
     _SETTLE_VELOCITY = 0.25  # m/s
     _SETTLE_POLL = 0.1  # s
@@ -228,29 +229,34 @@ class FlightSequencer:
             last_alt = alt
         return lifted, last_alt
 
-    def lidar_liftoff(self, start_range: float, window: Optional[float] = None) -> bool:
-        """Check the rangefinder for a climb after an unacknowledged takeoff.
+    def confirm_liftoff(
+        self,
+        source: AltitudeSource,
+        start_alt: float,
+        window: Optional[float] = None,
+    ) -> bool:
+        """Check for a climb after an unacknowledged takeoff command.
 
-        Polls the lidar for up to ``window`` seconds (default
-        ``_LIDAR_LIFTOFF_WINDOW``) and reports liftoff once
-        the reading exceeds ``start_range`` by ``_LIDAR_LIFTOFF_DELTA`` for
-        ``_LIDAR_LIFTOFF_SAMPLES`` consecutive samples (rejects single-sample
-        noise). Aborts early if the vehicle disarms.
+        Polls ``get_altitude(source)`` for up to ``window`` seconds (default
+        ``_NOACK_LIFTOFF_WINDOW``) and reports liftoff once the reading exceeds
+        ``start_alt`` by ``_NOACK_LIFTOFF_DELTA`` for ``_NOACK_LIFTOFF_SAMPLES``
+        consecutive samples (rejects single-sample noise). ``source`` must be a
+        concrete sensor (not AUTO) so every sample comes from the same sensor
+        as ``start_alt``. Aborts early if the vehicle disarms.
 
         Returns
         -------
         bool
-            True if a sustained climb was observed, False otherwise (including
-            when no rangefinder data is available).
+            True if a sustained climb was observed, False otherwise.
         """
         drone = self._drone
-        deadline = time.time() + (self._LIDAR_LIFTOFF_WINDOW if window is None else window)
+        deadline = time.time() + (self._NOACK_LIFTOFF_WINDOW if window is None else window)
         hits = 0
         while time.time() < deadline:
-            rng = drone._transport.rangefinder
-            if rng is not None and rng - start_range > self._LIDAR_LIFTOFF_DELTA:
+            alt = drone.get_altitude(source)
+            if alt is not None and alt - start_alt > self._NOACK_LIFTOFF_DELTA:
                 hits += 1
-                if hits >= self._LIDAR_LIFTOFF_SAMPLES:
+                if hits >= self._NOACK_LIFTOFF_SAMPLES:
                     return True
             else:
                 hits = 0

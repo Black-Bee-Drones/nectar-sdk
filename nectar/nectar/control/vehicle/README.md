@@ -155,9 +155,9 @@ flowchart TD
   T1 --> T2[spin-up delay]
   T2 --> T3["_command_takeoff(alt)"]
   T3 -->|ACK ok| T4[wait_takeoff_settle]
-  T3 -->|no ACK| TL{lidar climb?}
+  T3 -->|no ACK| TL{altitude climb?}
   TL -->|yes, warn| T4
-  TL -->|no / no lidar| TNoAck[retry without disarm]
+  TL -->|no / no source| TNoAck[retry without disarm]
   T4 -->|settled| T5{adjust_altitude?}
   T5 -->|yes| T6["move_to(z, TAKEOFF)"]
   T5 -->|no| TOk[return success]
@@ -169,7 +169,7 @@ Per attempt: arm (firmware guided/offboard), `_SPIN_UP_DELAY`, capture takeoff p
 
 **Settle** requires all of: altitude rose by `_LIFTOFF_DELTA`; altitude ≥ `target_alt - min(_SETTLE_ALT_TOLERANCE, _SETTLE_ALT_FRACTION × climb)`; mean `|vz|` over `_SETTLE_WINDOW` below `_SETTLE_VELOCITY`.
 
-**Missing / rejected ACK**: the rangefinder is polled for `_LIDAR_LIFTOFF_WINDOW`; a rise of `_LIDAR_LIFTOFF_DELTA` over `_LIDAR_LIFTOFF_SAMPLES` consecutive samples means the FCU executed the command anyway, so takeoff continues (settle + adjust) and returns `True` with a warning. Otherwise the takeoff command is retried **without disarming**; if the vehicle is still armed the arm step and spin-up delay are skipped, and if the FCU auto-disarmed meanwhile it is re-armed with a warning.
+**Missing / rejected ACK**: the altitude source `get_altitude(AUTO)` resolves to at command time (lidar > vision Z > relative altitude) is pinned and polled for `_NOACK_LIFTOFF_WINDOW`; a rise of `_NOACK_LIFTOFF_DELTA` over `_NOACK_LIFTOFF_SAMPLES` consecutive samples means the FCU executed the command anyway, so takeoff continues (settle + adjust) and returns `True` with a warning. Otherwise the takeoff command is retried **without disarming**; if the vehicle is still armed the arm step and spin-up delay are skipped, and if the FCU auto-disarmed meanwhile it is re-armed with a warning.
 
 **Retries**: ACK received but liftoff never seen (or mid-climb disarm) → retry without disarming (re-arm only if the FCU disarmed); last attempt fails. Takeoff never disarms the vehicle itself. Settled with `height_gain < _LIFTOFF_DELTA` while `is_airborne` is true is accepted (sensor glitch).
 

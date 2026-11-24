@@ -609,7 +609,10 @@ class VehicleDrone(BaseDrone):
                 f"{ARROW} Takeoff start_alt={start_alt:.2f}m (source={alt_source})"
             )
 
-            start_range = self._transport.rangefinder
+            # Pin the source AUTO picks now so the no-ACK check compares
+            # readings from one sensor (AUTO may switch source mid-check).
+            check_source = AltitudeSource[alt_source]
+            check_start = self.get_altitude(check_source)
 
             cmd_ok = False
             acked = False
@@ -620,14 +623,14 @@ class VehicleDrone(BaseDrone):
 
             if not cmd_ok:
                 self._node.get_logger().error(f"{ERR} Takeoff command rejected or ACK failed")
-                if start_range is None:
+                if check_source == AltitudeSource.AUTO or check_start is None:
                     self._node.get_logger().warn(
-                        f"{WARN} No lidar reading, cannot confirm liftoff without ACK"
+                        f"{WARN} No altitude source, cannot confirm liftoff without ACK"
                     )
-                elif self._sequencer.lidar_liftoff(start_range):
+                elif self._sequencer.confirm_liftoff(check_source, check_start):
                     self._node.get_logger().warn(
-                        f"{WARN} Takeoff not acknowledged but lidar shows climb "
-                        f"from {start_range:.2f}m, continuing takeoff"
+                        f"{WARN} Takeoff not acknowledged but {alt_source} shows climb "
+                        f"from {check_start:.2f}m, continuing takeoff"
                     )
                     cmd_ok = True
 
@@ -694,7 +697,7 @@ class VehicleDrone(BaseDrone):
     def _warn_unacked_takeoff(self, acked: bool) -> None:
         if not acked:
             self._node.get_logger().warn(
-                f"{WARN} Takeoff succeeded without FCU ACK (confirmed by lidar)"
+                f"{WARN} Takeoff succeeded without FCU ACK (confirmed by altitude)"
             )
 
     def land(self, timeout: float = 60.0) -> bool:
