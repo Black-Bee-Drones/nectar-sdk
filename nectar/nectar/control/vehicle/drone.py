@@ -614,7 +614,7 @@ class VehicleDrone(BaseDrone):
                     self._node.get_logger().warn(
                         f"{WARN} Disarming for retry ({attempt + 1}/{max_retries})"
                     )
-                    self.disarm()
+                    # self.disarm()
                     self.delay(1.5)
                     continue
                 return False
@@ -658,7 +658,7 @@ class VehicleDrone(BaseDrone):
                     f"{WARN} No liftoff (gain {height_gain:.2f}m, abort={abort}, "
                     f"armed={armed}), disarming for retry"
                 )
-                self.disarm()
+                # self.disarm()
                 self.delay(1.5)
             else:
                 self._node.get_logger().error(
